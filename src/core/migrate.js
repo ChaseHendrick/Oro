@@ -4,7 +4,7 @@
 import {
   NUM_PARTS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
   LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
-  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS,
+  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION,
   defaultState, defaultPart, defaultStep, defaultLinks, clamp,
 } from './params.js';
 
@@ -151,11 +151,18 @@ export function sanitizePart(src, i) {
   };
 }
 
+/**
+ * Any saved session or scene -> the current format (STATE_VERSION). Version 1
+ * (before v1.1) has no pedal params: sanitizeParams fills them with their
+ * defaults, so an old session loads with the pedal send, Pre and Insert off.
+ * Links already using a source index this build does not know are clamped by
+ * sanitizeLinks.
+ */
 export function migrateState(src) {
   const base = defaultState();
   if (!src || typeof src !== 'object') return base;
   return {
-    version: 1,
+    version: STATE_VERSION,
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
     parts: Array.from({ length: NUM_PARTS }, (_, i) => sanitizePart(Array.isArray(src.parts) ? src.parts[i] : null, i)),
   };

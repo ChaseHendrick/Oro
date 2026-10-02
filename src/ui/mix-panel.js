@@ -1,8 +1,10 @@
 // MIX tab: four channel strips (level fader, activity meter, pan, delay and
 // reverb sends, mute / solo, part colour and name) and the master section
-// (delay, reverb, chorus, warmth, volume with a stereo meter).
+// (delay, reverb, chorus, warmth, volume with a stereo meter). While the pedal
+// send is switched on in Settings > Pedals (v1.1), each strip also shows its
+// Pedal send with Pre and Insert.
 
-import { NUM_PARTS, PART_COLORS, GLOBAL_PARAM_MAP, formatValue, clamp } from '../core/params.js';
+import { NUM_PARTS, PART_COLORS, GLOBAL_PARAM_MAP, PART_PARAM_MAP, formatValue, clamp } from '../core/params.js';
 import { h, createScope, setText } from './dom.js';
 import { schedule, addLoop } from './frame.js';
 import { createKnob } from './knob.js';
@@ -117,13 +119,19 @@ function createStrip(ctx, parentScope, i) {
   const mute = createToggle(ctx, P('mute'), { label: 'M', className: 'toggle--mute', ariaLabel: `Mute part ${i + 1}`, tip: 'Mute' });
   const solo = createToggle(ctx, P('solo'), { label: 'S', className: 'toggle--solo', ariaLabel: `Solo part ${i + 1}`, tip: 'Solo' });
   for (const c of [level, ...knobs, mute, solo]) parentScope.add(c.dispose);
+  // Pedal send (v1.1): only shown while the pedal send runs, so the mixer is unchanged otherwise.
+  const hasPedal = !!PART_PARAM_MAP.pedalSend;
+  const pedalKnob = hasPedal ? createKnob(ctx, P('pedalSend'), { size: 'sm', ariaLabel: () => `Part ${i + 1} pedal send` }) : null;
+  const pedalPre = hasPedal ? createToggle(ctx, P('pedalPre'), { label: 'Pre', className: 'toggle--pedal', ariaLabel: `Part ${i + 1} pedal send before the fader`, tip: 'Pedal send before the level fader' }) : null;
+  const pedalIns = hasPedal ? createToggle(ctx, P('pedalInsert'), { label: 'Ins', className: 'toggle--pedal toggle--insert', ariaLabel: `Part ${i + 1} insert: hear it only through the pedals`, tip: 'Insert: mute the dry sound, hear this part only through the pedals' }) : null;
+  for (const c of [pedalKnob, pedalPre, pedalIns]) if (c) { parentScope.add(c.dispose); c.el.classList.add('is-pedal-ctl'); }
 
   const el = h('section', { class: 'strip', 'aria-label': `Part ${i + 1} channel`, dataset: { part: String(i) } },
     h('header', { class: 'strip-head' }, swatch, h('div', { class: 'strip-titles' }, nameBtn, patch), colorInput),
     h('div', { class: 'strip-body' },
       h('div', { class: 'strip-fader' }, h('div', { class: 'fader-wrap' }, level.el, meter), levelVal),
-      h('div', { class: 'strip-knobs' }, knobs.map(k => k.el))),
-    h('footer', { class: 'strip-foot' }, mute.el, solo.el));
+      h('div', { class: 'strip-knobs' }, knobs.map(k => k.el), pedalKnob ? pedalKnob.el : null)),
+    h('footer', { class: 'strip-foot' }, mute.el, solo.el, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
 
   function render() {
     const name = store.get(`parts.${i}.name`) || `Part ${i + 1}`;
@@ -136,11 +144,18 @@ function createStrip(ctx, parentScope, i) {
     el.classList.toggle('is-selected', binder.selected() === i);
     el.classList.toggle('is-muted', !!store.get(`parts.${i}.params.mute`));
     setText(levelVal, Math.round((store.get(`parts.${i}.params.level`) ?? 0.75) * 100) + '%');
+    if (hasPedal) {
+      const rig = ctx.pedals;
+      const on = !!(rig && rig.prefs.enabled);
+      el.classList.toggle('has-pedal', on);
+      el.classList.toggle('is-insert', on && !!store.get(`parts.${i}.params.pedalInsert`));
+    }
   }
   const invalidate = () => schedule(render);
   parentScope.add(store.subscribe(`parts.${i}`, invalidate));
   parentScope.add(store.subscribe('ui.selectedPart', invalidate));
   parentScope.on(window, 'orograph:theme', invalidate);
+  if (hasPedal && ctx.pedals) parentScope.add(ctx.pedals.on('change', invalidate));
 
   parentScope.on(nameBtn, 'click', () => store.set('ui.selectedPart', i, { source: 'ui' }));
   parentScope.on(nameBtn, 'dblclick', () => rename());

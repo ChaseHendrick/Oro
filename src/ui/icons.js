@@ -92,6 +92,7 @@ const P = {
   bounce: '<path d="M3.6 12h2.2l1.8-4.6 2.6 9.2 2.6-7 1.8 4.4H16"/><path d="M17.8 8.4v8M15.2 13.8l2.6 2.6 2.6-2.6"/>',
   waypoint: '<path d="M12 20.6s-5.6-5-5.6-9.2a5.6 5.6 0 0 1 11.2 0c0 4.2-5.6 9.2-5.6 9.2z"/><path d="M12 8.6v5.6M9.2 11.4h5.6"/>',
   bolt: '<path d="M13.2 3.6L5.8 13.2h5.4l-1.2 7.2 7.4-9.6H12z"/>',
+  pedal: '<rect x="5.4" y="3.6" width="13.2" height="16.8" rx="2.2"/><circle cx="9.2" cy="7.6" r="1.3"/><circle cx="14.8" cy="7.6" r="1.3"/><circle cx="12" cy="15.2" r="2.4"/><path d="M5.4 11.2h13.2"/>',
 };
 
 export function icon(name, { size, cls = '' } = {}) {

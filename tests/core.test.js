@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PART_PARAMS, GLOBAL_PARAMS, toNorm, fromNorm, formatValue, defaultState, stepToMidi, MOD_PARAM_IDS } from '../src/core/params.js';
+import { PART_PARAMS, GLOBAL_PARAMS, toNorm, fromNorm, formatValue, defaultState, stepToMidi, MOD_PARAM_IDS, LINK_SOURCES } from '../src/core/params.js';
 import { createStore } from '../src/core/store.js';
 import { migrateState } from '../src/core/migrate.js';
 
@@ -82,7 +82,8 @@ describe('round D contract', () => {
       dot: { mode: 4, waypoints: [{ x: 2, y: 0.3, beats: 99 }, null], tourMode: 9 },
     }] });
     const p = m.parts[0];
-    expect(p.links).toEqual([{ src: 14, dst: 'cutoff', amt: 1, curve: 1 }]);
+    // An unknown source index is clamped to the last known source (Guitar Level since v1.1).
+    expect(p.links).toEqual([{ src: LINK_SOURCES.length - 1, dst: 'cutoff', amt: 1, curve: 1 }]);
     expect(p.mods.morph.lfoShape).toBe(6);
     expect(p.mods.morph.steps.length).toBe(16);
     expect(p.mods.morph.steps.slice(0, 3)).toEqual([1, -1, 0.2]);

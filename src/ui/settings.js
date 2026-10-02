@@ -5,6 +5,7 @@ import { h, createScope, call, has, listen } from './dom.js';
 import { openModal } from './modal.js';
 import { createSegmented, createToggle } from './controls.js';
 import { createMidiSettings } from './settings-midi.js';
+import { createPedalSettings } from './settings-pedals.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { STYLES } from './viewport-overlay.js';
 import { openBounce, bounceSupported } from './bounce.js';
@@ -15,6 +16,7 @@ export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
   { id: 'audio', label: 'Audio', icon: 'speaker' },
   { id: 'midi', label: 'MIDI & MPC', icon: 'midi' },
+  { id: 'pedals', label: 'Pedals', icon: 'pedal' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard' },
   { id: 'about', label: 'About', icon: 'info' },
 ];
@@ -191,6 +193,7 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     general: () => generalTab(ctx, scope),
     audio: () => audioTab(ctx, scope),
     midi: () => { const m = createMidiSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
+    pedals: () => { const m = createPedalSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     shortcuts: () => h('div', { class: 'settings-pane' }, shortcutsList()),
     about: () => aboutTab(),
   };

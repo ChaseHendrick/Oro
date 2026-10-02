@@ -270,7 +270,7 @@ export function planRouting(maxChannelCount, { sendChannels = [2, 3], mainChanne
   return {
     mode: 'stereo',
     channelCount: 2,
-    reason: `This output device has ${max || 2} channels, and the pedal send uses output${sendChannels.length > 1 ? 's' : ''} ${outs}. The send is switched off for now. Choose a device with ${need} or more outputs, such as the MPC XL, in Settings > Audio.`,
+    reason: `This output device has ${max || 2} channels, and the pedal send uses output${sendChannels.length > 1 ? 's' : ''} ${outs}. The send is switched off for now. Choose a device with ${need} or more outputs, such as the MPC XL, in Settings > Pedals.`,
   };
 }
 

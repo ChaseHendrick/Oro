@@ -5,7 +5,8 @@
 //
 // Node options: numberOfInputs 0, numberOfOutputs 3, outputChannelCount
 // [2, 2, 2] -> outputs[0] dry mix, outputs[1] delay send, outputs[2] reverb
-// send. Messages on node.port follow docs/ARCHITECTURE.md; telemetry goes back
+// send. The live host (v1.1) asks for a fourth stereo output, outputs[3], the
+// pedal send bus; with three outputs (offline bounces) it is not rendered. Messages on node.port follow docs/ARCHITECTURE.md; telemetry goes back
 // the same way. A message may also be an array of messages (one postMessage
 // for a batch of parameter changes). processorOptions.init may carry an array
 // of messages applied in the constructor, before the first render quantum:
@@ -53,7 +54,10 @@ class OrographProcessor extends AudioWorkletProcessor {
     const DR = dly && dly.length > 1 ? this.channel(dly, 1, frames, 3) : this.channel(null, 0, frames, 3);
     const VL = this.channel(rev, 0, frames, 4);
     const VR = rev && rev.length > 1 ? this.channel(rev, 1, frames, 5) : this.channel(null, 0, frames, 5);
-    this.dsp.process(L, R, DL, DR, VL, VR, frames, globalThis.currentTime);
+    const ped = outputs.length > 3 ? outputs[3] : null;
+    const PL = ped ? this.channel(ped, 0, frames, 6) : null;
+    const PR = ped ? (ped.length > 1 ? this.channel(ped, 1, frames, 7) : this.channel(null, 0, frames, 7)) : null;
+    this.dsp.process(L, R, DL, DR, VL, VR, frames, globalThis.currentTime, PL, PR);
     // a mono dry output still gets both channels
     if (dry && dry.length === 1) for (let i = 0; i < frames; i++) dry[0][i] = 0.5 * (L[i] + R[i]);
     return true;

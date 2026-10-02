@@ -83,7 +83,10 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "identity": "-",
-      "artifactName": "Orograph-mac-${arch}.${ext}"
+      "artifactName": "Orograph-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Orograph listens to an audio input only when you turn on the pedal return in Settings > Pedals, to hear your guitar pedals and to measure their latency."
+      }
     },
     "dmg": {
       "artifactName": "Orograph-mac-${arch}.${ext}"

@@ -26,6 +26,7 @@ import { createDock, DOCK_TABS } from './dock.js';
 import { createPiano } from './piano.js';
 import { openModPopover } from './mod-popover.js';
 import { openSettings } from './settings.js';
+import { createPedalRig } from './pedal-rig.js';
 import { openHelp } from './help.js';
 import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
@@ -193,6 +194,18 @@ export function createUI(root, modules = {}) {
 
   // MIDI learn: one at a time, Esc cancels, toasts report the result.
   let learning = null;
+  // v1.1 pedal rig (Settings > Pedals, the mixer's Pedal sends). Optional:
+  // without Web Audio or MIDI it reports why and the rest of the UI is unchanged.
+  ctx.pedals = null;
+  try {
+    ctx.pedals = createPedalRig({ store, engine, midi });
+    scope.add(ctx.pedals.dispose);
+    ctx.pedals.restore().catch((err) => console.warn('[ui] could not restore the pedal rig', err));
+  } catch (err) {
+    console.warn('[ui] the pedal rig is unavailable', err);
+    ctx.pedals = null;
+  }
+
   ctx.learn = {
     start(target, label, onEnd) {
       if (!ctx.midiOk()) return;

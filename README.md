@@ -217,12 +217,13 @@ The full MPC XL notes, with sources, are in [docs/MPC-XL.md](docs/MPC-XL.md). No
 the MPC steps have been tried on a physical MPC XL yet, so treat the menu names as
 guidance.
 
-## Guitar pedals (coming in 1.1)
+## Guitar pedals (1.1, untested on hardware)
 
-Version 1.1 is planned to run Orograph through a real pedalboard via the MPC XL's audio
-inputs and outputs, send MIDI to pedals that accept it, and let a guitar play and
-modulate Orograph. The design is in [docs/PEDALS.md](docs/PEDALS.md). It is not part of
-0.1.0.
+Version 1.1 adds a pedal send per part, an output map for four-channel devices such as the
+MPC XL, a pedal return with a feedback guard, a latency ping, MIDI profiles for four
+pedals and a Guitar Level modulation source (**Settings > Pedals**). It follows the
+manuals but has not been tried with real pedals or a real MPC XL yet. Details are in the
+[user guide](docs/USER-GUIDE.md#15-guitar-pedals) and [docs/PEDALS.md](docs/PEDALS.md).
 
 ## Keyboard shortcuts
 
@@ -273,7 +274,7 @@ Linux by GitHub Actions and published on the
 | [User guide](docs/USER-GUIDE.md) | How to play Orograph, every control explained, troubleshooting |
 | [Changelog](CHANGELOG.md) | What is in each version |
 | [Akai MPC XL](docs/MPC-XL.md) | Connecting and syncing an MPC XL, with sources |
-| [Guitar pedals](docs/PEDALS.md) | The design for version 1.1's pedalboard integration |
+| [Guitar pedals](docs/PEDALS.md) | The design of version 1.1's pedalboard integration and what is wired |
 | [Research brief](docs/RESEARCH.md) | Wave terrain synthesis: history, maths, prior art and the build stack |
 | [Architecture](docs/ARCHITECTURE.md) | How the code fits together, for developers |
 

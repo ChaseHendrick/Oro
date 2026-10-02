@@ -25,6 +25,7 @@ import { wavHeader } from './wav.js';
 import { loadWorkletModule, withTimeout } from './worklet-loader.js';
 import { bounceOptions, normaliseEvents, stemParts, passInit, renderPass, encodeBuffer } from './bounce.js';
 import { sequencerEvents } from './bounce-events.js';
+import { createPedalHost } from './pedal-host.js';
 
 export { loadWorkletModule };
 
@@ -96,8 +97,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   const controllers = Array.from({ length: NUM_PARTS }, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0 }));
   const marbles = Array.from({ length: NUM_PARTS }, () => null);
   let transportMsg = null;
+  // v1.1 pedal loop state the DSP needs back after a rebuild.
+  let pedalMsg = null, guitarMsg = null;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
+    if (pedalMsg && pedalMsg.active) out.push({ ...pedalMsg });
+    if (guitarMsg && guitarMsg.v) out.push({ ...guitarMsg });
     controllers.forEach((c, part) => {
       if (c.bend) out.push({ t: 'bend', part, v: c.bend });
       if (c.wheel) out.push({ t: 'wheel', part, v: c.wheel });
@@ -117,10 +122,11 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   });
 
   function buildWorkletSource(init) {
+    // Output 3 is the v1.1 pedal send bus (silent until the pedal loop runs).
     const n = new AudioWorkletNode(ctx, 'orograph', {
       numberOfInputs: 0,
-      numberOfOutputs: 3,
-      outputChannelCount: [2, 2, 2],
+      numberOfOutputs: 4,
+      outputChannelCount: [2, 2, 2, 2],
       processorOptions: { sampleRate: ctx.sampleRate, init },
     });
     n.port.onmessage = (e) => {
@@ -131,6 +137,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     n.connect(fx.dryIn, 0);
     n.connect(fx.delayIn, 1);
     n.connect(fx.reverbIn, 2);
+    n.connect(pedalSendBus, 3);
     node = n;
     send = (msgs, transfer) => {
       try { n.port.postMessage(msgs, transfer || []); } catch (err) { console.error('[audio] post to DSP failed', err); }
@@ -143,21 +150,23 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     dsp.postMessage = (m) => { if (m && m.t === 'tele') onTele(m); };
     for (const m of init) dsp.handleMessage(m);
     let sp;
-    try { sp = ctx.createScriptProcessor(SCRIPT_BUFFER, 0, 6); } catch { sp = ctx.createScriptProcessor(SCRIPT_BUFFER, 1, 6); }
+    try { sp = ctx.createScriptProcessor(SCRIPT_BUFFER, 0, 8); } catch { sp = ctx.createScriptProcessor(SCRIPT_BUFFER, 1, 8); }
     sp.onaudioprocess = (e) => {
       const ob = e.outputBuffer;
       const t = Number.isFinite(e.playbackTime) ? e.playbackTime : ctx.currentTime;
       try {
+        const ped = ob.numberOfChannels >= 8;
         dsp.process(ob.getChannelData(0), ob.getChannelData(1), ob.getChannelData(2), ob.getChannelData(3),
-          ob.getChannelData(4), ob.getChannelData(5), ob.length, t);
+          ob.getChannelData(4), ob.getChannelData(5), ob.length, t,
+          ped ? ob.getChannelData(6) : null, ped ? ob.getChannelData(7) : null);
       } catch (err) {
         for (let c = 0; c < ob.numberOfChannels; c++) ob.getChannelData(c).fill(0);
         if (!buildScriptSource.warned) { buildScriptSource.warned = true; console.error('[audio] DSP failed in the ScriptProcessor', err); }
       }
     };
-    const split = ctx.createChannelSplitter(6);
+    const split = ctx.createChannelSplitter(8);
     sp.connect(split);
-    const targets = [fx.dryIn, fx.delayIn, fx.reverbIn];
+    const targets = [fx.dryIn, fx.delayIn, fx.reverbIn, pedalSendBus];
     const merges = targets.map((dst, k) => {
       const m = ctx.createChannelMerger(2);
       split.connect(m, 2 * k, 0);
@@ -224,12 +233,32 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     await rebuildSource();
   }
 
+  // mainOut: the master output on its way to the device. The pedal host moves
+  // it onto outputs 1/2 of a multichannel map when the pedal send is on.
+  let mainOut = null, pedalSendBus = null, pedals = null;
   if (ctx) {
+    const stereoNode = () => { const g = ctx.createGain(); g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; return g; };
+    mainOut = stereoNode();
+    mainOut.connect(ctx.destination);
+    pedalSendBus = stereoNode();
     fx = createFx(ctx, {
+      destination: mainOut,
       global: store.get('global') || {},
       // Reverb impulse responses are built by the same worker pool as terrains.
       computeIR: (opts) => genPromise.then(g => g.run({ kind: 'ir', ...opts })),
     });
+    try {
+      pedals = createPedalHost(ctx, {
+        sendBus: pedalSendBus, mainOut, masterIn: fx.dryIn, delayIn: fx.delayIn, reverbIn: fx.reverbIn,
+        post: (m) => {
+          if (m.t === 'pedal') pedalMsg = m; else if (m.t === 'guitar') guitarMsg = m;
+          sync.flush(); send(m);
+        },
+      });
+    } catch (err) {
+      console.warn('[audio] the pedal loop is unavailable', err);
+      pedals = null;
+    }
     const init = sync.snapshot();
     if (dspMode === 'worklet') {
       try {
@@ -283,6 +312,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   const onSinkChange = () => {
     const id = ctx && typeof ctx.sinkId === 'string' ? ctx.sinkId : '';
     outputDeviceId = id || 'default';
+    // A different device can have a different number of outputs.
+    if (pedals) pedals.refresh();
     events.emit('state', { state: ctx.state, mode: dspMode, sinkId: outputDeviceId });
     resumeIfWanted();
   };
@@ -352,6 +383,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     get latency() { return ctx ? (ctx.baseLatency || 0) + (ctx.outputLatency || 0) : 0; },
     get outputDeviceId() { return outputDeviceId; },
     get recording() { return !!(recorder && recorder.isRecording()); },
+    /**
+     * v1.1 pedal loop (src/audio/pedal-host.js), or null without Web Audio:
+     * configure({enabled, sendChannels, mainChannels, ceilingDb}), setReturn({...}),
+     * ping(), resetGuard(), status(), on('change' | 'guitar' | 'ping', fn).
+     */
+    get pedals() { return pedals; },
 
     async start() {
       wantRunning = true;
@@ -474,7 +511,9 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         sync.flush();
         // The live transport anchor is in live context seconds; an offline
         // render starts its bar at 0 (events from music.renderEvents say so too).
-        const snapshot = sync.snapshot().filter(m => m.t !== 'transport');
+        // The pedals are hardware and cannot take part in an offline render:
+        // the bounce plays every part dry (Insert ignored, no pedal send).
+        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar');
         snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
         if (opts.quality && QUALITY_MODES.includes(opts.quality)) snapshot.push({ t: 'quality', mode: opts.quality });
         const terrains = terrain.messages();
@@ -588,6 +627,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
           }
         }
         outputDeviceId = sink || 'default';
+        if (pedals) pedals.refresh();
         events.emit('state', { state: ctx.state, mode: dspMode, sinkId: outputDeviceId });
         // Some systems pause the context while they reopen the device.
         resumeIfWanted();
@@ -618,6 +658,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         terrain: terrain.stats(),
         generator: generator.stats(),
         fx: fx ? fx.stats() : null,
+        pedals: pedals ? pedals.status() : null,
         import: { ...importStats },
         sync: sync.stats(),
         quality,
@@ -637,6 +678,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       sync.dispose();
       generator.dispose();
       if (recorder) recorder.dispose();
+      if (pedals) { try { pedals.dispose(); } catch { /* ignore */ } }
       teardownSource();
       if (fx) fx.dispose();
       events.clear();

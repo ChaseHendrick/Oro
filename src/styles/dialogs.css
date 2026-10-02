@@ -197,7 +197,7 @@
   .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .settings-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--divider); padding: 8px; }
   .settings-tab { flex: none; height: 40px; padding: 0 10px; gap: 6px; }
-  /* Five tabs in one row on a phone: icons give way, labels stay. */
+  /* Six tabs in one scrolling row on a phone: icons give way, labels stay. */
   .settings-tabs { gap: 2px; scrollbar-width: none; }
   .settings-tabs::-webkit-scrollbar { display: none; }
   .settings-tab .icon { display: none; }
@@ -216,4 +216,44 @@
   .help-cards { grid-template-columns: minmax(0, 1fr); }
   .popover--browser, .popover--picker, .popover--mod { width: calc(100vw - 16px); }
   .map-row { grid-template-columns: 44px 60px minmax(0, 1fr) 40px; }
+}
+
+/* ================================================================== Settings > Pedals (v1.1) */
+.settings-pedals { display: flex; flex-direction: column; gap: 4px; }
+.settings-pedals > .callout { margin-top: 12px; }
+.settings-pedals .inline-controls { flex-wrap: wrap; }
+.settings-pedals .inline-controls .select { min-width: 220px; flex: 1 1 220px; }
+.pedal-slider { width: 180px; flex: none; }
+.pedal-ping { margin-top: 4px; font-variant-numeric: tabular-nums; }
+.pedal-meter { display: block; width: 180px; height: 8px; border-radius: 4px; background: var(--knob-track); overflow: hidden; }
+.pedal-meter-fill { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+.pedal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 10px 0; }
+.pedal-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--inset-hi); min-width: 0; }
+.pedal-card.is-off .pedal-body { opacity: .55; }
+.pedal-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pedal-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--panel-3); color: var(--text-2); flex: none; }
+.pedal-icon .icon { width: 20px; height: 20px; }
+.pedal-titles { flex: 1; min-width: 0; }
+.pedal-name { font-weight: 650; color: var(--text); }
+.pedal-body { display: flex; flex-direction: column; gap: 8px; }
+.pedal-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pedal-line .mini-label { width: 58px; flex: none; }
+.pedal-line .select { flex: 1 1 120px; min-width: 0; }
+.pedal-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pedal-program { width: 76px; }
+.pedal-notes { margin: 0; padding-left: 18px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.45; }
+@media (max-width: 899px) {
+  .pedal-slider, .pedal-meter { width: 100%; }
+  .pedal-cards { grid-template-columns: minmax(0, 1fr); }
+  /* Device pickers get their own line under the label. */
+  .settings-pedals .setting-row:has(> .inline-controls) > .setting-text { flex-basis: 100%; }
+  .settings-pedals .setting-row > .inline-controls { flex: 1 1 100%; }
+}
+/* 44 px touch targets for every control in the pane on phones and touch screens. */
+@media (max-width: 899px), (pointer: coarse) {
+  .settings-pedals .btn, .settings-pedals .toggle:not(.toggle--switch), .settings-pedals .seg-btn, .settings-pedals .select-native, .settings-pedals .field { min-height: 44px; }
+  .settings-pedals .mslider { min-height: 44px; }
+  /* Switches keep their look; an invisible margin makes the hit area 46 px tall. */
+  .settings-pedals .toggle--switch { height: 26px; }
+  .settings-pedals .toggle--switch::before { content: ''; position: absolute; inset: -10px -6px; }
 }

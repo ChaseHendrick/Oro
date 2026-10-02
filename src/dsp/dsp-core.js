@@ -104,10 +104,10 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 // for the whole part (folded into the part's shared modulation, so they also
 // show in idle telemetry) rather than per voice.
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
-  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14;
+  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15;
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
-for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT]) PART_SOURCE[s] = 1;
+for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR]) if (s < NSRC) PART_SOURCE[s] = 1;
 const NCURVES = LINK_CURVES.length;
 const DEFAULT_LINKS = defaultLinks();
 
@@ -586,6 +586,7 @@ class Part {
 
     // mixer
     this.gain = 0; this.dGain = 0; this.dly = 0; this.dDly = 0; this.rev = 0; this.dRev = 0;
+    this.ped = 0; this.dPed = 0;   // pedal send (v1.1), the fourth bus
     this.tail = 0;
 
     // voice bus at the oversampled rate with the decimator history in front
@@ -607,7 +608,7 @@ class Part {
     this.shapeI = 0; this.orderI = 1; this.ftype = 1; this.mode = 0;
     this.paceShapeI = 0; this.subT = 0;
     this.airT = 0; this.airTone = 0; this.noteSize = 0; this.travBits = 0;
-    this.gainS = 0; this.dlyS = 0; this.revS = 0;
+    this.gainS = 0; this.dlyS = 0; this.revS = 0; this.pedS = 0;
     this.updateDerived();
   }
 
@@ -684,7 +685,7 @@ class Part {
   }
 
   /** Recompute the summed contribution of the part-wide Link sources. */
-  updatePartLinks(macros) {
+  updatePartLinks(macros, guitar = 0) {
     const pl = this.partLink;
     pl.fill(0);
     for (let i = 0; i < this.nLinks; i++) {
@@ -694,6 +695,7 @@ class Part {
       if (s === L_WHEEL) x = this.wheel;
       else if (s === L_MSPEED) x = this.sMarbleSpeed;
       else if (s === L_MHEIGHT) x = this.sMarbleHeight;
+      else if (s === L_GUITAR) x = guitar;
       else x = macros[s - L_MACRO];
       pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], x);
     }
@@ -795,6 +797,11 @@ export class OrographDSP {
 
     this.tempo = 112;
     this.macros = new Float64Array(4);
+    // v1.1 pedal loop: the host says when the pedal send really leaves the
+    // computer (outputs 3/4); until then the send bus stays silent and Insert
+    // is ignored, so a part can never go quiet with nowhere to go.
+    this.pedalOn = false;
+    this.guitar = 0; this.sGuitar = 0;  // Guitar Level link source (0..1), smoothed like the marble
     this.transport = { playing: false, beatTime: 0, beat: 0 };
     this.watch = 0;
     this.voiceCounter = 0;
@@ -894,6 +901,8 @@ export class OrographDSP {
         break;
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
+      case 'pedal': this.pedalOn = !!msg.active; break;
+      case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
@@ -1023,7 +1032,7 @@ export class OrographDSP {
     }
     P.nLinks = n;
     this.updateLinkFlags(P);
-    P.updatePartLinks(this.macros);
+    P.updatePartLinks(this.macros, this.sGuitar);
   }
 
   /** Which slots need per-voice evaluation, and whether the orbit is modulated per voice. */
@@ -1602,7 +1611,7 @@ export class OrographDSP {
   }
 
   partMods(P) {
-    P.updatePartLinks(this.macros);
+    P.updatePartLinks(this.macros, this.sGuitar);
     const PL = P.partLink;
     for (let m = 0; m < NMOD; m++) {
       let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m];
@@ -2117,6 +2126,9 @@ export class OrographDSP {
     const k = this.kSmooth;
     const dt = elapsed / this.sr;
     const n2 = this.os * CTRL;
+    const gtr = this.guitar;
+    this.sGuitar = Math.abs(gtr - this.sGuitar) < 1e-6 ? gtr : this.sGuitar + (gtr - this.sGuitar) * this.kMarble;
+    const pedalOn = this.pedalOn;
     for (const P of this.parts) {
       if (P.nRamps > 0) this.advanceRamps(P);
       this.advanceLfos(P, dt);
@@ -2134,15 +2146,23 @@ export class OrographDSP {
       // mixer targets: perceptual (squared) level, post-fader sends
       const audible = P.params[PI.mute] < 0.5 && (!anySolo || P.params[PI.solo] >= 0.5);
       const lv = clamp01(P.params[PI.level]);
-      const gT = audible ? lv * lv * VOICE_GAIN : 0;
+      const post = audible ? lv * lv * VOICE_GAIN : 0;
+      // Pedal send: pre-fader follows mute/solo but not the level fader. Insert
+      // mutes the dry sound and its delay/reverb sends (the pedal return comes
+      // back into the master and the effects instead), only while the send runs.
+      const pT = pedalOn ? (P.params[PI.pedalPre] >= 0.5 ? (audible ? VOICE_GAIN : 0) : post) * clamp01(P.params[PI.pedalSend]) : 0;
+      const gT = pedalOn && P.params[PI.pedalInsert] >= 0.5 ? 0 : post;
       const dT = gT * clamp01(P.params[PI.delaySend]), rT = gT * clamp01(P.params[PI.reverbSend]);
       // one-pole towards the targets, snapping when close so muting reaches true zero
       P.gainS = Math.abs(gT - P.gainS) < 1e-4 ? gT : P.gainS + (gT - P.gainS) * k;
       P.dlyS = Math.abs(dT - P.dlyS) < 1e-4 ? dT : P.dlyS + (dT - P.dlyS) * k;
       P.revS = Math.abs(rT - P.revS) < 1e-4 ? rT : P.revS + (rT - P.revS) * k;
+      P.pedS = Math.abs(pT - P.pedS) < 1e-4 ? pT : P.pedS + (pT - P.pedS) * k;
       P.dGain = (P.gainS - P.gain) / CTRL;
       P.dDly = (P.dlyS - P.dly) / CTRL;
       P.dRev = (P.revS - P.rev) / CTRL;
+      if (P.pedS === 0 && Math.abs(P.ped) < 1e-9) P.ped = 0;  // exact zero, so the send loop is skipped
+      P.dPed = (P.pedS - P.ped) / CTRL;
 
       // terrain crossfades
       if (P.oldA) {
@@ -3466,13 +3486,13 @@ export class OrographDSP {
     }
   }
 
-  renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR) {
+  renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR, pedL, pedR) {
     for (const P of this.parts) {
       const g = P.ghost;
       const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
       if (active === 0 && P.tail <= 0 && !ghostOn) {
-        P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg;
+        P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg;
         continue;
       }
       if (active > 0 || ghostOn) P.tail = HB_N;
@@ -3528,6 +3548,14 @@ export class OrographDSP {
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }
       P.gain = gn; P.dly = dl; P.rev = rv;
+      // pedal send (skipped while it is and stays silent, the usual case)
+      if (P.ped !== 0 || P.dPed !== 0) {
+        let pd = P.ped;
+        const dpd = P.dPed;
+        if (pedL) for (let n = pos; n < pos + seg; n++) { pd += dpd; pedL[n] += oL[n] * pd; pedR[n] += oR[n] * pd; }
+        else pd += dpd * seg;
+        P.ped = pd;
+      }
       if (active === 0 && !ghostOn) {
         P.tail -= seg;
         if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0); }
@@ -3538,9 +3566,11 @@ export class OrographDSP {
   /**
    * Render `frames` samples. outL/outR: dry mix; dlyL/dlyR and revL/revR:
    * delay and reverb send buses (any of the send arrays may be null).
-   * currentTime is the AudioContext time of the first sample.
+   * currentTime is the AudioContext time of the first sample. pedL/pedR
+   * (optional, v1.1): the pedal send bus, silent unless the host sent
+   * {t:'pedal', active: true}.
    */
-  process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime) {
+  process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime, pedL = null, pedR = null) {
     const sr = this.sr;
     const n = frames | 0;
     const now = Number.isFinite(currentTime) ? currentTime : this.lastTime + n / sr;
@@ -3549,6 +3579,7 @@ export class OrographDSP {
     outL.fill(0, 0, n); outR.fill(0, 0, n);
     if (dlyL) { dlyL.fill(0, 0, n); dlyR.fill(0, 0, n); }
     if (revL) { revL.fill(0, 0, n); revR.fill(0, 0, n); }
+    if (pedL) { pedL.fill(0, 0, n); pedR.fill(0, 0, n); }
     for (const P of this.parts) {
       P.ensureBus(n);
       P.busL.fill(0, P.hist, P.hist + P.os * n);
@@ -3586,7 +3617,7 @@ export class OrographDSP {
         const off = Math.round((E[0].time - now) * sr);
         if (off > pos && off - pos < seg) seg = off - pos;
       }
-      this.renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR);
+      this.renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR, pedL, pedR);
       pos += seg;
       this.ctrlRemain -= seg;
       this.sinceCtrl += seg;
@@ -3622,6 +3653,7 @@ export class OrographDSP {
     }
     if (dlyL) this.sanitize(dlyL, dlyR, n);
     if (revL) this.sanitize(revL, revR, n);
+    if (pedL) this.sanitize(pedL, pedR, n);
     this.peakL = pl; this.peakR = pr;
 
     if (this.watch >= 0) this.teleCount += n;

@@ -2,7 +2,8 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 0.1.0.
+going on under the hood. It describes version 0.1.0, plus the guitar pedal features of
+version 1.1 ([section 15](#15-guitar-pedals)).
 
 ![Orograph in the dark theme: the 3D map with the dot and its orbit, the Map panel on the right, the Sound tab below](screenshots/orograph-dark.webp)
 
@@ -513,6 +514,7 @@ controls, with an amount and a response curve. Each part can have up to 8.
 | **Env 1**, **Env 2** | 0 to 1, per note |
 | **Random** | −1 to +1, a new value for each note |
 | **Terrain Height** | −1 to +1, the height of the land under the dot |
+| **Guitar Level** | 0 to 1, how loud the guitar on the pedal return's second channel is (see [Guitar pedals](#15-guitar-pedals)) |
 
 **Curve** shapes the response: **Linear**, **Soft** (squared: gentle at first, strong at the
 end) or **Hard** (square root: strong at first). **Amount** runs from −100% to +100%. Links
@@ -678,6 +680,8 @@ The **Mix** tab has a channel strip for each part:
 * **Level** fader with an activity meter.
 * **Pan**, **Delay** send and **Reverb** send.
 * **M** (mute) and **S** (solo).
+* **Pedal** send with **Pre** and **Ins**, shown only while the pedal send is switched on
+  (see [Guitar pedals](#15-guitar-pedals)).
 * Click the part's name to select it, double-click (or press F2) to rename it, and click the
   colour swatch to change the part's colour everywhere in the app.
 
@@ -769,7 +773,7 @@ computer, not part of a patch.
 | **Pristine** | Standard, plus a band-limited single cycle per voice, rebuilt about every 256 samples and crossfaded, whenever the loop is steady. Falls back to Standard for a voice whose loop is being moved at audio rate. | Extra work per voice. The cleanest tone. |
 | **Raw** | Two times oversampling with the terrain smoothing switched off. | Like Standard. Deliberately gritty and digital: aliasing on purpose. |
 
-### MIDI & MPC, Shortcuts, About
+### MIDI & MPC, Pedals, Shortcuts, About
 
 Covered in the next sections. **About** shows the version and licence.
 
@@ -852,12 +856,43 @@ what is being sent.
 
 ## 15. Guitar pedals
 
-**Coming in version 1.1.** The plan is to run Orograph through a real pedalboard, mostly via
-the MPC XL's audio inputs and outputs: a per-part pedal send (pre or post fader, or as an
-insert), a return input with automatic latency measurement, MIDI control of pedals that
-accept it, guitar playing Orograph's notes through pitch tracking, and a guitar-driven
-envelope as a modulation source. The design, the routing and the pedal MIDI maps are in
-[PEDALS.md](PEDALS.md). None of it is part of 0.1.0.
+Version 1.1 can send parts out to a pedalboard and bring the pedals back in. It follows the
+pedal and MPC XL manuals but **has not been tested with real pedals or a real MPC XL yet**,
+so start with the send low and check each step. Everything lives in **Settings > Pedals**;
+with the pedal send off, Orograph sounds exactly as before.
+
+**Pedal send.** Switch on **Pedal send**, pick an **Output device** with four or more
+outputs (for example the MPC XL over USB) and choose which outputs carry the **Main mix**
+(1/2 by default) and the **Send** (3/4). Then turn up a part's **Pedal** knob in the Mix
+tab. **Pre** takes the send before the part's level fader; **Ins** (Insert) mutes the
+part's own sound so you only hear it through the pedals. A limiter keeps the send at about
+-18 dB (**Send ceiling**), below what most pedals accept. If the device only has two
+outputs, or the browser cannot choose an output, the send stays off and the pane says why.
+Choosing an output works in Chrome, Edge and the desktop app.
+
+**Pedal return.** Switch on **Pedal return** and pick the **Input** the pedals come back on.
+The browser asks once for permission to use it. Orograph turns off echo cancellation, noise
+suppression and automatic gain so the pedals sound as they are. The return joins the master
+mix, and **Return to delay** and **Return to reverb** send it into the effects; it never
+goes back into the pedal send. If it starts to feed back, Orograph mutes it and shows an
+**Unmute return** button. With **Mono return + guitar**, input channel 1 is the pedals and
+channel 2 is your guitar, which drives the **Guitar Level** Links source.
+
+**Latency.** **Ping** plays a short chirp on the send with the music muted and times how long
+it takes to come back (expect tens of milliseconds). Bypass delay, reverb and looper pedals
+first. Orograph does not yet shift anything by the measured time.
+
+**Pedal MIDI.** Switch on the pedals you have (OBNE Purr-ting, Chase Bliss Lost + Found,
+Cornerstone Nucleo, Walrus Xero) and set each one's MIDI channel; Orograph warns when two
+pedals on the same cable share a channel. Each card has **Effect on**, **Bypass**, **Tap
+tempo** (four taps at the song tempo) and **Send preset** where the pedal supports them,
+plus **Follow**: one pedal control that follows a Macro or the guitar level. Messages go to
+the output chosen in MIDI & MPC unless you pick another one here. Values marked as not
+confirmed come from the manuals but have not been checked on the pedal.
+
+These settings belong to this computer, not to a song. Patches never change a part's pedal
+routing, and bounces render every part dry. Routing details for the MPC XL are in
+[PEDALS.md](PEDALS.md).
 
 ---
 

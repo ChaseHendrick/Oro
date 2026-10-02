@@ -63,7 +63,7 @@ function openExternal(url) {
 function installPermissionPolicy(ses) {
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const source = (details && details.requestingUrl) || (webContents && webContents.getURL()) || '';
-    const granted = policy.isPermissionAllowed(permission, source);
+    const granted = policy.isPermissionAllowed(permission, source, details);
     if (!granted) log(`denied permission "${permission}" for ${policy.originOf(source) || 'unknown origin'}`);
     callback(granted);
   });

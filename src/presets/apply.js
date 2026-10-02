@@ -1,7 +1,7 @@
 // Turning a patch (a partial parameter set) into a full part, shared by the
 // preset store and the factory scene builder.
 
-import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT, PART_PARAM_MAP } from '../core/params.js';
+import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT, PART_PARAM_MAP, PEDAL_PARAM_IDS } from '../core/params.js';
 import { sanitizeLinks } from '../core/migrate.js';
 
 // Mod settings may hold arrays (the Steps LFO values). Each part gets its own
@@ -49,12 +49,14 @@ export function patchLinks(patch) {
 /**
  * The part `base` with `patch` loaded: sound, modulation, Links, dot
  * behaviour and imported terrains come from the patch; name, colour,
- * sequence, arp and the mixer's mute/solo stay as they were.
+ * sequence, arp, the mixer's mute/solo and the pedal routing (Pedal send, Pre,
+ * Insert: part of the rig, not the sound) stay as they were.
  */
 export function partWithPatch(base, patch) {
   const params = patchParams(patch);
   params.mute = base.params ? base.params.mute || 0 : 0;
   params.solo = base.params ? base.params.solo || 0 : 0;
+  for (const id of PEDAL_PARAM_IDS) params[id] = base.params && Number.isFinite(base.params[id]) ? base.params[id] : PART_PARAM_MAP[id].default;
   return {
     ...base,
     patchName: String((patch && patch.name) || 'Init').slice(0, 60),

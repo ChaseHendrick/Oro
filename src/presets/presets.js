@@ -3,7 +3,7 @@
 // session (all four parts, sequences, mix, effects, tempo and key).
 
 import {
-  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, defaultPart,
+  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, defaultPart,
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState } from '../core/migrate.js';
 import { createEmitter } from '../music/emitter.js';
@@ -33,7 +33,7 @@ function sanitizePatchParams(src) {
   if (!src || typeof src !== 'object') return {};
   const full = sanitizeParams(PART_PARAMS, src);
   const out = {};
-  for (const id of Object.keys(src)) if (PART_PARAM_MAP[id] && id !== 'mute' && id !== 'solo') out[id] = full[id];
+  for (const id of Object.keys(src)) if (PART_PARAM_MAP[id] && id !== 'mute' && id !== 'solo' && !PEDAL_PARAM_IDS.includes(id)) out[id] = full[id];
   return out;
 }
 
@@ -175,6 +175,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const params = { ...cur.params };
     delete params.mute;
     delete params.solo;
+    for (const id of PEDAL_PARAM_IDS) delete params[id];
     const patch = {
       id: existing ? existing.id : newId(),
       name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),

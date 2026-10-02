@@ -3,6 +3,51 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.1 (unreleased): guitar pedals
+
+Orograph can now run parts through a real pedalboard. These features follow the pedal and
+MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet**. See
+[docs/PEDALS.md](docs/PEDALS.md) for what is wired and what still needs the hardware.
+
+### Pedal loop
+
+* A **Pedal** send on every part in the Mix tab, with **Pre** (before the level fader) and
+  **Ins** (Insert: hear the part only through the pedals). The controls appear once the
+  pedal send is switched on, and do nothing until then.
+* **Settings > Pedals**: choose the output device and which outputs carry the main mix
+  and the pedal send (main on 1/2 and the send on 3/4 by default). Needs a device with four
+  or more outputs and a browser that can choose one (Chrome, Edge or the desktop app); on a
+  stereo device the send stays off and Orograph says why.
+* A safety limiter on the send, about -18 dB by default, so hot outputs stay inside what
+  pedals accept.
+* **Pedal return** from an audio input, with echo cancellation, noise suppression and
+  automatic gain switched off. It joins the master and can feed the delay and reverb, but
+  never goes back into the send. A feedback guard mutes it if it starts to howl or run
+  away.
+* **Ping** measures the round trip through the pedals.
+* **Guitar Level**, a new Links source: with the "Mono return + guitar" input layout, the
+  guitar on input channel 2 can move any modulatable control.
+
+### Pedal MIDI
+
+* Profiles for the OBNE Purr-ting, Chase Bliss Lost + Found, Cornerstone Nucleo and Walrus
+  Xero: MIDI channel per pedal, a warning when two pedals on one cable share a channel,
+  Effect on and Bypass, Tap tempo at the song tempo, preset recall by Program Change, and
+  one control per pedal that can follow a Macro or the guitar level.
+
+### Other changes
+
+* Sessions saved by 0.1.0 load with every pedal setting off. Patches do not store the
+  pedal routing, and loading a patch keeps the part's routing.
+* Bounces render every part dry (the pedals are hardware).
+* Desktop app: audio-only capture is allowed for Orograph's own page, and macOS asks for
+  the microphone with a short explanation.
+
+### Not in this version yet
+
+* Latency compensation from the Ping result, guitar pitch tracking to notes, Capture
+  (a held guitar note as a wavetable terrain), and scenes recalling pedal presets.
+
 ## 0.1.0 (first release, October 2026)
 
 The first public version: a complete wave terrain synthesizer that runs as a desktop app
@@ -129,4 +174,4 @@ on Mac, Windows and Linux, in a web browser, or offline from a single HTML file.
   launch needs one extra confirmation. The README explains how.
 * MIDI works best in the desktop app or in Chrome, Edge or Opera. Safari has no Web
   MIDI.
-* Guitar pedal integration is planned for version 1.1 ([design notes](docs/PEDALS.md)).
+* Guitar pedal integration was planned for version 1.1 ([design notes](docs/PEDALS.md)).

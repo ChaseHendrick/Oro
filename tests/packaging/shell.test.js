@@ -51,6 +51,26 @@ describe('policy', () => {
     expect(policy.isPermissionAllowed('speaker-selection', 'app://orograph/index.html')).toBe(false);
   });
 
+  it('allows audio-only capture for the app origin (v1.1 pedal return), never video', () => {
+    expect(policy.isPermissionAllowed('media', 'app://orograph/index.html', { mediaTypes: ['audio'] })).toBe(true);
+    expect(policy.isPermissionAllowed('media', 'app://orograph/index.html', { mediaTypes: ['video'] })).toBe(false);
+    expect(policy.isPermissionAllowed('media', 'app://orograph/index.html', { mediaTypes: ['audio', 'video'] })).toBe(false);
+    expect(policy.isPermissionAllowed('media', 'app://orograph/index.html', { mediaTypes: [] })).toBe(false);
+    expect(policy.isPermissionAllowed('media', 'app://orograph/index.html', {})).toBe(false);
+    expect(policy.isPermissionAllowed('media', 'https://example.com', { mediaTypes: ['audio'] })).toBe(false);
+    expect(policy.isPermissionAllowed('display-capture', 'app://orograph/', { mediaTypes: ['audio'] })).toBe(false);
+    expect(policy.isAudioOnlyRequest({ mediaTypes: ['audio'] })).toBe(true);
+    expect(policy.isAudioOnlyRequest(null)).toBe(false);
+  });
+
+  it('asks macOS for the microphone with a usage description', () => {
+    const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+    const text = pkg.build.mac.extendInfo && pkg.build.mac.extendInfo.NSMicrophoneUsageDescription;
+    expect(typeof text).toBe('string');
+    expect(text).toMatch(/pedal/);
+    expect(text).not.toMatch(/\u2014/);
+  });
+
   it('sends web links to the browser and blocks dangerous schemes', () => {
     expect(policy.navigationAction('app://orograph/index.html')).toBe('allow');
     expect(policy.navigationAction('https://github.com/ChaseHendrick/synth')).toBe('external');

@@ -735,6 +735,14 @@
 .strip-foot .toggle { flex: 1; height: 22px; font-size: var(--fs-xs); font-weight: 750; }
 .toggle--mute.is-on { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
 .toggle--solo.is-on { background: var(--success-soft); color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, transparent); }
+/* Pedal send (v1.1): a fourth knob and Pre / Ins next to M / S, shown only
+   while the pedal send runs (Settings > Pedals). */
+.strip:not(.has-pedal) .is-pedal-ctl { display: none; }
+.strip.has-pedal .strip-knobs .knob--sm { --knob-size: 24px; }
+.strip.has-pedal .strip-foot .toggle { padding: 0 2px; min-width: 0; }
+.toggle--pedal.is-on { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.toggle--insert.is-on { background: var(--part-soft); color: var(--part-ink); border-color: var(--part-line); }
+.strip.is-insert .strip-fader { opacity: .6; }
 .meter { display: flex; gap: 2px; padding: 6px 0; }
 .meter-ch { position: relative; width: 5px; height: 100%; border-radius: 3px; background: var(--knob-track); overflow: hidden; }
 .meter-fill {
@@ -1043,4 +1051,11 @@
 @media (pointer: coarse) and (max-width: 899px) {
   .links-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
   .links-row > :nth-child(6) { width: 44px; height: 44px; }
+}
+
+/* Pedal send controls on phones: 44 px targets (the phone dock scrolls, so the strips may grow). */
+@media (max-width: 899px) {
+  .strip.has-pedal .strip-foot .toggle { height: 44px; }
+  .strip.has-pedal .strip-knobs .knob--sm { --knob-size: 40px; }
+  .strip.has-pedal { min-height: 300px; }
 }

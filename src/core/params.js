@@ -115,7 +115,16 @@ export const PART_PARAMS = [
   P('air',       'Air',      'voice', 'lin', 0, 1, 0,    { hint: 'Breathy noise layer that follows the amp envelope' }),
   P('airTone',   'Air Tone', 'voice', 'lin', -1, 1, 0,   { hint: 'Dark to bright noise colour' }),
   P('formant',   'Vowel',    'filter', 'lin', 0, 1, 0.5, { mod: true, hint: 'Vowel filter position A, E, I, O, U (also sets the Comb filter spread)' }),
+  // v1.1 pedal loop (docs/PEDALS.md). Only heard when Settings > Pedals has the
+  // pedal send running on outputs 3/4; otherwise they change nothing.
+  P('pedalSend',   'Pedal',  'mix', 'lin', 0, 1, 0,  { hint: 'Send to the guitar pedals on outputs 3 and 4 (set up in Settings > Pedals)' }),
+  P('pedalPre',    'Pre',    'mix', 'bool', 0, 1, 0, { hint: 'Pedal send before the level fader (on) or after it (off)' }),
+  P('pedalInsert', 'Insert', 'mix', 'bool', 0, 1, 0, { hint: 'Hear this part only through the pedals: its dry sound is muted while the pedal send is running' }),
 ];
+
+// Pedal routing belongs to the rig, not the sound: patch loads keep a part's
+// values (like Mute and Solo) and patches never store them.
+export const PEDAL_PARAM_IDS = Object.freeze(['pedalSend', 'pedalPre', 'pedalInsert']);
 
 export const GLOBAL_PARAMS = [
   P('masterVolume', 'Volume',   'master', 'lin', 0, 1, 0.8),
@@ -163,10 +172,10 @@ export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
 // Links: per-part modulation routing (source -> any modulatable parameter), applied
 // in normalised space on top of the per-parameter LFO/Env depths.
 // Source value ranges: Velocity, Mod Wheel, Pressure, Slide, Macros, Marble Speed,
-// Env 1, Env 2 are 0..1; Key ((note - 60) / 48), Marble Height, Random (per note) and
+// Env 1, Env 2, Guitar Level (envelope of the guitar on the pedal return, v1.1) are 0..1; Key ((note - 60) / 48), Marble Height, Random (per note) and
 // Terrain Height (height under the modulated dot) are -1..1.
 export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
-  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height'];
+  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {
@@ -282,9 +291,13 @@ export function defaultPart(i) {
   };
 }
 
+// Saved state format. 2 = v1.1 (pedal send params, Guitar Level link source);
+// migrateState() loads version 1 sessions with the new values at their defaults (off).
+export const STATE_VERSION = 2;
+
 export function defaultState() {
   return {
-    version: 1,
+    version: STATE_VERSION,
     global: defaultGlobalParams(),
     parts: Array.from({ length: NUM_PARTS }, (_, i) => defaultPart(i)),
   };

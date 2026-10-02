@@ -36,9 +36,12 @@ const ALLOWED_PERMISSIONS = new Set([
 // Answered only by the permission *check* handler (never by a request), so the page
 // can list and pick audio outputs (Settings > Audio > Output device, via
 // enumerateDevices and AudioContext.setSinkId) for an audio interface or an MPC.
-// The microphone itself stays off: getUserMedia goes through the request handler,
-// which still refuses 'media'.
 const CHECK_ONLY_PERMISSIONS = new Set(['speaker-selection']);
+
+// v1.1 pedal return (Settings > Pedals): getUserMedia asks the request handler for
+// 'media'. Audio capture is granted to our own origin only, and only when every
+// requested media type is audio: cameras and screen capture stay refused.
+const AUDIO_ONLY = new Set(['audio']);
 
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
@@ -71,11 +74,24 @@ function isExternalUrl(value) {
 }
 
 /**
- * Permission decision shared by the request and check handlers.
- * `source` is the requesting origin or URL as Electron reports it.
+ * True when an Electron permission request's details ask for audio capture and
+ * nothing else (`details.mediaTypes`, e.g. ['audio']).
  */
-function isPermissionAllowed(permission, source) {
-  return ALLOWED_PERMISSIONS.has(permission) && originOf(source) === APP_ORIGIN;
+function isAudioOnlyRequest(details) {
+  const types = details && Array.isArray(details.mediaTypes) ? details.mediaTypes : null;
+  return !!types && types.length > 0 && types.every((t) => AUDIO_ONLY.has(t));
+}
+
+/**
+ * Permission decision shared by the request and check handlers.
+ * `source` is the requesting origin or URL as Electron reports it; `details`
+ * is the request's details (only 'media' looks at it: audio capture for the
+ * pedal return is allowed, video is not).
+ */
+function isPermissionAllowed(permission, source, details) {
+  if (originOf(source) !== APP_ORIGIN) return false;
+  if (permission === 'media') return isAudioOnlyRequest(details);
+  return ALLOWED_PERMISSIONS.has(permission);
 }
 
 /**
@@ -84,7 +100,7 @@ function isPermissionAllowed(permission, source) {
  * which Chromium also consults before it shows output device names).
  */
 function isPermissionCheckAllowed(permission, source, details = {}) {
-  if (isPermissionAllowed(permission, source)) return true;
+  if (permission !== 'media' && isPermissionAllowed(permission, source)) return true;
   if (originOf(source) !== APP_ORIGIN) return false;
   if (CHECK_ONLY_PERMISSIONS.has(permission)) return true;
   return permission === 'media' && details != null && details.mediaType === 'audio';
@@ -116,5 +132,6 @@ module.exports = {
   isExternalUrl,
   isPermissionAllowed,
   isPermissionCheckAllowed,
+  isAudioOnlyRequest,
   navigationAction,
 };

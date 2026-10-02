@@ -962,6 +962,21 @@ export async function createMidi({
       }));
     },
     setInputEnabled,
+    /**
+     * Raw bytes to a MIDI output (v1.1 pedal profiles): `outputId` picks a port,
+     * otherwise the output chosen in Settings > MIDI & MPC. `ms` is a Web MIDI
+     * timestamp (performance.now() clock). Returns false when nothing was sent.
+     */
+    sendRaw(bytes, ms, outputId) {
+      let port = output;
+      if (outputId && access && access.outputs && typeof access.outputs.get === 'function') port = access.outputs.get(String(outputId)) || null;
+      if (!port || port.state === 'disconnected' || !Array.isArray(bytes) || !bytes.length) return false;
+      try {
+        if (ms != null && ms > now()) port.send(bytes, ms); else port.send(bytes);
+        activity('out', 'other', port);
+        return true;
+      } catch { return false; }
+    },
     /** Older shape: enable one input only, or 'all'. */
     setInput(id) {
       if (!access) return false;
