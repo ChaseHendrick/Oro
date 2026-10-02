@@ -213,6 +213,11 @@ export function createTopbar(ctx, container) {
   });
   const utils = h('div', { class: 'utils' }, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
 
+  // On hendrickresearch.com (served under /music/orograph/) a way back to the site's Music page.
+  const siteBack = isOnSite()
+    ? h('a', { class: 'icon-btn site-back', href: '/music/', 'aria-label': 'Back to Hendrick Research', title: 'Back to Hendrick Research', html: icon('chevron-left') })
+    : null;
+  if (siteBack) brand.prepend(siteBack);
   container.append(brand, partGroup, patch.el, h('span', { class: 'topbar-spacer' }), transport, utils);
   renderParts();
 
@@ -222,4 +227,10 @@ export function createTopbar(ctx, container) {
     togglePlay: () => { if (canPlay) play.click(); },
     dispose: scope.dispose,
   };
+}
+
+/** True when the app is the copy hosted on hendrickresearch.com (or its previews). */
+export function isOnSite(loc = typeof location !== 'undefined' ? location : null) {
+  if (!loc || !/^https?:$/.test(loc.protocol || '')) return false;
+  return /^\/music\/orograph(\/|$)/.test(loc.pathname || '');
 }
