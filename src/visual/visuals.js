@@ -72,6 +72,9 @@ export const SANITIZE_SHADER = {
     }`,
 };
 
+/** Minimum gap between minimap terrain rebuilds while the land moves (ms); 0 = every frame. */
+export const MINIMAP_TERRAIN_MS = 0;
+
 export const QUALITY = {
   high: { pixelRatio: 2, bloom: true, samples: 4 },
   medium: { pixelRatio: 1.5, bloom: true, samples: 4 },
@@ -1432,13 +1435,13 @@ export async function createVisuals(container, { store, engine = null, quality, 
     keepAboveLand();
 
     // ---- HUD
-    if ((minimapDirty || view.version !== minimapVersion) && now - minimapImgAt > 160) {
+    if ((minimapDirty || view.version !== minimapVersion) && now - minimapImgAt >= MINIMAP_TERRAIN_MS) {
       minimapImgAt = now;
       minimapDirty = false;
       minimapVersion = view.version;
       minimap.renderTerrain(view, styleIndex === 3 ? HEAT_RAMP : ramp, colCur, styleIndex === 3 ? 0 : PALETTES[paletteIndex].tint, atm.sunDir);
     }
-    if (now - minimapAt > 33) {
+    {
       minimapAt = now;
       const camAz = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
       minimap.setMarkers(showWp ? routeUV : null, showWp ? routeN : 0, showWp, markers.lockCount > 0);

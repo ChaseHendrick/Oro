@@ -146,13 +146,13 @@ function drawTrace(c, size, colors, samples, count, { fill = false, scale = 1 } 
 }
 
 /** Harmonic bars on a 48 dB log scale relative to the strongest bar; the Sub comes first, lighter. */
-function drawBars(c, size, colors, mags, sub, heights) {
+function drawBars(c, size, colors, mags, sub, heights, precomputed = false) {
   const dpr = sizeCanvas(c, size);
   if (!dpr) return;
   const g = c.getContext('2d');
   const W = c.width, H = c.height;
   g.clearRect(0, 0, W, H);
-  barHeights(mags, sub, 48, heights);
+  if (!precomputed) barHeights(mags, sub, 48, heights);
   const top = 16 * dpr, bottom = H - 4 * dpr, pad = 6 * dpr;
   const n = heights.length;
   const slot = (W - pad * 2) / n;
@@ -227,6 +227,11 @@ export function createScopeCard(ctx) {
   scope.add(harmSize.dispose);
   const harm = new Float32Array(16);
   const heights = new Float32Array(17);
+  // What is drawn eases towards the latest engine telemetry every frame, so
+  // the cycle and the bars glide instead of stepping when updates arrive.
+  const cycleShown = new Float32Array(cycle.length);
+  const heightsShown = new Float32Array(heights.length);
+  let haveShown = false, lastFrameAt = 0;
   scope.add(scopeSize.dispose);
   scope.add(cycleSize.dispose);
 
@@ -253,16 +258,40 @@ export function createScopeCard(ctx) {
     }
     // Cycle (every frame while telemetry moves the parameters, otherwise on change)
     const part = ctx.binder.selected();
+    const t = performance.now();
+    const dt = lastFrameAt ? Math.min(0.1, (t - lastFrameAt) / 1000) : 0;
+    lastFrameAt = t;
+    let target = false;
     if (cycleDirty || (ctx.tele && ctx.tele.fresh())) {
       cycleDirty = false;
+      target = true;
       const p = cycleParams(part);
       const A = ctx.terrains ? ctx.terrains.get(part, 'A') : null;
       const B = ctx.terrains ? ctx.terrains.get(part, 'B') : null;
       const spin = ctx.tele ? ctx.tele.spinPhase(part) : null;
       sampleCycle(p, A, B, cycle.length, spin || 0, cycle);
-      drawTrace(cycleCanvas, cycleSize.size, colors, i => cycle[i % cycle.length], cycle.length + 1, { fill: true, scale: 1 / 1.25 });
       harmonics(cycle, harm.length, harm);
-      drawBars(harmCanvas, harmSize.size, colors, harm, subLevel(ctx.store.get(`parts.${part}.params.sub`)), heights);
+      barHeights(harm, subLevel(ctx.store.get(`parts.${part}.params.sub`)), 48, heights);
+    }
+    // Ease the drawn shapes towards the target: the cycle in about 35 ms, the
+    // bars up in about 30 ms and down in about 120 ms (like a meter).
+    let moving = target;
+    if (!haveShown || dt === 0) {
+      cycleShown.set(cycle); heightsShown.set(heights); haveShown = true;
+    } else {
+      const ac = 1 - Math.exp(-dt / 0.035), up = 1 - Math.exp(-dt / 0.03), down = 1 - Math.exp(-dt / 0.12);
+      for (let i = 0; i < cycle.length; i++) {
+        const d = cycle[i] - cycleShown[i];
+        if (d > 1e-4 || d < -1e-4) { cycleShown[i] += d * ac; moving = true; } else cycleShown[i] = cycle[i];
+      }
+      for (let k = 0; k < heights.length; k++) {
+        const d = heights[k] - heightsShown[k];
+        if (d > 1e-4 || d < -1e-4) { heightsShown[k] += d * (d > 0 ? up : down); moving = true; } else heightsShown[k] = heights[k];
+      }
+    }
+    if (moving) {
+      drawTrace(cycleCanvas, cycleSize.size, colors, i => cycleShown[i % cycleShown.length], cycleShown.length + 1, { fill: true, scale: 1 / 1.25 });
+      drawBars(harmCanvas, harmSize.size, colors, harm, 0, heightsShown, true);
     }
   }));
 

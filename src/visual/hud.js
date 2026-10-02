@@ -7,6 +7,8 @@
 import { sampleRamp, linearToSrgb } from './palettes.js';
 
 const IMG_RES = 112;
+/** Longest cross-fade from the previous terrain image to a new one (ms). */
+export const TERRAIN_FADE_MS = 60;
 const MAX_WP = 8, MAX_LOCKS = 16;
 
 function el(tag, cls, style) {
@@ -32,6 +34,13 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
   img.width = img.height = IMG_RES;
   const ictx = img.getContext('2d');
   const imageData = ictx.createImageData(IMG_RES, IMG_RES);
+  // The previous terrain image, cross-faded under the new one so a moving
+  // terrain (morph, warp, lift) glides instead of stepping between renders.
+  const prev = document.createElement('canvas');
+  prev.width = IMG_RES; prev.height = IMG_RES;
+  const pctx = prev.getContext('2d');
+  let imgAt = -Infinity, havePrev = false, fadeMs = TERRAIN_FADE_MS;
+  const grid = new Float32Array(IMG_RES * IMG_RES);
   const col = [0, 0, 0];
   let size = 120, dpr = 1;
   let pressed = false;
@@ -183,11 +192,17 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
       const pl = Math.max(0.04, 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2]);
       const lx = sun[0], lz = sun[2];
       const ll = Math.hypot(lx, lz) || 1;
+      // One height lookup per pixel; slopes come from the neighbouring pixel
+      // (the terrain tiles, so the grid wraps). Cheap enough to run every frame.
       for (let j = 0; j < n; j++) {
         const v = (j + 0.5) / n;
+        for (let i = 0; i < n; i++) grid[j * n + i] = hf.ready ? hf.norm((i + 0.5) / n, v) : 0;
+      }
+      const sk = 0.035 / ll * hf.lift / e;
+      for (let j = 0; j < n; j++) {
+        const jn = j === n - 1 ? 0 : j + 1;
         for (let i = 0; i < n; i++) {
-          const u = (i + 0.5) / n;
-          const h = hf.ready ? hf.norm(u, v) : 0;
+          const h = grid[j * n + i];
           sampleRamp(ramp, h * 0.5 + 0.5, col);
           const lum = 0.2126 * col[0] + 0.7152 * col[1] + 0.0722 * col[2];
           const k = tintAmt * (0.35 + 0.65 * (h * 0.5 + 0.5));
@@ -195,9 +210,9 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
           let g = col[1] + (lum * tint[1] / pl - col[1]) * k;
           let b = col[2] + (lum * tint[2] / pl - col[2]) * k;
           // simple hill shade from the sun's horizontal direction
-          const gx = hf.ready ? (hf.norm(u + e, v) - h) / e : 0;
-          const gz = hf.ready ? (hf.norm(u, v + e) - h) / e : 0;
-          const shade = Math.max(0.55, Math.min(1.25, 1 - 0.035 * (gx * lx + gz * lz) / ll * hf.lift));
+          const gx = grid[j * n + (i === n - 1 ? 0 : i + 1)] - h;
+          const gz = grid[jn * n + i] - h;
+          const shade = Math.max(0.55, Math.min(1.25, 1 - sk * (gx * lx + gz * lz)));
           r *= shade; g *= shade; b *= shade;
           const o = (j * n + i) * 4;
           d[o] = Math.round(linearToSrgb(r) * 255);
@@ -206,7 +221,14 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
           d[o + 3] = 255;
         }
       }
+      pctx.clearRect(0, 0, IMG_RES, IMG_RES);
+      pctx.drawImage(img, 0, 0);
+      const t = performance.now();
+      havePrev = imgAt > -Infinity;
+      // fade over the gap between renders: instant when rebuilt every frame, smooth when spaced out
+      fadeMs = havePrev ? Math.min(TERRAIN_FADE_MS, t - imgAt) : 0;
       ictx.putImageData(imageData, 0, 0);
+      imgAt = t;
     },
 
     /**
@@ -217,7 +239,13 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
       const W_ = canvas.width, H_ = canvas.height;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(img, 0, 0, W_, H_);
+      const fade = havePrev && fadeMs > 0 ? Math.min(1, (performance.now() - imgAt) / fadeMs) : 1;
+      if (fade < 1) {
+        ctx.drawImage(prev, 0, 0, W_, H_);
+        ctx.globalAlpha = fade;
+        ctx.drawImage(img, 0, 0, W_, H_);
+        ctx.globalAlpha = 1;
+      } else ctx.drawImage(img, 0, 0, W_, H_);
 
       // Orbit, drawn at each periodic copy that touches the map.
       if (count > 1) {

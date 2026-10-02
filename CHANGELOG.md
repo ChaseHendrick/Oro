@@ -3,6 +3,14 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.2.1 (October 2026)
+
+* Smoother visuals. The minimap (top right of the map) rebuilds its terrain image on every
+  frame while the land moves, instead of about 6 times a second, and draws the orbit and dot
+  on every frame instead of every other one; the terrain image is about 3 times cheaper to
+  build. The One cycle and Harmonics displays now ease towards each engine update every
+  frame instead of stepping, with meter-style bars (fast up, slower down).
+
 ## 1.2.0 (October 2026): Looper and resampling
 
 ### Looper
