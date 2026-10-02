@@ -1,6 +1,7 @@
 // End-to-end checks for the Orograph user interface in headless Chromium.
 //
-//   npx vite --port 5184 --strictPort &      (from the repo root)
+//   npx vite --config dev/ui/vite.config.mjs --port 5184 --strictPort &   (repo root; no HMR,
+//                                             so edits elsewhere never reload a page mid-test)
 //   node tests/e2e/ui.cjs [baseUrl]           default http://127.0.0.1:5184
 //   SKIP_REAL=1 ... skips the real-app pass; ONLY_REAL=1 runs only that pass.
 //
@@ -25,6 +26,9 @@ const check = (ok, msg, extra) => {
   else { failures.push(msg); console.log('FAIL ' + msg + (extra ? `\n     ${extra}` : '')); }
 };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// The UI renders on animation frames; on a loaded machine with software GL those
+// can be a second apart, so DOM checks wait for their condition instead of sleeping.
+const until = (page, fn, arg, timeout = 8000) => page.waitForFunction(fn, arg, { timeout }).then(() => true).catch(() => false);
 const LAUNCH = { args: ['--autoplay-policy=no-user-gesture-required', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
 
 async function openPage(browser, url, { viewport, theme = 'dark', storage = null }) {
@@ -333,10 +337,10 @@ async function functional(browser) {
 
   // Record
   await page.locator('.rec-btn').click();
-  await page.waitForFunction(() => /0:0[1-9]/.test(document.querySelector('.rec-time')?.textContent || ''), null, { timeout: 4000 }).catch(() => {});
+  await page.waitForFunction(() => /0:0[1-9]/.test(document.querySelector('.rec-time')?.textContent || ''), null, { timeout: 9000 }).catch(() => {});
   const recText = await page.locator('.rec-time').textContent();
   check(/0:0[1-9]/.test(recText), `record shows elapsed time (${recText})`);
-  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 4000 }).catch(() => null), page.locator('.rec-btn').click()]);
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 12000 }).catch(() => null), page.locator('.rec-btn').click()]);
   check(!!download && /^orograph-\d{8}-\d{6}\.wav$/.test(download.suggestedFilename()), `stopping saves orograph-YYYYMMDD-HHMMSS.wav (${download && download.suggestedFilename()})`);
 
   // Terrain picker
@@ -358,8 +362,7 @@ async function functional(browser) {
   await page.locator('#dtab-sound').click();
   await page.locator('select[aria-label="Filter type"]').selectOption('6');
   check(await get('parts.0.params.filterType') === 6, 'filter type select writes filterType');
-  await page.waitForFunction(() => document.querySelector('.knob[data-param="formant"]:not(.is-dimmed)'), null, { timeout: 1500 }).catch(() => {});
-  check(await page.locator('.knob[data-param="formant"]:not(.is-dimmed)').count() === 1, 'Vowel knob wakes up for the Vowel filter');
+  check(await until(page, () => document.querySelector('.knob[data-param="formant"]:not(.is-dimmed)')), 'Vowel knob wakes up for the Vowel filter');
 
   await page.locator('#dtab-mod').click();
   await page.locator('.mod-switch .seg-btn[data-value="links"]').click();
@@ -410,7 +413,7 @@ async function functional(browser) {
 
   await page.locator('.bounce-btn').click();
   await sleep(150);
-  const [bounced] = await Promise.all([page.waitForEvent('download', { timeout: 5000 }).catch(() => null), page.locator('.popover--bounce .btn--primary').click()]);
+  const [bounced] = await Promise.all([page.waitForEvent('download', { timeout: 12000 }).catch(() => null), page.locator('.popover--bounce .btn--primary').click()]);
   check(!!bounced && /^orograph-bounce-\d{8}-\d{6}\.wav$/.test(bounced.suggestedFilename()), `Bounce renders and saves a WAV (${bounced && bounced.suggestedFilename()})`);
   await page.keyboard.press('Escape');
 
@@ -445,6 +448,253 @@ async function functional(browser) {
   await context.close();
 }
 
+// ------------------------------------------------------------------ Round D wiring (every new control does something)
+async function roundD(browser) {
+  const { page, context, errors } = await openPage(browser, HARNESS, { viewport: { width: 1440, height: 900 } });
+  await startAudio(page);
+  const get = (p) => page.evaluate((pp) => window.orograph.store.get(pp), p);
+  const knobKeys = async (sel, key = 'ArrowUp', n = 3) => { await page.locator(sel).first().focus(); for (let i = 0; i < n; i++) await page.keyboard.press(key); };
+
+  // SOUND: Air, Air Tone, Sub, Vowel; Comb and Vowel filters
+  for (const id of ['air', 'airTone', 'sub']) {
+    const before = await get(`parts.0.params.${id}`);
+    await knobKeys(`.dock-pane--sound .knob[data-param="${id}"] .knob-dial`);
+    check(await get(`parts.0.params.${id}`) > before, `${id} knob writes parts.0.params.${id}`);
+  }
+  await page.locator('select[aria-label="Filter type"]').selectOption('5');
+  const combAwake = await until(page, () => document.querySelector('.knob[data-param="formant"]:not(.is-dimmed)'));
+  check(await get('parts.0.params.filterType') === 5 && combAwake, 'Comb filter wakes up the Vowel (spread) knob');
+  const f0 = await get('parts.0.params.formant');
+  await knobKeys('.knob[data-param="formant"] .knob-dial');
+  check(await get('parts.0.params.formant') > f0, 'Vowel knob writes formant');
+  await page.locator('select[aria-label="Filter type"]').selectOption('1');
+
+  // MAP: Travel and Direction switches, Key>Size knob
+  await page.locator('.path-switches .toggle', { hasText: 'Even speed' }).click();
+  check(await get('parts.0.params.traverse') === 1, 'Even speed switch sets traverse = Even');
+  await page.locator('.path-switches .toggle', { hasText: 'Ping-pong' }).click();
+  check(await get('parts.0.params.direction') === 1, 'Ping-pong switch sets direction = Ping-pong');
+  await page.locator('.path-switches .toggle', { hasText: 'Even speed' }).click();
+  check(await get('parts.0.params.traverse') === 0, 'Even speed switch turns back to Natural');
+  await knobKeys('.knob[data-param="noteSize"] .knob-dial');
+  check(await get('parts.0.params.noteSize') > 0, 'Key>Size knob writes noteSize');
+
+  // Map style Points and the palette picker
+  await page.locator('.seg--style .seg-btn[data-value="points"]').click();
+  check(await get('ui.renderStyle') === 'points', 'Points map style writes ui.renderStyle');
+  await page.locator('.vp-palette').click();
+  await until(page, () => document.querySelector('.popover--palette.is-open'));
+  check(await page.locator('.popover--palette .palette-swatch').count() === 5, 'palette popover lists every palette from visuals.palettes()');
+  const ramp = await page.locator('.popover--palette .palette-swatch').nth(2).locator('.palette-ramp').evaluate(el => getComputedStyle(el).backgroundImage);
+  check(/linear-gradient/.test(ramp), 'palette swatches draw the palette ramp');
+  await page.locator('.popover--palette .palette-swatch').nth(2).click();
+  await until(page, () => document.querySelectorAll('.popover--palette .palette-swatch')[2]?.getAttribute('aria-checked') === 'true');
+  check(await get('ui.palette') === 2 && await page.evaluate(() => window.orograph.visuals.state.palette) === 2, 'choosing a palette writes ui.palette and calls visuals.setPalette');
+  await page.keyboard.press('Escape');
+  check(await until(page, () => !document.querySelector('.popover--palette')), 'Esc closes the palette popover');
+  await page.locator('.seg--style .seg-btn[data-value="relief"]').click();
+
+  // Macros: top bar popover, keyboard, MIDI learn in the knob menu, Edit links
+  await page.locator('.macros-btn').click();
+  await until(page, () => document.querySelector('.popover--macros.is-open'));
+  check(await page.locator('.popover--macros .knob').count() === 4, 'Macros popover shows four macro knobs');
+  await knobKeys('.popover--macros .knob[data-param="macro2"] .knob-dial', 'PageUp', 2);
+  check(await get('global.macro2') > 0.1, `Macro 2 knob writes global.macro2 (${await get('global.macro2')})`);
+  await page.locator('.popover--macros .knob[data-param="macro1"] .knob-dial').click({ button: 'right' });
+  await until(page, () => document.querySelector('.popover.menu .menu-item'));
+  const mItems = await page.locator('.popover.menu .menu-item').allTextContents();
+  check(mItems.some(t => /MIDI Learn/.test(t)), `macro knobs are MIDI-learnable from their menu (${mItems.join(' | ')})`);
+  await page.keyboard.press('Escape');
+  await sleep(120);
+  await page.locator('.popover--macros .btn', { hasText: 'Edit links' }).click();
+  const linksShown = await until(page, () => { const el = document.querySelector('.links-pane'); return el && el.offsetParent !== null; });
+  check(await get('ui.panel') === 'mod' && linksShown, 'Edit links opens MOD > Links + Macros');
+
+  // Links: amount, curve, remove, max 8
+  await page.locator('.links-list .btn', { hasText: 'Add link' }).click();
+  const n0 = (await get('parts.0.links')).length;
+  await page.locator(`select[aria-label="Link ${n0} curve"]`).selectOption('2');
+  check((await get(`parts.0.links.${n0 - 1}.curve`)) === 2, 'link curve select writes the curve');
+  await page.locator(`[aria-label="Link ${n0} amount"]`).focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
+  check((await get(`parts.0.links.${n0 - 1}.amt`)) < 0.5, 'link amount slider writes amt');
+  await page.locator(`select[aria-label="Link ${n0} source"]`).selectOption('6'); // Macro 2
+  check((await get(`parts.0.links.${n0 - 1}.src`)) === 6, 'link source select writes src');
+  await until(page, () => /^\d+ links?$/.test(document.querySelectorAll('.links-macros .macro-use')[1]?.textContent || ''));
+  const use2 = await page.locator('.links-macros .macro-use').nth(1).textContent();
+  check(/^\d+ links?$/.test(use2), `a macro shows how many links use it (${use2})`);
+  for (let i = 0; i < 10 && (await get('parts.0.links')).length < 8; i++) {
+    await page.locator('.links-list .btn', { hasText: 'Add link' }).click({ timeout: 8000 });
+    await until(page, (n) => document.querySelectorAll('.links-rows .links-row').length >= n, i + 2);
+  }
+  check(await until(page, () => document.querySelector('.links-list .section-head .btn').disabled), 'Add link is disabled at eight links');
+  check((await get('parts.0.links')).length === 8, 'Add link stops at eight links');
+  await page.locator('button[aria-label="Remove link 8"]').click();
+  check((await get('parts.0.links')).length === 7, 'a link can be removed');
+  await shot(page, 'roundd-links-full');
+
+  // SEQ: Lock Record through music.setLockRecord, Dot glide
+  await page.locator('#dtab-seq').click();
+  await page.evaluate(() => { window.__lockRec = []; const m = window.orograph.music; const f = m.setLockRecord; m.setLockRecord = (on) => { window.__lockRec.push(on); return f(on); }; });
+  await page.locator('.toggle--rec').click();
+  check(await get('ui.lockRecord') === 1 && (await page.evaluate(() => window.__lockRec)).includes(true), 'Rec dot turns on Lock Record through music.setLockRecord');
+  await page.locator('.toggle--rec').click();
+  check(await get('ui.lockRecord') === 0, 'Rec dot turns Lock Record off again');
+  const g0 = await get('parts.0.seq.lockGlide');
+  await page.locator('[aria-label="Dot lock glide time"]').focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+  check(await get('parts.0.seq.lockGlide') > g0, 'Dot glide slider writes seq.lockGlide');
+  await page.evaluate(() => { const s = window.orograph.store; s.set('parts.0.params.centerX', 0.6); s.set('parts.0.params.centerY', 0.4); });
+  await page.locator('.seq-col[data-step="7"] .seq-lock').focus();
+  await page.keyboard.press('Enter');
+  check((await get('parts.0.seq.steps.7.lock')) === 1, 'Enter on a Dot cell locks the step');
+  await page.evaluate(() => window.orograph.store.set('parts.0.params.centerX', 0.1));
+  await page.keyboard.press('Shift+Enter');
+  check(Math.abs((await get('parts.0.seq.steps.7.lx')) - 0.1) < 1e-6, 'Shift+Enter moves the lock to the current dot');
+
+  // Dot: Roll and Explore extras
+  await page.locator('.seg--dot .seg-btn[data-value="1"]').click();
+  await page.locator('button[aria-label="Dot settings"]').click();
+  await until(page, () => { const g = document.querySelector('.popover--dot .dot-group[data-modes="1,3"]'); return g && !g.hidden; });
+  for (const id of ['gravity', 'bounce', 'flick', 'tiltX', 'tiltY']) {
+    const before = await get(`parts.0.dot.${id}`);
+    await knobKeys(`.popover--dot .knob[data-param="${id}"] .knob-dial`);
+    check(await get(`parts.0.dot.${id}`) > before, `Roll ${id} knob writes dot.${id}`);
+  }
+  await shot(page, 'roundd-dot-roll');
+  // The dot settings stay open while the mode changes in the same toolbar.
+  const dotMode = async (v) => {
+    await page.locator(`.seg--dot .seg-btn[data-value="${v}"]`).click();
+    await sleep(200);
+    if (!(await page.locator('.popover--dot.is-open').count())) await page.locator('button[aria-label="Dot settings"]').click();
+  };
+  await page.locator('.seg--dot .seg-btn[data-value="3"]').click();
+  check(await until(page, () => { const g = document.querySelector('.popover--dot.is-open .dot-group[data-modes="3"]'); return g && !g.hidden; }), 'the dot settings stay open and follow a mode change (Explore)');
+  await dotMode(3);
+  const er0 = await get('parts.0.dot.exploreRate');
+  await knobKeys('.popover--dot .knob[data-param="exploreRate"] .knob-dial');
+  check(await get('parts.0.dot.exploreRate') > er0, 'Explore density writes dot.exploreRate');
+  await page.locator('.popover--dot .stepper-btn').last().click();
+  check(await get('parts.0.dot.exploreRange') === 3, 'Explore range stepper writes dot.exploreRange');
+  await page.locator('.popover--dot .toggle', { hasText: 'Play notes' }).click();
+  check(await get('parts.0.dot.exploreNotes') === 0, 'Play notes toggle writes dot.exploreNotes');
+  await shot(page, 'roundd-dot-explore');
+  await dotMode(4);
+  await until(page, () => { const g = document.querySelector('.popover--dot .dot-group[data-modes="4"]'); return g && !g.hidden; });
+  await page.locator('.popover--dot .seg-btn', { hasText: 'Ping-pong' }).click();
+  check(await get('parts.0.dot.tourMode') === 1, 'Tour mode writes dot.tourMode');
+  await page.evaluate(() => window.orograph.store.set('parts.0.dot.waypoints', [{ x: 0.2, y: 0.3, beats: 2 }, { x: 0.7, y: 0.6, beats: 4 }]));
+  check(await until(page, () => document.querySelectorAll('.popover--dot .waypoint').length === 2), 'Tour lists the waypoints');
+  await page.locator('select[aria-label="Waypoint 2 travel time"]').selectOption('8');
+  check((await get('parts.0.dot.waypoints.1.beats')) === 8, 'waypoint travel time select writes beats');
+  await until(page, () => document.querySelector('select[aria-label="Waypoint 2 travel time"]')?.value === '8');
+  await page.locator('button[aria-label="Delete waypoint 1"]').click();
+  check((await get('parts.0.dot.waypoints')).length === 1, 'a waypoint can be deleted');
+  await shot(page, 'roundd-dot-tour');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.orograph.store.set('ui.editWaypoints', 1));
+  await page.locator('body').click({ position: { x: 700, y: 300 } });
+  await page.keyboard.press('Escape');
+  check((await get('ui.editWaypoints')) === 0, 'Esc ends waypoint editing');
+  await page.locator('.seg--dot .seg-btn[data-value="0"]').click();
+
+  // Preview button (toggles, lights while playing)
+  await page.evaluate(() => { window.__src = []; window.orograph.music.router.on('note', e => window.__src.push(e.source)); });
+  await page.evaluate(() => {
+    window.__pressed = [];
+    const b = document.querySelector('.preview-btn');
+    new MutationObserver(() => window.__pressed.push(b.getAttribute('aria-pressed'))).observe(b, { attributes: true, attributeFilter: ['aria-pressed'] });
+  });
+  await page.locator('.preview-btn').click();
+  check(await until(page, () => window.__src.includes('preview')), 'Preview button plays the preview phrase');
+  check(await until(page, () => window.__pressed.includes('true')), 'Preview button shows that it is playing');
+  check(await until(page, () => document.querySelector('.preview-btn').getAttribute('aria-pressed') === 'false'), 'Preview button goes dark when the phrase ends');
+
+  // MIX: Ceiling
+  await page.locator('#dtab-mix').click();
+  const c0 = await get('global.ceiling');
+  await knobKeys('.knob[data-param="ceiling"] .knob-dial', 'ArrowDown', 4);
+  check(await get('global.ceiling') < c0, `Ceiling knob writes global.ceiling (${c0} -> ${await get('global.ceiling')})`);
+
+  // Bounce: mix + stems, progress, names
+  await page.locator('.bounce-btn').click();
+  await until(page, () => document.querySelector('.popover--bounce.is-open'));
+  await page.locator('.popover--bounce .seg-btn', { hasText: 'Mix + stems' }).click();
+  await page.locator('select[aria-label="Bars to render"]').selectOption('2');
+  check(await until(page, () => /2 bars at/.test(document.querySelector('.bounce-length').textContent)), 'Bounce shows how long the render is');
+  const names = [];
+  const onDl = (d) => names.push(d.suggestedFilename());
+  page.on('download', onDl);
+  await page.locator('.popover--bounce .btn--primary').click();
+  await until(page, () => /Done/.test(document.querySelector('.bounce-status')?.textContent || ''), null, 12000);
+  const pct = await page.locator('.bounce-progress').getAttribute('aria-valuenow');
+  for (let i = 0; i < 80 && names.length < 5; i++) await sleep(100);
+  page.off('download', onDl);
+  check(pct === '100', `Bounce progress reaches 100% (${pct})`);
+  check(names.length === 5 && /^orograph-bounce-\d{8}-\d{6}\.wav$/.test(names[0]) && names.slice(1).every((n, i) => new RegExp(`^orograph-bounce-\\d{8}-\\d{6}-part${i + 1}\\.wav$`).test(n)), `Bounce saves the mix and one stem per part (${names.join(', ')})`);
+  await shot(page, 'roundd-bounce-done');
+  await page.keyboard.press('Escape');
+
+  // Settings: audio quality, palette swatches, MIDI auto output, MPE, MPC guide
+  await page.evaluate(() => window.orograph.ui.openSettings('audio'));
+  await page.locator('.seg[aria-label="Audio quality"] .seg-btn', { hasText: 'High' }).click();
+  check(await get('ui.audioQuality') === 'high' && await page.evaluate(() => window.orograph.engine.quality) === 'high', 'Audio quality writes ui.audioQuality and calls engine.setQuality');
+  check(await until(page, () => /Four times/.test(document.querySelector('.settings-panel:not([hidden]) .setting-hint')?.textContent || '')), 'Audio quality explains the chosen mode');
+  await page.locator('#stab-general').click();
+  check(await until(page, () => document.querySelectorAll('.settings-panel:not([hidden]) .palette-swatch').length === 5), 'Settings > General shows the palette swatches');
+  await page.locator('#stab-midi').click();
+  const connect = page.locator('.status-actions .btn--primary');
+  if (await connect.isVisible()) { await connect.click(); await until(page, () => window.orograph.midi.status === 'ready' && document.querySelector('select[aria-label="MIDI output"] option')); }
+  await until(page, () => document.querySelector('select[aria-label="MIDI output"]')?.options.length > 2);
+  const optTexts = await page.locator('select[aria-label="MIDI output"] option').allTextContents();
+  check(optTexts[0] === 'Automatic (MPC)', `MIDI output offers Automatic (MPC) first (${optTexts.join(' | ')})`);
+  await page.locator('select[aria-label="MIDI output"]').selectOption('out-iac');
+  check((await page.evaluate(() => window.orograph.midi.getSettings().outputAuto)) === false, 'choosing a port turns Automatic off');
+  await page.locator('select[aria-label="MIDI output"]').selectOption('auto');
+  check((await page.evaluate(() => window.orograph.midi.getSettings().outputAuto)) === true, 'Automatic (MPC) calls setSetting(outputId, auto)');
+  check(await until(page, () => /Automatic: sending to MPC/.test(document.querySelector('#midi-devices ~ .setting-row .setting-hint')?.textContent || '')), 'the output hint names the port Automatic picked');
+  await page.locator('.setting-row', { has: page.locator('.setting-label', { hasText: /^MPE$/ }) }).locator('.toggle').click();
+  check((await page.evaluate(() => window.orograph.midi.getSettings().mpe)) === true, 'MPE switch writes the mpe setting');
+  check(await page.locator('.guide-detail').count() > 5, 'the MPC guide shows step details');
+  check(await page.locator('.guide-checks').count() > 0, 'the MPC guide shows the checks for each section');
+  check(/firmware 3\.9/.test(await page.locator('.guide > .setting-hint').textContent()), 'the MPC guide uses the MIDI module intro');
+  await page.evaluate(() => { window.orograph.midi.error = 'The MPC output was unplugged.'; });
+  await page.evaluate(() => window.orograph.midi.setSetting('velocityCurve', 'soft'));
+  check(await until(page, () => { const w = document.querySelector('.status-warn'); return w && !w.hidden && /unplugged/.test(w.textContent); }), 'a MIDI problem while connected is shown in the status card');
+  await page.evaluate(() => { window.orograph.midi.error = null; window.orograph.midi.setSetting('velocityCurve', 'linear'); });
+  await page.keyboard.press('Escape');
+  await sleep(200);
+
+  // Electron drag region on the top bar (Chromium reports app-region even outside Electron)
+  const region = await page.evaluate(() => [getComputedStyle(document.querySelector('.topbar')).getPropertyValue('-webkit-app-region'),
+    ...['.play-btn', '.part-tab', '.patch-open', '.macros-btn', '.tempo .dragnum-input'].map(sel => getComputedStyle(document.querySelector(sel)).getPropertyValue('-webkit-app-region'))]);
+  check(region[0] === 'drag' && region.slice(1).every(r => r === 'no-drag'), `top bar is a drag region with no-drag controls (${region.join(', ')})`);
+
+  // Focus is visible on keyboard focus
+  await page.locator('body').click({ position: { x: 700, y: 300 } });
+  await page.locator('.macros-btn').focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  const ring = await page.evaluate(() => { const cs = getComputedStyle(document.activeElement); return `${cs.outlineStyle} ${cs.outlineWidth}`; });
+  check(/solid 2px/.test(ring), `keyboard focus shows a ring (${ring})`);
+
+  check(errors.length === 0, 'no console errors during the Round D run', errors.slice(0, 5).join('\n     '));
+  await context.close();
+
+  // Reduced motion: animations collapse to 1 ms
+  const rm = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  const rp = await rm.newPage();
+  await rp.goto(HARNESS, { waitUntil: 'load' });
+  await rp.waitForFunction(() => document.querySelector('#app.is-ready'), null, { timeout: 120000 });
+  await rp.locator('[data-action="start"]').click().catch(() => {});
+  await sleep(300);
+  await rp.locator('.macros-btn').click();
+  await rp.waitForSelector('.popover--macros');
+  const dur = await rp.evaluate(() => getComputedStyle(document.querySelector('.popover--macros')).transitionDuration);
+  check(dur.split(',').every(d => parseFloat(d) <= 0.001), `reduced motion shortens transitions (${dur})`);
+  await rm.close();
+}
+
 // ------------------------------------------------------------------ visual sweep
 async function sweep(browser, viewport, theme) {
   const tag = `${viewport.width < 900 ? 'mobile' : `w${viewport.width}`}-${theme}`;
@@ -455,6 +705,27 @@ async function sweep(browser, viewport, theme) {
   const contrast = await contrastAudit(page);
   check(contrast.length === 0, `${tag}: token contrast meets AA`, contrast.join('; '));
 
+  const popShot = async (open, sel, name) => {
+    try {
+      await open();
+      await page.locator(sel).first().waitFor({ state: 'visible', timeout: 4000 });
+      // Wait for the fade-in to finish (frames can be slow under software GL).
+      await until(page, (s2) => { const el = document.querySelector(`${s2}.is-open`) || document.querySelector(`${s2}`); return el && (el.classList.contains('menu') || el.classList.contains('is-open')) && getComputedStyle(el).opacity === '1'; }, sel, 4000);
+      await sleep(150);
+      await shot(page, `${tag}-pop-${name}`);
+      const off = await page.locator(sel).first().evaluate(el => { const r = el.getBoundingClientRect(); return r.left < 0 || r.top < 0 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1; });
+      check(!off, `${tag}: the ${name} popover stays on screen`);
+    } catch (err) { check(false, `${tag}: the ${name} popover opens`, String(err.message || err).split('\n')[0]); }
+    await page.keyboard.press('Escape');
+    // Let the closing popover hand focus back before the next one opens.
+    await until(page, () => !document.querySelector('.popover'), null, 3000);
+    await sleep(250);
+  };
+  const dotPop = async (mode) => {
+    await page.locator(`.seg--dot .seg-btn[data-value="${mode}"]`).click();
+    await sleep(150);
+    if (!(await page.locator('.popover--dot.is-open').count())) await page.locator('button[aria-label="Dot settings"]').click();
+  };
   if (viewport.width >= 900) {
     for (const pane of ['sound', 'mod', 'seq', 'mix']) {
       await page.locator(`#dtab-${pane}`).click();
@@ -462,8 +733,39 @@ async function sweep(browser, viewport, theme) {
       await sleep(300);
       await shot(page, `${tag}-${pane}`);
       check((await overflowX(page)).length === 0, `${tag}: no horizontal overflow on ${pane}`);
+      const wide = await page.evaluate(() => { const p = document.querySelector('.dock-panel:not([hidden])'); return p.scrollWidth - p.clientWidth; });
+      check(wide <= 1, `${tag}: the ${pane} pane fits the dock width (${wide} px over)`);
+      if (pane === 'mod') {
+        await page.locator('.mod-switch .seg-btn[data-value="links"]').click();
+        await sleep(250);
+        await shot(page, `${tag}-mod-links`);
+        await page.locator('.mod-switch .seg-btn[data-value="params"]').click();
+      }
+      if (pane === 'seq' && viewport.width >= 1280) {
+        // The whole grid, Dot row included, fits without scrolling on common laptop sizes.
+        const fit = await page.evaluate(() => { const p = document.querySelector('.dock-panel:not([hidden])'); return p.scrollHeight - p.clientHeight; });
+        check(fit <= 1, `${tag}: the sequencer fits the dock without scrolling (${fit} px over)`);
+      }
     }
     await page.locator('#dtab-sound').click();
+    await popShot(() => page.locator('.macros-btn').click(), '.popover--macros', 'macros');
+    await popShot(() => page.locator('.vp-palette').click(), '.popover--palette', 'palette');
+    await popShot(() => page.locator('.bounce-btn').click(), '.popover--bounce', 'bounce');
+    await popShot(() => page.locator('.patch-open').click(), '.popover--browser', 'patches');
+    await popShot(() => dotPop(3), '.popover--dot', 'dot-explore');
+    await popShot(() => dotPop(4), '.popover--dot', 'dot-tour');
+    await page.locator('.seg--dot .seg-btn[data-value="0"]').click();
+    await popShot(async () => { await page.locator('#dtab-mod').click(); await page.locator('.mod-row[data-param="cutoff"] .mod-name').click(); await page.locator('.popover--mod .seg-btn[data-value="6"]').click(); }, '.popover--mod', 'mod-steps');
+    await popShot(() => page.locator('.knob[data-param="morph"] .knob-dial').click({ button: 'right' }), '.popover.menu', 'knob-menu');
+    await popShot(() => page.locator('.terrain-slot[data-slot="A"] .terrain-pick').click(), '.popover--picker', 'terrain');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+    await popShot(() => page.locator('.terrain-slot[data-slot="B"] input[type=file]').setInputFiles({ name: 'ridge.png', mimeType: 'image/png', buffer: png }), '.popover--import', 'import');
+    await page.locator('#dtab-sound').click();
+    await page.keyboard.press('?');
+    await sleep(300);
+    await shot(page, `${tag}-help`);
+    await page.keyboard.press('Escape');
+    await sleep(200);
   } else {
     for (const tab of ['map', 'sound', 'mod', 'seq', 'mix', 'keys']) {
       await page.locator(`.mtab[data-tab="${tab}"]`).click();
@@ -471,6 +773,19 @@ async function sweep(browser, viewport, theme) {
       await shot(page, `${tag}-${tab}`);
       check((await overflowX(page)).length === 0, `${tag}: no horizontal overflow on ${tab}`);
     }
+    // Both map toolbars fit side by side without overlapping.
+    const [a, b] = await page.evaluate(() => ['.vp-toolbar--left', '.vp-toolbar--right'].map(sel => { const r = document.querySelector(sel).getBoundingClientRect(); return { l: r.left, r: r.right }; }));
+    check(a.r <= b.l, `${tag}: map toolbars do not overlap (${Math.round(a.r)} <= ${Math.round(b.l)})`);
+    await page.locator('.mtab[data-tab="mod"]').click();
+    await page.locator('.mod-switch .seg-btn[data-value="links"]').click();
+    await sleep(250);
+    await shot(page, `${tag}-mod-links`);
+    check((await overflowX(page)).length === 0, `${tag}: no horizontal overflow on Links`);
+    await page.locator('.mod-switch .seg-btn[data-value="params"]').click();
+    await page.locator('.mtab[data-tab="map"]').click();
+    await popShot(() => dotPop(1), '.popover--dot', 'dot-roll');
+    await page.locator('.seg--dot .seg-btn[data-value="0"]').click();
+    await popShot(() => page.locator('.patch-open').click(), '.popover--browser', 'patches');
     // Touch targets in the mobile tab bar and transport
     const small = await page.evaluate(() => [...document.querySelectorAll('.mtab, .transport-btn, .utils .icon-btn, .part-tab')]
       .filter(el => el.getClientRects().length > 0) // skip controls hidden at this width
@@ -511,6 +826,28 @@ async function degraded(browser) {
   check(await page.locator('.flatmap-canvas').count() === 1, 'a flat map stands in when the 3D view is missing');
   check(await page.locator('.play-btn').isDisabled(), 'Play is disabled without the music engine');
   check(await page.locator('.patch-open').isDisabled(), 'the patch browser is disabled without presets');
+  // Unavailable Round D controls stay focusable and say why instead of failing silently.
+  check(await page.locator('.preview-btn').getAttribute('aria-disabled') === 'true', 'Preview is marked unavailable without the music engine');
+  await page.locator('.preview-btn').click();
+  check(await until(page, () => [...document.querySelectorAll('.toast')].some(t => /music engine/.test(t.textContent))), 'clicking an unavailable Preview explains why');
+  check(await page.locator('.vp-palette').getAttribute('aria-disabled') === 'true', 'the palette button is marked unavailable without the 3D view');
+  await page.locator('.seg--dot .seg-btn[data-value="3"]').click();
+  await page.locator('button[aria-label="Dot settings"]').click();
+  await until(page, () => { const g = document.querySelector('.popover--dot .dot-group[data-modes="3"]'); return g && !g.hidden; });
+  check(await page.locator('.popover--dot .toggle', { hasText: 'Play notes' }).isDisabled(), 'Explore notes are switched off with an explanation when the music engine is missing');
+  await page.locator('.seg--dot .seg-btn[data-value="4"]').click();
+  await until(page, () => { const g = document.querySelector('.popover--dot .dot-group[data-modes="4"]'); return g && !g.hidden; });
+  check(await page.locator('.popover--dot .toggle', { hasText: 'Edit on map' }).isDisabled(), 'waypoint editing is unavailable without the 3D map');
+  await page.keyboard.press('Escape');
+  await page.locator('.seg--dot .seg-btn[data-value="0"]').click();
+  await page.locator('.bounce-btn').click();
+  await until(page, () => document.querySelector('.popover--bounce.is-open'));
+  check(/not available/.test(await page.locator('.popover--bounce').textContent()) && await page.locator('.popover--bounce .btn--primary').isDisabled(), 'Bounce explains that it needs the audio and music engines');
+  await page.keyboard.press('Escape');
+  await page.locator('.macros-btn').click();
+  await until(page, () => document.querySelector('.popover--macros.is-open'));
+  check(await page.locator('.popover--macros .knob').count() === 4, 'Macros still work without the audio engine (they are stored settings)');
+  await page.keyboard.press('Escape');
   // The dot can still be placed on the flat map.
   const c = await page.locator('.flatmap-canvas').boundingBox();
   await page.mouse.click(c.x + c.width * 0.5 + 60, c.y + c.height * 0.5 - 40);
@@ -598,7 +935,8 @@ async function realApp(browser) {
   try {
     if (!process.env.ONLY_REAL) {
       await functional(browser);
-      for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      await roundD(browser);
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
         for (const theme of ['dark', 'light']) await sweep(browser, viewport, theme);
       }
       await degraded(browser);

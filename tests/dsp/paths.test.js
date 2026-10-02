@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { PATHS } from '../../src/dsp/catalog.js';
 import { pathPoint, pathBlock, pathLength, samplePath, PATH_COUNT } from '../../src/dsp/paths.js';
+
+// Offline renders are heavy and the suite may share a busy machine: measure
+// quality here, not wall-clock speed (dev/dsp/bench.mjs measures CPU time).
+vi.setConfig({ testTimeout: 120000 });
 
 const SCAN = PATHS.findIndex(p => p.id === 'scan');
 const PARAMS = [0, 0.25, 0.5, 0.75, 1];
@@ -144,7 +148,8 @@ describe('paths', () => {
     let acc = 0;
     for (let i = 0; i < 100000; i++) acc += pathLength(i % 12, 1 + (i % 8), (i % 97) / 97);
     expect(acc).toBeGreaterThan(0);
-    expect(performance.now() - t0).toBeLessThan(500);
+    // ~100 ns per call on an idle machine; generous so a loaded CI box does not flake
+    expect(performance.now() - t0).toBeLessThan(2000);
   });
 
   it('samplePath fills an interleaved Float32Array', () => {

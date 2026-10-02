@@ -8,17 +8,34 @@
 // times per cycle and restarted each cycle, so sweeping it gives the classic
 // sync scream), Pace (phase distortion along the path) and the Sub sine.
 //
+// Some patches carry Links (expression routings: velocity opens the orbit,
+// the key brightens the filter, macros morph the land) and Steps LFOs (a
+// 16-step pattern per cycle, here tempo-synced to one bar so each 16th note
+// gets its own value). Links that are not neutral at rest, like velocity,
+// come with a compensated base value so the patch sounds as balanced at the
+// audition velocity (0.8) as it did before.
+//
+// The Comb and Vowel filters and the Air noise layer get patches of their
+// own: a tuned comb that rings like a string (Cutoff tracks the key at Key
+// Trk 1, so the comb sits on the note), a comb swept through Air for a jet
+// whoosh, and two Vowel patches whose Vowel knob is played by envelopes,
+// LFOs, pressure and macros.
+//
 // Levels were balanced by rendering every patch offline through the DSP
 // engine (tests/presets/levels.test.js).
 
 import { TERRAIN_INDEX as T, PATH_INDEX as P } from '../dsp/catalog.js';
 
-const F = { off: 0, low: 1, band: 2, high: 3, notch: 4 };
+const F = { off: 0, low: 1, band: 2, high: 3, notch: 4, comb: 5, vowel: 6 };
 const MODE = { poly: 0, mono: 1, legato: 2 };
 const SH = { sine: 0, tri: 1, saw: 2, square: 3, sh: 4, drift: 5 };
 const DIV = { '4bar': 0, '2bar': 1, '1bar': 2, '1/2': 3, '1/4.': 4, '1/4': 5, '1/8.': 6, '1/4T': 7, '1/8': 8, '1/16.': 9, '1/8T': 10, '1/16': 11, '1/32': 12 };
 const DOT = { pin: 0, roll: 1, drift: 2 };
 const PACE = { bend: 0, skew: 1, pinch: 2 };
+// Indices into LINK_SOURCES / LINK_CURVES (src/core/params.js).
+const SRC = { vel: 0, wheel: 1, pressure: 2, key: 3, slide: 4, m1: 5, m2: 6, m3: 7, m4: 8, random: 13 };
+const CURVE = { lin: 0, soft: 1, hard: 2 };
+const STEPS = 6;
 
 /** Free-running LFO: depth in knob travel, rate in Hz. */
 const lfo = (depth, rate, shape = SH.sine, more = {}) => ({ lfoDepth: depth, lfoRate: rate, lfoShape: shape, ...more });
@@ -28,6 +45,11 @@ const synced = (depth, div, shape = SH.sine, more = {}) => ({ lfoDepth: depth, l
 const env = (depth, more = {}) => ({ envDepth: depth, ...more });
 const amp = (attack, decay, sustain, release) => ({ attack, decay, sustain, release });
 const env2 = (a, d, s, r) => ({ env2Attack: a, env2Decay: d, env2Sustain: s, env2Release: r });
+/** A Steps LFO: 16 held values, synced so the pattern spans `div`. */
+const steps = (depth, div, values, more = {}) => ({ lfoShape: STEPS, lfoSync: 1, lfoDiv: DIV[div], lfoDepth: depth, steps: values, ...more });
+const link = (src, dst, amt, curve = CURVE.lin) => ({ src: SRC[src], dst, amt, curve });
+// Every patch with its own Links keeps the classic wheel routing first.
+const WHEEL_MORPH = link('wheel', 'morph', 1);
 
 export const CATEGORIES = ['Bass', 'Lead', 'Pad', 'Keys', 'Pluck', 'Bell', 'Texture', 'Drone', 'FX', 'Arp'];
 
@@ -128,11 +150,15 @@ export const FACTORY_PATCHES = [
       terrainA: T.ridge, terrainB: T.swell, morph: 0.35, seed: 3, detail: 0.55,
       pathShape: P.rose, pathOrder: 3, pathParam: 0.55, size: 0.27,
       polyMode: MODE.legato, glide: 0.07, unison: 2, detune: 9, spread: 0.5,
-      filterType: F.low, cutoff: 4200, resonance: 0.22, filterEnv: 0.3, keyTrack: 0.6, drive: 0.15,
+      filterType: F.low, cutoff: 4200, resonance: 0.22, filterEnv: 0.3, keyTrack: 0.45, drive: 0.15,
       ...amp(0.006, 0.6, 0.8, 0.25), ...env2(0.01, 0.5, 0.35, 0.4),
       level: 0.79, delaySend: 0.22, reverbSend: 0.2,
     },
     mods: { fine: lfo(0.025, 5.4), centerY: lfo(0.05, 0.17, SH.tri), size: env(0.08) },
+    // Lean into the keys (pressure) to open the orbit, slide (MPE) to reshape it;
+    // the key brightens the top end on its own; Macro 1 walks to the second terrain.
+    links: [WHEEL_MORPH, link('key', 'cutoff', 0.3), link('pressure', 'size', 0.22, CURVE.soft),
+      link('slide', 'pathParam', 0.35), link('m1', 'morph', 0.55)],
   },
   {
     name: 'Summit Saw', category: 'Lead', tags: ['wavetable', 'supersaw', 'classic'],
@@ -196,6 +222,22 @@ export const FACTORY_PATCHES = [
     mods: { laps: env(0.42), fine: lfo(0.02, 5.2) },
   },
 
+  {
+    name: 'Talus Talker', category: 'Lead', tags: ['vowel', 'talking', 'pressure'],
+    params: {
+      terrainA: T.ridge, terrainB: T.cells, morph: 0.25, seed: 27, detail: 0.5,
+      pathShape: P.polygon, pathOrder: 4, pathParam: 0.4, size: 0.26, lift: 1.3,
+      polyMode: MODE.legato, glide: 0.06, unison: 2, detune: 6, spread: 0.4,
+      filterType: F.vowel, cutoff: 1000, resonance: 0.45, formant: 1, filterEnv: 0, keyTrack: 0.15, drive: 0.2,
+      ...amp(0.005, 0.5, 0.85, 0.25), ...env2(0.01, 0.45, 0.3, 0.35),
+      level: 0.52, delaySend: 0.2, reverbSend: 0.15,
+    },
+    // Envelope 2 says "you-ah" on every note (U opening towards A, settling on O);
+    // pressing harder opens the mouth again.
+    mods: { formant: env(-0.8), fine: lfo(0.02, 5.2) },
+    links: [WHEEL_MORPH, link('pressure', 'formant', -0.4), link('vel', 'formant', -0.15)],
+  },
+
   // ------------------------------------------------------------------- Pad
   {
     name: 'Tidal Flats', category: 'Pad', tags: ['warm', 'drifting', 'wide'],
@@ -221,6 +263,9 @@ export const FACTORY_PATCHES = [
       level: 0.56, delaySend: 0.2, reverbSend: 0.55,
     },
     mods: { morph: synced(0.35, '4bar', SH.tri), pathParam: lfo(0.2, 0.08), centerY: lfo(0.05, 0.07, SH.drift) },
+    // Each chord note gets its own petal shape (Random is centred, so the
+    // average sound is unchanged); Macros 1 and 2 morph and warp the land.
+    links: [WHEEL_MORPH, link('random', 'pathParam', 0.15), link('m1', 'morph', 0.5), link('m2', 'warp', 0.35, CURVE.soft)],
   },
   {
     name: 'Fjord Choir', category: 'Pad', tags: ['vocal', 'formant', 'airy'],
@@ -272,17 +317,35 @@ export const FACTORY_PATCHES = [
     mods: { laps: lfo(0.12, 0.06), morph: lfo(0.2, 0.045, SH.drift), centerX: lfo(0.06, 0.03, SH.drift) },
   },
 
+  {
+    name: 'Tundra Voice', category: 'Pad', tags: ['vowel', 'breathy', 'choir'],
+    params: {
+      terrainA: T.swell, terrainB: T.dunes, morph: 0.3, seed: 18, detail: 0.35,
+      pathShape: P.eight, pathOrder: 2, pathParam: 0.45, size: 0.24, spin: 0.06,
+      unison: 3, detune: 10, spread: 0.85, air: 0.22, airTone: -0.35,
+      filterType: F.vowel, cutoff: 1000, resonance: 0.35, formant: 0.5, filterEnv: 0, keyTrack: 0,
+      ...amp(1.2, 2, 0.9, 3),
+      level: 0.6, delaySend: 0.15, reverbSend: 0.6,
+    },
+    // The choir drifts E, I, O and back over four bars; Macro 1 opens the mouth further.
+    mods: { formant: synced(0.4, '4bar', SH.tri), morph: lfo(0.2, 0.05, SH.drift), centerX: lfo(0.05, 0.06, SH.drift) },
+    links: [WHEEL_MORPH, link('m1', 'formant', -0.45), link('random', 'pathParam', 0.12)],
+  },
+
   // ------------------------------------------------------------------ Keys
   {
     name: 'Sandstone Keys', category: 'Keys', tags: ['piano-ish', 'velocity', 'warm'],
     params: {
       terrainA: T.swell, terrainB: T.fm, morph: 0.25, seed: 9, detail: 0.35,
-      pathShape: P.ellipse, pathOrder: 3, size: 0.12, velSens: 0.8,
+      // Size 0.078 + velocity link = the old 0.12 orbit at velocity 0.8.
+      pathShape: P.ellipse, pathOrder: 3, size: 0.078, velSens: 0.8,
       filterType: F.low, cutoff: 5500, resonance: 0.1, filterEnv: 0.25, keyTrack: 0.7,
       ...amp(0.002, 1.6, 0.3, 0.6), ...env2(0.001, 0.7, 0.15, 0.5),
       level: 0.75, delaySend: 0.08, reverbSend: 0.25,
     },
     mods: { size: env(0.2), morph: env(0.2) },
+    // Harder playing opens the orbit, so it gets brighter as well as louder, like a real piano.
+    links: [WHEEL_MORPH, link('vel', 'size', 0.12), link('m1', 'morph', 0.5)],
   },
   {
     name: 'Lagoon EP', category: 'Keys', tags: ['electric piano', 'tremolo', 'mellow'],
@@ -336,12 +399,15 @@ export const FACTORY_PATCHES = [
     name: 'Pebble Pluck', category: 'Pluck', tags: ['soft', 'size envelope', 'clean'],
     params: {
       terrainA: T.ripple, terrainB: T.swell, morph: 0.2, seed: 1, detail: 0.5,
-      pathShape: P.ellipse, pathOrder: 2, size: 0.07,
-      filterType: F.low, cutoff: 5000, resonance: 0.15, filterEnv: 0.35, keyTrack: 0.6,
+      // Size 0.03 + velocity link = the old 0.07 orbit at velocity 0.8.
+      pathShape: P.ellipse, pathOrder: 2, size: 0.03,
+      filterType: F.low, cutoff: 5000, resonance: 0.15, filterEnv: 0.35, keyTrack: 0.45,
       ...amp(0.001, 0.55, 0, 0.35), ...env2(0.001, 0.16, 0, 0.2),
       level: 0.83, delaySend: 0.25, reverbSend: 0.3,
     },
-    mods: { size: env(0.38), morph: env(0.25) },
+    // A one-bar Steps pattern nudges the orbit shape on every 16th, so repeated notes never sound copied.
+    mods: { size: env(0.38), morph: env(0.25), pathParam: steps(0.14, '1bar', [0, 0.6, -0.3, 0.9, 0, -0.6, 0.3, 0.7, 0, 0.5, -0.4, 0.8, 0.2, -0.7, 0.4, 1]) },
+    links: [WHEEL_MORPH, link('vel', 'size', 0.15), link('key', 'cutoff', 0.25)],
   },
   {
     name: 'Scree Pluck', category: 'Pluck', tags: ['bright', 'folded', 'snappy'],
@@ -398,6 +464,20 @@ export const FACTORY_PATCHES = [
     },
     // Each note starts as a sync zap (about 3.8 laps) and settles onto the plain orbit.
     mods: { laps: env(0.4), size: env(0.36) },
+  },
+
+  {
+    name: 'Gully Comb', category: 'Pluck', tags: ['comb', 'string', 'tuned resonance'],
+    params: {
+      terrainA: T.crater, terrainB: T.swell, morph: 0.35, seed: 44, detail: 0.6,
+      pathShape: P.star, pathOrder: 3, pathParam: 0.55, size: 0.16, air: 0.08, airTone: 0.4,
+      // Cutoff = C4 with Key Trk 1: the comb sits on every note's fundamental and rings like a string.
+      filterType: F.comb, cutoff: 261.63, resonance: 0.82, formant: 0.9, filterEnv: 0, keyTrack: 1,
+      ...amp(0.001, 0.7, 0, 0.45), ...env2(0.001, 0.2, 0, 0.2),
+      level: 0.45, delaySend: 0.2, reverbSend: 0.28,
+    },
+    mods: { size: env(0.3), resonance: env(0.12) },
+    links: [WHEEL_MORPH, link('vel', 'resonance', 0.15), link('m1', 'formant', -0.6)],
   },
 
   // ------------------------------------------------------------------ Bell
@@ -481,7 +561,13 @@ export const FACTORY_PATCHES = [
       ...amp(0.01, 0.8, 0.7, 0.6),
       level: 0.73, delaySend: 0.3, reverbSend: 0.35,
     },
-    mods: { centerY: synced(0.35, '1/16', SH.sh), morph: synced(0.3, '1/8', SH.sh) },
+    // The dot hops through a fixed 16-step figure each bar (a rhythm you can
+    // learn), while morph keeps its random sample-and-hold.
+    mods: {
+      centerY: steps(0.35, '1bar', [0.9, -0.5, 0.3, -0.9, 0.6, 0, -0.7, 0.4, 0.9, -0.3, 0.5, -0.8, 0.2, -0.6, 0.7, -0.1]),
+      morph: synced(0.3, '1/8', SH.sh),
+    },
+    links: [WHEEL_MORPH, link('m1', 'warp', 0.4, CURVE.soft), link('m2', 'fold', 0.3)],
   },
   {
     name: 'Rain Shadow', category: 'Texture', tags: ['crackle', 'superformula', 'airy'],
@@ -617,17 +703,36 @@ export const FACTORY_PATCHES = [
     mods: { cutoff: lfo(0.25, 0.1, SH.drift), warp: lfo(0.3, 0.2, SH.drift), centerX: lfo(0.3, 0.05, SH.drift) },
   },
 
+  {
+    name: 'Jetstream', category: 'FX', tags: ['comb', 'air', 'flanger whoosh'],
+    params: {
+      terrainA: T.vortex, terrainB: T.ripple, morph: 0.4, seed: 52, detail: 0.7,
+      pathShape: P.spiral, pathOrder: 2, pathParam: 0.5, size: 0.2, air: 0.6, airTone: 0.3,
+      // Key Trk 0: the comb stays put in Hz while an LFO sweeps it, a jet-plane flange over the Air.
+      filterType: F.comb, cutoff: 700, resonance: 0.75, formant: 0.5, filterEnv: 0, keyTrack: 0,
+      ...amp(0.4, 1.5, 0.8, 1.8),
+      level: 0.49, delaySend: 0.25, reverbSend: 0.45,
+    },
+    mods: { cutoff: lfo(0.25, 0.12, SH.tri), rotate: lfo(0.2, 0.08, SH.saw), morph: lfo(0.15, 0.05, SH.drift) },
+    links: [WHEEL_MORPH, link('m1', 'cutoff', 0.3), link('m2', 'resonance', 0.2)],
+  },
+
   // ------------------------------------------------------------------- Arp
   {
     name: 'Survey Arp', category: 'Arp', tags: ['wavetable', 'tight', 'echo'],
     params: {
       terrainA: T.spectra, terrainB: T.swell, morph: 0, seed: 7, detail: 0.6,
       pathShape: P.scan, pathOrder: 1, pathParam: 0.5, size: 0.5, centerY: 0.3,
-      filterType: F.low, cutoff: 3000, resonance: 0.3, filterEnv: 0.4, keyTrack: 0.6,
+      filterType: F.low, cutoff: 3000, resonance: 0.3, filterEnv: 0.4, keyTrack: 0.45,
       ...amp(0.001, 0.3, 0.1, 0.2), ...env2(0.001, 0.15, 0, 0.15),
       level: 0.5, delaySend: 0.3, reverbSend: 0.2,
     },
-    mods: { centerY: synced(0.08, '2bar', SH.tri) },
+    // A one-bar Steps filter sequence, accented on the beats, over the arpeggio.
+    mods: {
+      centerY: synced(0.08, '2bar', SH.tri),
+      cutoff: steps(0.16, '1bar', [1, -0.6, 0.2, -0.9, 0.7, -0.4, 0.4, -0.8, 1, -0.5, 0.1, -0.9, 0.6, -0.2, 0.8, -0.7]),
+    },
+    links: [WHEEL_MORPH, link('key', 'cutoff', 0.2), link('m1', 'morph', 0.6)],
   },
   {
     name: 'Isobar Arp', category: 'Arp', tags: ['plucky', 'synced morph', 'bright'],

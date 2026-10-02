@@ -14,9 +14,11 @@ const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) /
 const massif = buildMipChain(generateTerrain(5, { size: 512 }), 512);
 const swell = buildMipChain(generateTerrain(0, { size: 512 }), 512);
 
-function rtFactor(params) {
+function rtFactor(params, quality = 'standard', extra = null) {
   const dsp = new OrographDSP(SR);
+  dsp.handleMessage({ t: 'quality', mode: quality });
   for (let p = 0; p < 2; p++) {
+    if (extra) for (const m of extra) dsp.handleMessage({ ...m, part: p });
     dsp.handleMessage({ t: 'terrain', part: p, slot: 0, levels: massif });
     dsp.handleMessage({ t: 'terrain', part: p, slot: 1, levels: swell });
     dsp.handleMessage({ t: 'params', part: p, p: { unison: 2, sustain: 1, ...params } });
@@ -46,6 +48,24 @@ const rt = {
   // hard sync with polyBLEP, phase distortion with per-sample mips, sub sine
   features: rtFactor({ laps: 1.5, pace: 0.6, sub: 0.5 }),
   featuresSkew: rtFactor({ laps: 1.5, pace: 0.6, paceShape: 1, sub: 0.5 }),
+  // Round D voice features (standard quality)
+  travel: rtFactor({ traverse: 1, direction: 1 }),
+  air: rtFactor({ air: 0.5, airTone: 0.3 }),
+  comb: rtFactor({ filterType: 5, cutoff: 220, resonance: 0.6 }),
+  vowel: rtFactor({ filterType: 6, cutoff: 1000, resonance: 0.5 }),
+  // five per-voice Links (every voice evaluates every slot they touch)
+  links: rtFactor({}, 'standard', [{ t: 'links', links: [
+    { src: 0, dst: 'cutoff', amt: 0.3, curve: 0 }, { src: 3, dst: 'size', amt: -0.2, curve: 1 },
+    { src: 12, dst: 'morph', amt: 0.5, curve: 0 }, { src: 13, dst: 'pan', amt: 0.4, curve: 0 },
+    { src: 14, dst: 'fold', amt: 0.3, curve: 2 },
+  ] }]),
+  // quality modes with the default patch
+  eco: rtFactor({}, 'eco'),
+  high: rtFactor({}, 'high'),
+  pristine: rtFactor({}, 'pristine'),
+  // a slowly drifting dot: every voice rebuilds its table about every 256 samples
+  pristineMoving: rtFactor({}, 'pristine', [{ t: 'mods', m: { centerX: { lfoDepth: 0.1, lfoRate: 0.3 }, rotate: { lfoDepth: 0.1, lfoRate: 0.2 } } }]),
+  raw: rtFactor({}, 'raw'),
 };
 
 const gen = {};

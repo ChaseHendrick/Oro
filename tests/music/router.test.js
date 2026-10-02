@@ -192,3 +192,27 @@ describe('arpeggiator', () => {
     expect(engine.events.filter(e => e.type === 'allOff').length).toBe(4);
   });
 });
+
+describe('router: session loads', () => {
+  it('drops a latched arp chord when a whole session loads, even if the new part holds too', () => {
+    const { clock, engine, store, router } = setup({ tempo: 120 });
+    setArp(store, 1, { mode: ARP.UP, rate: 3, octaves: 1, gate: 0.5, hold: 1 });
+    for (const n of [60, 64, 67]) router.noteOn(1, n, 0.8);
+    for (const n of [60, 64, 67]) router.noteOff(1, n);
+    clock.advance(0.5);
+    expect(engine.ons(1).length).toBeGreaterThan(2);
+    const next = defaultState();
+    next.parts[1].arp = { mode: ARP.UP, rate: 3, octaves: 1, gate: 0.5, hold: 1 };
+    store.load(next);
+    engine.clear();
+    clock.advance(1);
+    expect(engine.ons(1)).toHaveLength(0);
+    expect(router.heldNotes(1).size).toBe(0);
+    // Keys still physically down keep the arp going.
+    router.noteOn(1, 62, 0.8);
+    store.load(next);
+    clock.advance(0.5);
+    expect(engine.ons(1).length).toBeGreaterThan(0);
+    expect(engine.ons(1).every(e => e.note === 62)).toBe(true);
+  });
+});

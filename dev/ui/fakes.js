@@ -178,17 +178,29 @@ export function createFakeEngine({ store }) {
 }
 
 // ---------------------------------------------------------------------------- visuals
+const FAKE_PALETTES = [
+  { name: 'Nocturne', dark: ['#0b1030', '#24306b', '#4f7fc4', '#a9d8ff', '#f4f8ff'], light: ['#2c3a6b', '#5672b0', '#8fb2de', '#d6e6f6', '#fbfdff'] },
+  { name: 'Aurora', dark: ['#04161a', '#0f4b4a', '#2fa58c', '#9be37a', '#f3f7c4'], light: ['#16413f', '#2f8073', '#69c09a', '#bfe7b4', '#f6fbe8'] },
+  { name: 'Ember', dark: ['#1a0707', '#5a1712', '#b8441f', '#f2a04a', '#ffe9b8'], light: ['#4a1a12', '#9a3a1e', '#d9733a', '#f3bd84', '#fff1dc'] },
+  { name: 'Glacier', dark: ['#071420', '#14385a', '#3b7fae', '#9fd0ea', '#f2fbff'], light: ['#203f5c', '#4b7fa6', '#8dbcd8', '#cfe8f3', '#fbfeff'] },
+  { name: 'Mono', dark: ['#0b0c10', '#2a2d36', '#5b606d', '#a5aab6', '#f2f3f6'], light: ['#2a2c31', '#585c66', '#8f939c', '#c9ccd2', '#fbfbfc'] },
+];
+
 export function createFakeVisuals(container, { store, engine }) {
   const terrains = createTerrainSource({ store, engine });
   const map = createFlatMap(container, { store, terrains, tele: null, source: 'visual' });
   map.el.classList.add('fake-visuals');
-  let state = { view: 'orbit', quality: 'high', style: 'relief', rotate: true };
+  let state = { view: 'orbit', quality: 'high', style: 'relief', rotate: true, palette: 0 };
+  const ev = emitter();
   return {
-    palettes: ['Natural', 'Aurora', 'Ember', 'Mono'],
+    // Same shape as the real visuals: ramps from valley to peak per theme.
+    palettes: () => FAKE_PALETTES.map(p => ({ name: p.name, dark: [...p.dark], light: [...p.light] })),
+    setPalette(i) { state.palette = i; },
     setView(v) { state.view = v; },
     setQuality(q) { state.quality = q; },
     setRenderStyle(s) { state.style = s; },
     setAutoRotate(r) { state.rotate = r; },
+    on: ev.on, off: ev.off,
     resize() {},
     dispose() { map.dispose(); },
     get state() { return state; },
@@ -275,12 +287,36 @@ export function createFakeMusic({ store, engine }) {
     position: () => ({ bar: Math.floor(step / 16), beat: Math.floor(step / 4) % 4, step: step % 16 }),
     on: tEv.on, off: tEv.off,
   };
+  const mEv = emitter();
+  let previewTimer = 0;
+  let previewing = false;
   return {
     router, transport,
     preview(part = 'sel') {
       const p = part === 'sel' ? sel() : part;
       [0, 4, 7, 12].forEach((d, i) => setTimeout(() => { router.noteOn(p, 57 + d, 0.8, 'preview'); setTimeout(() => router.noteOff(p, 57 + d, 'preview'), 160); }, i * 180));
+      previewing = true;
+      mEv.emit('preview', { part: p, playing: true, category: 'Keys', phrase: 'Arp' });
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => { previewing = false; mEv.emit('preview', { part: p, playing: false, reason: 'end' }); }, 4 * 180 + 160);
+      return { part: p, category: 'Keys', phrase: 'Arp', start: 0, duration: 0.9 };
     },
+    isPreviewing: () => previewing,
+    stopPreview() { clearTimeout(previewTimer); if (previewing) { previewing = false; mEv.emit('preview', { part: sel(), playing: false, reason: 'stop' }); } },
+    setLockRecord(on) { store.set('ui.lockRecord', on ? 1 : 0, { source: 'music' }); },
+    // Explore: a peak or valley plays a short in-key note (height picks the degree).
+    exploreNote({ part = sel(), height = 0 } = {}) {
+      const dot = store.get(`parts.${part}.dot`) || {};
+      if (dot.mode !== 3 || !dot.exploreNotes) return null;
+      const scale = SCALES[SCALE_NAMES[store.get('global.scaleType')]] || SCALES.Minor;
+      const deg = Math.round(((height + 1) / 2) * scale.length * (dot.exploreRange || 2));
+      const note = 48 + (store.get('global.scaleRoot') || 0) + 12 * Math.floor(deg / scale.length) + scale[deg % scale.length];
+      router.noteOn(part, note, 0.7, 'explore');
+      setTimeout(() => router.noteOff(part, note, 'explore'), 220);
+      return note;
+    },
+    isLockRecording: () => !!store.get('ui.lockRecord'),
+    on: mEv.on, off: mEv.off,
     renderEvents(bars) { return Array.from({ length: bars * 4 }, (_, i) => ({ time: i * 0.5, msg: { t: 'noteOn', part: 0, note: 57, vel: 0.8 } })); },
     randomizePattern(part, { density = 0.6 } = {}) {
       const len = (SCALES[SCALE_NAMES[store.get('global.scaleType')]] || SCALES.Minor).length;
@@ -418,6 +454,7 @@ export function createFakeMidi({ store, unsupported = false } = {}) {
     status: unsupported ? 'unsupported' : 'idle',
     error: null,
     externalClock: { active: false, bpm: 0 },
+    statusText() { return midi.error || ''; },
     get output() { const o = outputs.find(x => x.id === settings.outputId); return o ? { id: o.id, name: o.name } : null; },
     learnPadBase() { return new Promise(r => setTimeout(() => { settings = { ...settings, padBaseNote: 37 }; ev.emit('change', { type: 'settings' }); r(37); }, 700)); },
     async connect() {

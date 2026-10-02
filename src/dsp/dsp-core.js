@@ -4,34 +4,46 @@
 // AudioWorklet (worklet.js), inside a ScriptProcessorNode fallback, and in
 // Node tests. process() never allocates (telemetry objects excepted, ~60/s).
 //
-// Signal flow per voice (at 2x the host rate):
+// Signal flow per voice (at the oversampled rate, 2x in the standard quality):
 //   unison cycle phases -> Pace (phase distortion) -> Laps (path phase, hard
-//   sync restart) -> path (pathBlock / pathBlockAt) -> transform (size,
-//   stretch, rotate + spin, centre) -> warp -> trilinear terrain lookup (mip
-//   level from traversal speed), A/B morph -> Lift/Fold shaper -> polyBLEP at
-//   sync restarts -> DC blocker -> + sub sine -> drive -> TPT state variable
-//   filter -> amp envelope -> pan
-// Voices of a part are summed at 2x, then a 63-tap half-band FIR decimates the
-// part to the host rate before level, mute/solo and send gains.
+//   sync restart) -> Direction (ping-pong) -> Travel (even arc-length speed)
+//   -> path (pathBlock / pathBlockAt) -> transform (size, stretch, rotate +
+//   spin, centre) -> warp -> trilinear terrain lookup (mip level from
+//   traversal speed), A/B morph -> Lift/Fold shaper -> polyBLEP at sync
+//   restarts -> DC blocker -> + sub sine + Air noise -> drive -> filter (state
+//   variable, comb or vowel) -> amp envelope -> pan
+// In the Pristine quality a voice whose orbit is not being modulated fast
+// instead plays a band-limited single cycle of exactly that signal (sampled,
+// FFT brick-walled at Nyquist, refreshed every ~256 samples with a crossfade).
+// Voices of a part are summed at the oversampled rate, then half-band FIR
+// stages decimate the part to the host rate before level, mute/solo and sends.
 //
 // Control rate: every CTRL samples each part advances its LFOs, each voice its
-// Envelope 2 / glide, re-evaluates modulation in normalised space, smooths the
-// targets with a one-pole and sets per-sample linear ramps for everything that
-// could zipper. Events (notes) split the block at their exact sample.
+// Envelope 2 / glide, re-evaluates modulation (LFO, Env 2, Links) in
+// normalised space, smooths the targets with a one-pole and sets per-sample
+// linear ramps for everything that could zipper. Events (notes and timed
+// parameter changes) split the block at their exact sample.
 //
-// Laps = 1 with Pace = 0 (the defaults) takes the original fast path, which is
-// bit-identical to the engine before those controls existed.
+// With every Round D control at its default (Natural, Forward, no Air, no
+// Key>Size, a state variable filter, the default Links, standard quality) the
+// engine takes exactly the code paths it had before those controls existed and
+// is bit-identical to it (tests/dsp/fixtures).
 
 import {
   PART_PARAMS, PART_PARAM_INDEX, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT,
-  NUM_PARTS, VOICES_PER_PART, SYNC_DIVS, toNorm, fromNorm,
+  NUM_PARTS, VOICES_PER_PART, SYNC_DIVS, LFO_STEP_COUNT, DEFAULT_LFO_STEPS,
+  LINK_SOURCES, LINK_CURVES, MAX_LINKS, defaultLinks, toNorm, fromNorm,
 } from '../core/params.js';
-import { pathBlock, pathBlockAt, pathPoint, pathLength, paceWarp, paceBlock } from './paths.js';
+import {
+  pathBlock, pathBlockAt, pathPoint, pathLength, paceWarp, paceBlock,
+  travelBlock, prepareEven, evenPhase, pingPong,
+} from './paths.js';
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
 import { generateTerrain, buildMipChain } from './terrains.js';
 
-export const OVERSAMPLE = 2;
+export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
+const MAX_OS = 4;                       // the High quality renders voices at 4x
 const MAX_UNISON = 4;
 const VOICE_GAIN = 0.5;                 // headroom: a full-scale voice sits at -6 dBFS
 const SMOOTH_TIME = 0.004;              // one-pole smoothing of control targets (s)
@@ -44,6 +56,21 @@ const SUB_GAIN = 0.8;                   // Sub at 1: a sine 2 dB under a full-sc
 // Snap distance for the Laps / Pace / Sub one-poles, so they land exactly on
 // their targets (and Laps 1 / Pace 0 get back onto the fast path).
 const SNAP = 1e-5;
+const QUALITY_FADE = 0.012;             // crossfade when the quality changes rate or mips (s)
+const FILTER_FADE = 0.008;              // crossfade when the filter type changes (s)
+const TRAVEL_FADE = 0.012;              // crossfade when Direction / Travel change (s)
+const TABLE_FADE = 0.006;               // Pristine: table <-> direct rendering crossfade (s)
+const TABLE_DRIFT = 0.01;               // Pristine: orbit travel (knob units) that earns a new table
+// Pristine: table points built per control block at most, so a low chord
+// starting at once spreads its builds over a few blocks instead of spiking
+const TABLE_BUDGET = 4096;
+const STEP_SLEW = 0.002;                // Steps LFO: glide between steps (s)
+const PRESS_TIME = 0.008;               // smoothing of pressure / slide (MIDI steps) (s)
+const MARBLE_TIME = 0.03;               // smoothing of the ~30 Hz marble physics (s)
+const AIR_RMS = 0.3;                    // Air at 1: noise RMS in the audible band
+const AIR_PIVOT = 1200;                 // Air Tone tilt pivot (Hz)
+const COMB_FMIN = 30;                   // lowest comb frequency (Hz): sizes the delay lines
+const ECO_DELAY = 15;                   // Eco: host samples of delay = the half-band's latency
 
 const IDLE = 0, ATTACK = 1, DECAY = 2, RELEASE = 3;
 
@@ -55,14 +82,52 @@ const M_MORPH = MOD_SLOT.morph, M_WARP = MOD_SLOT.warp, M_LIFT = MOD_SLOT.lift, 
 const M_PARAM = MOD_SLOT.pathParam, M_SIZE = MOD_SLOT.size, M_STRETCH = MOD_SLOT.stretch;
 const M_ROTATE = MOD_SLOT.rotate, M_CX = MOD_SLOT.centerX, M_CY = MOD_SLOT.centerY, M_FINE = MOD_SLOT.fine;
 const M_CUTOFF = MOD_SLOT.cutoff, M_RES = MOD_SLOT.resonance, M_DRIVE = MOD_SLOT.drive, M_PAN = MOD_SLOT.pan;
-const M_LAPS = MOD_SLOT.laps, M_PACE = MOD_SLOT.pace;
+const M_LAPS = MOD_SLOT.laps, M_PACE = MOD_SLOT.pace, M_FORMANT = MOD_SLOT.formant;
+const SIZE_DEF = PART_PARAM_MAP.size;
+// Modulation slots that shape the orbit (Pristine falls back to direct
+// rendering while any of them is pushed around by Env 2 or a per-voice Link).
+const ORBIT_SLOTS = [M_MORPH, M_WARP, M_LIFT, M_FOLD, M_PARAM, M_SIZE, M_STRETCH, M_ROTATE, M_CX, M_CY, M_LAPS, M_PACE];
+// Slots whose per-voice modulation (Env 2, per-voice Links) moves the mean
+// height of the cycle fast enough for the DC blocker to let a thump through:
+// such voices track the mean and remove it (see orbitMeanEnd). Shape and
+// Rotate are left out: they move the mean little and slowly.
+const MEAN_SLOTS = [M_SIZE, M_STRETCH, M_CX, M_CY, M_MORPH, M_WARP, M_LIFT, M_FOLD, M_LAPS, M_PACE];
 
 const PI = PART_PARAM_INDEX;
 const NPARAMS = PART_PARAMS.length;
+// Parameters that glide (timed ramps): continuous curves only; ints, enums
+// and switches jump at the scheduled sample.
+const RAMPABLE = new Uint8Array(PART_PARAMS.map(d => (d.curve === 'int' || d.curve === 'enum' || d.curve === 'bool') ? 0 : 1));
+const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 360 : (d.id === 'centerX' || d.id === 'centerY') ? 1 : 0)));
+
+// Link sources (indices into LINK_SOURCES) and which of them are one value
+// for the whole part (folded into the part's shared modulation, so they also
+// show in idle telemetry) rather than per voice.
+const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
+  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14;
+const NSRC = LINK_SOURCES.length;
+const PART_SOURCE = new Uint8Array(NSRC);
+for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT]) PART_SOURCE[s] = 1;
+const NCURVES = LINK_CURVES.length;
+const DEFAULT_LINKS = defaultLinks();
+
+// Quality modes (ui.audioQuality). os: oversampling factor; mipShift: octaves
+// added to the mip level choice. Eco renders at the host rate, where the same
+// mip formula already lands one octave higher (the contract's "mip bias +1");
+// High renders at 4x and shifts back so it reads the same tables as Standard;
+// Raw turns mips off. Pristine is Standard plus band-limited single cycles.
+export const QUALITY_MODES = ['eco', 'standard', 'high', 'pristine', 'raw'];
+const QUALITY = {
+  eco: { os: 1, mipShift: 0, pristine: false },
+  standard: { os: 2, mipShift: 0, pristine: false },
+  high: { os: 4, mipShift: 1, pristine: false },
+  pristine: { os: 2, mipShift: 0, pristine: true },
+  raw: { os: 2, mipShift: -100, pristine: false },
+};
 
 // Hard-sync restarts recorded per segment: at most one per oscillator per
 // sample (the increment is capped at 0.45) plus one look-ahead each.
-const MAX_SYNC_EVENTS = MAX_UNISON * (OVERSAMPLE * CTRL + 1);
+const MAX_SYNC_EVENTS = MAX_UNISON * (MAX_OS * CTRL + 1);
 
 // log2 of a Pace speed factor (0.1 .. 6.3) for the per-sample mip level: a
 // table read instead of a Math.log2 call per oscillator sample. Linear
@@ -78,34 +143,47 @@ function speedLog2(x) {
   return LOG2_T[i] + (f - i) * (LOG2_T[i + 1] - LOG2_T[i]);
 }
 
-// --- half-band decimator ---------------------------------------------------
-// 63-tap Kaiser (β = 7.4) windowed sinc at a quarter of the oversampled rate.
-// Only odd offsets from the centre are non-zero, so 16 symmetric coefficients
-// plus the centre do the work. Passband is flat to 0.2 fs2 (19.2 kHz at 48 kHz)
-// and the stopband from 0.29 fs2 is below -70 dB, so nothing that would fold
-// to below ~20 kHz survives the 2:1 decimation.
-const HB_N = 63;
-const HB_M = (HB_N - 1) >> 1;
-const HB_HIST = HB_N - 1;
-export const HALFBAND = (() => {
-  const beta = 7.4;
+// --- half-band decimators ----------------------------------------------------
+// Kaiser windowed sinc at a quarter of the input rate: only odd offsets from
+// the centre are non-zero, so the filter is a few symmetric pairs plus the
+// centre.
+function kaiserHalfband(N, beta) {
+  const M = (N - 1) >> 1;
   const i0 = (x) => { let s = 1, t = 1; for (let k = 1; k < 30; k++) { t *= (x / (2 * k)) * (x / (2 * k)); s += t; } return s; };
-  const h = new Float64Array(HB_N);
+  const h = new Float64Array(N);
   let sum = 0;
-  for (let n = 0; n < HB_N; n++) {
-    const k = n - HB_M;
+  for (let n = 0; n < N; n++) {
+    const k = n - M;
     const sinc = k === 0 ? 0.5 : Math.sin(Math.PI * k / 2) / (Math.PI * k);
-    const r = k / HB_M;
+    const r = k / M;
     h[n] = (k !== 0 && (k & 1) === 0) ? 0 : sinc * i0(beta * Math.sqrt(Math.max(0, 1 - r * r))) / i0(beta);
     sum += h[n];
   }
-  for (let n = 0; n < HB_N; n++) h[n] /= sum;
+  for (let n = 0; n < N; n++) h[n] /= sum;
   return h;
-})();
+}
+// 2x -> 1x: 63 taps, beta 7.4. Passband is flat to 0.2 fs2 (19.2 kHz at
+// 48 kHz) and the stopband from 0.29 fs2 is below -70 dB, so nothing that
+// would fold to below ~20 kHz survives the decimation.
+const HB_N = 63;
+const HB_M = (HB_N - 1) >> 1;
+const HB_HIST = HB_N - 1;
+export const HALFBAND = kaiserHalfband(HB_N, 7.4);
 const HB_PAIRS = (HB_M + 1) >> 1;
 const HB_C = new Float64Array(HB_PAIRS);   // coefficient for offsets ±1, ±3, ...
 for (let i = 0; i < HB_PAIRS; i++) HB_C[i] = HALFBAND[HB_M + 2 * i + 1];
 const HB_CENTER = HALFBAND[HB_M];
+// 4x -> 2x (High quality): only what would fold into the final 0..0.58 fs
+// band must go, so the transition band is wide (0.105 .. 0.355 of the 4x
+// rate) and 27 taps reach -80 dB.
+const HB1_N = 27;
+const HB1_M = (HB1_N - 1) >> 1;
+const HB1_HIST = HB1_N - 1;
+export const HALFBAND_4X = kaiserHalfband(HB1_N, 8);
+const HB1_PAIRS = (HB1_M + 1) >> 1;
+const HB1_C = new Float64Array(HB1_PAIRS);
+for (let i = 0; i < HB1_PAIRS; i++) HB1_C[i] = HALFBAND_4X[HB1_M + 2 * i + 1];
+const HB1_CENTER = HALFBAND_4X[HB1_M];
 
 // --- default terrain -------------------------------------------------------
 // A built-in Swell so a part is never silent while its terrain message is in
@@ -145,7 +223,123 @@ function bil(d, s, m, u, v) {
 }
 
 function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+function clampPM1(x) { return x < -1 ? -1 : x > 1 ? 1 : x; }
 function wrapHalf(d) { return d - Math.floor(d + 0.5); }
+
+/** Link curves: 0 Linear y = x, 1 Soft sign(x) x^2, 2 Hard sign(x) |x|^0.5. */
+function linkCurve(c, x) {
+  if (c === 1) return x < 0 ? -x * x : x * x;
+  if (c === 2) return x < 0 ? -Math.sqrt(-x) : Math.sqrt(x);
+  return x;
+}
+
+// --- vowel formants ----------------------------------------------------------
+// Orograph's own vowel set, A E I O U at formant 0, 0.25, 0.5, 0.75, 1:
+// three resonances each (Hz), their bandwidths (Hz) and levels (dB). Values
+// were set by ear on terrain tones, starting from the broad ranges acoustic
+// phonetics gives for an adult voice and leaning towards a clear, slightly
+// bright singing vowel (F2/F3 a little higher, bandwidths a little narrower
+// than speech) so the vowels stay distinct even on dark terrains.
+// trim: per-vowel makeup (dB) measured on terrain tones (whose spectra fall
+// with frequency, so a vowel with a high first formant catches less energy),
+// which keeps a Vowel sweep at a steady loudness, near the Low filter's.
+const VOWELS = [
+  { f: [780, 1240, 2620], bw: [95, 115, 165], db: [0, -4, -15], trim: 8 },    // A  (father)
+  { f: [470, 1960, 2700], bw: [75, 105, 170], db: [0, -8, -13], trim: 5.5 },  // E  (bed / say)
+  { f: [300, 2280, 3080], bw: [55, 110, 175], db: [0, -13, -16], trim: 3.5 }, // I  (see)
+  { f: [510, 860, 2540], bw: [80, 90, 160], db: [0, -5, -19], trim: 5 },      // O  (go)
+  { f: [340, 760, 2380], bw: [65, 80, 150], db: [0, -10, -24], trim: 0 },     // U  (boot)
+];
+const VOWEL_LOGF = VOWELS.map(v => v.f.map(Math.log2));
+const VOWEL_AMP = VOWELS.map(v => v.db.map(d => Math.pow(10, (d + v.trim) / 20)));
+const VOWEL_GAIN = 2.0;                 // makeup: keeps Vowel near the level of the Low filter
+
+// --- FFT (Pristine) ----------------------------------------------------------
+// In-place iterative radix-2 complex FFT up to 4096 points, twiddles from one
+// shared table (stride per size), bit-reversal permutations cached per size,
+// and the real-signal pair (realForward / realInverse) that runs an N-point
+// real transform as an N/2-point complex one. No allocation after the first
+// use of each size.
+const TAB_MAX = 4096;
+class FFT {
+  constructor(maxN) {
+    this.maxN = maxN;
+    this.cs = new Float64Array(maxN >> 1);
+    this.sn = new Float64Array(maxN >> 1);
+    for (let i = 0; i < maxN >> 1; i++) { this.cs[i] = Math.cos(2 * Math.PI * i / maxN); this.sn[i] = Math.sin(2 * Math.PI * i / maxN); }
+    this.rev = new Map();
+    for (let n = 2; n <= maxN; n <<= 1) {
+      const r = new Uint16Array(n);
+      for (let i = 1, j = 0; i < n; i++) {
+        let bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        r[i] = j;
+      }
+      this.rev.set(n, r);
+    }
+  }
+
+  run(re, im, n, inverse) {
+    const rv = this.rev.get(n);
+    for (let i = 1; i < n; i++) {
+      const j = rv[i];
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    const cs = this.cs, sn = this.sn, sgn = inverse ? 1 : -1;
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, step = this.maxN / len;
+      for (let i = 0; i < n; i += len) {
+        for (let k = 0; k < half; k++) {
+          const wr = cs[k * step], wi = sgn * sn[k * step];
+          const a = i + k, b = a + half;
+          const tr = re[b] * wr - im[b] * wi, ti = re[b] * wi + im[b] * wr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti;
+          re[a] += tr; im[a] += ti;
+        }
+      }
+    }
+  }
+
+  /**
+   * Spectrum of the real signal x[0..n) in bins 0..n/2 (re[k], im[k]),
+   * through an n/2-point complex FFT of z[m] = x[2m] + i x[2m+1]. zr/zi:
+   * n/2 scratch. x may alias re.
+   */
+  realForward(x, n, re, im, zr, zi) {
+    const h = n >> 1;
+    for (let m = 0; m < h; m++) { zr[m] = x[2 * m]; zi[m] = x[2 * m + 1]; }
+    this.run(zr, zi, h, false);
+    const step = this.maxN / n, cs = this.cs, sn = this.sn;
+    for (let k = 0; k <= h; k++) {
+      const a = k === h ? 0 : k, b = k === 0 ? 0 : h - k;
+      // even part E = (Z[k] + conj Z[h-k]) / 2, odd part O = (Z[k] - conj Z[h-k]) / 2i
+      const er = 0.5 * (zr[a] + zr[b]), ei = 0.5 * (zi[a] - zi[b]);
+      const or = 0.5 * (zi[a] + zi[b]), oi = -0.5 * (zr[a] - zr[b]);
+      // X[k] = E + W^k O, W = e^{-2 pi i / n}
+      const c = k < n / 2 ? cs[k * step] : -1, s = k < n / 2 ? -sn[k * step] : 0;
+      re[k] = er + (or * c - oi * s);
+      im[k] = ei + (or * s + oi * c);
+    }
+  }
+
+  /** Inverse of realForward: bins 0..n/2 (Hermitian spectrum) to the real x[0..n), unscaled (n x). */
+  realInverse(re, im, n, x, zr, zi) {
+    const h = n >> 1;
+    const step = this.maxN / n, cs = this.cs, sn = this.sn;
+    for (let k = 0; k < h; k++) {
+      const b = h - k;
+      // E = (X[k] + conj X[h-k]) / 2, O = (X[k] - conj X[h-k]) W^-k / 2, Z = E + i O
+      const er = 0.5 * (re[k] + re[b]), ei = 0.5 * (im[k] - im[b]);
+      const dr = 0.5 * (re[k] - re[b]), di = 0.5 * (im[k] + im[b]);
+      const c = cs[k * step], s = sn[k * step];
+      const or = dr * c - di * s, oi = dr * s + di * c;
+      zr[k] = er - oi; zi[k] = ei + or;
+    }
+    this.run(zr, zi, h, true);
+    for (let m = 0; m < h; m++) { x[2 * m] = 2 * zr[m]; x[2 * m + 1] = 2 * zi[m]; }
+  }
+}
 
 // --- voice -----------------------------------------------------------------
 
@@ -164,6 +358,16 @@ class Voice {
     this.phase = new Float64Array(MAX_UNISON);   // cycle phase φ per unison oscillator
     this.inc = new Float64Array(MAX_UNISON);
     this.dinc = new Float64Array(MAX_UNISON);
+    // unison as this voice renders it: oscillators running (a removed one
+    // keeps running while it fades out), their gains (ramped per sample while
+    // Unison or Width change) and whether the voice is stereo (latched: once a
+    // voice has a right channel it keeps it, so R never jumps back onto L)
+    this.uRun = 1; this.stereo = false; this.gRamp = false;
+    this.ugL = new Float64Array(MAX_UNISON); this.ugR = new Float64Array(MAX_UNISON);
+    this.dugL = new Float64Array(MAX_UNISON); this.dugR = new Float64Array(MAX_UNISON);
+    // mean height of the cycle, tracked and removed before the DC blocker
+    // when the orbit is modulated per voice (ramped per sample)
+    this.mTrack = false; this.mCur = 0; this.dMean = 0;
 
     this.envStage = IDLE; this.envLvl = 0;
     this.env2Stage = IDLE; this.env2Lvl = 0;
@@ -176,6 +380,12 @@ class Voice {
     this.modNorm = new Float64Array(NMOD);
     this.modPlain = new Float64Array(NMOD);
 
+    // Link sources that belong to the note: random per note, per-note
+    // pressure and slide (targets and their smoothed values), and the terrain
+    // height under this voice's modulated dot (from the previous block)
+    this.rand = 0; this.press = 0; this.slide = 0; this.sPress = 0; this.sSlide = 0;
+    this.terrH = 0;
+
     // one-pole smoothed control state
     this.sSize = 0.2; this.sStretch = 0; this.sRot = 0; this.sCx = 0.5; this.sCy = 0.5;
     this.sMorph = 0; this.sWarp = 0; this.sLift = 1; this.sFold = 0; this.sParam = 0.5;
@@ -183,6 +393,7 @@ class Voice {
     this.sLvA = 0; this.sLvB = 0;
     this.uLvA = 0; this.uLvB = 0;           // unclamped mip levels (per-sample Pace mips add to these)
     this.sLaps = 1; this.sPace = 0; this.sSub = 0;
+    this.sFormant = 0.5; this.sAir = 0; this.sTone = 0;
 
     // per-sample ramps (current value + increment per oversampled sample)
     this.tA = 0; this.dtA = 0; this.tB = 0; this.dtB = 0; this.tC = 0; this.dtC = 0; this.tD = 0; this.dtD = 0;
@@ -199,10 +410,17 @@ class Voice {
     this.laps = 1; this.dLaps = 0;
     this.pace = 0; this.dPace = 0;
     this.paceShape = 0;        // Pace curve in use (switches only while Pace is faded to 0)
+    // end-of-block transform targets (Pristine samples its cycle with these)
+    this.eA = 0; this.eB = 0; this.eC = 0; this.eD = 0; this.eSpeed = 0;
 
     // sub oscillator (one per voice, not per unison oscillator)
     this.subPh = 0; this.subInc = 0; this.dSubInc = 0;
     this.subLv = 0; this.dSubLv = 0;
+
+    // Air: tilted noise. aH * noise + aD * lowpass(noise), both ramped; the
+    // xorshift state and the tilt low-pass states
+    this.aH = 0; this.daH = 0; this.aD = 0; this.daD = 0;
+    this.nz = 1; this.tlL = 0; this.tlR = 0;
 
     // hard-sync polyBLEP carried across a segment boundary: the correction for
     // the first sample of the next segment, and whether its restart is done
@@ -213,6 +431,33 @@ class Voice {
     this.ic1L = 0; this.ic2L = 0; this.ic1R = 0; this.ic2R = 0;
     this.dcxL = 0; this.dcyL = 0; this.dcxR = 0; this.dcyR = 0;
     this.dcInit = false; this.dcMeanL = 0; this.dcMeanR = 0;
+    // second DC blocker after the filter, switched on (for good) once Drive
+    // bends an asymmetric wave into DC and the filter would pass it
+    this.pdOn = false; this.pdxL = 0; this.pdyL = 0; this.pdxR = 0; this.pdyR = 0;
+    // filter type in use; on a change the old type keeps running and fades
+    // out (weight ftW, falling by ftDW per sample)
+    this.ft = -1; this.ftOld = 0; this.ftW = 0; this.ftDW = 0;
+    // comb: delay lines (L then R, each combLen long), write index, ramps of
+    // the delay (samples), loop gain g^2, feed-forward (2 formant - 1) g, makeup
+    this.comb = null; this.combLen = 0; this.cw = 0;
+    this.cD = 100; this.dcD = 0; this.cFb = 0; this.dcFb = 0; this.cFf = 0; this.dcFf = 0; this.cMk = 1; this.dcMk = 0;
+    // vowel: per formant g, k, amplitude (current + per-sample delta) and
+    // the SVF states (ic1, ic2 for L then R)
+    this.vf = new Float64Array(9); this.dvf = new Float64Array(9); this.vs = new Float64Array(12);
+    // path in use (shape, order, travel bits: 1 ping-pong, 2 even) and the
+    // previous one, which keeps rendering and fades out (weight travW) after
+    // a change, so switching Path, Order, Direction or Travel never clicks
+    this.pShape = 0; this.pOrder = 1; this.trav = 0;
+    this.shOld = 0; this.orOld = 1; this.travOld = 0; this.travW = 0; this.travDW = 0;
+
+    // Pristine: band-limited single cycles. tabA = playing, tabB = arriving
+    // (crossfade tabX 0 -> 1); tw = weight of the table against direct
+    // rendering. Allocated when Pristine is first selected.
+    this.tabA = null; this.tabB = null; this.tabNA = 0; this.tabNB = 0;
+    this.tabX = 1; this.dTabX = 0; this.tw = 0; this.dtw = 0;
+    this.tabValid = false; this.tabCount = 0; this.calm = 0; this.drift = 0; this.tabAge = 0;
+    this.orb = new Float64Array(12);
+    this.tabKey = new Float64Array(20);    // what the arriving table was built from
   }
 
   resetState() {
@@ -223,13 +468,41 @@ class Voice {
     this.stealFade = 0; this.stealGain = 1; this.pending = false;
     this.subPh = 0;
     this.blepPend.fill(0); this.blepSkip.fill(0);
+    this.tlL = 0; this.tlR = 0;
+    this.vs.fill(0);
+    this.ftW = 0; this.travW = 0;
+    this.tabValid = false; this.tw = 0; this.dtw = 0;
+    this.pdOn = false; this.pdxL = this.pdyL = this.pdxR = this.pdyR = 0;
+    this.gRamp = false; this.dugL.fill(0); this.dugR.fill(0);
+    this.dMean = 0;
+  }
+
+  /** The voice gains a right channel mid-note: R starts from L's state, so it continues seamlessly. */
+  goStereo() {
+    this.ic1R = this.ic1L; this.ic2R = this.ic2L;
+    this.dcxR = this.dcxL; this.dcyR = this.dcyL;
+    this.tlR = this.tlL;
+    this.pdxR = this.pdxL; this.pdyR = this.pdyL;
+    for (let i = 0; i < 6; i++) this.vs[6 + i] = this.vs[i];
+    if (this.comb) this.comb.copyWithin(this.combLen, 0, this.combLen);
+    this.stereo = true;
+  }
+
+  /** Copy every scalar and small array of another voice (big buffers are the caller's business). */
+  copyFrom(o) {
+    for (const key of Object.keys(o)) {
+      if (key === 'comb' || key === 'tabA' || key === 'tabB') continue;
+      const a = o[key];
+      if (ArrayBuffer.isView(a)) this[key].set(a);
+      else if (a === null || typeof a !== 'object') this[key] = a;
+    }
   }
 }
 
 // --- part ------------------------------------------------------------------
 
 class Part {
-  constructor(index, sr) {
+  constructor(index, sr, os) {
     this.index = index;
     this.params = new Float64Array(NPARAMS);
     for (let i = 0; i < NPARAMS; i++) this.params[i] = PART_PARAMS[i].default;
@@ -244,6 +517,8 @@ class Part {
     this.lfoDepth = new Float64Array(NMOD).fill(MOD_DEFAULT.lfoDepth);
     this.envDepth = new Float64Array(NMOD).fill(MOD_DEFAULT.envDepth);
     this.retrig = new Uint8Array(NMOD).fill(MOD_DEFAULT.retrig);
+    this.lfoSteps = new Float64Array(NMOD * LFO_STEP_COUNT);
+    for (let m = 0; m < NMOD; m++) for (let s = 0; s < LFO_STEP_COUNT; s++) this.lfoSteps[m * LFO_STEP_COUNT + s] = DEFAULT_LFO_STEPS[s];
 
     this.lfoPhase = new Float64Array(NMOD);
     this.lfoOffset = new Float64Array(NMOD);   // phase offset for transport-anchored, retriggered LFOs
@@ -256,17 +531,44 @@ class Part {
     this.partNorm = new Float64Array(NMOD);
     this.partPlain = new Float64Array(NMOD);
 
+    // Links: up to MAX_LINKS routes. partLink = the summed contribution of the
+    // part-wide sources per slot; vLinked = slots with a per-voice source.
+    this.nLinks = 0;
+    this.lkSrc = new Int32Array(MAX_LINKS); this.lkDst = new Int32Array(MAX_LINKS);
+    this.lkAmt = new Float64Array(MAX_LINKS); this.lkCurve = new Int32Array(MAX_LINKS);
+    this.partLink = new Float64Array(NMOD);
+    this.vLinked = new Uint8Array(NMOD);
+    this.voiceLinks = false; this.needTerrH = false; this.orbitVoiceMod = false; this.trackMean = false;
+    this.wheel = 0;
+    this.pressure = 0; this.slide = 0;
+    // until the host sends the part's Links, the default set (Mod Wheel ->
+    // Morph, what used to be hard-wired) applies
+    for (const l of DEFAULT_LINKS) {
+      const m = MOD_SLOT[l.dst];
+      if (m === undefined || this.nLinks >= MAX_LINKS) continue;
+      this.lkSrc[this.nLinks] = l.src; this.lkDst[this.nLinks] = m;
+      this.lkAmt[this.nLinks] = l.amt; this.lkCurve[this.nLinks] = l.curve;
+      this.nLinks++;
+    }
+    this.marbleSpeed = 0; this.marbleHeight = 0; this.sMarbleSpeed = 0; this.sMarbleHeight = 0;
+
+    // timed parameter ramps, one slot per parameter (no allocation in process())
+    this.rampOn = new Uint8Array(NPARAMS);
+    this.rampStart = new Float64Array(NPARAMS); this.rampDelta = new Float64Array(NPARAMS);
+    this.rampT0 = new Float64Array(NPARAMS); this.rampDur = new Float64Array(NPARAMS);
+    this.nRamps = 0;
+
     this.voices = [];
     for (let i = 0; i < VOICES_PER_PART; i++) this.voices.push(new Voice(i));
 
     this.terrA = defaultChain();
     this.terrB = defaultChain();
+    this.terrGen = 0;                   // bumped whenever a terrain table arrives (Pristine rebuilds)
     this.oldA = null; this.fadeA = 0;   // terrain crossfade (1 -> 0)
     this.oldB = null; this.fadeB = 0;
     this.fadeACur = 0; this.dFadeA = 0; this.fadeBCur = 0; this.dFadeB = 0;
 
     this.bend = 0;
-    this.wheel = 0;
     this.spinPhase = 0;
     this.stack = new Float64Array(32);  // held notes in mono/legato, last = newest
     this.stackLen = 0;
@@ -286,15 +588,25 @@ class Part {
     this.gain = 0; this.dGain = 0; this.dly = 0; this.dDly = 0; this.rev = 0; this.dRev = 0;
     this.tail = 0;
 
-    // oversampled part bus with decimator history in front
-    this.busL = new Float64Array(HB_HIST + 2 * 256);
-    this.busR = new Float64Array(HB_HIST + 2 * 256);
+    // voice bus at the oversampled rate with the decimator history in front
+    // (hist samples); the 4x mode decimates through a 2x bus (mid)
+    this.os = os;
+    this.hist = os === 4 ? HB1_HIST : HB_HIST;
+    this.busL = new Float64Array(HB_HIST + MAX_OS * 256);
+    this.busR = new Float64Array(HB_HIST + MAX_OS * 256);
+    this.midL = new Float64Array(HB_HIST + 2 * 256);
+    this.midR = new Float64Array(HB_HIST + 2 * 256);
     this.outL = new Float64Array(256);
     this.outR = new Float64Array(256);
+    // render context: everything rate-dependent that renderVoice reads, so a
+    // ghost (the outgoing quality during a crossfade) can bring its own
+    this.rc = { os, dcR: 0, attC: 0, decC: 0, relC: 0, sus: 0.75, tiltA: 0, airNorm: null, busL: this.busL, busR: this.busR, hist: this.hist };
+    this.ghost = null;
 
     this.sr = sr;
     this.shapeI = 0; this.orderI = 1; this.ftype = 1; this.mode = 0;
     this.paceShapeI = 0; this.subT = 0;
+    this.airT = 0; this.airTone = 0; this.noteSize = 0; this.travBits = 0;
     this.gainS = 0; this.dlyS = 0; this.revS = 0;
     this.updateDerived();
   }
@@ -310,12 +622,18 @@ class Part {
     const P = this.params;
     this.shapeI = Math.max(0, Math.min(11, Math.round(P[PI.pathShape]) || 0));
     this.orderI = Math.max(1, Math.min(8, Math.round(P[PI.pathOrder]) || 1));
-    this.ftype = Math.max(0, Math.min(4, Math.round(P[PI.filterType]) || 0));
+    this.ftype = Math.max(0, Math.min(6, Math.round(P[PI.filterType]) || 0));
     this.mode = Math.max(0, Math.min(2, Math.round(P[PI.polyMode]) || 0));
     this.paceShapeI = Math.max(0, Math.min(2, Math.round(P[PI.paceShape]) || 0));
     // Sub level on a squared (audio taper) curve: half way is about -12 dB
     const sub = clamp01(P[PI.sub]);
     this.subT = SUB_GAIN * sub * sub;
+    // Air on the same taper
+    const air = clamp01(P[PI.air]);
+    this.airT = AIR_RMS * air * air;
+    this.airTone = clampPM1(P[PI.airTone]);
+    this.noteSize = clampPM1(P[PI.noteSize]);
+    this.travBits = (Math.round(P[PI.direction]) === 1 ? 1 : 0) | (Math.round(P[PI.traverse]) === 1 ? 2 : 0);
     // unison
     const U = Math.max(1, Math.min(MAX_UNISON, Math.round(P[PI.unison])));
     const det = P[PI.detune];
@@ -331,7 +649,7 @@ class Part {
       this.gUR[k] = Math.sin(ang) * norm;
     }
     // Env 1 at the oversampled rate
-    const fs2 = sr * OVERSAMPLE;
+    const fs2 = sr * this.os;
     this.attC = Math.exp(Math.log((ATTACK_OVERSHOOT - 1) / ATTACK_OVERSHOOT) / Math.max(1, P[PI.attack] * fs2));
     this.decC = Math.exp(Math.log(ENV_FLOOR) / Math.max(1, P[PI.decay] * fs2));
     this.relC = Math.exp(Math.log(ENV_FLOOR) / Math.max(1, P[PI.release] * fs2));
@@ -342,16 +660,43 @@ class Part {
     this.dec2C = Math.exp(Math.log(ENV_FLOOR) / blocks(P[PI.env2Decay]));
     this.rel2C = Math.exp(Math.log(ENV_FLOOR) / blocks(P[PI.env2Release]));
     this.sus2 = clamp01(P[PI.env2Sustain]);
+    const rc = this.rc;
+    rc.os = this.os; rc.attC = this.attC; rc.decC = this.decC; rc.relC = this.relC; rc.sus = this.sus;
   }
 
   ensureBus(frames) {
     if (this.outL.length >= frames) return;
     const n = 1 << Math.ceil(Math.log2(frames));
-    const keepL = this.busL.subarray(0, HB_HIST), keepR = this.busR.subarray(0, HB_HIST);
-    const bl = new Float64Array(HB_HIST + 2 * n), br = new Float64Array(HB_HIST + 2 * n);
-    bl.set(keepL); br.set(keepR);
-    this.busL = bl; this.busR = br;
+    const grow = (a, len, keep) => { const b = new Float64Array(len); b.set(a.subarray(0, keep)); return b; };
+    this.busL = grow(this.busL, HB_HIST + MAX_OS * n, HB_HIST);
+    this.busR = grow(this.busR, HB_HIST + MAX_OS * n, HB_HIST);
+    this.midL = grow(this.midL, HB_HIST + 2 * n, HB_HIST);
+    this.midR = grow(this.midR, HB_HIST + 2 * n, HB_HIST);
     this.outL = new Float64Array(n); this.outR = new Float64Array(n);
+    this.rc.busL = this.busL; this.rc.busR = this.busR;
+    const g = this.ghost;
+    if (g) {
+      g.busL = grow(g.busL, HB_HIST + MAX_OS * n, HB_HIST); g.busR = grow(g.busR, HB_HIST + MAX_OS * n, HB_HIST);
+      g.midL = grow(g.midL, HB_HIST + 2 * n, HB_HIST); g.midR = grow(g.midR, HB_HIST + 2 * n, HB_HIST);
+      g.outL = new Float64Array(n); g.outR = new Float64Array(n);
+      g.rc.busL = g.busL; g.rc.busR = g.busR;
+    }
+  }
+
+  /** Recompute the summed contribution of the part-wide Link sources. */
+  updatePartLinks(macros) {
+    const pl = this.partLink;
+    pl.fill(0);
+    for (let i = 0; i < this.nLinks; i++) {
+      const s = this.lkSrc[i];
+      if (!PART_SOURCE[s]) continue;
+      let x;
+      if (s === L_WHEEL) x = this.wheel;
+      else if (s === L_MSPEED) x = this.sMarbleSpeed;
+      else if (s === L_MHEIGHT) x = this.sMarbleHeight;
+      else x = macros[s - L_MACRO];
+      pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], x);
+    }
   }
 }
 
@@ -364,6 +709,22 @@ function lfoValue(shape, ph, r0, r1) {
     case 4: return r1;
     default: { const s = ph * ph * (3 - 2 * ph); return r0 + (r1 - r0) * s; }
   }
+}
+
+/**
+ * Steps LFO: the value of step floor(16 ph), reached by a STEP_SLEW linear
+ * glide from the previous step. Stateless (a function of the phase and the
+ * step length), so it follows transport anchoring and retriggers exactly.
+ */
+function stepsValue(steps, base, ph, stepDur) {
+  const x = ph * LFO_STEP_COUNT;
+  let i = x | 0;
+  if (i >= LFO_STEP_COUNT) i = LFO_STEP_COUNT - 1;
+  const cur = steps[base + i];
+  const tIn = (x - i) * stepDur;
+  if (tIn >= STEP_SLEW) return cur;
+  const prev = steps[base + (i === 0 ? LFO_STEP_COUNT - 1 : i - 1)];
+  return prev + (cur - prev) * (tIn / STEP_SLEW);
 }
 
 function finiteOr(v, d) { const n = +v; return Number.isFinite(n) ? n : d; }
@@ -390,42 +751,78 @@ function chainHeight(chain, l, wt, old, f, u, v) {
   return h;
 }
 
+/** Air: in-band (0 .. sr/2) power of the tilted noise, per unit-variance input, for tone -1..1. */
+function airNormTable(sr, fs) {
+  const a = 1 - Math.exp(-2 * Math.PI * AIR_PIVOT / fs);
+  const tab = new Float64Array(65);
+  const K = 512;
+  for (let t = 0; t <= 64; t++) {
+    const tone = t / 32 - 1;
+    const gL = Math.pow(2, -4 * Math.max(0, tone)), gH = Math.pow(2, 4 * Math.min(0, tone));
+    let p = 0;
+    for (let k = 0; k < K; k++) {
+      const w = 2 * Math.PI * ((k + 0.5) / K) * (0.5 * sr) / fs;
+      // lp = a / (1 - (1 - a) e^-jw); y = gH + (gL - gH) lp
+      const dr = 1 - (1 - a) * Math.cos(w), di = (1 - a) * Math.sin(w);
+      const den = dr * dr + di * di;
+      const lr = a * dr / den, li = -a * di / den;
+      const yr = gH + (gL - gH) * lr, yi = (gL - gH) * li;
+      p += yr * yr + yi * yi;
+    }
+    // white noise of variance s2 at rate fs puts s2 * (sr / fs) of its power below sr / 2
+    p = p / K * (sr / fs);
+    // uniform [-1, 1) noise has variance 1/3
+    tab[t] = 1 / Math.sqrt(p / 3);
+  }
+  return { a, tab };
+}
+
 // ---------------------------------------------------------------------------
 
 export class OrographDSP {
   constructor(sampleRate) {
     this.sr = sampleRate > 0 ? sampleRate : 48000;
-    this.fs2 = this.sr * OVERSAMPLE;
+    this.quality = 'standard';
+    this.os = OVERSAMPLE;
+    this.fs2 = this.sr * this.os;
+    this.mipShift = 0;
+    this.pristine = false;
+    this.pendingQuality = null;
     /** Telemetry hook; the worklet points this at port.postMessage. */
     this.postMessage = () => {};
     this.parts = [];
-    for (let i = 0; i < NUM_PARTS; i++) this.parts.push(new Part(i, this.sr));
+    for (let i = 0; i < NUM_PARTS; i++) this.parts.push(new Part(i, this.sr, this.os));
 
     this.tempo = 112;
+    this.macros = new Float64Array(4);
     this.transport = { playing: false, beatTime: 0, beat: 0 };
     this.watch = 0;
     this.voiceCounter = 0;
 
-    this.events = [];           // scheduled note events, sorted by time
+    this.events = [];           // scheduled note / parameter events, sorted by time
     this.lastTime = 0;          // currentTime of the latest process() call
+    this.nextTime = 0;          // time of the first sample of the next process() call
     this.blockTime = 0;         // time of the current control block
 
     this.ctrlRemain = 0;
+    this.sinceCtrl = CTRL;      // samples since the last control update
     this.kSmooth = 1 - Math.exp(-CTRL / (this.sr * SMOOTH_TIME));
+    this.kPress = 1 - Math.exp(-CTRL / (this.sr * PRESS_TIME));
+    this.kMarble = 1 - Math.exp(-CTRL / (this.sr * MARBLE_TIME));
     this.fadeStep = CTRL / (this.sr * TERRAIN_FADE_TIME);
-    this.stealSamples = Math.max(8, Math.round(STEAL_FADE_TIME * this.fs2));
-    this.dcR = 1 - 2 * Math.PI * 8 / this.fs2;
     /** Octaves added to the mip level choice (see mipRaw); -99 disables mip mapping (tests). */
     this.mipBias = 1;
     /** false: hard-sync restarts are left naive (no polyBLEP), for A/B tests. */
     this.blep = true;
+    this.airTabs = {};
+    this.setRateConstants();
 
     this.teleInterval = Math.max(64, Math.round(this.sr / 60));
     this.teleCount = 0;
     this.peakL = 0; this.peakR = 0;
 
     // scratch for renderVoice (a segment never spans more than one control block)
-    const n2max = OVERSAMPLE * CTRL;
+    const n2max = MAX_OS * CTRL;
     this.xs = []; this.ys = []; this.lvs = [];
     for (let q = 0; q < MAX_UNISON; q++) {
       this.xs.push(new Float64Array(n2max)); this.ys.push(new Float64Array(n2max));
@@ -435,14 +832,37 @@ export class OrographDSP {
     this.phs = new Float64Array(n2max);          // cycle phases (Laps / Pace)
     this.sumL = new Float64Array(n2max);
     this.sumR = new Float64Array(n2max);
+    this.tmpL = new Float64Array(n2max);         // second render for crossfades
+    this.tmpR = new Float64Array(n2max);
+    this.sav = new Float64Array(8 * MAX_UNISON); // oscillator state saved around a second render
     this.pst = new Float64Array(5);
     this.pt = { x: 0, y: 0 };
     this.rng = mulberry32(0x6f726f67);
+    this.linkRng = mulberry32(0x11c5);           // Random link source (own stream: unison phases stay as they were)
+    this.noiseSeed = 0x2545f491;
     // hard-sync restarts of the current segment: oscillator, sample (n2 = look-ahead), fraction, laps
     this.evQ = new Int32Array(MAX_SYNC_EVENTS);
     this.evJ = new Int32Array(MAX_SYNC_EVENTS);
     this.evD = new Float64Array(MAX_SYNC_EVENTS);
     this.evL = new Float64Array(MAX_SYNC_EVENTS);
+    // Pristine scratch (allocated on first use of the mode)
+    this.fft = null;
+    this.keyScratch = new Float64Array(20);
+    this.tabBudget = TABLE_BUDGET;
+  }
+
+  /** Everything that follows the oversampled rate. */
+  setRateConstants() {
+    this.fs2 = this.sr * this.os;
+    this.stealSamples = Math.max(8, Math.round(STEAL_FADE_TIME * this.fs2));
+    this.dcR = 1 - 2 * Math.PI * 8 / this.fs2;
+    const key = String(this.os);
+    if (!this.airTabs[key]) this.airTabs[key] = airNormTable(this.sr, this.fs2);
+    const air = this.airTabs[key];
+    for (const P of this.parts) {
+      const rc = P.rc;
+      rc.dcR = this.dcR; rc.tiltA = air.a; rc.airNorm = air.tab;
+    }
   }
 
   // ---- message protocol ---------------------------------------------------
@@ -450,7 +870,10 @@ export class OrographDSP {
   handleMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
-      case 'params': this.setParams(msg.part, msg.p); break;
+      case 'params':
+        if (msg.time !== undefined || msg.ramp !== undefined) this.scheduleParams(msg);
+        else this.setParams(msg.part, msg.p);
+        break;
       case 'mods': this.setMods(msg.part, msg.m); break;
       case 'global': this.setGlobal(msg.p); break;
       case 'terrain': this.setTerrain(msg.part, msg.slot, msg.levels); break;
@@ -460,6 +883,17 @@ export class OrographDSP {
       case 'panic': this.panic(); break;
       case 'bend': { const P = this.partAt(msg.part); if (P) P.bend = Math.max(-1, Math.min(1, finiteOr(msg.v, 0))); break; }
       case 'wheel': { const P = this.partAt(msg.part); if (P) P.wheel = clamp01(finiteOr(msg.v, 0)); break; }
+      case 'pressure': this.setTouch(msg, 'press'); break;
+      case 'slide': this.setTouch(msg, 'slide'); break;
+      case 'marble': {
+        const P = this.partAt(msg.part);
+        if (!P) break;
+        P.marbleSpeed = clamp01(finiteOr(msg.speed, 0));
+        P.marbleHeight = clampPM1(finiteOr(msg.height, 0));
+        break;
+      }
+      case 'links': this.setLinks(msg.part, msg.links); break;
+      case 'quality': this.setQuality(msg.mode); break;
       case 'watch': { const i = Math.round(finiteOr(msg.part, 0)); if (i >= 0 && i < NUM_PARTS) this.watch = i; break; }
       case 'transport':
         this.transport.playing = !!msg.playing;
@@ -484,12 +918,36 @@ export class OrographDSP {
       if (idx === undefined) continue;
       const val = +p[id];
       if (!Number.isFinite(val)) continue;
-      P.params[idx] = val;
-      const m = MOD_SLOT[id];
-      if (m !== undefined) P.baseNorm[m] = toNorm(MOD_DEFS[m], val);
+      this.writeParam(P, idx, val);
+      if (P.rampOn[idx]) { P.rampOn[idx] = 0; P.nRamps--; }
     }
     P.updateDerived();
+    this.prepareFeatures(P);
     if (P.mode !== oldMode) this.releasePart(P);
+  }
+
+  writeParam(P, idx, val) {
+    P.params[idx] = val;
+    const m = MOD_SLOT[PART_PARAMS[idx].id];
+    if (m !== undefined) P.baseNorm[m] = toNorm(MOD_DEFS[m], val);
+  }
+
+  /**
+   * Allocation the audio callback must not do: Even tables around the current
+   * Shape, comb delay lines when a part selects the Comb filter.
+   */
+  prepareFeatures(P) {
+    if (P.travBits & 2) prepareEven(P.shapeI, P.orderI, P.params[PI.pathParam]);
+    if (P.ftype === 5) this.ensureComb(P);
+  }
+
+  ensureComb(P) {
+    const len = 1 << Math.ceil(Math.log2(2 * Math.ceil(this.fs2 / COMB_FMIN) + 8));
+    for (const v of P.voices) {
+      if (v.comb && v.combLen === len) continue;
+      v.comb = new Float32Array(2 * len);
+      v.combLen = len; v.cw = 0;
+    }
   }
 
   setMods(part, mods) {
@@ -499,19 +957,85 @@ export class OrographDSP {
       const m = MOD_SLOT[id];
       const o = mods[id];
       if (m === undefined || !o || typeof o !== 'object') continue;
-      if (o.lfoShape !== undefined) P.lfoShape[m] = Math.max(0, Math.min(5, Math.round(finiteOr(o.lfoShape, 0))));
+      if (o.lfoShape !== undefined) P.lfoShape[m] = Math.max(0, Math.min(6, Math.round(finiteOr(o.lfoShape, 0))));
       if (o.lfoRate !== undefined) P.lfoRate[m] = Math.max(0.01, Math.min(30, finiteOr(o.lfoRate, 0.5)));
       if (o.lfoSync !== undefined) P.lfoSync[m] = finiteOr(o.lfoSync, 0) ? 1 : 0;
       if (o.lfoDiv !== undefined) P.lfoDiv[m] = Math.max(0, Math.min(SYNC_DIVS.length - 1, Math.round(finiteOr(o.lfoDiv, 5))));
       if (o.lfoDepth !== undefined) P.lfoDepth[m] = Math.max(-1, Math.min(1, finiteOr(o.lfoDepth, 0)));
       if (o.envDepth !== undefined) P.envDepth[m] = Math.max(-1, Math.min(1, finiteOr(o.envDepth, 0)));
       if (o.retrig !== undefined) P.retrig[m] = finiteOr(o.retrig, 0) ? 1 : 0;
+      if (o.steps !== undefined && o.steps !== null && typeof o.steps.length === 'number') {
+        const base = m * LFO_STEP_COUNT;
+        for (let s = 0; s < LFO_STEP_COUNT; s++) {
+          const x = s < o.steps.length ? finiteOr(o.steps[s], DEFAULT_LFO_STEPS[s]) : DEFAULT_LFO_STEPS[s];
+          P.lfoSteps[base + s] = clampPM1(x);
+        }
+      }
     }
+    this.updateLinkFlags(P);
   }
 
   setGlobal(p) {
     if (!p || typeof p !== 'object') return;
     if (p.tempo !== undefined) this.tempo = Math.max(20, Math.min(400, finiteOr(p.tempo, this.tempo)));
+    for (let i = 0; i < 4; i++) {
+      const v = p['macro' + (i + 1)];
+      if (v !== undefined) this.macros[i] = clamp01(finiteOr(v, this.macros[i]));
+    }
+  }
+
+  /** {t:'pressure' | 'slide', part, v, note?}: channel-wide, or one note's (poly AT / MPE). */
+  setTouch(msg, field) {
+    const P = this.partAt(msg.part);
+    if (!P) return;
+    let v = finiteOr(msg.v, 0);
+    if (v > 1) v /= 127;
+    v = clamp01(v);
+    const note = msg.note === undefined || msg.note === null ? NaN : +msg.note;
+    if (Number.isFinite(note)) {
+      for (const vc of P.voices) if (vc.active && sameNote(vc.note, note)) vc[field] = v;
+    } else if (field === 'press') P.pressure = v;
+    else P.slide = v;
+  }
+
+  setLinks(part, links) {
+    const P = this.partAt(part);
+    if (!P || !Array.isArray(links)) return;
+    let n = 0;
+    for (const l of links) {
+      if (n >= MAX_LINKS) break;
+      if (!l || typeof l !== 'object') continue;
+      const m = MOD_SLOT[l.dst];
+      if (m === undefined) continue;
+      const src = Math.round(finiteOr(l.src, -1));
+      if (src < 0 || src >= NSRC) continue;
+      P.lkSrc[n] = src;
+      P.lkDst[n] = m;
+      P.lkAmt[n] = clampPM1(finiteOr(l.amt, 0));
+      P.lkCurve[n] = Math.max(0, Math.min(NCURVES - 1, Math.round(finiteOr(l.curve, 0))));
+      n++;
+    }
+    P.nLinks = n;
+    this.updateLinkFlags(P);
+    P.updatePartLinks(this.macros);
+  }
+
+  /** Which slots need per-voice evaluation, and whether the orbit is modulated per voice. */
+  updateLinkFlags(P) {
+    P.vLinked.fill(0);
+    P.voiceLinks = false; P.needTerrH = false;
+    for (let i = 0; i < P.nLinks; i++) {
+      const s = P.lkSrc[i];
+      if (s === L_TERRAIN) P.needTerrH = true;
+      if (PART_SOURCE[s]) continue;
+      P.vLinked[P.lkDst[i]] = 1;
+      P.voiceLinks = true;
+    }
+    let orbit = false, mean = false;
+    for (const m of ORBIT_SLOTS) if (P.vLinked[m] || P.envDepth[m] !== 0) orbit = true;
+    for (const m of MEAN_SLOTS) if (P.vLinked[m] || P.envDepth[m] !== 0) mean = true;
+    P.orbitVoiceMod = orbit;
+    P.trackMean = mean;
   }
 
   setTerrain(part, slot, levels) {
@@ -528,8 +1052,9 @@ export class OrographDSP {
     }
     if (!chain.length) return;
     extendChain(chain);
+    P.terrGen++;
     const isB = slot === 1 || slot === 'B' || slot === 'b';
-    const live = P.activeCount() > 0;
+    const live = P.activeCount() > 0 || (P.ghost !== null && P.ghost.left > 0);
     if (isB) {
       if (live) { P.oldB = P.terrB; P.fadeB = 1; P.fadeBCur = 1; P.dFadeB = 0; }
       P.terrB = chain;
@@ -550,11 +1075,89 @@ export class OrographDSP {
       if (type === 1) this.noteOn(P, note, vel); else this.noteOff(P, note);
       return;
     }
-    const ev = { type, part: P.index, note, vel, time };
+    this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0 });
+  }
+
+  /** Sorted insert; at equal times parameter changes go before notes (a note sees its step's params). */
+  insertEvent(ev) {
     const E = this.events;
     let i = E.length;
-    while (i > 0 && E[i - 1].time > time) i--;
+    while (i > 0 && (E[i - 1].time > ev.time || (ev.type === 2 && E[i - 1].type !== 2 && E[i - 1].time === ev.time))) i--;
     E.splice(i, 0, ev);
+  }
+
+  /** {t:'params', part, p, time?, ramp?}: sample-accurate and/or gliding parameter changes. */
+  scheduleParams(msg) {
+    const P = this.partAt(msg.part);
+    const p = msg.p;
+    if (!P || !p || typeof p !== 'object') return;
+    const vals = {};
+    let any = false;
+    for (const id in p) {
+      if (PI[id] === undefined) continue;
+      const v = +p[id];
+      if (!Number.isFinite(v)) continue;
+      vals[id] = v; any = true;
+    }
+    if (!any) return;
+    const ramp = Math.max(0, finiteOr(msg.ramp, 0));
+    const time = finiteOr(msg.time, 0);
+    if (vals.filterType !== undefined && Math.round(vals.filterType) === 5) this.ensureComb(P);
+    if (vals.traverse !== undefined && Math.round(vals.traverse) === 1) {
+      prepareEven(vals.pathShape ?? P.shapeI, vals.pathOrder ?? P.orderI, vals.pathParam ?? P.params[PI.pathParam]);
+    }
+    if (time > 0 && time > this.lastTime) {
+      this.insertEvent({ type: 2, part: P.index, note: 0, vel: 0, time, p: vals, ramp });
+    } else {
+      // due now: starts with the next block (no forced control update, like any other message)
+      this.applyParams(P, vals, ramp, this.nextTime > this.lastTime ? this.nextTime : this.lastTime, false);
+    }
+  }
+
+  /**
+   * Apply a parameter change at `time`: continuous params glide linearly over
+   * `ramp` seconds (wrap-aware for rotate / centerX / centerY), the rest
+   * jump. `force` starts a control block right here, so the change is heard
+   * from this very sample rather than from the next control boundary.
+   */
+  applyParams(P, vals, ramp, time, force) {
+    const oldMode = P.mode;
+    for (const id in vals) {
+      const idx = PI[id];
+      const target = vals[id];
+      if (ramp > 0 && RAMPABLE[idx]) {
+        const start = P.params[idx];
+        const range = WRAP_RANGE[idx];
+        const delta = range > 0 ? wrapHalf((target - start) / range) * range : target - start;
+        if (!P.rampOn[idx]) { P.rampOn[idx] = 1; P.nRamps++; }
+        P.rampStart[idx] = start; P.rampDelta[idx] = delta; P.rampT0[idx] = time; P.rampDur[idx] = ramp;
+      } else {
+        if (P.rampOn[idx]) { P.rampOn[idx] = 0; P.nRamps--; }
+        this.writeParam(P, idx, target);
+      }
+    }
+    P.updateDerived();
+    if (P.mode !== oldMode) this.releasePart(P);
+    if (force) this.ctrlRemain = 0;
+  }
+
+  /** Advance the part's timed ramps to the current control block. */
+  advanceRamps(P) {
+    const t = this.blockTime;
+    let touched = false;
+    for (let idx = 0; idx < NPARAMS; idx++) {
+      if (!P.rampOn[idx]) continue;
+      const dur = P.rampDur[idx];
+      let x = dur > 0 ? (t - P.rampT0[idx]) / dur : 1;
+      if (x < 0) continue;
+      if (x >= 1) { x = 1; P.rampOn[idx] = 0; P.nRamps--; }
+      let val = P.rampStart[idx] + P.rampDelta[idx] * x;
+      const range = WRAP_RANGE[idx];
+      if (range > 0) val -= Math.floor(val / range) * range;
+      this.writeParam(P, idx, val);
+      touched = true;
+    }
+    if (touched) P.updateDerived();
   }
 
   allOff(part) {
@@ -564,7 +1167,8 @@ export class OrographDSP {
       if (only && P !== only) continue;
       this.releasePart(P);
     }
-    this.events = this.events.filter(e => only && e.part !== only.index);
+    // note events of the affected parts are dropped; scheduled parameter changes stay
+    this.events = this.events.filter(e => e.type === 2 || (only && e.part !== only.index));
   }
 
   releasePart(P) {
@@ -580,10 +1184,119 @@ export class OrographDSP {
     for (const P of this.parts) {
       for (const v of P.voices) { v.active = false; v.gate = false; v.resetState(); }
       P.stackLen = 0;
-      P.busL.fill(0); P.busR.fill(0);
+      P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0);
       P.tail = 0;
       P.oldA = P.oldB = null; P.fadeA = P.fadeB = P.fadeACur = P.fadeBCur = 0;
+      if (P.ghost) P.ghost.left = 0;
     }
+  }
+
+  // ---- quality ----------------------------------------------------------------
+
+  /** {t:'quality', mode}. Changing the rate or the mips crossfades from a frozen copy of the voices. */
+  setQuality(mode) {
+    const q = QUALITY[mode];
+    if (!q) return;
+    if (this.parts.some(P => P.ghost !== null && P.ghost.left > 0)) { this.pendingQuality = mode; return; }
+    this.pendingQuality = null;
+    if (mode === this.quality) return;
+    const reshape = q.os !== this.os || q.mipShift !== this.mipShift;
+    if (reshape) {
+      for (const P of this.parts) if (P.activeCount() > 0 || P.tail > 0) this.startGhost(P);
+    }
+    const ratio = this.os / q.os;
+    const osChanged = q.os !== this.os;
+    this.quality = mode;
+    this.os = q.os;
+    this.mipShift = q.mipShift;
+    this.pristine = q.pristine;
+    this.setRateConstants();
+    const fsOld = this.fs2 * ratio;
+    for (const P of this.parts) {
+      P.os = q.os;
+      P.updateDerived();
+      if (osChanged) {
+        P.hist = q.os === 4 ? HB1_HIST : HB_HIST;
+        P.rc.hist = P.hist;
+        P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0);
+        if (P.ftype === 5 || P.voices.some(v => v.comb)) this.ensureComb(P);
+        for (const v of P.voices) {
+          // per-sample increments follow the rate; everything else is
+          // re-ramped by the control update forced below
+          for (let k = 0; k < MAX_UNISON; k++) { v.inc[k] *= ratio; v.dinc[k] = 0; }
+          v.subInc *= ratio; v.dSubInc = 0;
+          v.stealStep *= ratio;
+          v.ftDW *= ratio; v.travDW *= ratio;
+          // same cutoff at the new rate
+          const fc = Math.atan(v.g) * fsOld / Math.PI;
+          v.g = Math.tan(Math.PI * Math.min(fc, 0.45 * this.fs2) / this.fs2);
+          v.cD /= ratio;
+          for (let i = 0; i < 3; i++) {
+            const fv = Math.atan(v.vf[i]) * fsOld / Math.PI;
+            v.vf[i] = Math.tan(Math.PI * Math.min(fv, 0.45 * this.fs2) / this.fs2);
+          }
+          if (v.comb) v.comb.fill(0);
+          v.cw = 0;
+          v.tabValid = false; v.tw = 0; v.dtw = 0;
+        }
+      }
+      if (!this.pristine) for (const v of P.voices) v.dtw = v.tw > 0 ? -1 / (TABLE_FADE * this.fs2) : 0;
+    }
+    if (this.pristine) this.ensurePristine();
+    this.ctrlRemain = 0;
+  }
+
+  ensurePristine() {
+    if (!this.fft) {
+      this.fft = new FFT(TAB_MAX);
+      this.fre = new Float64Array(TAB_MAX); this.fim = new Float64Array(TAB_MAX);
+      this.tT = new Float64Array(TAB_MAX);
+      this.tX = new Float64Array(TAB_MAX); this.tY = new Float64Array(TAB_MAX); this.tLv = new Float64Array(TAB_MAX);
+    }
+    for (const P of this.parts) {
+      for (const v of P.voices) {
+        if (!v.tabA) { v.tabA = new Float64Array(TAB_MAX + 3); v.tabB = new Float64Array(TAB_MAX + 3); }
+      }
+    }
+  }
+
+  /** Freeze a copy of the part's voices and decimator state in the outgoing quality. */
+  startGhost(P) {
+    let g = P.ghost;
+    if (!g) {
+      const n = P.outL.length;
+      g = P.ghost = {
+        voices: P.voices.map((_, i) => new Voice(i)),
+        busL: new Float64Array(P.busL.length), busR: new Float64Array(P.busR.length),
+        midL: new Float64Array(P.midL.length), midR: new Float64Array(P.midR.length),
+        outL: new Float64Array(n), outR: new Float64Array(n),
+        left: 0, total: 0, rc: null,
+      };
+    }
+    g.rc = { ...P.rc, busL: g.busL, busR: g.busR };
+    g.busL.fill(0); g.busR.fill(0); g.midL.fill(0); g.midR.fill(0);
+    g.busL.set(P.busL.subarray(0, P.hist)); g.busR.set(P.busR.subarray(0, P.hist));
+    g.midL.set(P.midL.subarray(0, HB_HIST)); g.midR.set(P.midR.subarray(0, HB_HIST));
+    for (let i = 0; i < P.voices.length; i++) {
+      const v = P.voices[i], gv = g.voices[i];
+      gv.copyFrom(v);
+      gv.pending = false;
+      if (v.comb) {
+        if (!gv.comb || gv.comb.length !== v.comb.length) gv.comb = new Float32Array(v.comb.length);
+        gv.comb.set(v.comb);
+      }
+      // frozen: every control ramp stops where it is for the ~12 ms fade
+      gv.dtA = gv.dtB = gv.dtC = gv.dtD = gv.dcx = gv.dcy = 0;
+      gv.dMorph = gv.dWarp = gv.dLift = gv.dFold = gv.dParam = 0;
+      gv.dg = gv.dk = gv.dDrive = gv.dgl = gv.dgr = 0;
+      gv.dwA = gv.dwB = gv.dcLvA = gv.dcLvB = gv.dLaps = gv.dPace = 0;
+      gv.dSubInc = gv.dSubLv = gv.daH = gv.daD = 0;
+      gv.dcD = gv.dcFb = gv.dcFf = gv.dcMk = 0;
+      gv.dvf.fill(0); gv.dinc.fill(0);
+      gv.dugL.fill(0); gv.dugR.fill(0); gv.gRamp = false; gv.dMean = 0;
+      gv.tw = 0; gv.dtw = 0; gv.travW = 0; gv.ftW = 0;
+    }
+    g.total = g.left = Math.max(CTRL, Math.round(QUALITY_FADE * this.sr));
   }
 
   // ---- notes ----------------------------------------------------------------
@@ -607,8 +1320,9 @@ export class OrographDSP {
         P.lfoOffset[m] = 0;
       }
       P.lfoPhase[m] = 0;
-      if (P.lfoShape[m] >= 4) { P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = P.rng() * 2 - 1; }
-      P.lfoVal[m] = lfoValue(P.lfoShape[m], 0, P.lfoR0[m], P.lfoR1[m]);
+      const shape = P.lfoShape[m];
+      if (shape === 4 || shape === 5) { P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = P.rng() * 2 - 1; }
+      P.lfoVal[m] = shape === 6 ? P.lfoSteps[m * LFO_STEP_COUNT + LFO_STEP_COUNT - 1] : lfoValue(shape, 0, P.lfoR0[m], P.lfoR1[m]);
     }
     this.partMods(P);
   }
@@ -663,6 +1377,8 @@ export class OrographDSP {
       v.note = note;
       v.gate = true;
       v.order = ++this.voiceCounter;
+      v.rand = this.linkRng() * 2 - 1;
+      v.press = 0; v.slide = 0;
       if (!legato) {
         v.vel = vel;
         v.velGain = this.velGain(P, vel);
@@ -717,6 +1433,7 @@ export class OrographDSP {
     v.order = ++this.voiceCounter;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
+    v.rand = this.linkRng() * 2 - 1;
   }
 
   startVoice(P, v, note, vel, glideFrom) {
@@ -733,32 +1450,60 @@ export class OrographDSP {
     v.uniPrev = 0;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
+    v.rand = this.linkRng() * 2 - 1;
+    v.press = 0; v.slide = 0;
+    v.sPress = P.pressure; v.sSlide = P.slide;
+    // a fresh noise stream per note, so stacked voices never hiss in unison
+    this.noiseSeed = (Math.imul(this.noiseSeed ^ (this.noiseSeed >>> 15), 0x2c1b3c6d) + 0x6d2b79f5) | 0;
+    v.nz = this.noiseSeed || 1;
+    if (v.comb) { v.comb.fill(0); v.cw = 0; }
+    v.ft = -1;
+    v.trav = P.travBits; v.pShape = P.shapeI; v.pOrder = P.orderI;
+    v.uRun = P.uni; v.stereo = P.uni > 1;
+    for (let q = 0; q < MAX_UNISON; q++) { v.ugL[q] = q < P.uni ? P.gUL[q] : 0; v.ugR[q] = q < P.uni ? P.gUR[q] : 0; }
+    v.mTrack = P.trackMean;
     // the part's shared modulation may be stale if it has been idle
     this.partMods(P);
     this.controlVoice(P, v, true);
     // Start the DC blocker as if it had always been running on this orbit, so
     // an orbit over high ground does not thump while the blocker settles.
     const mean = this.orbitMean(P, v);
-    let gl = 0, gr = 0;
-    for (let q = 0; q < P.uni; q++) { gl += P.gUL[q]; gr += P.gUR[q]; }
-    v.dcMeanL = mean * gl;
-    v.dcMeanR = mean * gr;
+    if (v.mTrack) {
+      // the tracked mean is removed before the blocker, which then starts at rest
+      v.mCur = mean;
+      v.dcMeanL = 0; v.dcMeanR = 0;
+    } else {
+      let gl = 0, gr = 0;
+      for (let q = 0; q < P.uni; q++) { gl += P.gUL[q]; gr += P.gUR[q]; }
+      v.dcMeanL = mean * gl;
+      v.dcMeanR = mean * gr;
+    }
     v.dcInit = true;
   }
 
-  /** Mean shaped terrain height over one cycle of the voice's current orbit (with Pace and Laps). */
+  /** Map a path phase through a travel setting (ping-pong, even). */
+  travelMap(shape, order, t, param, trav) {
+    if (trav & 1) t = pingPong(t);
+    if (trav & 2) t = evenPhase(shape, order, param, t);
+    return t;
+  }
+
+  /** Mean shaped terrain height over one cycle of the voice's current orbit (with Pace, Laps and travel). */
   orbitMean(P, v) {
     const pt = this.pt;
-    const L = v.laps, pc = v.pace, shp = v.paceShape;
-    const plain = L === 1 && pc === 0;
+    const L = v.laps, pc = v.pace, shp = v.paceShape, trav = v.trav;
+    const plain = L === 1 && pc === 0 && trav === 0;
     // more points when Laps/Pace crowd several traversals into one cycle
     const K = plain ? 48 : 192;
     const A = P.terrA[Math.min(v.lA, P.terrA.length - 1)], B = P.terrB[Math.min(v.lB, P.terrB.length - 1)];
     let sum = 0;
     for (let i = 0; i < K; i++) {
       let t = i / K;
-      if (!plain) { t = L * paceWarp(t, pc, shp); t -= Math.floor(t); }
-      pathPoint(P.shapeI, t, P.orderI, v.param, pt);
+      if (!plain) {
+        t = L * paceWarp(t, pc, shp); t -= Math.floor(t);
+        if (trav !== 0) t = this.travelMap(v.pShape, v.pOrder, t, v.param, trav);
+      }
+      pathPoint(v.pShape, t, v.pOrder, v.param, pt);
       let u = v.cx + pt.x * v.tA - pt.y * v.tB;
       let w = v.cy + pt.x * v.tC + pt.y * v.tD;
       if (v.warp > 0) {
@@ -778,6 +1523,20 @@ export class OrographDSP {
     return sum / K;
   }
 
+  /** Terrain height (warp + morph, before Lift/Fold) at (u, v) on the full-resolution tables. */
+  terrainHeightAt(P, u, w, morph, warp) {
+    if (warp > 0) {
+      const ww = warp * 0.06;
+      const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+      w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+      u = u2;
+    }
+    const A = P.terrA[0];
+    let h = bil(A.data, A.size, A.size - 1, u, w);
+    if (morph > 1e-4) { const B = P.terrB[0]; h += morph * (bil(B.data, B.size, B.size - 1, u, w) - h); }
+    return h;
+  }
+
   currentBeats() {
     const T = this.transport;
     return T.beat + (this.blockTime - T.beatTime) * this.tempo / 60;
@@ -785,34 +1544,40 @@ export class OrographDSP {
 
   // ---- control rate ---------------------------------------------------------
 
-  advanceLfos(P) {
-    const dt = CTRL / this.sr;
+  advanceLfos(P, dt) {
     const anchored = this.transport.playing;
     const beats = anchored ? this.currentBeats() : 0;
     for (let m = 0; m < NMOD; m++) {
       const prev = P.lfoPhase[m];
-      let ph;
+      let ph, period;
       if (P.lfoSync[m]) {
         const div = SYNC_DIVS[P.lfoDiv[m]].beats;
+        period = div * 60 / this.tempo;
         if (anchored) {
           ph = beats / div + P.lfoOffset[m];
         } else {
           ph = prev + (this.tempo / 60 / div) * dt;
         }
       } else {
+        period = 1 / P.lfoRate[m];
         ph = prev + P.lfoRate[m] * dt;
       }
       ph -= Math.floor(ph);
       if (ph < prev) { P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = P.rng() * 2 - 1; }
       P.lfoPhase[m] = ph;
-      P.lfoVal[m] = lfoValue(P.lfoShape[m], ph, P.lfoR0[m], P.lfoR1[m]);
+      const shape = P.lfoShape[m];
+      P.lfoVal[m] = shape === 6
+        ? stepsValue(P.lfoSteps, m * LFO_STEP_COUNT, ph, period / LFO_STEP_COUNT)
+        : lfoValue(shape, ph, P.lfoR0[m], P.lfoR1[m]);
     }
   }
 
   partMods(P) {
+    P.updatePartLinks(this.macros);
+    const PL = P.partLink;
     for (let m = 0; m < NMOD; m++) {
       let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m];
-      if (m === M_MORPH) n += P.wheel;
+      n += PL[m];
       n = MOD_WRAPS[m] ? n - Math.floor(n) : clamp01(n);
       P.partNorm[m] = n;
       P.partPlain[m] = fromNorm(MOD_DEFS[m], n);
@@ -833,6 +1598,21 @@ export class OrographDSP {
         if (v.env2Lvl <= 0) { v.env2Lvl = 0; v.env2Stage = IDLE; }
         break;
       default: break;
+    }
+  }
+
+  /** Value of a per-voice Link source. */
+  voiceSource(P, v, s) {
+    switch (s) {
+      case L_VEL: return clamp01(v.vel);
+      case L_PRESS: return v.sPress;
+      case L_KEY: return clampPM1((v.pitch - 60) / 48);
+      case L_SLIDE: return v.sSlide;
+      case L_ENV1: return v.envLvl;
+      case L_ENV2: return v.env2Lvl;
+      case L_RAND: return v.rand;
+      case L_TERRAIN: return clampPM1(v.terrH);
+      default: return 0;
     }
   }
 
@@ -864,17 +1644,42 @@ export class OrographDSP {
       v.pitch = v.note;
     }
 
-    // modulation in normalised space
+    // modulation in normalised space: base + LFO + Env 2 + Links
     const e2 = v.env2Lvl;
     const MN = v.modNorm, MP = v.modPlain;
+    const VL = this.tmpL;      // per-voice link sums (scratch, free outside renderVoice)
+    if (P.voiceLinks) {
+      // pressure and slide: the note's own value or the channel's, smoothed (MIDI steps)
+      const pt = v.press > P.pressure ? v.press : P.pressure, st = v.slide > P.slide ? v.slide : P.slide;
+      if (snap) { v.sPress = pt; v.sSlide = st; } else {
+        v.sPress = Math.abs(pt - v.sPress) < 1e-6 ? pt : v.sPress + (pt - v.sPress) * this.kPress;
+        v.sSlide = Math.abs(st - v.sSlide) < 1e-6 ? st : v.sSlide + (st - v.sSlide) * this.kPress;
+      }
+      for (let m = 0; m < NMOD; m++) VL[m] = 0;
+      for (let i = 0; i < P.nLinks; i++) {
+        const s = P.lkSrc[i];
+        if (PART_SOURCE[s]) continue;
+        VL[P.lkDst[i]] += P.lkAmt[i] * linkCurve(P.lkCurve[i], this.voiceSource(P, v, s));
+      }
+    }
+    const PL = P.partLink;
     for (let m = 0; m < NMOD; m++) {
       const ed = P.envDepth[m];
-      if (ed === 0) { MN[m] = P.partNorm[m]; MP[m] = P.partPlain[m]; continue; }
+      const vl = P.vLinked[m];
+      if (ed === 0 && vl === 0) { MN[m] = P.partNorm[m]; MP[m] = P.partPlain[m]; continue; }
       let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m] + e2 * ed;
-      if (m === M_MORPH) n += P.wheel;
+      n += PL[m];
+      if (vl) n += VL[m];
       n = MOD_WRAPS[m] ? n - Math.floor(n) : clamp01(n);
       MN[m] = n;
       MP[m] = fromNorm(MOD_DEFS[m], n);
+    }
+    // Key>Size: higher notes shrink or grow the orbit, per voice
+    if (P.noteSize !== 0) {
+      let s = MP[M_SIZE] * Math.pow(2, P.noteSize * (v.pitch - 60) / 24);
+      s = s < 0 ? 0 : s > 0.5 ? 0.5 : s;
+      MP[M_SIZE] = s;
+      MN[M_SIZE] = toNorm(SIZE_DEF, s);
     }
 
     // one-pole smoothing of the targets (wrap-aware for angles and the dot)
@@ -883,6 +1688,7 @@ export class OrographDSP {
       v.sCx = MP[M_CX]; v.sCy = MP[M_CY]; v.sMorph = MP[M_MORPH]; v.sWarp = MP[M_WARP];
       v.sLift = MP[M_LIFT]; v.sFold = MP[M_FOLD]; v.sParam = MP[M_PARAM];
       v.sCut = Math.log2(MP[M_CUTOFF]); v.sRes = MP[M_RES]; v.sDrive = MP[M_DRIVE]; v.sPan = MP[M_PAN];
+      v.sFormant = MP[M_FORMANT];
     } else {
       v.sSize += (MP[M_SIZE] - v.sSize) * k;
       v.sStretch += (MP[M_STRETCH] - v.sStretch) * k;
@@ -898,14 +1704,15 @@ export class OrographDSP {
       v.sRes += (MP[M_RES] - v.sRes) * k;
       v.sDrive += (MP[M_DRIVE] - v.sDrive) * k;
       v.sPan += (MP[M_PAN] - v.sPan) * k;
+      v.sFormant += (MP[M_FORMANT] - v.sFormant) * k;
       v.sRot -= Math.floor(v.sRot / 360) * 360;
       v.sCx -= Math.floor(v.sCx);
       v.sCy -= Math.floor(v.sCy);
     }
 
-    // Laps / Pace / Sub. Each ramp first lands exactly on the previous target
-    // when it is within rounding of it, so a voice whose Laps returns to 1 and
-    // Pace to 0 drops back onto the fast path.
+    // Laps / Pace / Sub / Air. Each ramp first lands exactly on the previous
+    // target when it is within rounding of it, so a voice whose Laps returns
+    // to 1 and Pace to 0 drops back onto the fast path.
     if (Math.abs(v.laps - v.sLaps) < 1e-9) v.laps = v.sLaps;
     if (Math.abs(v.pace - v.sPace) < 1e-9) v.pace = v.sPace;
     if (Math.abs(v.subLv - v.sSub) < 1e-9) v.subLv = v.sSub;
@@ -920,12 +1727,26 @@ export class OrographDSP {
       else paceT = 0;
     }
     if (snap) {
-      v.sLaps = lapsT; v.sPace = paceT; v.sSub = P.subT;
+      v.sLaps = lapsT; v.sPace = paceT; v.sSub = P.subT; v.sAir = P.airT; v.sTone = P.airTone;
     } else {
       v.sLaps = Math.abs(lapsT - v.sLaps) < SNAP ? lapsT : v.sLaps + (lapsT - v.sLaps) * k;
       v.sPace = Math.abs(paceT - v.sPace) < SNAP ? paceT : v.sPace + (paceT - v.sPace) * k;
       v.sSub = Math.abs(P.subT - v.sSub) < SNAP ? P.subT : v.sSub + (P.subT - v.sSub) * k;
+      v.sAir = Math.abs(P.airT - v.sAir) < SNAP ? P.airT : v.sAir + (P.airT - v.sAir) * k;
+      v.sTone = Math.abs(P.airTone - v.sTone) < SNAP ? P.airTone : v.sTone + (P.airTone - v.sTone) * k;
     }
+
+    // path and filter type changes crossfade from the old setting (a path
+    // change waits for a running fade to finish rather than cut it short)
+    if (v.trav !== P.travBits || v.pShape !== P.shapeI || v.pOrder !== P.orderI) {
+      if (snap) { v.trav = P.travBits; v.pShape = P.shapeI; v.pOrder = P.orderI; v.travW = 0; }
+      else if (v.travW === 0) {
+        v.travOld = v.trav; v.shOld = v.pShape; v.orOld = v.pOrder;
+        v.trav = P.travBits; v.pShape = P.shapeI; v.pOrder = P.orderI;
+        v.travW = 1; v.travDW = 1 / (TRAVEL_FADE * fs2);
+      }
+    }
+    if (v.ft !== P.ftype) this.switchFilter(P, v, snap);
 
     // transform coefficients at the end of the block
     const ax = Math.exp(v.sStretch * 1.5 * Math.LN2);
@@ -933,6 +1754,7 @@ export class OrographDSP {
     const th = v.sRot / 360 + P.spinPhase;
     const c = fastCos(th), s = fastSin(th);
     const tA = sx * c, tB = sy * s, tC = sx * s, tD = sy * c;
+    v.eA = tA; v.eB = tB; v.eC = tC; v.eD = tD;
 
     // pitch
     const semis = v.pitch + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange];
@@ -940,9 +1762,12 @@ export class OrographDSP {
     if (!(f > 0)) f = 1;
 
     // mip level from traversal speed (terrain units per second); Laps traces
-    // the path `laps` times per cycle, so it scales the speed. Pace speeds up
-    // and slows down within the cycle: it is added per sample (see terrainPaced).
-    const speed = f * pathLength(P.shapeI, P.orderI, v.sParam) * v.sSize * (ax > 1 ? ax : 1 / ax) * (1 + 1.3 * v.sWarp) * v.sLaps + 1e-9;
+    // the path `laps` times per cycle, so it scales the speed, and Ping-pong
+    // runs it twice per lap. Pace speeds up and slows down within the cycle:
+    // it is added per sample (see terrainPaced).
+    let speed = f * pathLength(v.pShape, v.pOrder, v.sParam) * v.sSize * (ax > 1 ? ax : 1 / ax) * (1 + 1.3 * v.sWarp) * v.sLaps + 1e-9;
+    if (v.trav & 1) speed *= 2;
+    v.eSpeed = speed / f;
     const rawA = this.mipRaw(P.terrA, speed), rawB = this.mipRaw(P.terrB, speed);
     const topA = P.terrA.length - 1, topB = P.terrB.length - 1;
     const lvA = rawA < 0 ? 0 : rawA > topA ? topA : rawA;
@@ -954,7 +1779,8 @@ export class OrographDSP {
     if (snap) { v.uLvA = uA; v.uLvB = uB; } else { v.uLvA += (uA - v.uLvA) * k; v.uLvB += (uB - v.uLvB) * k; }
 
     // filter
-    let fc = Math.exp((v.sCut + prm[PI.keyTrack] * (semis - 60) / 12 + prm[PI.filterEnv] * 6 * e2) * Math.LN2);
+    const fcRaw = Math.exp((v.sCut + prm[PI.keyTrack] * (semis - 60) / 12 + prm[PI.filterEnv] * 6 * e2) * Math.LN2);
+    let fc = fcRaw;
     const fcMax = 0.45 * fs2;
     if (!(fc > 16)) fc = 16; else if (fc > fcMax) fc = fcMax;
     const g = Math.tan(Math.PI * fc / fs2);
@@ -964,7 +1790,7 @@ export class OrographDSP {
     const ang = (Math.max(-1, Math.min(1, v.sPan)) + 1) * Math.PI / 4;
     const gl = Math.cos(ang) * Math.SQRT2, gr = Math.sin(ang) * Math.SQRT2;
 
-    const n2 = OVERSAMPLE * CTRL;
+    const n2 = this.os * CTRL;
     const inv = 1 / n2;
     const U = P.uni;
     if (snap) {
@@ -995,8 +1821,11 @@ export class OrographDSP {
       if (incT > 0.45) incT = 0.45;
       if (snap || q >= v.uniPrev) { v.inc[q] = incT; v.dinc[q] = 0; } else v.dinc[q] = (incT - v.inc[q]) * inv;
     }
+    // unison changes: gains glide to the part's layout (Width), oscillators
+    // that join fade in, ones that leave fade out at their last pitch
+    if (!snap) this.unisonRamp(P, v, U, k, inv);
     // oscillators that are not running carry no sync correction into the future
-    for (let q = U; q < MAX_UNISON; q++) { v.blepPend[q] = 0; v.blepSkip[q] = 0; }
+    for (let q = v.uRun; q < MAX_UNISON; q++) { v.blepPend[q] = 0; v.blepSkip[q] = 0; }
     v.uniPrev = U;
     // sub: one octave below the voice's (glided, bent) pitch, no unison detune
     let subIncT = 0.5 * f / fs2;
@@ -1005,6 +1834,26 @@ export class OrographDSP {
 
     this.setMipRamp(v, P.terrA.length, v.sLvA, snap, true, inv);
     this.setMipRamp(v, P.terrB.length, v.sLvB, snap, false, inv);
+    // the cycle's mean height at the end of the block (startVoice seeds it)
+    if (v.mTrack) v.dMean = snap ? 0 : (this.orbitMeanEnd(P, v) - v.mCur) * inv;
+
+    // Air: level and tilt as two ramped coefficients (see voiceChain)
+    if (v.sAir === 0 && Math.abs(v.aH) < 1e-12 && Math.abs(v.aD) < 1e-12) { v.aH = v.aD = 0; }
+    if (v.sAir !== 0 || v.aH !== 0 || v.aD !== 0) {
+      const tone = v.sTone;
+      const gL = Math.pow(2, -4 * (tone > 0 ? tone : 0)), gH = Math.pow(2, 4 * (tone < 0 ? tone : 0));
+      const ti = (tone + 1) * 32, t0 = ti < 0 ? 0 : ti > 63 ? 63 : ti | 0;
+      const nt = P.rc.airNorm;
+      const norm = nt[t0] + (ti - t0) * (nt[t0 + 1] - nt[t0]);
+      const lv = v.sAir * norm;
+      const aH = lv * gH, aD = lv * (gL - gH);
+      if (snap) { v.aH = aH; v.aD = aD; v.daH = v.daD = 0; } else { v.daH = (aH - v.aH) * inv; v.daD = (aD - v.aD) * inv; }
+    } else { v.daH = v.daD = 0; }
+
+    // comb / vowel coefficients while either is in use (or fading out)
+    const ft = v.ft, fo = v.ftW > 0 ? v.ftOld : -1;
+    if (ft === 5 || fo === 5) this.combControl(v, fcRaw, snap, inv);
+    if (ft === 6 || fo === 6) this.vowelControl(v, fcRaw, snap, inv);
 
     // safety: a voice that ever goes non-finite is reset rather than left screaming
     if (!(Math.abs(v.ic1L) + Math.abs(v.ic2L) + Math.abs(v.ic1R) + Math.abs(v.ic2R) + Math.abs(v.dcyL) + Math.abs(v.dcyR) < 1e6)) {
@@ -1015,7 +1864,182 @@ export class OrographDSP {
       if (Math.abs(v.ic2L) < 1e-20) v.ic2L = 0;
       if (Math.abs(v.ic1R) < 1e-20) v.ic1R = 0;
       if (Math.abs(v.ic2R) < 1e-20) v.ic2R = 0;
+      // a constant input (Size 0, a collapsed orbit) lets the blocker's output
+      // decay into subnormal floats after ~15 s, which are slow to compute
+      if (Math.abs(v.dcyL) < 1e-20) v.dcyL = 0;
+      if (Math.abs(v.dcyR) < 1e-20) v.dcyR = 0;
+      if (Math.abs(v.pdyL) < 1e-20) v.pdyL = 0;
+      if (Math.abs(v.pdyR) < 1e-20) v.pdyR = 0;
     }
+    if (ft >= 5 || fo >= 5 || v.sAir !== 0) this.extraSafety(v);
+    // Drive bends an asymmetric wave into DC; behind a filter that passes DC
+    // a second blocker takes it out (stays on for the rest of the note)
+    if (!v.pdOn && v.sDrive > 1e-4 && (ft === 0 || ft === 1 || ft === 4 || ft === 5)) {
+      v.pdOn = true; v.pdxL = v.pdyL = v.pdxR = v.pdyR = 0;
+    }
+    if (v.pdOn && !(Math.abs(v.pdyL) + Math.abs(v.pdyR) < 1e6)) { v.pdxL = v.pdyL = v.pdxR = v.pdyR = 0; }
+
+    // Terrain Height link source for the next block: under this voice's modulated dot
+    if (P.needTerrH) v.terrH = this.terrainHeightAt(P, v.sCx, v.sCy, v.sMorph, v.sWarp);
+
+    // Pristine: band-limited single cycles when the orbit holds still enough
+    if (this.pristine && v.tabA) this.pristineControl(P, v, snap, f);
+    else if (v.tw > 0) v.dtw = -1 / (TABLE_FADE * fs2);
+    else v.tabValid = false;
+  }
+
+  /**
+   * Per-voice unison gains: one-pole glide (the 4 ms control smoothing) to
+   * the part's layout, ramped per sample. A joining oscillator starts silent
+   * (and a mono voice gains its right channel from the left's state); a
+   * leaving one glides to 0 and is then dropped.
+   */
+  unisonRamp(P, v, U, k, inv) {
+    if (U > v.uRun) {
+      for (let q = v.uRun; q < U; q++) { v.ugL[q] = 0; v.ugR[q] = 0; }
+      v.uRun = U;
+    }
+    if (U > 1 && !v.stereo) v.goStereo();
+    let ramp = false;
+    const n = v.uRun;
+    for (let q = 0; q < n; q++) {
+      if (q >= U) v.dinc[q] = 0;
+      const tL = q < U ? P.gUL[q] : 0, tR = q < U ? P.gUR[q] : 0;
+      const gL = v.ugL[q], gR = v.ugR[q];
+      if (gL === tL && gR === tR) { v.dugL[q] = 0; v.dugR[q] = 0; continue; }
+      let nL = gL + (tL - gL) * k, nR = gR + (tR - gR) * k;
+      if (Math.abs(tL - nL) < 1e-6 && Math.abs(tR - nR) < 1e-6) { nL = tL; nR = tR; }
+      v.dugL[q] = (nL - gL) * inv; v.dugR[q] = (nR - gR) * inv;
+      ramp = true;
+    }
+    v.gRamp = ramp;
+    if (!ramp) while (v.uRun > U && v.ugL[v.uRun - 1] === 0 && v.ugR[v.uRun - 1] === 0) v.uRun--;
+  }
+
+  /**
+   * Mean shaped height over one cycle of the voice's orbit at the END of the
+   * current control block (the smoothed targets), a cheaper twin of
+   * orbitMean for tracking the DC of a per-voice modulated orbit.
+   */
+  orbitMeanEnd(P, v) {
+    const pt = this.pt;
+    const L = v.sLaps, pc = v.sPace, shp = v.paceShape, trav = v.trav;
+    const plain = L === 1 && pc === 0 && trav === 0;
+    const K = plain ? 24 : 48;
+    const A = P.terrA[Math.min(v.lA, P.terrA.length - 1)], B = P.terrB[Math.min(v.lB, P.terrB.length - 1)];
+    const tA = v.eA, tB = v.eB, tC = v.eC, tD = v.eD, cx = v.sCx, cy = v.sCy, param = v.sParam;
+    const warp = v.sWarp, morph = v.sMorph, lift = v.sLift, fold = v.sFold;
+    let sum = 0;
+    for (let i = 0; i < K; i++) {
+      let t = (i + 0.5) / K;
+      if (!plain) {
+        t = L * paceWarp(t, pc, shp); t -= Math.floor(t);
+        if (trav !== 0) t = this.travelMap(v.pShape, v.pOrder, t, param, trav);
+      }
+      pathPoint(v.pShape, t, v.pOrder, param, pt);
+      let u = cx + pt.x * tA - pt.y * tB;
+      let w = cy + pt.x * tC + pt.y * tD;
+      if (warp > 0) {
+        const ww = warp * 0.06;
+        const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+        w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+        u = u2;
+      }
+      let h = bil(A.data, A.size, A.size - 1, u, w);
+      if (morph > 1e-4) h += morph * (bil(B.data, B.size, B.size - 1, u, w) - h);
+      const y = h * lift, ay = y < 0 ? -y : y;
+      let sh = y;
+      if (ay > 1) { const e = 2 * (ay - 1); const kk = 1 + 0.5 * e / (1 + e); sh = y < 0 ? -kk : kk; }
+      if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
+      sum += sh;
+    }
+    return sum / K;
+  }
+
+  /** A changed filter type: the new one starts from rest, the old one fades out. */
+  switchFilter(P, v, snap) {
+    const nt = P.ftype;
+    const svf = (t) => t >= 1 && t <= 4;
+    if (snap || v.ft < 0) {
+      v.ft = nt; v.ftW = 0;
+    } else {
+      v.ftOld = v.ft; v.ft = nt; v.ftW = 1; v.ftDW = 1 / (FILTER_FADE * this.fs2);
+      // SVF to SVF keeps its state (only the output tap changes)
+      if (svf(nt) && !svf(v.ftOld)) { v.ic1L = v.ic2L = v.ic1R = v.ic2R = 0; }
+    }
+    if (nt === 5) { if (v.comb) { v.comb.fill(0); v.cw = 0; } v.cD = -1; }
+    if (nt === 6) { v.vs.fill(0); v.vf[0] = -1; }
+  }
+
+  /**
+   * Comb: two feedback combs of opposite sign (peaks at multiples of the
+   * comb frequency, or at its odd half-multiples), blended by Vowel/formant.
+   * The blend is one loop: w = x + g^2 w[n - 2D], y = w + (2 f - 1) g w[n - D]
+   * (the sum f/(1 - g z^-D) + (1 - f)/(1 + g z^-D) over a common denominator),
+   * so it costs one delay line per channel and is stable for every g < 1.
+   */
+  combControl(v, fcRaw, snap, inv) {
+    if (!v.comb) { v.ftW = 0; if (v.ft === 5) v.ft = 0; return; }
+    const fs = this.fs2;
+    let fc = fcRaw;
+    const lo = Math.max(COMB_FMIN, fs / (v.combLen / 2 - 4));
+    if (!(fc > lo)) fc = lo; else if (fc > fs / 4) fc = fs / 4;
+    const D = fs / fc;
+    const res = clamp01(v.sRes);
+    const gg = 0.35 + 0.62 * res;
+    const fb = gg * gg;
+    const ff = (2 * clamp01(v.sFormant) - 1) * gg;
+    // part way to power-normalised, so the comb neither booms nor vanishes
+    // as Reso sweeps (harmonics mostly miss the narrow high-Reso peaks)
+    const mk = Math.pow(1 - fb, 0.4) * 1.25;
+    if (snap || v.cD < 0) { v.cD = D; v.cFb = fb; v.cFf = ff; v.cMk = mk; v.dcD = v.dcFb = v.dcFf = v.dcMk = 0; }
+    else { v.dcD = (D - v.cD) * inv; v.dcFb = (fb - v.cFb) * inv; v.dcFf = (ff - v.cFf) * inv; v.dcMk = (mk - v.cMk) * inv; }
+  }
+
+  /**
+   * Vowel: three parallel band-passes at the formants of the vowel under
+   * Vowel/formant (A E I O U, interpolated in log frequency, bandwidth and
+   * dB), shifted +-1 octave by the cutoff around 1 kHz; Reso narrows them.
+   */
+  vowelControl(v, fcRaw, snap, inv) {
+    const fs = this.fs2;
+    const x = clamp01(v.sFormant) * 4;
+    let i0 = x | 0;
+    if (i0 > 3) i0 = 3;
+    const fr = x - i0;
+    const A = VOWELS[i0], B = VOWELS[i0 + 1];
+    const LA = VOWEL_LOGF[i0], LB = VOWEL_LOGF[i0 + 1];
+    const GA = VOWEL_AMP[i0], GB = VOWEL_AMP[i0 + 1];
+    let oct = Math.log2(fcRaw / 1000);
+    oct = oct < -1 ? -1 : oct > 1 ? 1 : (oct === oct ? oct : 0);
+    const res = clamp01(v.sRes);
+    const bwScale = 1.6 * Math.pow(2, -2.6 * res);
+    // narrower bands pass less energy (and miss more harmonics): give it back
+    const mk = VOWEL_GAIN * Math.pow(bwScale, -0.7);
+    const vf = v.vf, dvf = v.dvf;
+    const first = snap || vf[0] < 0;
+    for (let j = 0; j < 3; j++) {
+      let f = Math.pow(2, LA[j] + fr * (LB[j] - LA[j]) + oct);
+      if (f > 0.45 * fs) f = 0.45 * fs;
+      const bw = (A.bw[j] + fr * (B.bw[j] - A.bw[j])) * bwScale * Math.pow(2, oct * 0.5);
+      const g = Math.tan(Math.PI * f / fs);
+      const kk = Math.min(1.9, bw / f);
+      const amp = (GA[j] + fr * (GB[j] - GA[j])) * kk * mk;
+      if (first) { vf[j] = g; vf[3 + j] = kk; vf[6 + j] = amp; dvf[j] = dvf[3 + j] = dvf[6 + j] = 0; }
+      else { dvf[j] = (g - vf[j]) * inv; dvf[3 + j] = (kk - vf[3 + j]) * inv; dvf[6 + j] = (amp - vf[6 + j]) * inv; }
+    }
+  }
+
+  /** Flush denormals and reset non-finite state of the comb, vowel and Air filters. */
+  extraSafety(v) {
+    const vs = v.vs;
+    let s = 0;
+    for (let i = 0; i < 12; i++) { const a = vs[i]; s += a < 0 ? -a : a; if (a < 1e-20 && a > -1e-20) vs[i] = 0; }
+    if (!(s < 1e6)) vs.fill(0);
+    if (!(Math.abs(v.tlL) + Math.abs(v.tlR) < 1e6)) { v.tlL = v.tlR = 0; }
+    if (Math.abs(v.tlL) < 1e-20) v.tlL = 0;
+    if (Math.abs(v.tlR) < 1e-20) v.tlR = 0;
+    if (v.comb && !(Math.abs(v.comb[(v.cw - 1) & (v.combLen - 1)]) < 1e6)) v.comb.fill(0);
   }
 
   /**
@@ -1026,9 +2050,11 @@ export class OrographDSP {
    * it under the host Nyquist instead, which loses nothing (the decimator
    * removes that band anyway) but also pushes the images that bilinear
    * interpolation makes of near-Nyquist detail into the decimator's stopband.
+   * The quality mode adds its shift (Eco +1 by rendering at the host rate,
+   * High back to Standard's tables at 4x, Raw mips off).
    */
   mipRaw(chain, speed) {
-    return Math.log2(chain[0].size * speed / this.fs2) + this.mipBias;
+    return Math.log2(chain[0].size * speed / this.fs2) + this.mipBias + this.mipShift;
   }
 
   /** Mip level for a traversal speed, clamped to the chain (the block-rate choice). */
@@ -1055,14 +2081,22 @@ export class OrographDSP {
     else { v.lB = l; v.wB = wStart; v.dwB = snap ? 0 : (wEnd - wStart) * inv; }
   }
 
-  controlUpdate() {
+  controlUpdate(elapsed) {
+    this.tabBudget = TABLE_BUDGET;
     let anySolo = false;
     for (const P of this.parts) if (P.params[PI.solo] >= 0.5) anySolo = true;
     const k = this.kSmooth;
-    const dt = CTRL / this.sr;
-    const n2 = OVERSAMPLE * CTRL;
+    const dt = elapsed / this.sr;
+    const n2 = this.os * CTRL;
     for (const P of this.parts) {
-      this.advanceLfos(P);
+      if (P.nRamps > 0) this.advanceRamps(P);
+      this.advanceLfos(P, dt);
+      // the marble arrives at ~30 Hz: glide between its readings
+      if (P.nLinks > 0) {
+        const km = this.kMarble;
+        P.sMarbleSpeed = Math.abs(P.marbleSpeed - P.sMarbleSpeed) < 1e-6 ? P.marbleSpeed : P.sMarbleSpeed + (P.marbleSpeed - P.sMarbleSpeed) * km;
+        P.sMarbleHeight = Math.abs(P.marbleHeight - P.sMarbleHeight) < 1e-6 ? P.marbleHeight : P.sMarbleHeight + (P.marbleHeight - P.sMarbleHeight) * km;
+      }
       P.spinPhase += P.params[PI.spin] * dt;
       P.spinPhase -= Math.floor(P.spinPhase);
       const active = P.activeCount();
@@ -1101,40 +2135,114 @@ export class OrographDSP {
   // ---- audio rate -------------------------------------------------------------
 
   /**
-   * Render n2 oversampled samples of one voice into its part bus at off2.
-   * Pass 1 traces each unison oscillator's path for the whole segment, pass 2
-   * maps it onto the terrain and sums the oscillators (then band-limits any
-   * hard-sync restarts), pass 3 runs the per-voice chain (DC block, sub,
-   * drive, filter, envelope, pan). Segments never span a control block, so
-   * n2 <= OVERSAMPLE * CTRL and the scratch fits.
+   * Render n2 oversampled samples of one voice into its bus (rc) at off2.
+   * The oscillator (direct: paths then terrain, or Pristine's table, or a
+   * crossfade of both) fills this.sumL/sumR; voiceChain then runs the
+   * per-voice chain (DC block, sub, Air, drive, filter, envelope, pan).
+   * Segments never span a control block, so n2 <= MAX_OS * CTRL and the
+   * scratch fits.
    */
-  renderVoice(P, v, off2, n2) {
-    const bL = P.busL, bR = P.busR;
-    const base = HB_HIST + off2;
-    const U = P.uni, gUL = P.gUL, gUR = P.gUR;
-    const stereo = U > 1;
+  renderVoice(P, v, off2, n2, rc) {
+    const SL = this.sumL, SR = this.sumR, TL = this.tmpL, TR = this.tmpR;
+    const stereo = v.stereo;
+    const param0 = v.param;
+    const tw0 = v.tw, dtw = v.dtw;
+    let twEnd = tw0 + dtw * n2;
+    twEnd = twEnd < 0 ? 0 : twEnd > 1 ? 1 : twEnd;
+    // a voice keeps playing its table while it fades out, even after Pristine is switched off
+    const tableOn = v.tabValid && v.tabA !== null && (tw0 > 0 || twEnd > 0);
+    const directOn = !tableOn || tw0 < 1 || twEnd < 1;
+    const sav = this.sav;
+    if (tableOn && directOn) for (let q = 0; q < MAX_UNISON; q++) { sav[q] = v.phase[q]; sav[4 + q] = v.inc[q]; }
+
+    if (directOn) {
+      if (v.travW > 0) {
+        // the old travel setting renders first and fades out
+        for (let q = 0; q < MAX_UNISON; q++) {
+          sav[8 + q] = v.phase[q]; sav[12 + q] = v.inc[q]; sav[16 + q] = v.blepPend[q]; sav[20 + q] = v.blepSkip[q];
+        }
+        this.oscDirect(P, v, n2, v.travOld, param0, v.shOld, v.orOld);
+        for (let j = 0; j < n2; j++) { TL[j] = SL[j]; TR[j] = SR[j]; }
+        for (let q = 0; q < MAX_UNISON; q++) {
+          v.phase[q] = sav[8 + q]; v.inc[q] = sav[12 + q]; v.blepPend[q] = sav[16 + q]; v.blepSkip[q] = sav[20 + q];
+        }
+        this.oscDirect(P, v, n2, v.trav, param0, v.pShape, v.pOrder);
+        let w = v.travW;
+        const dw = v.travDW;
+        for (let j = 0; j < n2; j++) {
+          w -= dw; if (w < 0) w = 0;
+          SL[j] += w * (TL[j] - SL[j]);
+          if (stereo) SR[j] += w * (TR[j] - SR[j]);
+        }
+        v.travW = w;
+      } else {
+        this.oscDirect(P, v, n2, v.trav, param0, v.pShape, v.pOrder);
+      }
+    }
+    if (tableOn) {
+      if (directOn) {
+        this.tableOsc(P, v, n2, TL, TR, false);
+        let w = tw0;
+        for (let j = 0; j < n2; j++) {
+          w += dtw; w = w < 0 ? 0 : w > 1 ? 1 : w;
+          SL[j] += w * (TL[j] - SL[j]);
+          if (stereo) SR[j] += w * (TR[j] - SR[j]);
+        }
+      } else {
+        this.tableOsc(P, v, n2, SL, SR, true);
+        v.blepPend.fill(0); v.blepSkip.fill(0);
+      }
+      let x = v.tabX + v.dTabX * n2;
+      v.tabX = x > 1 ? 1 : x;
+    }
+    v.tw = twEnd;
+    if (twEnd === 0 || twEnd === 1) v.dtw = 0;
+
+    v.param += v.dParam * n2;
+    v.tA += v.dtA * n2; v.tB += v.dtB * n2; v.tC += v.dtC * n2; v.tD += v.dtD * n2;
+    v.cx += v.dcx * n2; v.cy += v.dcy * n2;
+    v.morph += v.dMorph * n2; v.warp += v.dWarp * n2; v.lift += v.dLift * n2; v.fold += v.dFold * n2;
+    v.wA += v.dwA * n2; v.wB += v.dwB * n2;
+    v.cLvA += v.dcLvA * n2; v.cLvB += v.dcLvB * n2;
+    v.laps += v.dLaps * n2; v.pace += v.dPace * n2;
+    if (v.gRamp) {
+      for (let q = 0; q < v.uRun; q++) { v.ugL[q] += v.dugL[q] * n2; v.ugR[q] += v.dugR[q] * n2; }
+    }
+
+    this.voiceChain(P, v, rc.hist + off2, n2, rc);
+  }
+
+  /**
+   * The direct oscillator for n2 samples into sumL/sumR: pass 1 traces each
+   * unison oscillator's path for the whole segment, pass 2 maps it onto the
+   * terrain and sums the oscillators, then any hard-sync restarts are
+   * band-limited. Advances the oscillator phases (and the sync carry-over)
+   * but none of the voice's control ramps (renderVoice does that once).
+   */
+  oscDirect(P, v, n2, trav, param0, shape, order) {
+    const U = v.uRun, gUL = v.ugL, gUR = v.ugR;
+    const stereo = v.stereo, gRamp = v.gRamp;
     const XS = this.xs, YS = this.ys, SL = this.sumL, SR = this.sumR;
     const pst = this.pst;
 
     // ---- pass 1: paths
-    // Laps 1 and Pace 0 for the whole segment: the cycle phase is the path
-    // phase, the original fast path. Otherwise the Laps/Pace oscillator.
-    const param0 = v.param;
-    const sync = v.laps !== 1 || v.dLaps !== 0 || v.pace !== 0 || v.dPace !== 0;
+    // Laps 1, Pace 0 and plain travel for the whole segment: the cycle phase
+    // is the path phase, the original fast path. Otherwise the Laps/Pace/
+    // travel oscillator.
+    const sync = v.laps !== 1 || v.dLaps !== 0 || v.pace !== 0 || v.dPace !== 0 || trav !== 0;
     const paced = sync && (v.pace !== 0 || v.dPace !== 0);
     let nEv = 0;
     if (sync) {
-      nEv = this.syncPaths(P, v, n2, paced);
+      nEv = this.syncPaths(P, v, n2, paced, trav, shape, order);
     } else {
       for (let q = 0; q < U; q++) {
         pst[0] = v.phase[q]; pst[1] = v.inc[q]; pst[2] = v.dinc[q];
         pst[3] = v.param; pst[4] = v.dParam;
-        pathBlock(P.shapeI, P.orderI, n2, pst, XS[q], YS[q]);
+        pathBlock(shape, order, n2, pst, XS[q], YS[q]);
         v.phase[q] = pst[0]; v.inc[q] = pst[1];
         v.blepSkip[q] = 0;
       }
     }
-    v.param += v.dParam * n2;
 
     // ---- pass 2: terrain
     const chA = P.terrA, nA = chA.length;
@@ -1177,11 +2285,13 @@ export class OrographDSP {
     } else {
       for (let q = 0; q < U; q++) {
         const X = XS[q], Y = YS[q];
-        const gl = gUL[q], gr = gUR[q];
+        let gl = gUL[q], gr = gUR[q];
+        const dgl = gRamp ? v.dugL[q] : 0, dgr = gRamp ? v.dugR[q] : 0;
         let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
         let morph = m0, warp = wp0, lift = lf0, fold = fd0, wA = wA0, wB = wB0, fA = fA0, fB = fB0;
         for (let j = 0; j < n2; j++) {
           tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
+          if (gRamp) { gl += dgl; gr += dgr; }
           const px = X[j], py = Y[j];
           let u = cx + px * tA - py * tB;
           let w = cy + px * tC + py * tD;
@@ -1230,36 +2340,89 @@ export class OrographDSP {
       const pd = v.blepPend[q];
       if (pd !== 0) { SL[0] += pd * gUL[q]; if (stereo) SR[0] += pd * gUR[q]; v.blepPend[q] = 0; }
     }
-    if (nEv > 0) this.syncBlep(P, v, n2, nEv, param0, paced);
+    if (nEv > 0) this.syncBlep(P, v, n2, nEv, param0, paced, trav, shape, order);
+  }
 
-    v.tA = tA0 + dtA * n2; v.tB = tB0 + dtB * n2; v.tC = tC0 + dtC * n2; v.tD = tD0 + dtD * n2;
-    v.cx = cx0 + dcx * n2; v.cy = cy0 + dcy * n2;
-    v.morph = mEnd; v.warp = wp0 + dWarp * n2; v.lift = lf0 + dLift * n2; v.fold = fd0 + dFold * n2;
-    v.wA = wA0 + dwA * n2; v.wB = wB0 + dwB * n2;
-    v.cLvA += v.dcLvA * n2; v.cLvB += v.dcLvB * n2;
-    v.laps += v.dLaps * n2; v.pace += v.dPace * n2;
+  /**
+   * Pristine playback: each unison oscillator reads the band-limited single
+   * cycle at its own phase (Catmull-Rom, the table is at least 2x
+   * oversampled), crossfading from the playing table to the arriving one.
+   * The phases advance exactly as the direct oscillator's would; with
+   * writeBack false (the direct oscillator ran too) they start from the
+   * values saved before it and are not stored.
+   */
+  tableOsc(P, v, n2, OL, OR, writeBack) {
+    const U = v.uRun, gUL = v.ugL, gUR = v.ugR, stereo = v.stereo, gRamp = v.gRamp;
+    const A = v.tabA, B = v.tabB, na = v.tabNA, nb = v.tabNB;
+    const x0 = v.tabX, dx = v.dTabX;
+    const sav = this.sav;
+    for (let q = 0; q < U; q++) {
+      let ph = writeBack ? v.phase[q] : sav[q];
+      let inc = writeBack ? v.inc[q] : sav[4 + q];
+      const dinc = v.dinc[q];
+      let gl = gUL[q], gr = gUR[q];
+      const dgl = gRamp ? v.dugL[q] : 0, dgr = gRamp ? v.dugR[q] : 0;
+      let x = x0;
+      for (let j = 0; j < n2; j++) {
+        ph += inc;
+        if (ph >= 1) ph -= 1;
+        inc += dinc;
+        gl += dgl; gr += dgr;
+        let h;
+        {
+          const p = ph * nb, i = p | 0, f = p - i;
+          const y0 = B[i], y1 = B[i + 1], y2 = B[i + 2], y3 = B[i + 3];
+          h = y1 + 0.5 * f * (y2 - y0 + f * (2 * y0 - 5 * y1 + 4 * y2 - y3 + f * (3 * (y1 - y2) + y3 - y0)));
+        }
+        if (x < 1) {
+          x += dx; if (x > 1) x = 1;
+          const p = ph * na, i = p | 0, f = p - i;
+          const y0 = A[i], y1 = A[i + 1], y2 = A[i + 2], y3 = A[i + 3];
+          const ha = y1 + 0.5 * f * (y2 - y0 + f * (2 * y0 - 5 * y1 + 4 * y2 - y3 + f * (3 * (y1 - y2) + y3 - y0)));
+          h = ha + x * (h - ha);
+        }
+        if (q === 0) { OL[j] = h * gl; if (stereo) OR[j] = h * gr; }
+        else { OL[j] += h * gl; OR[j] += h * gr; }
+      }
+      if (writeBack) { v.phase[q] = ph; v.inc[q] = inc; v.blepSkip[q] = 0; }
+    }
+  }
 
-    // ---- pass 3: voice chain
-    const ftype = P.ftype;
+  /**
+   * voiceChain for filter types 0..4 without a crossfade: DC blocker, sub,
+   * Air, drive, state variable filter, envelope and pan in one pass (the
+   * same arithmetic as the split path, sample for sample).
+   */
+  voiceChainFused(P, v, base, n2, rc) {
+    const SL = this.sumL, SR = this.sumR;
+    const bL = rc.busL, bR = rc.busR;
+    const stereo = v.stereo;
+    if (v.mTrack) this.removeMean(v, n2, stereo);
+    const pdOn = v.pdOn;
+    let pxL = v.pdxL, pyL = v.pdyL, pxR = v.pdxR, pyR = v.pdyR;
+    const ftype = v.ft;
     let g = v.g, kq = v.k, drive = v.drive;
     const dg = v.dg, dk = v.dk, dDrive = v.dDrive;
     const driveOn = drive > 1e-4 || drive + dDrive * n2 > 1e-4;
     let ic1L = v.ic1L, ic2L = v.ic2L, ic1R = v.ic1R, ic2R = v.ic2R;
     let dxL = v.dcxL, dyL = v.dcyL, dxR = v.dcxR, dyR = v.dcyR;
-    const R = this.dcR;
+    const R = rc.dcR;
     let st = v.envStage, lvl = v.envLvl;
-    const attC = P.attC, decC = P.decC, relC = P.relC, sus = P.sus;
+    const attC = rc.attC, decC = rc.decC, relC = rc.relC, sus = rc.sus;
     const vg = v.velGain;
     let gl = v.gl, gr = v.gr;
     const dgl = v.dgl, dgr = v.dgr;
     const stealing = v.stealFade > 0;
     let sg = v.stealGain;
     const ss = v.stealStep;
-    // sub sine: after the DC blocker (it has no DC to remove and the blocker
-    // would only shift its phase), before drive and filter so they shape it
     const subOn = v.subLv !== 0 || v.dSubLv !== 0;
     let sPh = v.subPh, sInc = v.subInc, sLv = v.subLv;
     const dsInc = v.dSubInc, dsLv = v.dSubLv;
+    let aH = v.aH, aD = v.aD;
+    const daH = v.daH, daD = v.daD;
+    const airOn = aH !== 0 || aD !== 0 || daH !== 0 || daD !== 0;
+    let nz = v.nz, tlL = v.tlL, tlR = v.tlR;
+    const ta = rc.tiltA;
 
     if (v.dcInit) {
       // see startVoice(): y[-1] = x[0] - mean makes the first output x[0] - mean
@@ -1280,6 +2443,19 @@ export class OrographDSP {
         sInc += dsInc; sLv += dsLv;
         const sv = sLv * fastSin(sPh);
         yL += sv; yR += sv;
+      }
+      if (airOn) {
+        aH += daH; aD += daD;
+        nz ^= nz << 13; nz ^= nz >>> 17; nz ^= nz << 5;
+        const xL = nz * 4.656612873077393e-10;
+        tlL += ta * (xL - tlL);
+        yL += aH * xL + aD * tlL;
+        if (stereo) {
+          nz ^= nz << 13; nz ^= nz >>> 17; nz ^= nz << 5;
+          const xR = nz * 4.656612873077393e-10;
+          tlR += ta * (xR - tlR);
+          yR += aH * xR + aD * tlR;
+        }
       }
       if (driveOn) {
         drive += dDrive;
@@ -1305,6 +2481,11 @@ export class OrographDSP {
           ic1R = 2 * v1 - ic1R; ic2R = 2 * v2 - ic2R;
           yR = ftype === 1 ? v2 : ftype === 2 ? kq * v1 : ftype === 3 ? yR - kq * v1 - v2 : yR - kq * v1;
         }
+      }
+      if (pdOn) {
+        const xL = yL;
+        yL = xL - pxL + R * pyL; pxL = xL; pyL = yL;
+        if (stereo) { const xR = yR; yR = xR - pxR + R * pyR; pxR = xR; pyR = yR; }
       }
       // amp envelope: exponential segments at the oversampled rate
       if (st === ATTACK) {
@@ -1340,20 +2521,363 @@ export class OrographDSP {
     v.envStage = st; v.envLvl = lvl;
     v.stealGain = sg;
     if (subOn) { v.subPh = sPh; v.subInc = sInc; v.subLv = sLv; } else v.subInc += dsInc * n2;
+    if (airOn) { v.aH = aH; v.aD = aD; v.nz = nz; v.tlL = tlL; v.tlR = tlR; }
+    if (pdOn) { v.pdxL = pxL; v.pdyL = pyL; v.pdxR = pxR; v.pdyR = pyR; }
+    this.advanceComb(v, n2);
+    this.advanceVowel(v, n2);
+  }
+
+  /** Subtract the tracked mean height of the cycle (ramped) from sumL/sumR, scaled by the unison gains. */
+  removeMean(v, n2, stereo) {
+    const SL = this.sumL, SR = this.sumR;
+    let gsL = 0, gsR = 0;
+    for (let q = 0; q < v.uRun; q++) { gsL += v.ugL[q]; gsR += v.ugR[q]; }
+    let m = v.mCur;
+    const dm = v.dMean;
+    for (let j = 0; j < n2; j++) {
+      m += dm;
+      SL[j] -= m * gsL;
+      if (stereo) SR[j] -= m * gsR;
+    }
+    v.mCur = m;
   }
 
   /**
-   * Pass 1 of the Laps/Pace oscillator. Per unison oscillator and sample: the
-   * cycle phase φ advances at the note frequency; Pace warps it to ψ, Laps
-   * gives the path phase t = frac(laps ψ). Every wrap of φ is a hard-sync
-   * restart; it is recorded (sample, sub-sample position, laps) for
-   * syncBlep(), including one look-ahead restart that falls between this
-   * segment's last sample and the next segment's first. With `paced` the
-   * log2 of the local Pace speed goes into this.lvs[q] for the per-sample mip
-   * level. Returns the number of recorded restarts.
+   * The per-voice chain for n2 samples of sumL/sumR, accumulated into the
+   * bus at `base`: DC blocker, sub sine, Air, drive (one pass), the filter
+   * (in place, with a crossfade from the previous type), then the amp
+   * envelope, steal fade, soft limit and pan.
    */
-  syncPaths(P, v, n2, paced) {
-    const U = P.uni, T = this.ts, PH = this.phs;
+  voiceChain(P, v, base, n2, rc) {
+    // the common case (a state variable filter or none, no filter change in
+    // progress) runs as one fused loop: no intermediate buffers
+    if (v.ft <= 4 && !(v.ftW > 0)) { this.voiceChainFused(P, v, base, n2, rc); return; }
+    const SL = this.sumL, SR = this.sumR;
+    const bL = rc.busL, bR = rc.busR;
+    const stereo = v.stereo;
+    if (v.mTrack) this.removeMean(v, n2, stereo);
+    let drive = v.drive;
+    const dDrive = v.dDrive;
+    const driveOn = drive > 1e-4 || drive + dDrive * n2 > 1e-4;
+    let dxL = v.dcxL, dyL = v.dcyL, dxR = v.dcxR, dyR = v.dcyR;
+    const R = rc.dcR;
+    // sub sine: after the DC blocker (it has no DC to remove and the blocker
+    // would only shift its phase), before drive and filter so they shape it
+    const subOn = v.subLv !== 0 || v.dSubLv !== 0;
+    let sPh = v.subPh, sInc = v.subInc, sLv = v.subLv;
+    const dsInc = v.dSubInc, dsLv = v.dSubLv;
+    // Air: white noise, tilted (aH * x + aD * lowpass(x)), also before the filter
+    let aH = v.aH, aD = v.aD;
+    const daH = v.daH, daD = v.daD;
+    const airOn = aH !== 0 || aD !== 0 || daH !== 0 || daD !== 0;
+    let nz = v.nz, tlL = v.tlL, tlR = v.tlR;
+    const ta = rc.tiltA;
+
+    if (v.dcInit) {
+      // see startVoice(): y[-1] = x[0] - mean makes the first output x[0] - mean
+      v.dcInit = false;
+      dxL = SL[0]; dyL = SL[0] - v.dcMeanL;
+      if (stereo) { dxR = SR[0]; dyR = SR[0] - v.dcMeanR; }
+    }
+    for (let j = 0; j < n2; j++) {
+      const sL = SL[j];
+      let yL = sL - dxL + R * dyL;
+      dxL = sL; dyL = yL;
+      let yR = 0;
+      if (stereo) { const sR = SR[j]; yR = sR - dxR + R * dyR; dxR = sR; dyR = yR; }
+      if (subOn) {
+        sPh += sInc;
+        if (sPh >= 1) sPh -= 1;
+        sInc += dsInc; sLv += dsLv;
+        const sv = sLv * fastSin(sPh);
+        yL += sv; yR += sv;
+      }
+      if (airOn) {
+        aH += daH; aD += daD;
+        nz ^= nz << 13; nz ^= nz >>> 17; nz ^= nz << 5;
+        const xL = nz * 4.656612873077393e-10;
+        tlL += ta * (xL - tlL);
+        yL += aH * xL + aD * tlL;
+        if (stereo) {
+          nz ^= nz << 13; nz ^= nz >>> 17; nz ^= nz << 5;
+          const xR = nz * 4.656612873077393e-10;
+          tlR += ta * (xR - tlR);
+          yR += aH * xR + aD * tlR;
+        }
+      }
+      if (driveOn) {
+        drive += dDrive;
+        const dgain = 1 + 5 * drive, comp = 1 / (1 + drive);
+        let x = yL * dgain;
+        yL = (x > 3 ? 1 : x < -3 ? -1 : x * (27 + x * x) / (27 + 9 * x * x)) * comp;
+        if (stereo) {
+          x = yR * dgain;
+          yR = (x > 3 ? 1 : x < -3 ? -1 : x * (27 + x * x) / (27 + 9 * x * x)) * comp;
+        }
+      }
+      SL[j] = yL; SR[j] = yR;
+    }
+    v.dcxL = dxL; v.dcyL = dyL; v.dcxR = dxR; v.dcyR = dyR;
+    v.drive = drive;
+    if (subOn) { v.subPh = sPh; v.subInc = sInc; v.subLv = sLv; } else v.subInc += dsInc * n2;
+    if (airOn) { v.aH = aH; v.aD = aD; v.nz = nz; v.tlL = tlL; v.tlR = tlR; }
+
+    this.filterStage(v, n2, stereo);
+    if (v.pdOn) {
+      let pxL = v.pdxL, pyL = v.pdyL, pxR = v.pdxR, pyR = v.pdyR;
+      for (let j = 0; j < n2; j++) {
+        const xL = SL[j];
+        const yL = xL - pxL + R * pyL; pxL = xL; pyL = yL; SL[j] = yL;
+        if (stereo) { const xR = SR[j]; const yR = xR - pxR + R * pyR; pxR = xR; pyR = yR; SR[j] = yR; }
+      }
+      v.pdxL = pxL; v.pdyL = pyL; v.pdxR = pxR; v.pdyR = pyR;
+    }
+
+    // amp envelope: exponential segments at the oversampled rate
+    let st = v.envStage, lvl = v.envLvl;
+    const attC = rc.attC, decC = rc.decC, relC = rc.relC, sus = rc.sus;
+    const vg = v.velGain;
+    let gl = v.gl, gr = v.gr;
+    const dgl = v.dgl, dgr = v.dgr;
+    const stealing = v.stealFade > 0;
+    let sg = v.stealGain;
+    const ss = v.stealStep;
+    for (let j = 0; j < n2; j++) {
+      gl += dgl; gr += dgr;
+      let yL = SL[j], yR = SR[j];
+      if (st === ATTACK) {
+        lvl = ATTACK_OVERSHOOT + (lvl - ATTACK_OVERSHOOT) * attC;
+        if (lvl >= 1) { lvl = 1; st = DECAY; }
+      } else if (st === DECAY) {
+        lvl = sus + (lvl - sus) * decC;
+      } else if (st === RELEASE) {
+        lvl = -ENV_FLOOR + (lvl + ENV_FLOOR) * relC;
+        if (lvl <= 0) { lvl = 0; st = IDLE; }
+      }
+      let amp = lvl * vg;
+      if (stealing) {
+        sg -= ss;
+        if (sg < 0) sg = 0;
+        amp *= sg;
+      }
+      yL *= amp;
+      if (yL > 2 || yL < -2) yL = softLimit(yL);
+      if (stereo) {
+        yR *= amp;
+        if (yR > 2 || yR < -2) yR = softLimit(yR);
+      } else {
+        yR = yL;
+      }
+      bL[base + j] += yL * gl;
+      bR[base + j] += yR * gr;
+    }
+    v.gl = gl; v.gr = gr;
+    v.envStage = st; v.envLvl = lvl;
+    v.stealGain = sg;
+  }
+
+  /** Filter sumL/sumR in place with the voice's type, fading out the previous type after a change. */
+  filterStage(v, n2, stereo) {
+    const SL = this.sumL, SR = this.sumR, TL = this.tmpL, TR = this.tmpR;
+    const ft = v.ft;
+    const fading = v.ftW > 0;
+    const fo = fading ? v.ftOld : ft;
+    const svfNew = ft >= 1 && ft <= 4, svfOld = fo >= 1 && fo <= 4;
+    if (!fading) {
+      if (svfNew) this.svfBlock(v, n2, stereo, ft, ft, 0, 0);
+      else this.advanceSvf(v, n2);
+      if (ft === 5) this.combBlock(v, SL, SR, n2, stereo); else this.advanceComb(v, n2);
+      if (ft === 6) this.vowelBlock(v, SL, SR, n2, stereo); else this.advanceVowel(v, n2);
+      return;
+    }
+    let w = v.ftW;
+    const dw = v.ftDW;
+    if (svfNew && svfOld) {
+      // one state variable filter, the output tap crossfades
+      this.svfBlock(v, n2, stereo, ft, fo, w, dw);
+      w -= dw * n2;
+    } else {
+      for (let j = 0; j < n2; j++) { TL[j] = SL[j]; TR[j] = SR[j]; }
+      // old type on the copy, new type in place
+      if (svfOld) { this.svfBlockOn(v, TL, TR, n2, stereo, fo); }
+      else if (fo === 5) this.combBlock(v, TL, TR, n2, stereo);
+      else if (fo === 6) this.vowelBlock(v, TL, TR, n2, stereo);
+      if (svfNew) this.svfBlockOn(v, SL, SR, n2, stereo, ft);
+      else if (ft === 5) this.combBlock(v, SL, SR, n2, stereo);
+      else if (ft === 6) this.vowelBlock(v, SL, SR, n2, stereo);
+      if (!svfOld && !svfNew) this.advanceSvf(v, n2);
+      if (fo !== 5 && ft !== 5) this.advanceComb(v, n2);
+      if (fo !== 6 && ft !== 6) this.advanceVowel(v, n2);
+      for (let j = 0; j < n2; j++) {
+        w -= dw; if (w < 0) w = 0;
+        SL[j] += w * (TL[j] - SL[j]);
+        if (stereo) SR[j] += w * (TR[j] - SR[j]);
+      }
+    }
+    v.ftW = w > 0 ? w : 0;
+  }
+
+  advanceSvf(v, n2) { v.g += v.dg * n2; v.k += v.dk * n2; }
+  advanceComb(v, n2) { v.cD += v.dcD * n2; v.cFb += v.dcFb * n2; v.cFf += v.dcFf * n2; v.cMk += v.dcMk * n2; }
+  advanceVowel(v, n2) { const vf = v.vf, dvf = v.dvf; for (let i = 0; i < 9; i++) vf[i] += dvf[i] * n2; }
+
+  /**
+   * TPT state variable filter on sumL/sumR (types 1 Low, 2 Band, 3 High,
+   * 4 Notch). With w > 0 the output is crossfaded from type `fo`'s tap
+   * (weight w, falling by dw per sample) to type ft's.
+   */
+  svfBlock(v, n2, stereo, ft, fo, w, dw) {
+    const SL = this.sumL, SR = this.sumR;
+    let g = v.g, kq = v.k;
+    const dg = v.dg, dk = v.dk;
+    let ic1L = v.ic1L, ic2L = v.ic2L, ic1R = v.ic1R, ic2R = v.ic2R;
+    const mix = w > 0;
+    for (let j = 0; j < n2; j++) {
+      g += dg; kq += dk;
+      let yL = SL[j];
+      const a1c = 1 / (1 + g * (g + kq)), a2c = g * a1c, a3c = g * a2c;
+      let v3 = yL - ic2L;
+      let v1 = a1c * ic1L + a2c * v3;
+      let v2 = ic2L + a2c * ic1L + a3c * v3;
+      ic1L = 2 * v1 - ic1L; ic2L = 2 * v2 - ic2L;
+      let oL = ft === 1 ? v2 : ft === 2 ? kq * v1 : ft === 3 ? yL - kq * v1 - v2 : yL - kq * v1;
+      if (mix) {
+        w -= dw; if (w < 0) w = 0;
+        const pL = fo === 1 ? v2 : fo === 2 ? kq * v1 : fo === 3 ? yL - kq * v1 - v2 : yL - kq * v1;
+        oL += w * (pL - oL);
+      }
+      SL[j] = oL;
+      if (stereo) {
+        const yR = SR[j];
+        v3 = yR - ic2R;
+        v1 = a1c * ic1R + a2c * v3;
+        v2 = ic2R + a2c * ic1R + a3c * v3;
+        ic1R = 2 * v1 - ic1R; ic2R = 2 * v2 - ic2R;
+        let oR = ft === 1 ? v2 : ft === 2 ? kq * v1 : ft === 3 ? yR - kq * v1 - v2 : yR - kq * v1;
+        if (mix) {
+          const pR = fo === 1 ? v2 : fo === 2 ? kq * v1 : fo === 3 ? yR - kq * v1 - v2 : yR - kq * v1;
+          oR += w * (pR - oR);
+        }
+        SR[j] = oR;
+      }
+    }
+    v.g = g; v.k = kq;
+    v.ic1L = ic1L; v.ic2L = ic2L; v.ic1R = ic1R; v.ic2R = ic2R;
+  }
+
+  /** The state variable filter on arbitrary buffers (filter-type crossfades). */
+  svfBlockOn(v, XL, XR, n2, stereo, ft) {
+    let g = v.g, kq = v.k;
+    const dg = v.dg, dk = v.dk;
+    let ic1L = v.ic1L, ic2L = v.ic2L, ic1R = v.ic1R, ic2R = v.ic2R;
+    for (let j = 0; j < n2; j++) {
+      g += dg; kq += dk;
+      const a1c = 1 / (1 + g * (g + kq)), a2c = g * a1c, a3c = g * a2c;
+      const yL = XL[j];
+      let v3 = yL - ic2L;
+      let v1 = a1c * ic1L + a2c * v3;
+      let v2 = ic2L + a2c * ic1L + a3c * v3;
+      ic1L = 2 * v1 - ic1L; ic2L = 2 * v2 - ic2L;
+      XL[j] = ft === 1 ? v2 : ft === 2 ? kq * v1 : ft === 3 ? yL - kq * v1 - v2 : yL - kq * v1;
+      if (stereo) {
+        const yR = XR[j];
+        v3 = yR - ic2R;
+        v1 = a1c * ic1R + a2c * v3;
+        v2 = ic2R + a2c * ic1R + a3c * v3;
+        ic1R = 2 * v1 - ic1R; ic2R = 2 * v2 - ic2R;
+        XR[j] = ft === 1 ? v2 : ft === 2 ? kq * v1 : ft === 3 ? yR - kq * v1 - v2 : yR - kq * v1;
+      }
+    }
+    v.g = g; v.k = kq;
+    v.ic1L = ic1L; v.ic2L = ic2L; v.ic1R = ic1R; v.ic2R = ic2R;
+  }
+
+  /** Comb filter in place (see combControl). Linear-interpolated taps keep the loop passive, so it never blows up. */
+  combBlock(v, XL, XR, n2, stereo) {
+    const buf = v.comb;
+    if (!buf) { this.advanceComb(v, n2); return; }
+    const len = v.combLen, mask = len - 1;
+    let D = v.cD, fb = v.cFb, ff = v.cFf, mk = v.cMk;
+    const dD = v.dcD, dfb = v.dcFb, dff = v.dcFf, dmk = v.dcMk;
+    let wi = v.cw;
+    for (let j = 0; j < n2; j++) {
+      D += dD; fb += dfb; ff += dff; mk += dmk;
+      const p1 = wi - D, p2 = wi - 2 * D;
+      const i1 = Math.floor(p1), f1 = p1 - i1, i2 = Math.floor(p2), f2 = p2 - i2;
+      {
+        const a1 = buf[i1 & mask], a2 = buf[i2 & mask];
+        const d1 = a1 + f1 * (buf[(i1 + 1) & mask] - a1);
+        const d2 = a2 + f2 * (buf[(i2 + 1) & mask] - a2);
+        const w = XL[j] + fb * d2;
+        buf[wi] = w;
+        XL[j] = mk * (w + ff * d1);
+      }
+      if (stereo) {
+        const o = len;
+        const a1 = buf[o + (i1 & mask)], a2 = buf[o + (i2 & mask)];
+        const d1 = a1 + f1 * (buf[o + ((i1 + 1) & mask)] - a1);
+        const d2 = a2 + f2 * (buf[o + ((i2 + 1) & mask)] - a2);
+        const w = XR[j] + fb * d2;
+        buf[o + wi] = w;
+        XR[j] = mk * (w + ff * d1);
+      }
+      wi = (wi + 1) & mask;
+    }
+    v.cw = wi;
+    v.cD = D; v.cFb = fb; v.cFf = ff; v.cMk = mk;
+  }
+
+  /** Vowel filter in place: three TPT band-passes summed with their formant levels. */
+  vowelBlock(v, XL, XR, n2, stereo) {
+    const vf = v.vf, dvf = v.dvf, s = v.vs;
+    let g1 = vf[0], g2 = vf[1], g3 = vf[2], k1 = vf[3], k2 = vf[4], k3 = vf[5], m1 = vf[6], m2 = vf[7], m3 = vf[8];
+    const dg1 = dvf[0], dg2 = dvf[1], dg3 = dvf[2], dk1 = dvf[3], dk2 = dvf[4], dk3 = dvf[5], dm1 = dvf[6], dm2 = dvf[7], dm3 = dvf[8];
+    let a1 = s[0], b1 = s[1], a2 = s[2], b2 = s[3], a3 = s[4], b3 = s[5];
+    let c1 = s[6], e1 = s[7], c2 = s[8], e2 = s[9], c3 = s[10], e3 = s[11];
+    for (let j = 0; j < n2; j++) {
+      g1 += dg1; g2 += dg2; g3 += dg3; k1 += dk1; k2 += dk2; k3 += dk3; m1 += dm1; m2 += dm2; m3 += dm3;
+      const h1 = 1 / (1 + g1 * (g1 + k1)), h2 = 1 / (1 + g2 * (g2 + k2)), h3 = 1 / (1 + g3 * (g3 + k3));
+      const xL = XL[j];
+      let t = xL - b1, p = h1 * (a1 + g1 * t);
+      b1 += 2 * g1 * p; a1 = 2 * p - a1;
+      let y = m1 * p;
+      t = xL - b2; p = h2 * (a2 + g2 * t);
+      b2 += 2 * g2 * p; a2 = 2 * p - a2;
+      y += m2 * p;
+      t = xL - b3; p = h3 * (a3 + g3 * t);
+      b3 += 2 * g3 * p; a3 = 2 * p - a3;
+      XL[j] = y + m3 * p;
+      if (stereo) {
+        const xR = XR[j];
+        t = xR - e1; p = h1 * (c1 + g1 * t);
+        e1 += 2 * g1 * p; c1 = 2 * p - c1;
+        y = m1 * p;
+        t = xR - e2; p = h2 * (c2 + g2 * t);
+        e2 += 2 * g2 * p; c2 = 2 * p - c2;
+        y += m2 * p;
+        t = xR - e3; p = h3 * (c3 + g3 * t);
+        e3 += 2 * g3 * p; c3 = 2 * p - c3;
+        XR[j] = y + m3 * p;
+      }
+    }
+    vf[0] = g1; vf[1] = g2; vf[2] = g3; vf[3] = k1; vf[4] = k2; vf[5] = k3; vf[6] = m1; vf[7] = m2; vf[8] = m3;
+    s[0] = a1; s[1] = b1; s[2] = a2; s[3] = b2; s[4] = a3; s[5] = b3;
+    s[6] = c1; s[7] = e1; s[8] = c2; s[9] = e2; s[10] = c3; s[11] = e3;
+  }
+
+  /**
+   * Pass 1 of the Laps/Pace/travel oscillator. Per unison oscillator and
+   * sample: the cycle phase φ advances at the note frequency; Pace warps it
+   * to ψ, Laps gives the path phase t = frac(laps ψ), then ping-pong and
+   * Even re-map t. Every wrap of φ is a hard-sync restart; it is recorded
+   * (sample, sub-sample position, laps) for syncBlep(), including one
+   * look-ahead restart that falls between this segment's last sample and the
+   * next segment's first. With `paced` the log2 of the local Pace speed goes
+   * into this.lvs[q] for the per-sample mip level. Returns the number of
+   * recorded restarts.
+   */
+  syncPaths(P, v, n2, paced, trav, shape, order) {
+    const U = v.uRun, T = this.ts, PH = this.phs;
     const L0 = v.laps, dL = v.dLaps;
     const evQ = this.evQ, evJ = this.evJ, evD = this.evD, evL = this.evL;
     let nEv = 0;
@@ -1404,7 +2928,8 @@ export class OrographDSP {
         }
       }
       v.phase[q] = ph; v.inc[q] = inc;
-      pathBlockAt(P.shapeI, P.orderI, n2, T, v.param, v.dParam, this.xs[q], this.ys[q]);
+      if (trav !== 0) travelBlock(shape, order, n2, T, v.param, v.dParam, trav & 1, trav & 2);
+      pathBlockAt(shape, order, n2, T, v.param, v.dParam, this.xs[q], this.ys[q]);
     }
     return nEv;
   }
@@ -1416,7 +2941,7 @@ export class OrographDSP {
    * tables than the lingering part and neither aliases nor dulls.
    */
   terrainPaced(P, v, n2) {
-    const U = P.uni, gUL = P.gUL, gUR = P.gUR, stereo = U > 1;
+    const U = v.uRun, gUL = v.ugL, gUR = v.ugR, stereo = v.stereo, gRamp = v.gRamp;
     const XS = this.xs, YS = this.ys, SL = this.sumL, SR = this.sumR;
     const chA = P.terrA, topA = chA.length - 1, chB = P.terrB, topB = chB.length - 1;
     const fA0 = P.fadeACur, dfA = P.dFadeA, oldA = P.oldA;
@@ -1439,7 +2964,8 @@ export class OrographDSP {
     const oA = oldA !== null ? oldA : chA, oB = oldB !== null ? oldB : chB;
     for (let q = 0; q < U; q++) {
       const X = XS[q], Y = YS[q], LV = this.lvs[q];
-      const gl = gUL[q], gr = gUR[q];
+      let gl = gUL[q], gr = gUR[q];
+      const dgl = gRamp ? v.dugL[q] : 0, dgr = gRamp ? v.dugR[q] : 0;
       let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
       let morph = m0, warp = wp0, lift = lf0, fold = fd0, fA = fA0, fB = fB0, lvA = lvA0, lvB = lvB0;
       let curA = -1, a0 = chA[0].data, sa0 = 1, ma0 = 0, a1 = a0, sa1 = 1, ma1 = 0, oa = a0, osa = 1, oma = 0;
@@ -1447,6 +2973,7 @@ export class OrographDSP {
       for (let j = 0; j < n2; j++) {
         tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
         lvA += dlvA; lvB += dlvB;
+        if (gRamp) { gl += dgl; gr += dgr; }
         const px = X[j], py = Y[j], off = LV[j];
         let u = cx + px * tA - py * tB;
         let w = cy + px * tC + py * tD;
@@ -1587,16 +3114,17 @@ export class OrographDSP {
    * A restart at a fraction d of a sample before sample j makes the output
    * jump by D = height(path start) - height(where the cut lap ended), both
    * measured through the full terrain chain at that moment (t = 0 versus
-   * t = frac(laps); integer Laps restart where they already are, D = 0).
-   * The two-sample polyBLEP residual adds D d^2 / 2 to sample j - 1 and
-   * -D (1 - d)^2 / 2 to sample j. A look-ahead restart (j = n2) puts its
-   * first half on our last sample and leaves the second for the next segment.
+   * t = frac(laps), each through the voice's travel map; integer Laps
+   * restart where they already are, D = 0). The two-sample polyBLEP residual
+   * adds D d^2 / 2 to sample j - 1 and -D (1 - d)^2 / 2 to sample j. A
+   * look-ahead restart (j = n2) puts its first half on our last sample and
+   * leaves the second for the next segment.
    * (A polyBLAMP for the change of slope at the restart was tried: under
    * 1 dB less aliasing for twice the lookups, so it is left out.)
    */
-  syncBlep(P, v, n2, nEv, param0, paced) {
+  syncBlep(P, v, n2, nEv, param0, paced, trav, shape, order) {
     if (!this.blep) return;
-    const SL = this.sumL, SR = this.sumR, stereo = P.uni > 1;
+    const SL = this.sumL, SR = this.sumR, stereo = v.stereo;
     const evQ = this.evQ, evJ = this.evJ, evD = this.evD, evL = this.evL;
     const pt = this.pt, dp = v.dParam;
     for (let e = 0; e < nEv; e++) {
@@ -1607,12 +3135,12 @@ export class OrographDSP {
       const j = jj < n2 ? jj : n2 - 1;
       let p = param0 + dp * (j + 1);
       p = p < 0 ? 0 : p > 1 ? 1 : p;
-      pathPoint(P.shapeI, tEnd, P.orderI, p, pt);
+      pathPoint(shape, trav !== 0 ? this.travelMap(shape, order, tEnd, p, trav) : tEnd, order, p, pt);
       const hEnd = this.heightAt(P, v, n2, j, q, paced);
-      pathPoint(P.shapeI, 0, P.orderI, p, pt);
+      pathPoint(shape, 0, order, p, pt);
       const D = this.heightAt(P, v, n2, j, q, paced) - hEnd;
       if (D === 0) continue;
-      const gl = P.gUL[q], gr = P.gUR[q];
+      const gl = v.ugL[q] + (v.gRamp ? v.dugL[q] * (j + 1) : 0), gr = v.ugR[q] + (v.gRamp ? v.dugR[q] * (j + 1) : 0);
       const pre = 0.5 * D * d * d, post = -0.5 * D * (1 - d) * (1 - d);
       if (jj < n2) {
         SL[jj] += post * gl; if (stereo) SR[jj] += post * gr;
@@ -1624,8 +3152,251 @@ export class OrographDSP {
     }
   }
 
-  decimate(P, pos, seg) {
-    const bL = P.busL, bR = P.busR, oL = P.outL, oR = P.outR;
+  // ---- Pristine ------------------------------------------------------------
+
+  /**
+   * Per control block: decide between band-limited tables and direct
+   * rendering (direct while the orbit moves fast: a 5 ms snapshot crossfade
+   * would smear it), and refresh the table every ~256 samples (at least once
+   * per cycle for low notes) with a crossfade into the new one.
+   */
+  pristineControl(P, v, snap, f) {
+    const o = v.orb;
+    // where the orbit is, in roughly knob-travel units
+    const rot = v.sRot / 360 + P.spinPhase;
+    const vals = this.sav;
+    vals[0] = v.sSize * 2; vals[1] = v.sStretch * 0.5; vals[2] = rot; vals[3] = v.sCx * 4; vals[4] = v.sCy * 4;
+    vals[5] = v.sMorph; vals[6] = v.sWarp; vals[7] = Math.log2(v.sLift) * 0.25; vals[8] = v.sFold; vals[9] = v.sParam;
+    vals[10] = (v.sLaps - 1) / 7; vals[11] = v.sPace * 0.5;
+    let motion = 0;
+    if (!snap) {
+      for (let i = 0; i < 12; i++) {
+        let d = vals[i] - o[i];
+        if (i >= 2 && i <= 4) { const r = i === 2 ? 1 : 4; d = wrapHalf(d / r) * r; }
+        if (d < 0) d = -d;
+        if (d > motion) motion = d;
+      }
+      motion *= this.sr / CTRL;      // per second
+    }
+    for (let i = 0; i < 12; i++) o[i] = vals[i];
+    v.drift += motion * CTRL / this.sr;     // orbit travel since the last table, knob units
+    const fs2 = this.fs2;
+    if (snap) v.calm = P.orbitVoiceMod ? 0 : 1e9;
+    else if (motion > 8) v.calm = 0;
+    else if (motion < 4) v.calm += CTRL;
+    const want = v.calm >= 0.064 * this.sr;
+    const cyc = this.sr / f;
+    const R = CTRL * Math.ceil(Math.min(1024, Math.max(256, cyc)) / CTRL);
+    if (want && !v.tabValid && this.tabBudget <= 0) {
+      // over this block's build budget: play direct for now, build next block
+      v.tabCount = 0;
+      return this.pristineFade(v, false);
+    }
+    if (want) {
+      v.tabCount -= CTRL;
+      if (!v.tabValid) {
+        this.tableKey(P, v, f, v.tabKey);
+        v.drift = 0; v.tabAge = 0;
+        this.buildTable(P, v, v.tabB);
+        v.tabNA = v.tabNB = this.tabLen;
+        v.tabA.set(v.tabB.subarray(0, this.tabLen + 3));
+        v.tabX = 1; v.dTabX = 0; v.tabValid = true;
+        // stagger the refreshes of voices started together
+        v.tabCount = R - CTRL * ((v.index * 3) % (R / CTRL));
+        if (snap) { v.tw = 1; v.dtw = 0; }
+      } else if (v.tabCount <= 0 && this.tabBudget > 0) {
+        v.tabCount = R;
+        v.tabAge += R;
+        // A held, unmodulated orbit keeps its table; one that drifts slowly
+        // gets a new one once it has moved a little (or every 4 refreshes):
+        // the crossfade between snapshots carries a slow change faithfully.
+        if (v.tabX >= 1) {
+          const same = this.sameTableKey(P, v, f);
+          if (same === 0 || (same === 1 && v.drift < TABLE_DRIFT && v.tabAge < 4 * R)) return this.pristineFade(v, want);
+        }
+        const t = v.tabA; v.tabA = v.tabB; v.tabB = t; v.tabNA = v.tabNB;
+        this.tableKey(P, v, f, v.tabKey);
+        this.buildTable(P, v, v.tabB);
+        v.tabNB = this.tabLen;
+        v.tabX = 0; v.dTabX = 1 / (R * this.os);
+        v.drift = 0; v.tabAge = 0;
+      }
+    }
+    this.pristineFade(v, want);
+  }
+
+  /** Steer the table weight towards 1 (table) or 0 (direct rendering). */
+  pristineFade(v, want) {
+    const fs2 = this.fs2;
+    if (want) {
+      v.dtw = v.tw < 1 ? 1 / (TABLE_FADE * fs2) : 0;
+    } else {
+      v.dtw = v.tw > 0 ? -1 / (TABLE_FADE * fs2) : 0;
+      if (v.tw <= 0) v.tabValid = false;
+    }
+  }
+
+  /**
+   * The inputs of a table build (orbit, travel, band limit, terrain), stored
+   * in v.tabKey by buildTable; true when they are unchanged, so the table in
+   * hand is still exact.
+   */
+  tableKey(P, v, f, out) {
+    const o = v.orb;
+    for (let i = 0; i < 12; i++) out[i] = o[i];
+    out[12] = v.paceShape; out[13] = v.trav; out[14] = v.pShape * 16 + v.pOrder;
+    out[15] = Math.floor(0.5 * this.sr / (f * P.detRatio[v.uRun - 1] + 1e-9));
+    out[16] = P.terrGen; out[17] = (P.oldA !== null ? P.fadeACur : 0) + (P.oldB !== null ? P.fadeBCur : 0);
+    out[18] = v.uRun; out[19] = this.mipBias;
+  }
+
+  /** 0: the table in hand is exact; 1: only the orbit has drifted; 2: something else changed. */
+  sameTableKey(P, v, f) {
+    const k = this.keyScratch;
+    this.tableKey(P, v, f, k);
+    const old = v.tabKey;
+    let res = 0;
+    for (let i = 0; i < 20; i++) {
+      const d = k[i] - old[i];
+      if (d > 1e-9 || d < -1e-9) { if (i >= 12) return 2; res = 1; }
+    }
+    return res;
+  }
+
+  /**
+   * Sample one cycle of the voice's current (end-of-block) orbit through the
+   * terrain, brick-wall it at the host Nyquist for the fastest unison
+   * oscillator and write it to dst with Catmull-Rom guard points
+   * (dst[i + 1] = sample i; dst[0] = last; two wrapped samples at the end).
+   * this.tabLen = table length.
+   */
+  buildTable(P, v, dst) {
+    const U = v.uRun;
+    let inc = 0;
+    for (let q = 0; q < U; q++) if (v.inc[q] > inc) inc = v.inc[q];
+    const fmax = inc * this.fs2 + 1e-9;
+    let H = Math.floor(0.5 * this.sr / fmax);
+    if (H < 1) H = 1; else if (H > 1023) H = 1023;
+    let K = 16;
+    while (K < H + 1) K <<= 1;
+    const M = Math.min(TAB_MAX, 4 * K);
+    const T = this.tT, X = this.tX, Y = this.tY, LV = this.tLv;
+    for (let i = 0; i < M; i++) T[i] = i / M;
+    const pace = v.sPace, laps = v.sLaps, trav = v.trav, param = v.sParam;
+    const paced = pace !== 0;
+    if (paced) {
+      paceBlock(v.paceShape, M, T, pace, 0, T);
+      let prev = T[M - 1] - 1;
+      for (let i = 0; i < M; i++) {
+        let d = T[i] - prev;
+        if (d < 0) d += 1;
+        prev = T[i];
+        LV[i] = speedLog2(d * M);
+      }
+    }
+    if (laps !== 1) for (let i = 0; i < M; i++) { const t = laps * T[i]; T[i] = t - Math.floor(t); }
+    if (trav !== 0) travelBlock(v.pShape, v.pOrder, M, T, param, 0, trav & 1, trav & 2);
+    pathBlockAt(v.pShape, v.pOrder, M, T, param, 0, X, Y);
+
+    // mip: M points per cycle, content kept to M/4 harmonics (bias 1, as the oscillator)
+    const cyc = v.eSpeed;      // terrain units per cycle
+    const tA = v.eA, tB = v.eB, tC = v.eC, tD = v.eD, cx = v.sCx, cy = v.sCy;
+    const warp = v.sWarp, morph = v.sMorph, lift = v.sLift, fold = v.sFold;
+    const chA = P.terrA, chB = P.terrB, topA = chA.length - 1, topB = chB.length - 1;
+    const baseA = Math.log2(chA[0].size * cyc / M) + this.mipBias, baseB = Math.log2(chB[0].size * cyc / M) + this.mipBias;
+    const needA = morph < 0.9999, needB = morph > 1e-4;
+    const fA = P.oldA !== null ? P.fadeACur : 0, fB = P.oldB !== null ? P.fadeBCur : 0;
+    const shapeOn = !(lift === 1 && fold <= 0);
+    const S = this.fre;
+    if (!paced && fA === 0 && fB === 0) {
+      // one mip level pair for the whole cycle: tables hoisted, lookups inline
+      const lva = baseA < 0 ? 0 : baseA > topA ? topA : baseA, la = lva | 0, wa = la < topA ? mipZone(lva - la) : 0;
+      const lvb = baseB < 0 ? 0 : baseB > topB ? topB : baseB, lb = lvb | 0, wb = lb < topB ? mipZone(lvb - lb) : 0;
+      const A0 = chA[la], A1 = chA[la < topA ? la + 1 : la], B0 = chB[lb], B1 = chB[lb < topB ? lb + 1 : lb];
+      const a0 = A0.data, sa0 = A0.size, a1 = A1.data, sa1 = A1.size, b0 = B0.data, sb0 = B0.size, b1 = B1.data, sb1 = B1.size;
+      for (let i = 0; i < M; i++) {
+        const px = X[i], py = Y[i];
+        let u = cx + px * tA - py * tB;
+        let w = cy + px * tC + py * tD;
+        if (warp > 0) {
+          const ww = warp * 0.06;
+          const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+          w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+          u = u2;
+        }
+        let h = 0;
+        if (needA) {
+          h = bil(a0, sa0, sa0 - 1, u, w);
+          if (wa > 0) h += wa * (bil(a1, sa1, sa1 - 1, u, w) - h);
+        }
+        if (needB) {
+          let hb = bil(b0, sb0, sb0 - 1, u, w);
+          if (wb > 0) hb += wb * (bil(b1, sb1, sb1 - 1, u, w) - hb);
+          h = needA ? h + morph * (hb - h) : hb;
+        }
+        if (shapeOn) {
+          const y = h * lift;
+          const ay = y < 0 ? -y : y;
+          let sh = y;
+          if (ay > 1) { const e = 2 * (ay - 1); const kk = 1 + 0.5 * e / (1 + e); sh = y < 0 ? -kk : kk; }
+          if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
+          h = sh;
+        }
+        S[i] = h;
+      }
+    } else {
+      for (let i = 0; i < M; i++) {
+        const px = X[i], py = Y[i];
+        let u = cx + px * tA - py * tB;
+        let w = cy + px * tC + py * tD;
+        if (warp > 0) {
+          const ww = warp * 0.06;
+          const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+          w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+          u = u2;
+        }
+        const off = paced ? LV[i] : 0;
+        let h = 0;
+        if (needA) {
+          let lv = baseA + off;
+          lv = lv < 0 ? 0 : lv > topA ? topA : lv;
+          const l = lv | 0;
+          h = chainHeight(chA, l, l < topA ? mipZone(lv - l) : 0, fA > 0 ? P.oldA : null, fA, u, w);
+        }
+        if (needB) {
+          let lv = baseB + off;
+          lv = lv < 0 ? 0 : lv > topB ? topB : lv;
+          const l = lv | 0;
+          const hb = chainHeight(chB, l, l < topB ? mipZone(lv - l) : 0, fB > 0 ? P.oldB : null, fB, u, w);
+          h = needA ? h + morph * (hb - h) : hb;
+        }
+        if (shapeOn) {
+          const y = h * lift;
+          const ay = y < 0 ? -y : y;
+          let sh = y;
+          if (ay > 1) { const e = 2 * (ay - 1); const kk = 1 + 0.5 * e / (1 + e); sh = y < 0 ? -kk : kk; }
+          if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
+          h = sh;
+        }
+        S[i] = h;
+      }
+    }
+    // brick wall: keep DC and harmonics 1..H (a real FFT of M points as M/2 complex)
+    const re = this.fre, im = this.fim, zr = this.tX, zi = this.tY;
+    this.fft.realForward(S, M, re, im, zr, zi);
+    for (let k = H + 1; k <= M >> 1; k++) { re[k] = 0; im[k] = 0; }
+    this.fft.realInverse(re, im, M, LV, zr, zi);
+    const sc = 1 / M;
+    for (let i = 0; i < M; i++) dst[i + 1] = LV[i] * sc;
+    dst[0] = dst[M]; dst[M + 1] = dst[1]; dst[M + 2] = dst[2];
+    this.tabLen = M;
+    this.tabBudget -= M;
+  }
+
+  // ---- decimation and mixing ---------------------------------------------------
+
+  /** 2x -> host: the 63-tap half-band from bus (2x, HB_HIST history) to o*. */
+  decimate2(bL, bR, oL, oR, pos, seg) {
     for (let n = pos; n < pos + seg; n++) {
       const c = HB_HIST + 2 * n + 1 - HB_M;
       let sL = HB_CENTER * bL[c], sR = HB_CENTER * bR[c];
@@ -1639,19 +3410,48 @@ export class OrographDSP {
     }
   }
 
+  /** 4x -> 2x (High): the 27-tap half-band from bus (4x, HB1_HIST history) into mid (2x, HB_HIST history). */
+  decimate4(bL, bR, mL, mR, pos, seg) {
+    for (let m = 2 * pos; m < 2 * (pos + seg); m++) {
+      const c = HB1_HIST + 2 * m + 1 - HB1_M;
+      let sL = HB1_CENTER * bL[c], sR = HB1_CENTER * bR[c];
+      for (let i = 0; i < HB1_PAIRS; i++) {
+        const o = 2 * i + 1;
+        const h = HB1_C[i];
+        sL += h * (bL[c - o] + bL[c + o]);
+        sR += h * (bR[c - o] + bR[c + o]);
+      }
+      mL[HB_HIST + m] = sL; mR[HB_HIST + m] = sR;
+    }
+  }
+
+  /** The part's (or ghost's) bus down to the host rate for one segment. */
+  decimateTo(os, busL, busR, midL, midR, oL, oR, pos, seg) {
+    if (os === 2) this.decimate2(busL, busR, oL, oR, pos, seg);
+    else if (os === 4) {
+      this.decimate4(busL, busR, midL, midR, pos, seg);
+      this.decimate2(midL, midR, oL, oR, pos, seg);
+    } else {
+      // Eco: no filter, a plain delay that matches the half-band's latency
+      for (let n = pos; n < pos + seg; n++) { oL[n] = busL[HB_HIST + n - ECO_DELAY]; oR[n] = busR[HB_HIST + n - ECO_DELAY]; }
+    }
+  }
+
   renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR) {
-    const n2 = OVERSAMPLE * seg;
-    const off2 = OVERSAMPLE * pos;
     for (const P of this.parts) {
+      const g = P.ghost;
+      const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
-      if (active === 0 && P.tail <= 0) {
+      if (active === 0 && P.tail <= 0 && !ghostOn) {
         P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg;
         continue;
       }
-      if (active > 0) P.tail = HB_N;
+      if (active > 0 || ghostOn) P.tail = HB_N;
+      const rc = P.rc, os = rc.os;
+      const n2 = os * seg, off2 = os * pos;
       for (const v of P.voices) {
         if (!v.active) continue;
-        this.renderVoice(P, v, off2, n2);
+        this.renderVoice(P, v, off2, n2, rc);
         if (v.stealFade > 0 && (v.stealGain <= 0 || v.envStage === IDLE)) {
           const pend = v.pending, note = v.pendNote, vel = v.pendVel;
           v.active = false;
@@ -1663,10 +3463,32 @@ export class OrographDSP {
           v.resetState();
         }
       }
+      const oL = P.outL, oR = P.outR;
+      this.decimateTo(os, P.busL, P.busR, P.midL, P.midR, oL, oR, pos, seg);
+      if (ghostOn) {
+        // the outgoing quality: frozen voices into their own buses, then a
+        // raised-cosine crossfade (the new path's decimator has just started
+        // from silence, so it comes in after a short hold)
+        const grc = g.rc, gos = grc.os;
+        for (const gv of g.voices) {
+          if (!gv.active) continue;
+          this.renderVoice(P, gv, gos * pos, gos * seg, grc);
+          if (gv.envStage === IDLE || (gv.stealFade > 0 && gv.stealGain <= 0)) gv.active = false;
+        }
+        this.decimateTo(gos, g.busL, g.busR, g.midL, g.midR, g.outL, g.outR, pos, seg);
+        const total = g.total, hold = Math.min(HB_N, total >> 2);
+        let left = g.left;
+        for (let n = pos; n < pos + seg; n++) {
+          left--;
+          const x = (total - left - hold) / (total - hold);
+          const w = x <= 0 ? 0 : x >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * x);
+          oL[n] = g.outL[n] + w * (oL[n] - g.outL[n]);
+          oR[n] = g.outR[n] + w * (oR[n] - g.outR[n]);
+        }
+        g.left = left;
+      }
       if (P.oldA) { P.fadeACur += P.dFadeA * n2; if (P.fadeACur < 0) P.fadeACur = 0; }
       if (P.oldB) { P.fadeBCur += P.dFadeB * n2; if (P.fadeBCur < 0) P.fadeBCur = 0; }
-      this.decimate(P, pos, seg);
-      const oL = P.outL, oR = P.outR;
       let gn = P.gain, dl = P.dly, rv = P.rev;
       const dgn = P.dGain, ddl = P.dDly, drv = P.dRev;
       for (let n = pos; n < pos + seg; n++) {
@@ -1677,9 +3499,9 @@ export class OrographDSP {
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }
       P.gain = gn; P.dly = dl; P.rev = rv;
-      if (active === 0) {
+      if (active === 0 && !ghostOn) {
         P.tail -= seg;
-        if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); }
+        if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0); }
       }
     }
   }
@@ -1694,13 +3516,20 @@ export class OrographDSP {
     const n = frames | 0;
     const now = Number.isFinite(currentTime) ? currentTime : this.lastTime + n / sr;
     this.lastTime = now;
+    if (this.pendingQuality !== null && !this.parts.some(P => P.ghost !== null && P.ghost.left > 0)) this.setQuality(this.pendingQuality);
     outL.fill(0, 0, n); outR.fill(0, 0, n);
     if (dlyL) { dlyL.fill(0, 0, n); dlyR.fill(0, 0, n); }
     if (revL) { revL.fill(0, 0, n); revR.fill(0, 0, n); }
     for (const P of this.parts) {
       P.ensureBus(n);
-      P.busL.fill(0, HB_HIST, HB_HIST + OVERSAMPLE * n);
-      P.busR.fill(0, HB_HIST, HB_HIST + OVERSAMPLE * n);
+      P.busL.fill(0, P.hist, P.hist + P.os * n);
+      P.busR.fill(0, P.hist, P.hist + P.os * n);
+      const g = P.ghost;
+      if (g !== null && g.left > 0) {
+        const gh = g.rc.hist, gos = g.rc.os;
+        g.busL.fill(0, gh, gh + gos * n);
+        g.busR.fill(0, gh, gh + gos * n);
+      }
     }
 
     let pos = 0;
@@ -1712,11 +3541,14 @@ export class OrographDSP {
         if (off > pos) break;
         E.shift();
         const P = this.parts[ev.part];
-        if (ev.type === 1) this.noteOn(P, ev.note, ev.vel); else this.noteOff(P, ev.note);
+        if (ev.type === 2) this.applyParams(P, ev.p, ev.ramp, ev.time, true);
+        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel);
+        else this.noteOff(P, ev.note);
       }
       if (this.ctrlRemain <= 0) {
         this.blockTime = now + pos / sr;
-        this.controlUpdate();
+        this.controlUpdate(this.sinceCtrl);
+        this.sinceCtrl = 0;
         this.ctrlRemain = CTRL;
       }
       let seg = n - pos;
@@ -1728,12 +3560,25 @@ export class OrographDSP {
       this.renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR);
       pos += seg;
       this.ctrlRemain -= seg;
+      this.sinceCtrl += seg;
     }
+    this.nextTime = now + n / sr;
 
-    const H2 = OVERSAMPLE * n;
     for (const P of this.parts) {
-      P.busL.copyWithin(0, H2, H2 + HB_HIST);
-      P.busR.copyWithin(0, H2, H2 + HB_HIST);
+      const H = P.os * n;
+      P.busL.copyWithin(0, H, H + P.hist);
+      P.busR.copyWithin(0, H, H + P.hist);
+      if (P.os === 4) {
+        P.midL.copyWithin(0, 2 * n, 2 * n + HB_HIST);
+        P.midR.copyWithin(0, 2 * n, 2 * n + HB_HIST);
+      }
+      const g = P.ghost;
+      if (g !== null && g.left > 0) {
+        const gos = g.rc.os, gh = g.rc.hist, GH = gos * n;
+        g.busL.copyWithin(0, GH, GH + gh);
+        g.busR.copyWithin(0, GH, GH + gh);
+        if (gos === 4) { g.midL.copyWithin(0, 2 * n, 2 * n + HB_HIST); g.midR.copyWithin(0, 2 * n, 2 * n + HB_HIST); }
+      }
     }
 
     // last line of defence before the host's limiter: no NaN, never beyond ±4
@@ -1780,7 +3625,15 @@ export class OrographDSP {
       voices.push({ id: v.index, note: v.pending ? v.pendNote : v.note, amp: v.envLvl * v.velGain * v.stealGain });
     }
     const activeVoices = this.parts.map(p => p.activeCount());
-    const msg = { t: 'tele', part: this.watch, n: nobj, spinPhase: P.spinPhase, voices, peak: [this.peakL, this.peakR], activeVoices };
+    // height under the modulated dot: the newest voice's smoothed dot, else the part's
+    const PP = P.partPlain;
+    const terrainHeight = best
+      ? this.terrainHeightAt(P, best.sCx, best.sCy, best.sMorph, best.sWarp)
+      : this.terrainHeightAt(P, PP[M_CX], PP[M_CY], PP[M_MORPH], PP[M_WARP]);
+    const msg = {
+      t: 'tele', part: this.watch, n: nobj, spinPhase: P.spinPhase, voices, peak: [this.peakL, this.peakR], activeVoices,
+      terrainHeight, quality: this.quality,
+    };
     this.peakL = 0; this.peakR = 0;
     this.postMessage(msg);
   }

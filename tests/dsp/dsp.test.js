@@ -1,8 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TERRAINS, PATHS } from '../../src/dsp/catalog.js';
 import { OrographDSP, HALFBAND, CTRL } from '../../src/dsp/dsp-core.js';
 import { MOD_PARAM_IDS } from '../../src/core/params.js';
 import { SR, makeDSP, render, rms, peak, allFinite, spectrum, terrainChain } from './helpers.js';
+
+// Offline renders are heavy and the suite may share a busy machine: measure
+// quality here, not wall-clock speed (dev/dsp/bench.mjs measures CPU time).
+vi.setConfig({ testTimeout: 120000 });
 
 const T = Object.fromEntries(TERRAINS.map((t, i) => [t.id, i]));
 const P = Object.fromEntries(PATHS.map((p, i) => [p.id, i]));

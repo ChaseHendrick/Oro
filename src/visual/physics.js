@@ -1,12 +1,25 @@
-// Dot behaviours: Pin (still), Roll (a marble on the displayed terrain) and
-// Drift (a slow, smooth wander).
+// Dot behaviours that need a simulation: Roll (a marble on the displayed
+// terrain), Explore (the same marble pushed around by a slowly turning wind,
+// see explore.js) and Drift (a slow, smooth wander). Pin and Tour are not
+// simulated here (Tour lives in tour.js).
 //
 // Roll uses Rapier (lazy-loaded the first time any part rolls) with a ball on a
 // heightfield collider sampled from the part's blended terrain over all 3 x 3
 // tiles. While Rapier loads, or if it cannot load at all (e.g. a strict CSP
 // blocks WebAssembly), a small built-in integrator rolls the ball on the
-// analytic height gradient instead, tuned to feel the same. Because the
-// terrain tiles, a ball leaving the centre tile is simply shifted by one tile.
+// analytic height gradient instead, tuned to feel the same. The built-in ball
+// always stays on the ground, so Bounce only shows once Rapier runs. Because
+// the terrain tiles, a ball leaving the centre tile is simply shifted by one
+// tile.
+//
+// Explore always uses the built-in ball: a real ball (Rapier) wedges against
+// cliffs and in narrow pits the turning wind cannot get it out of, while the
+// point-contact integrator glides over them and keeps roaming, which is what
+// Explore is for.
+//
+// Units: world units are metres for the physics (one tile is W = 10 m), so
+// dot.gravity 0..1 maps to 0..2 g with g = 9.81 m/s^2. World tilt and the
+// Explore wind are horizontal accelerations added to gravity.
 //
 // Positions are world units (see heightfield.js); the centre tile is
 // x, z in [-W/2, W/2).
@@ -15,7 +28,12 @@ import { W, xToU, uToX, wrapWorld, wrap01, wrapDelta } from './heightfield.js';
 import { mulberry32, TAU } from '../dsp/terrain-math.js';
 
 export const BALL_RADIUS = 0.21;
-export const MODE_PIN = 0, MODE_ROLL = 1, MODE_DRIFT = 2;
+export const MODE_PIN = 0, MODE_ROLL = 1, MODE_DRIFT = 2, MODE_EXPLORE = 3, MODE_TOUR = 4;
+export const G = 9.81;            // m/s^2, one world unit is a metre
+// A weightless marble would leave the ground at the first bump and never come
+// back, so gravity 0 keeps a twentieth of g to hold it on the land.
+export const MIN_GRAVITY = 0.05 * G;
+export const MAX_TILT = 0.3;      // radians of world lean at tiltX / tiltY = +-1 (about 17 degrees)
 
 // A solid sphere rolling without slipping accelerates at 5/7 of a sliding one.
 const ROLL_FACTOR = 5 / 7;
@@ -25,10 +43,27 @@ const SUBSTEP = 1 / 240;
 const HF_PER_TILE = 64;
 const REBUILD_INTERVAL = 0.125;  // s, at most ~8 Hz
 
-/** dot.gravity 0..1 -> world units / s^2. */
+/** dot.gravity 0..1 -> 0..2 g in world units / s^2 (with a small floor, see MIN_GRAVITY). */
 export function gravityFromParam(g) {
-  const v = Number.isFinite(g) ? Math.min(1, Math.max(0, g)) : 0.6;
-  return 1.5 + 20 * v;
+  const v = Number.isFinite(g) ? Math.min(1, Math.max(0, g)) : 0.5;
+  return Math.max(MIN_GRAVITY, 2 * G * v);
+}
+
+/** dot.tiltX / tiltY -1..1 -> horizontal acceleration (world units / s^2) for gravity g. */
+export function tiltAccel(t, g) {
+  const v = Number.isFinite(t) ? Math.min(1, Math.max(-1, t)) : 0;
+  return g * Math.sin(v * MAX_TILT);
+}
+
+/** dot.flick 0..1 -> multiplier on the throw velocity (0.5 = as dragged, 0 = just drop it). */
+export function flickScale(f) {
+  const v = Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0.5;
+  return 2 * v;
+}
+
+/** dot.bounce 0..0.95 -> restitution. */
+export function bounceFromParam(b) {
+  return Number.isFinite(b) ? Math.min(0.95, Math.max(0, b)) : 0.25;
 }
 
 /** dot.friction 0..1 -> velocity decay rate (1 / s). */
@@ -47,8 +82,12 @@ const _g = { x: 0, z: 0 };
 
 /**
  * Built-in rolling ball: semi-implicit Euler on the surface gradient. For a
- * heightfield y = f(x, z) the horizontal acceleration of a ball held to the
- * surface is -g ∇f / (1 + |∇f|²); the 5/7 accounts for rolling inertia.
+ * heightfield y = f(x, z) and a gravity vector (ax, -g, az) (ax, az: world
+ * tilt plus the Explore wind) the horizontal acceleration of a ball held to
+ * the surface is the tangential part of gravity:
+ *   a = (ax, az) - ∇f (ax fx + az fz + g) / (1 + |∇f|²),
+ * which reduces to -g ∇f / (1 + |∇f|²) on a level world; the 5/7 accounts
+ * for rolling inertia.
  */
 export class FallbackBall {
   constructor() {
@@ -62,7 +101,7 @@ export class FallbackBall {
 
   setVelocity(vx, vz) { this.vx = vx; this.vz = vz; }
 
-  step(hf, dt, gravity, damping) {
+  step(hf, dt, gravity, damping, ax = 0, az = 0) {
     if (!(dt > 0)) return;
     const n = Math.max(1, Math.ceil(dt / SUBSTEP));
     const h = dt / n;
@@ -70,8 +109,9 @@ export class FallbackBall {
     for (let i = 0; i < n; i++) {
       hf.gradient(this.x, this.z, _g);
       const denom = 1 + _g.x * _g.x + _g.z * _g.z;
-      this.vx = (this.vx - ROLL_FACTOR * gravity * (_g.x / denom) * h) * decay;
-      this.vz = (this.vz - ROLL_FACTOR * gravity * (_g.z / denom) * h) * decay;
+      const k = (ax * _g.x + az * _g.z + gravity) / denom;
+      this.vx = (this.vx + ROLL_FACTOR * (ax - _g.x * k) * h) * decay;
+      this.vz = (this.vz + ROLL_FACTOR * (az - _g.z * k) * h) * decay;
       const sp = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
       if (sp > MAX_SPEED) { this.vx *= MAX_SPEED / sp; this.vz *= MAX_SPEED / sp; }
       this.x += this.vx * h;
@@ -149,12 +189,13 @@ export function rapierStatus() { return rapierState; }
 export class RapierBall {
   constructor(R) {
     this.R = R;
-    this.world = new R.World({ x: 0, y: -9.81, z: 0 });
+    this.world = new R.World({ x: 0, y: -G, z: 0 });
     this.world.timestep = FIXED_DT;
     this.body = this.world.createRigidBody(
       R.RigidBodyDesc.dynamic().setTranslation(0, 2, 0).setCcdEnabled(true).setCanSleep(false));
+    this.bounce = 0.25;
     this.ball = this.world.createCollider(
-      R.ColliderDesc.ball(BALL_RADIUS).setRestitution(0.3).setFriction(0.7).setDensity(1.2), this.body);
+      R.ColliderDesc.ball(BALL_RADIUS).setRestitution(this.bounce).setFriction(0.7).setDensity(1.2), this.body);
     this.ground = null;
     this.subdiv = HF_PER_TILE * 3;
     this.heights = new Float32Array((this.subdiv + 1) * (this.subdiv + 1));
@@ -163,6 +204,8 @@ export class RapierBall {
     this.acc = 0;
     this.gravity = -1;
     this.damping = -1;
+    // Reused for every setTranslation / setLinvel call (Rapier copies them).
+    this._v = { x: 0, y: 0, z: 0 };
     this.x = 0; this.y = 0; this.z = 0; this.vx = 0; this.vz = 0;
   }
 
@@ -176,7 +219,7 @@ export class RapierBall {
     }
     if (this.ground) this.world.removeCollider(this.ground, false);
     this.ground = this.world.createCollider(
-      R.ColliderDesc.heightfield(n, n, hts, { x: 2 * ext, y: 1, z: 2 * ext }).setFriction(0.7).setRestitution(0.3));
+      R.ColliderDesc.heightfield(n, n, hts, { x: 2 * ext, y: 1, z: 2 * ext }).setFriction(0.7).setRestitution(this.bounce));
     this.builtVersion = hf.version;
   }
 
@@ -188,13 +231,15 @@ export class RapierBall {
     const p = this.body.translation();
     this.rebuild(hf);
     const floor = hf.yAt(p.x, p.z) + BALL_RADIUS;
-    if (p.y < floor) this.body.setTranslation({ x: p.x, y: floor + 0.01, z: p.z }, true);
+    if (p.y < floor) this.body.setTranslation(this.vec(p.x, floor + 0.01, p.z), true);
   }
 
-  setTuning(gravity, damping) {
+  vec(x, y, z) { const v = this._v; v.x = x; v.y = y; v.z = z; return v; }
+
+  setTuning(gravity, damping, bounce = this.bounce) {
     if (gravity !== this.gravity) {
       this.gravity = gravity;
-      this.world.gravity = { x: 0, y: -gravity, z: 0 };
+      this.world.gravity.y = -gravity;
     }
     if (damping !== this.damping) {
       this.damping = damping;
@@ -203,13 +248,25 @@ export class RapierBall {
       this.body.setLinearDamping(damping * 0.55);
       this.body.setAngularDamping(damping * 0.55);
     }
+    if (bounce !== this.bounce) {
+      // Both sides carry the same value, so Rapier's average combine rule gives exactly `bounce`.
+      this.bounce = bounce;
+      this.ball.setRestitution(bounce);
+      if (this.ground) this.ground.setRestitution(bounce);
+    }
+  }
+
+  /** Horizontal part of gravity (world tilt plus the Explore wind), in place: no allocation. */
+  setPush(ax, az) {
+    const g = this.world.gravity;
+    g.x = ax; g.z = az;
   }
 
   place(hf, x, z, vx = 0, vz = 0) {
     const y = hf.yAt(x, z) + BALL_RADIUS + 0.005;
-    this.body.setTranslation({ x, y, z }, true);
-    this.body.setLinvel({ x: vx, y: 0, z: vz }, true);
-    this.body.setAngvel({ x: vz / BALL_RADIUS, y: 0, z: -vx / BALL_RADIUS }, true);
+    this.body.setTranslation(this.vec(x, y, z), true);
+    this.body.setLinvel(this.vec(vx, 0, vz), true);
+    this.body.setAngvel(this.vec(vz / BALL_RADIUS, 0, -vx / BALL_RADIUS), true);
     this.x = x; this.y = y; this.z = z; this.vx = vx; this.vz = vz;
   }
 
@@ -223,7 +280,7 @@ export class RapierBall {
     let x = p.x, y = p.y, z = p.z;
     const wx = wrapWorld(x), wz = wrapWorld(z);
     if (wx !== x || wz !== z) {
-      this.body.setTranslation({ x: wx, y, z: wz }, true);
+      this.body.setTranslation(this.vec(wx, y, wz), true);
       x = wx; z = wz;
     }
     // A tunnelled or launched ball comes back to the surface.
@@ -237,7 +294,7 @@ export class RapierBall {
     const sp = Math.sqrt(vx * vx + vz * vz);
     if (sp > MAX_SPEED) {
       vx *= MAX_SPEED / sp; vz *= MAX_SPEED / sp;
-      this.body.setLinvel({ x: vx, y: v.y, z: vz }, true);
+      this.body.setLinvel(this.vec(vx, v.y, vz), true);
     }
     this.x = x; this.y = y; this.z = z; this.vx = vx; this.vz = vz;
   }
@@ -250,17 +307,26 @@ export class RapierBall {
 // ---------------------------------------------------------------------------
 // Per-part manager.
 
+/** Roll and Explore both simulate a marble. */
+export function isMarbleMode(m) { return m === MODE_ROLL || m === MODE_EXPLORE; }
+
 /**
  * createPhysics({ fieldFor(part) -> HeightField, rapier: true|false, importer })
  * Positions are reported as wrapped terrain coordinates plus world position.
+ * Modes: Pin and Tour are not simulated here (isActive false).
  */
 export function createPhysics({ fieldFor, rapier = true, importer = null, parts = 4 } = {}) {
   const states = [];
   for (let i = 0; i < parts; i++) {
     states.push({
       mode: MODE_PIN,
-      gravity: gravityFromParam(0.6),
+      gravity: gravityFromParam(0.5),
       damping: dampingFromParam(0.25),
+      bounce: bounceFromParam(0.25),
+      flick: flickScale(0.5),
+      tiltX: 0, tiltY: 0,          // dot params, -1..1
+      windX: 0, windZ: 0,          // Explore push, world units / s^2
+      pushX: 0, pushZ: 0,          // tilt + wind, world units / s^2
       drift: 0.3,
       fallback: new FallbackBall(),
       rapier: null,
@@ -278,7 +344,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
     loadRapier(importer).then((mod) => {
       if (!mod || disposed) return;
       R = mod;
-      // Hand every rolling part over to Rapier, keeping position and speed.
+      // Hand every rolling marble over to Rapier, keeping position and speed.
       for (let p = 0; p < states.length; p++) if (states[p].mode === MODE_ROLL) attachRapier(p);
     });
   }
@@ -289,8 +355,9 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
     try {
       const hf = fieldFor(p);
       const rb = new RapierBall(R);
+      rb.setTuning(s.gravity, s.damping, s.bounce);
       rb.rebuild(hf);
-      rb.setTuning(s.gravity, s.damping);
+      rb.setPush(s.pushX, s.pushZ);
       rb.place(hf, s.fallback.x, s.fallback.z, s.fallback.vx, s.fallback.vz);
       rb.lastBuild = time;
       s.rapier = rb;
@@ -304,10 +371,15 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
     if (s.rapier) { s.rapier.dispose(); s.rapier = null; }
   }
 
+  function updatePush(s) {
+    s.pushX = tiltAccel(s.tiltX, s.gravity) + s.windX;
+    s.pushZ = tiltAccel(s.tiltY, s.gravity) + s.windZ;
+  }
+
   function sync(p) {
     const s = states[p];
     const hf = fieldFor(p);
-    if (s.mode === MODE_ROLL) {
+    if (isMarbleMode(s.mode)) {
       const src = s.rapier || s.fallback;
       s.x = src.x; s.z = src.z; s.vx = src.vx; s.vz = src.vz;
       s.y = s.rapier ? Math.max(s.rapier.y, hf.yAt(s.x, s.z) + BALL_RADIUS) : hf.yAt(s.x, s.z) + BALL_RADIUS;
@@ -317,12 +389,17 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       s.x = wrapWorld(uToX(s.u)); s.z = wrapWorld(uToX(s.v));
       s.vx = s.drifter.vu * W; s.vz = s.drifter.vv * W;
       s.y = hf.yAt(s.x, s.z) + BALL_RADIUS;
+    } else {
+      s.x = wrapWorld(uToX(s.u)); s.z = wrapWorld(uToX(s.v));
+      s.vx = 0; s.vz = 0;
+      s.y = hf && hf.ready ? hf.yAt(s.x, s.z) + BALL_RADIUS : BALL_RADIUS;
     }
   }
 
   function place(p, u, v, vx = 0, vz = 0) {
     const s = states[p];
     const x = wrapWorld(uToX(u)), z = wrapWorld(uToX(v));
+    s.u = wrap01(u); s.v = wrap01(v);
     s.fallback.place(x, z);
     s.fallback.setVelocity(vx, vz);
     if (s.rapier) s.rapier.place(fieldFor(p), x, z, vx, vz);
@@ -335,6 +412,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
 
     engineName(p) {
       const s = states[p];
+      if (s.mode === MODE_EXPLORE) return 'explore';
       if (s.mode === MODE_ROLL) return s.rapier ? 'rapier' : 'fallback';
       if (s.mode === MODE_DRIFT) return 'drift';
       return 'pin';
@@ -344,15 +422,24 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
 
     isActive(p) { return states[p].mode !== MODE_PIN; },
 
+    /** Roll or Explore: a marble with a speed worth reporting. */
+    isMarble(p) { return isMarbleMode(states[p].mode); },
+
+    /** The part's gravity in world units / s^2. */
+    gravity(p) { return states[p].gravity; },
+
     anyActive() { return states.some(s => s.mode !== MODE_PIN); },
 
     setMode(p, mode, u, v) {
       const s = states[p];
-      const m = mode === MODE_ROLL || mode === MODE_DRIFT ? mode : MODE_PIN;
+      const m = mode === MODE_ROLL || mode === MODE_DRIFT || mode === MODE_EXPLORE ? mode : MODE_PIN;
       if (m === s.mode) return;
+      const wasMarble = isMarbleMode(s.mode);
       s.mode = m;
-      if (m !== MODE_ROLL) detachRapier(p);
-      place(p, u, v);
+      if (m !== MODE_ROLL) detachRapier(p);   // the fallback was kept in step: no jump
+      if (m !== MODE_EXPLORE) { s.windX = 0; s.windZ = 0; updatePush(s); }
+      // Roll <-> Explore keeps the marble rolling; anything else starts at rest where the dot is.
+      if (!(wasMarble && isMarbleMode(m))) place(p, u, v);
       if (m === MODE_ROLL) {
         want();
         if (R) attachRapier(p);
@@ -363,8 +450,22 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       const s = states[p];
       s.gravity = gravityFromParam(dot && dot.gravity);
       s.damping = dampingFromParam(dot && dot.friction);
+      s.bounce = bounceFromParam(dot && dot.bounce);
+      s.flick = flickScale(dot && dot.flick);
+      s.tiltX = dot && Number.isFinite(dot.tiltX) ? dot.tiltX : 0;
+      s.tiltY = dot && Number.isFinite(dot.tiltY) ? dot.tiltY : 0;
       s.drift = dot && Number.isFinite(dot.driftSpeed) ? dot.driftSpeed : 0.3;
-      if (s.rapier) s.rapier.setTuning(s.gravity, s.damping);
+      updatePush(s);
+      if (s.rapier) { s.rapier.setTuning(s.gravity, s.damping, s.bounce); s.rapier.setPush(s.pushX, s.pushZ); }
+    },
+
+    /** Explore: the slowly turning push (world units / s^2), on top of the world tilt. */
+    setWind(p, ax, az) {
+      const s = states[p];
+      s.windX = Number.isFinite(ax) ? ax : 0;
+      s.windZ = Number.isFinite(az) ? az : 0;
+      updatePush(s);
+      if (s.rapier) s.rapier.setPush(s.pushX, s.pushZ);
     },
 
     /** The user (or another module) moved the dot: put the ball there at rest. */
@@ -377,11 +478,15 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       place(p, u, v);
     },
 
-    /** Let go; in Roll mode the ball keeps the throw velocity (world units / s). */
+    /**
+     * Let go; a marble keeps the throw velocity (world units / s) scaled by
+     * the part's Flick setting.
+     */
     release(p, vx = 0, vz = 0) {
       const s = states[p];
       s.held = false;
-      if (s.mode !== MODE_ROLL) return;
+      if (!isMarbleMode(s.mode)) return;
+      vx *= s.flick; vz *= s.flick;
       const sp = Math.sqrt(vx * vx + vz * vz);
       const k = sp > MAX_SPEED ? MAX_SPEED / sp : 1;
       s.fallback.setVelocity(vx * k, vz * k);
@@ -398,16 +503,16 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
         if (s.mode === MODE_PIN || s.held) continue;
         const hf = fieldFor(p);
         if (!hf || !hf.ready) continue;
-        if (s.mode === MODE_ROLL) {
-          if (s.rapier) {
-            s.rapier.setTuning(s.gravity, s.damping);
+        if (isMarbleMode(s.mode)) {
+          if (s.rapier && s.mode === MODE_ROLL) {
+            s.rapier.setTuning(s.gravity, s.damping, s.bounce);
             s.rapier.maybeRebuild(hf, time);
             s.rapier.step(hf, h);
             // keep the fallback in step so a later handover is seamless
             s.fallback.x = s.rapier.x; s.fallback.z = s.rapier.z;
             s.fallback.vx = s.rapier.vx; s.fallback.vz = s.rapier.vz;
           } else {
-            s.fallback.step(hf, h, s.gravity, s.damping);
+            s.fallback.step(hf, h, s.gravity, s.damping, s.pushX, s.pushZ);
           }
         } else {
           s.drifter.step(h, s.drift);

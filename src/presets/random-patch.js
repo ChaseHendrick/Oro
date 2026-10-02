@@ -4,6 +4,8 @@
 // sensible ranges, then rolls the terrain pair, orbit and a few modulation
 // recipes from a list of moves that show off the terrain (including Laps sync
 // sweeps and Pace phase distortion), and sometimes a Sub under basses.
+// Each archetype also gets an expressive Link or two (velocity, key, macro)
+// and sometimes a Steps LFO pattern.
 
 import { TERRAINS, PATHS } from '../dsp/catalog.js';
 
@@ -89,9 +91,27 @@ const RECIPES = [
   (r) => ['laps', { envDepth: r.range(0.15, 0.4) }],
   // Pace wobbling either side of zero: phase distortion that breathes.
   (r) => ['pace', { lfoShape: r.pick([0, 1]), lfoRate: r.range(0.1, 0.6), lfoDepth: r.range(0.1, 0.25) }],
+  // A Steps pattern over one bar: the orbit shape changes on every 16th.
+  (r) => ['pathParam', { lfoShape: 6, lfoSync: 1, lfoDiv: 2, lfoDepth: r.range(0.08, 0.2), steps: stepValues(r) }],
 ];
 
 const tidy = (v) => Math.round(v * 1000) / 1000;
+
+// Indices into LINK_SOURCES: 0 Velocity, 1 Mod Wheel, 3 Key, 5 Macro 1, 6 Macro 2.
+// Velocity links are small so a random patch stays within its archetype's level.
+const LINKS = {
+  pluck: (r) => [{ src: 0, dst: 'size', amt: r.range(0.05, 0.1), curve: 0 }, { src: 3, dst: 'cutoff', amt: r.range(0.1, 0.25), curve: 0 }],
+  pad: (r) => [{ src: 5, dst: 'morph', amt: r.range(0.3, 0.6), curve: 0 }, { src: 6, dst: 'warp', amt: r.range(0.2, 0.4), curve: 1 }],
+  lead: (r) => [{ src: 3, dst: 'cutoff', amt: r.range(0.15, 0.3), curve: 0 }, { src: 5, dst: 'morph', amt: r.range(0.3, 0.6), curve: 0 }],
+  bass: (r) => [{ src: 5, dst: 'fold', amt: r.range(0.2, 0.4), curve: 0 }],
+  keys: (r) => [{ src: 0, dst: 'size', amt: r.range(0.05, 0.1), curve: 0 }, { src: 5, dst: 'morph', amt: r.range(0.3, 0.5), curve: 0 }],
+  bell: (r) => [{ src: 5, dst: 'morph', amt: r.range(0.3, 0.6), curve: 0 }],
+};
+
+/** 16 Steps LFO values: a strong downbeat and a loose, repeatable figure. */
+function stepValues(r) {
+  return Array.from({ length: 16 }, (_, i) => (i % 4 === 0 ? tidy(0.6 + 0.4 * r.range(0, 1)) : r.range(-1, 0.8)));
+}
 
 export function randomPatch(rng = Math.random) {
   const r = {
@@ -128,11 +148,14 @@ export function randomPatch(rng = Math.random) {
     const [id, m] = r.pick(RECIPES)(r);
     if (!mods[id]) mods[id] = m;
   }
+  // The wheel keeps its classic job (Morph) on top of the archetype's own Links.
+  const links = [{ src: 1, dst: 'morph', amt: 1, curve: 0 }, ...LINKS[kind](r)];
   return {
     name: `${r.pick(ADJECTIVES)} ${r.pick(PLACES)}`,
     category: arch.category,
     tags: ['random', kind],
     params,
     mods,
+    links,
   };
 }

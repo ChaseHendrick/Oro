@@ -20,7 +20,7 @@ async function makeEngine(store) {
     const url = ['/src', 'audio', 'engine.js'].join('/');
     const mod = await import(/* @vite-ignore */ url);
     const engine = await mod.createEngine({ store });
-    return { engine, kind: 'real' };
+    return { engine: await withTap(engine, store), kind: 'real' };
   } catch (err) {
     console.info('[harness] real engine unavailable, hosting the DSP worklet directly:', err && err.message);
   }
@@ -60,6 +60,62 @@ class OgTap extends AudioWorkletProcessor {
   }
 }
 registerProcessor('og-tap', OgTap);`;
+
+/**
+ * The real engine records WAV files, but the onset check in
+ * tests/e2e/music.cjs needs raw samples with their context times, like the
+ * stand-in below provides. Tap the engine's analyser (the master output) and
+ * answer startRecording / stopRecording with sample blocks. While recording,
+ * every part's delay and reverb sends are muted so effect tails cannot hide
+ * the next onset; they are restored afterwards. Everything else goes straight
+ * to the real engine.
+ */
+async function withTap(engine, store) {
+  const ctx = engine.context;
+  if (!ctx || !ctx.audioWorklet || !engine.analyser) return engine;
+  let tap;
+  try {
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP_CODE], { type: 'application/javascript' })));
+    tap = new AudioWorkletNode(ctx, 'og-tap', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit' });
+    engine.analyser.connect(tap);
+  } catch (err) {
+    console.info('[harness] no sample tap on the real engine:', err && err.message);
+    return engine;
+  }
+  let recording = null;
+  let savedSends = null;
+  tap.port.onmessage = (e) => { if (recording) recording.push(e.data); };
+  const sendPath = (p, id) => `parts.${p}.params.${id}`;
+  function startRecording() {
+    savedSends = [];
+    store.batch(() => {
+      for (let p = 0; p < NUM_PARTS; p++) {
+        for (const id of ['delaySend', 'reverbSend']) {
+          savedSends.push([sendPath(p, id), store.get(sendPath(p, id))]);
+          store.set(sendPath(p, id), 0, { source: 'harness' });
+        }
+      }
+    });
+    recording = [];
+    tap.port.postMessage(true);
+  }
+  function stopRecording() {
+    tap.port.postMessage(false);
+    const r = recording || [];
+    recording = null;
+    if (savedSends) store.batch(() => { for (const [path, v] of savedSends) store.set(path, v, { source: 'harness' }); });
+    savedSends = null;
+    return r;
+  }
+  return new Proxy(engine, {
+    get(target, key) {
+      if (key === 'startRecording') return startRecording;
+      if (key === 'stopRecording') return stopRecording;
+      const v = Reflect.get(target, key, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
 
 /**
  * Minimal stand-in for the audio host (src/audio/engine.js) for this harness
@@ -143,7 +199,7 @@ async function boot() {
   presets.loadScene(0);
   const { engine, kind } = await makeEngine(store);
   try { await engine.start(); } catch { /* resumes on the first click instead */ }
-  const music = createMusic({ store, engine });
+  const music = createMusic({ store, engine, presets });
   const midi = await createMidi({ store, router: music.router, engine, transport: music.transport, presets, storage: null });
 
   $('engine').textContent = kind;
@@ -237,6 +293,31 @@ async function boot() {
   music.transport.on('state', (s) => {
     playBtn.textContent = s.playing ? 'Stop' : 'Play';
     if (!s.playing) for (const r of rows) { if (r.head >= 0) r.steps[r.head].classList.remove('head'); r.head = -1; }
+  });
+
+  // Round D: preview, Explore notes and offline event rendering.
+  $('preview').addEventListener('click', async () => {
+    try { await engine.start(); } catch { /* ignore */ }
+    const info = music.preview('sel');
+    $('r-preview').textContent = info ? `${info.category}: ${info.phrase}` : 'nothing to play';
+  });
+  music.on('preview', (e) => { if (!e.playing) $('r-preview').textContent += ` (${e.reason})`; });
+  $('explore').addEventListener('click', async () => {
+    try { await engine.start(); } catch { /* ignore */ }
+    const p = store.get('ui.selectedPart') || 0;
+    // Switch the part to Explore mode for the demo, as the dot settings would.
+    if (store.get(`parts.${p}.dot.mode`) !== 3) store.set(`parts.${p}.dot.mode`, 3);
+    const height = Math.random() * 2 - 1;
+    const n = music.exploreNote({ part: p, kind: height > 0 ? 'peak' : 'valley', height, x: Math.random(), y: Math.random() });
+    $('r-explore').textContent = n ? `note ${n.note}, vel ${n.vel.toFixed(2)}` : 'held back by the rate limit';
+  });
+  $('render').addEventListener('click', () => {
+    const t0 = performance.now();
+    const ev = music.renderEvents(4);
+    const ons = ev.filter(e => e.msg.t === 'noteOn').length;
+    const locks = ev.filter(e => e.msg.t === 'params').length;
+    $('r-render').textContent = `${ons} notes, ${locks} locks, ${(performance.now() - t0).toFixed(0)} ms`;
+    window.lastRender = ev;
   });
 
   function setChecks(list) {

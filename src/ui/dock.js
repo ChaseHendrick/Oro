@@ -48,6 +48,7 @@ export function createDock(ctx, container) {
     tabs.get(ids[n]).focus();
   });
 
+  let ro = null;
   function show() {
     let id = store.get('ui.panel');
     if (!panes.has(id)) id = 'sound';
@@ -60,6 +61,7 @@ export function createDock(ctx, container) {
           p.built = p.def.build(ctx);
           p.el.appendChild(p.built.el);
           scope.add(p.built.dispose);
+          if (ro && p.built.el) ro.observe(p.built.el);
         } catch (err) {
           console.error(`[ui] the ${p.def.label} panel failed to build`, err);
           p.built = { el: null };
@@ -70,8 +72,24 @@ export function createDock(ctx, container) {
     }
     container.dataset.pane = id;
   }
-  scope.add(store.subscribe('ui.panel', show));
+  // When a pane is taller than the dock (short windows), fade its bottom edge
+  // so it is clear there is more to scroll to.
+  const updateMore = () => {
+    const p = panes.get(container.dataset.pane);
+    const el = p && p.el;
+    const more = !!el && !el.hidden && el.scrollHeight - el.scrollTop - el.clientHeight > 4;
+    body.classList.toggle('has-more', more);
+  };
+  for (const p of panes.values()) scope.on(p.el, 'scroll', updateMore, { passive: true });
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(() => updateMore());
+    ro.observe(body);
+    for (const p of panes.values()) { ro.observe(p.el); if (p.built && p.built.el) ro.observe(p.built.el); }
+    scope.add(() => ro.disconnect());
+  }
+  scope.add(store.subscribe('ui.panel', () => { show(); requestAnimationFrame(updateMore); }));
   container.append(rail, body);
   show();
+  requestAnimationFrame(updateMore);
   return { dispose: scope.dispose, show };
 }

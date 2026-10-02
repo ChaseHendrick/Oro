@@ -1,7 +1,8 @@
 // Turning a patch (a partial parameter set) into a full part, shared by the
 // preset store and the factory scene builder.
 
-import { defaultPart, defaultPartParams, defaultMods, MOD_DEFAULT, PART_PARAM_MAP } from '../core/params.js';
+import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT, PART_PARAM_MAP } from '../core/params.js';
+import { sanitizeLinks } from '../core/migrate.js';
 
 // Mod settings may hold arrays (the Steps LFO values). Each part gets its own
 // copies, so editing one part's steps can never touch another part, a factory
@@ -38,9 +39,17 @@ export function patchDot(patch) {
 }
 
 /**
- * The part `base` with `patch` loaded: sound, modulation, dot behaviour and
- * imported terrains come from the patch; name, colour, sequence, arp and the
- * mixer's mute/solo stay as they were.
+ * The patch's Links (copies), or the default routing (Mod Wheel -> Morph) for
+ * patches saved before Links existed, which is what the wheel used to do.
+ */
+export function patchLinks(patch) {
+  return patch && Array.isArray(patch.links) ? sanitizeLinks(patch.links) : defaultLinks();
+}
+
+/**
+ * The part `base` with `patch` loaded: sound, modulation, Links, dot
+ * behaviour and imported terrains come from the patch; name, colour,
+ * sequence, arp and the mixer's mute/solo stay as they were.
  */
 export function partWithPatch(base, patch) {
   const params = patchParams(patch);
@@ -51,6 +60,7 @@ export function partWithPatch(base, patch) {
     patchName: String((patch && patch.name) || 'Init').slice(0, 60),
     params,
     mods: patchMods(patch),
+    links: patchLinks(patch),
     dot: patchDot(patch),
     userTerrain: {
       A: (patch && patch.userTerrain && patch.userTerrain.A) || null,

@@ -2,7 +2,7 @@
 // list of patches and scenes, Save, Dice (randomise) and Init, plus scene
 // saving and JSON export / import in the list footer.
 
-import { h, createScope, setText, listen, call, has, uniqueId, downloadBlob } from './dom.js';
+import { h, createScope, setText, listen, call, has, uniqueId, downloadBlob, softDisable } from './dom.js';
 import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 
@@ -40,8 +40,16 @@ export function createPatchBrowser(ctx) {
   const save = btn('save', 'Save patch', { tip: 'Save this part as a patch' });
   const dice = btn('dice', 'Randomise patch', { tip: 'Roll a new random patch' });
   const init = btn('init', 'Initialise patch', { tip: 'Start from a clean Init patch' });
+  // Preview plays a short phrase that suits the patch, so a sound can be judged
+  // without reaching for a keyboard. It needs the music engine, not the presets.
+  const canPreview = has(ctx.music, 'preview');
+  const preview = h('button', {
+    type: 'button', class: 'icon-btn preview-btn', 'aria-label': 'Preview this patch', 'aria-pressed': 'false', html: icon('preview'),
+    dataset: { tip: 'Hear this patch play a short phrase (Shift+P)' },
+  });
+  if (!canPreview) softDisable(preview, 'Preview needs the music engine, which is not available here', (r) => ctx.toast(r, { kind: 'info' }));
   const el = h('div', { class: ['patch-browser', !ok && 'is-disabled'], role: 'group', 'aria-label': 'Patch' },
-    h('div', { class: 'patch-main' }, prev, open, next), h('div', { class: 'patch-tools' }, save, dice, init));
+    h('div', { class: 'patch-main' }, prev, open, next), h('div', { class: 'patch-tools' }, preview, save, dice, init));
 
   function currentPatch() {
     const p = binder.selected();
@@ -72,6 +80,22 @@ export function createPatchBrowser(ctx) {
   scope.on(dice, 'click', () => { if (ok) call(presets, 'randomizePatch', binder.selected()); });
   scope.on(init, 'click', () => { if (ok) call(presets, 'initPatch', binder.selected()); });
   scope.on(save, 'click', () => openSaveForm(ctx, save, 'patch'));
+  const setPreviewing = (on) => {
+    preview.classList.toggle('is-on', on);
+    preview.setAttribute('aria-pressed', String(on));
+  };
+  scope.on(preview, 'click', async () => {
+    if (!canPreview) return;
+    if (has(ctx.music, 'isPreviewing') && ctx.music.isPreviewing()) { call(ctx.music, 'stopPreview'); setPreviewing(false); return; }
+    await ctx.startAudio();
+    const res = call(ctx.music, 'preview', 'sel');
+    // Without preview events, light the button for roughly the phrase length.
+    if (!has(ctx.music, 'on')) { setPreviewing(true); setTimeout(() => setPreviewing(false), 1600); }
+    else if (res && res.duration) setPreviewing(true);
+  });
+  if (canPreview && has(ctx.music, 'on')) {
+    scope.add(listen(ctx.music, 'preview', (e) => setPreviewing(!!(e && e.playing))));
+  }
 
   let pop = null;
   scope.on(open, 'click', () => {

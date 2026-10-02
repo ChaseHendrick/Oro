@@ -6,7 +6,7 @@
 import * as params from '../core/params.js';
 import { h, createScope, setText } from './dom.js';
 import { schedule } from './frame.js';
-import { createKnob } from './knob.js';
+import { createMacroKnobs } from './macros.js';
 import { createMiniSlider } from './controls.js';
 import { icon } from './icons.js';
 
@@ -67,15 +67,13 @@ export function createLinksPanel(ctx) {
   const getLinks = () => (Array.isArray(store.get(path())) ? store.get(path()) : []).map(sanitizeLink);
   const putLinks = (arr) => store.set(path(), arr.slice(0, MAX_LINKS).map(sanitizeLink), { source: 'ui' });
 
-  // Macros (global)
-  const macros = [1, 2, 3, 4].map(i => {
-    const k = createKnob(ctx, binder.globalParam(`macro${i}`), { size: 'md' });
-    scope.add(k.dispose);
-    return k.el;
-  });
+  // Macros (global): the same knobs as the top bar's Macros popover.
+  const macros = createMacroKnobs(ctx, { size: 'sm', caption: 'swap' });
+  macros.el.classList.add('macro-knobs--grid');
+  scope.add(macros.dispose);
   const macroCard = h('section', { class: 'links-macros', 'aria-labelledby': 'sec-macros' },
     h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-macros' }, 'Macros')),
-    h('div', { class: 'knob-grid knob-grid--2' }, macros),
+    macros.el,
     h('p', { class: 'links-note' }, 'Shared by all parts. Right-click to MIDI-learn.'));
 
   const rowsEl = h('div', { class: 'links-rows' });

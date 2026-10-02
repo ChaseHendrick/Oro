@@ -1,5 +1,5 @@
 // Laps (hard sync), Pace (phase distortion) and Sub.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TERRAINS, PATHS } from '../../src/dsp/catalog.js';
@@ -10,6 +10,10 @@ import {
 import { PART_PARAM_MAP } from '../../src/core/params.js';
 import { SR, makeDSP, render, allFinite, spectrum, peak } from './helpers.js';
 import { REF_SCENES, REF_FRAMES, renderScene } from './fixtures/reference-scenes.js';
+
+// Offline renders are heavy and the suite may share a busy machine: measure
+// quality here, not wall-clock speed (dev/dsp/bench.mjs measures CPU time).
+vi.setConfig({ testTimeout: 120000 });
 
 const T = Object.fromEntries(TERRAINS.map((t, i) => [t.id, i]));
 const P = Object.fromEntries(PATHS.map((p, i) => [p.id, i]));

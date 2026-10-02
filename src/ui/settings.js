@@ -3,11 +3,12 @@
 
 import { h, createScope, call, has, listen } from './dom.js';
 import { openModal } from './modal.js';
-import { createSegmented, createToggle, createSelect } from './controls.js';
+import { createSegmented, createToggle } from './controls.js';
 import { createMidiSettings } from './settings-midi.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { STYLES } from './viewport-overlay.js';
 import { openBounce, bounceSupported } from './bounce.js';
+import { createPalettePicker } from './palettes.js';
 import { icon } from './icons.js';
 
 export const SETTINGS_TABS = [
@@ -19,14 +20,6 @@ export const SETTINGS_TABS = [
 ];
 
 export const VERSION = '0.1.0';
-
-const DEFAULT_PALETTES = ['Natural', 'Aurora', 'Ember', 'Mono'];
-
-function paletteNames(visuals) {
-  const src = visuals && (typeof visuals.palettes === 'function' ? call(visuals, 'palettes') : visuals.palettes);
-  if (Array.isArray(src) && src.length) return src.map((p, i) => (typeof p === 'string' ? p : (p && p.name) || `Palette ${i + 1}`));
-  return DEFAULT_PALETTES;
-}
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
@@ -49,10 +42,7 @@ function generalTab(ctx, scope) {
     label: 'Visual quality', options: [{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }],
   });
   const style = createSegmented(ctx, via(binder.uiValue('renderStyle', STYLES.map(s => s.value), 'relief'), 'setRenderStyle'), { label: 'Map style', options: STYLES.map(s => ({ ...s, label: s.label.replace('Wireframe', 'Wire').replace('Contours', 'Contour').replace('Heat map', 'Heat') })) });
-  const names = paletteNames(visuals);
-  const palette = createSelect(ctx, { ...via(binder.uiValue('palette', names.map((_, i) => i), 0), 'setPalette'), def: { id: 'palette', label: 'Palette', default: 0 } }, {
-    label: 'Palette', options: names.map((n, i) => ({ value: i, label: n })),
-  });
+  const palette = createPalettePicker(ctx);
   const rotate = createToggle(ctx, { ...via(binder.uiValue('autoRotate', [0, 1], 1), 'setAutoRotate', v => !!v), def: { id: 'autoRotate', label: 'Auto-rotate', default: 1 } }, { label: 'Auto-rotate', className: 'toggle--switch' });
   const motion = createSegmented(ctx, prefBinding(ctx, 'reduceMotion', 'system'), {
     label: 'Reduce motion', options: [{ value: 'system', label: 'System' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
@@ -61,7 +51,6 @@ function generalTab(ctx, scope) {
   for (const c of [theme, quality, style, palette, rotate, motion, tips]) scope.add(c.dispose);
   if (!visuals) {
     for (const c of [quality, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
-    palette.setDisabled(true, 'The 3D view is not running');
   }
 
   return h('div', { class: 'settings-pane' },
@@ -72,7 +61,7 @@ function generalTab(ctx, scope) {
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
       row('Map style', null, style.el),
-      row('Palette', 'Colours of the land', palette.el),
+      h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),
       row('Auto-rotate', 'Slowly circles the map in Orbit view', rotate.el)));
 }
 

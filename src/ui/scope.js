@@ -48,6 +48,28 @@ export function harmonics(samples, count = 16, out = new Float32Array(count)) {
   return out;
 }
 
+// The DSP's Sub: one sine an octave down at SUB_GAIN · sub² (see dsp-core.js;
+// at full Sub it sits about 2 dB under a full-scale voice). Mirrored here so
+// the bars show it at the right height next to the cycle's harmonics.
+export const SUB_GAIN = 0.8;
+export function subLevel(sub) {
+  const s = Math.max(0, Math.min(1, Number(sub) || 0));
+  return SUB_GAIN * s * s;
+}
+
+/**
+ * Bar heights 0..1 on a `range` dB log scale relative to the strongest bar.
+ * Index 0 is the Sub (half the fundamental), then harmonics 1..n.
+ */
+export function barHeights(mags, sub = 0, range = 48, out = new Float32Array(mags.length + 1)) {
+  let max = sub;
+  for (const m of mags) max = Math.max(max, m);
+  const level = (m) => (max < 1e-6 || m < 1e-9 ? 0 : Math.max(0, Math.min(1, (20 * Math.log10(m / max) + range) / range)));
+  out[0] = level(sub);
+  for (let k = 0; k < mags.length; k++) out[k + 1] = level(mags[k]);
+  return out;
+}
+
 /** Index of a rising zero crossing (with a little hysteresis) in the first half. */
 export function findTrigger(buf, limit = buf.length >> 1) {
   let armed = false;
@@ -123,29 +145,27 @@ function drawTrace(c, size, colors, samples, count, { fill = false, scale = 1 } 
   g.stroke();
 }
 
-/** Harmonic bars on a 48 dB log scale relative to the strongest harmonic. */
-function drawBars(c, size, colors, mags) {
+/** Harmonic bars on a 48 dB log scale relative to the strongest bar; the Sub comes first, lighter. */
+function drawBars(c, size, colors, mags, sub, heights) {
   const dpr = sizeCanvas(c, size);
   if (!dpr) return;
   const g = c.getContext('2d');
   const W = c.width, H = c.height;
   g.clearRect(0, 0, W, H);
-  let max = 0;
-  for (const m of mags) max = Math.max(max, m);
+  barHeights(mags, sub, 48, heights);
   const top = 16 * dpr, bottom = H - 4 * dpr, pad = 6 * dpr;
-  const n = mags.length;
+  const n = heights.length;
   const slot = (W - pad * 2) / n;
   const bw = Math.max(1, slot * 0.62);
   g.fillStyle = colors.grid;
   g.fillRect(pad, bottom, W - pad * 2, Math.max(1, dpr));
-  if (max < 1e-6) return;
+  // A hairline between the Sub and the harmonics, so the extra bar reads as separate.
+  g.fillRect(pad + slot - Math.max(1, dpr) / 2, bottom - 6 * dpr, Math.max(1, dpr), 6 * dpr);
   g.fillStyle = colors.line;
   for (let k = 0; k < n; k++) {
-    const db = 20 * Math.log10(Math.max(mags[k], 1e-9) / max);
-    const v = Math.max(0, Math.min(1, (db + 48) / 48));
-    const hgt = v * (bottom - top);
+    const hgt = heights[k] * (bottom - top);
     if (hgt < 0.5) continue;
-    g.globalAlpha = k === 0 ? 1 : 0.85;
+    g.globalAlpha = k === 0 ? 0.5 : k === 1 ? 1 : 0.85;
     g.fillRect(pad + k * slot + (slot - bw) / 2, bottom - hgt, bw, hgt);
   }
   g.globalAlpha = 1;
@@ -162,7 +182,7 @@ export function createScopeCard(ctx) {
       scopeCanvas, h('figcaption', { class: 'scope-label' }, 'Output', note)),
     h('figure', { class: 'scope-cell', dataset: { tip: 'One exact cycle: the height of the land under the moving point, sampled along the path', tipPlace: 'top-start' } },
       cycleCanvas, h('figcaption', { class: 'scope-label' }, 'One cycle')),
-    h('figure', { class: 'scope-cell scope-cell--harm', dataset: { tip: 'Strength of the first 16 harmonics of that cycle (log scale)', tipPlace: 'top-start' } },
+    h('figure', { class: 'scope-cell scope-cell--harm', dataset: { tip: 'The Sub (first, lighter bar) and the first 16 harmonics of that cycle, on a log scale', tipPlace: 'top-start' } },
       harmCanvas, h('figcaption', { class: 'scope-label' }, 'Harmonics')));
 
   const analyser = ctx.engine && ctx.engine.analyser;
@@ -206,6 +226,7 @@ export function createScopeCard(ctx) {
   const harmSize = watchSize(harmCanvas, resized);
   scope.add(harmSize.dispose);
   const harm = new Float32Array(16);
+  const heights = new Float32Array(17);
   scope.add(scopeSize.dispose);
   scope.add(cycleSize.dispose);
 
@@ -241,7 +262,7 @@ export function createScopeCard(ctx) {
       sampleCycle(p, A, B, cycle.length, spin || 0, cycle);
       drawTrace(cycleCanvas, cycleSize.size, colors, i => cycle[i % cycle.length], cycle.length + 1, { fill: true, scale: 1 / 1.25 });
       harmonics(cycle, harm.length, harm);
-      drawBars(harmCanvas, harmSize.size, colors, harm);
+      drawBars(harmCanvas, harmSize.size, colors, harm, subLevel(ctx.store.get(`parts.${part}.params.sub`)), heights);
     }
   }));
 

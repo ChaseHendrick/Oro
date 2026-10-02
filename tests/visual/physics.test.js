@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { HeightField, W } from '../../src/visual/heightfield.js';
 import {
   FallbackBall, Drifter, createPhysics, gravityFromParam, dampingFromParam, driftRate,
-  torusDistance, MODE_ROLL, MODE_DRIFT, MODE_PIN, RapierBall, BALL_RADIUS,
+  torusDistance, MODE_ROLL, MODE_DRIFT, MODE_PIN, MODE_EXPLORE, MODE_TOUR, RapierBall, BALL_RADIUS,
+  G, MIN_GRAVITY, tiltAccel, flickScale, bounceFromParam,
 } from '../../src/visual/physics.js';
 
 // One smooth basin per tile with its lowest point at (u, v) = (0.5, 0.5).
@@ -63,7 +64,34 @@ describe('fallback rolling ball', () => {
     expect(dampingFromParam(1)).toBeGreaterThan(dampingFromParam(0));
     expect(driftRate(0)).toBe(0);
     expect(driftRate(1)).toBeGreaterThan(driftRate(0.3));
-    expect(gravityFromParam(NaN)).toBe(gravityFromParam(0.6));
+    expect(gravityFromParam(NaN)).toBe(gravityFromParam(0.5));
+  });
+
+  it('maps gravity 0..1 to 0..2 g (with a small floor), tilt to a lean, flick to a throw scale', () => {
+    expect(gravityFromParam(0.5)).toBeCloseTo(G, 12);
+    expect(gravityFromParam(1)).toBeCloseTo(2 * G, 12);
+    expect(gravityFromParam(0)).toBe(MIN_GRAVITY);
+    expect(gravityFromParam(7)).toBeCloseTo(2 * G, 12);
+    expect(tiltAccel(0, G)).toBe(0);
+    expect(tiltAccel(1, G)).toBeGreaterThan(0);
+    expect(tiltAccel(-1, G)).toBeCloseTo(-tiltAccel(1, G), 12);
+    expect(tiltAccel(1, G)).toBeLessThan(0.35 * G);
+    expect(flickScale(0.5)).toBe(1);
+    expect(flickScale(0)).toBe(0);
+    expect(flickScale(1)).toBe(2);
+    expect(bounceFromParam(2)).toBe(0.95);
+  });
+
+  it('rolls downhill across a tilted, perfectly flat world', () => {
+    const size = 64;
+    const hf = new HeightField();
+    hf.setTable('A', new Float32Array(size * size), size);
+    const ball = new FallbackBall();
+    ball.place(0, 0);
+    for (let i = 0; i < 60; i++) ball.step(hf, 1 / 60, G, dampingFromParam(0), tiltAccel(1, G), tiltAccel(-0.5, G));
+    expect(ball.vx).toBeGreaterThan(0.5);
+    expect(ball.vz).toBeLessThan(-0.2);
+    expect(ball.vx).toBeGreaterThan(-ball.vz * 1.5);
   });
 });
 
@@ -118,6 +146,26 @@ describe('physics manager (built-in integrator)', () => {
     ph.step(1 / 60);
     expect(ph.state(0).vx).toBeGreaterThan(5);
 
+    // Flick 0: letting go just drops the marble; flick 1 throws twice as hard.
+    ph.setParams(0, { gravity: 0.6, friction: 0.25, flick: 0 });
+    ph.hold(0, 0.1, 0.8);
+    ph.release(0, 8, 0);
+    expect(ph.state(0).vx).toBe(0);
+    ph.setParams(0, { gravity: 0.6, friction: 0.25, flick: 1 });
+    ph.hold(0, 0.1, 0.8);
+    ph.release(0, 4, 0);
+    expect(ph.state(0).vx).toBeCloseTo(8, 9);
+
+    // Explore is a marble too; Tour is not simulated here.
+    ph.setMode(3, MODE_EXPLORE, 0.2, 0.2);
+    expect(ph.isMarble(3)).toBe(true);
+    ph.setWind(3, 3, 0);
+    for (let i = 0; i < 30; i++) ph.step(1 / 60);
+    expect(ph.state(3).vx).toBeGreaterThan(0);
+    ph.setMode(3, MODE_TOUR, 0.2, 0.2);
+    expect(ph.isActive(3)).toBe(false);
+    expect(ph.isMarble(3)).toBe(false);
+
     // Pin parts never move; Drift parts do.
     ph.setMode(1, MODE_PIN, 0.4, 0.4);
     ph.setMode(2, MODE_DRIFT, 0.4, 0.4);
@@ -129,7 +177,8 @@ describe('physics manager (built-in integrator)', () => {
   });
 });
 
-describe('Rapier marble', () => {
+// Rapier steps real physics: generous timeouts, the CI box may be busy.
+describe('Rapier marble', { timeout: 60000 }, () => {
   it('rolls on the heightfield collider like the built-in one (lazy init in Node)', async () => {
     const mod = await import('@dimforge/rapier3d-compat');
     const R = mod.default || mod;
@@ -143,6 +192,39 @@ describe('Rapier marble', () => {
     expect(Math.hypot(rb.x, rb.z)).toBeLessThan(0.4);
     expect(rb.y).toBeGreaterThan(hf.yAt(rb.x, rb.z) + BALL_RADIUS * 0.5);
     expect(rb.y).toBeLessThan(hf.yAt(rb.x, rb.z) + BALL_RADIUS * 1.6);
+    rb.dispose();
+  });
+
+  it('bounces higher with more Bounce and leans with the world tilt', async () => {
+    const mod = await import('@dimforge/rapier3d-compat');
+    const R = mod.default || mod;
+    await R.init();
+    const size = 64;
+    const hf = new HeightField();
+    hf.setTable('A', new Float32Array(size * size), size);
+    const rebound = (bounce) => {
+      const rb = new RapierBall(R);
+      rb.setTuning(G, dampingFromParam(0), bounce);
+      rb.rebuild(hf);
+      rb.body.setTranslation({ x: 0, y: 3, z: 0 }, true);
+      let landed = false, best = 0, prev = 3;
+      for (let i = 0; i < 240; i++) {
+        rb.step(hf, 1 / 120);
+        if (!landed && rb.y > prev) landed = true;      // first contact turns it round
+        if (landed) best = Math.max(best, rb.y);
+        prev = rb.y;
+      }
+      rb.dispose();
+      return best;
+    };
+    expect(rebound(0.9)).toBeGreaterThan(rebound(0) + 0.5);
+    const rb = new RapierBall(R);
+    rb.setTuning(G, dampingFromParam(0), 0);
+    rb.rebuild(hf);
+    rb.place(hf, 0, 0);
+    rb.setPush(tiltAccel(1, G), 0);
+    for (let i = 0; i < 120; i++) rb.step(hf, 1 / 60);
+    expect(rb.vx).toBeGreaterThan(1);
     rb.dispose();
   });
 

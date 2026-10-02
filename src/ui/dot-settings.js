@@ -6,7 +6,7 @@
 //   Tour     loop mode, waypoint editing on the map, per-waypoint travel time
 
 import { DOT_MODES, TOUR_MODES, MAX_WAYPOINTS } from '../core/params.js';
-import { h, createScope, setText } from './dom.js';
+import { h, createScope, setText, has } from './dom.js';
 import { schedule } from './frame.js';
 import { createKnob } from './knob.js';
 import { createSegmented, createToggle, createStepper } from './controls.js';
@@ -62,6 +62,11 @@ export function openDotSettings(ctx, anchor) {
   const range = createStepper(ctx, P('exploreRange'), { label: 'Explore range in octaves', format: v => `${v} oct` });
   scope.add(notesToggle.dispose);
   scope.add(range.dispose);
+  // Explore notes come from the music module; without it the marble still roams.
+  if (!has(ctx.music, 'exploreNote')) {
+    notesToggle.setDisabled(true, 'Playing notes needs the music engine, which is not available');
+    range.setDisabled(true, 'Playing notes needs the music engine, which is not available');
+  }
   const explore = h('div', { class: 'dot-group', dataset: { modes: '3' } },
     h('div', { class: 'mini-label' }, 'Explore'),
     h('div', { class: 'dot-line' }, knob('exploreRate', { format: pct }), h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Range'), range.el), notesToggle.el));
@@ -72,6 +77,8 @@ export function openDotSettings(ctx, anchor) {
   });
   scope.add(tourSeg.dispose);
   scope.add(editToggle.dispose);
+  // Waypoints are placed on the 3D map; the flat stand-in map only moves the dot.
+  if (!ctx.visuals) editToggle.setDisabled(true, 'Placing waypoints needs the 3D map, which is not running');
   const list = h('ol', { class: 'waypoint-list', 'aria-label': 'Waypoints' });
   const clearBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('trash') + '<span>Clear</span>' });
   const tour = h('div', { class: 'dot-group', dataset: { modes: '4' } },
@@ -122,6 +129,8 @@ export function openDotSettings(ctx, anchor) {
   render();
   pop = openPopover(ctx.layers, anchor, body, {
     className: 'popover--dot', label: 'Dot settings', placement: 'bottom-end',
+    // Switching the dot mode in the same toolbar keeps the settings open and shows the new mode's controls.
+    within: anchor && anchor.closest ? anchor.closest('.vp-toolbar') : null,
     onClose: () => scope.dispose(),
   });
   return pop;

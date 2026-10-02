@@ -47,7 +47,7 @@
 .part-tab.is-muted .part-texts { opacity: .55; }
 .part-led { flex: none; }
 
-.patch-browser { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 340px; }
+.patch-browser { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 430px; }
 .patch-browser.is-disabled { opacity: .55; }
 .patch-main {
   display: flex; align-items: center; gap: 0;
@@ -125,11 +125,21 @@
 .midi-led.is-on[data-dir="in"] { background: var(--midi-in); box-shadow: 0 0 8px var(--midi-in); }
 .midi-led.is-on[data-dir="out"] { background: var(--midi-out); box-shadow: 0 0 8px var(--midi-out); }
 
-@media (max-width: 1379px) and (min-width: 900px) {
+/* The wordmark gives way first so the patch name keeps its room. */
+@media (max-width: 1499px) and (min-width: 900px) {
   .brand-word { display: none; }
+}
+@media (max-width: 1379px) and (min-width: 900px) {
   .part-tab { width: 116px; flex-basis: 116px; }
 }
-@media (max-width: 1199px) and (min-width: 900px) {
+/* Mid widths: part tabs show their names only; the selected part's patch is in the browser next to them. */
+@media (max-width: 1339px) and (min-width: 1240px) {
+  .topbar { gap: 10px; }
+  .part-tab { width: 100px; flex-basis: 100px; }
+  .part-patch { display: none; }
+  .patch-browser { flex-basis: 362px; }
+}
+@media (max-width: 1239px) and (min-width: 900px) {
   .topbar { gap: 8px; }
   .part-tab { width: 50px; flex-basis: 50px; padding: 0 8px; gap: 6px; justify-content: center; }
   .part-texts { display: none; }
@@ -168,8 +178,18 @@
   .vp-label { display: none; }
 }
 @container stage (max-width: 700px) {
-  .vp-toolbar--left .seg:last-child, .vp-toolbar--left .vp-sep { display: none; }
+  /* Map style and palette stay in Settings > General on narrow maps. */
+  .vp-toolbar--left .seg--style, .vp-toolbar--left .vp-sep, .vp-palette { display: none; }
   .scope-cell--harm { display: none; }
+}
+@container stage (max-width: 430px) {
+  /* Phones: auto-rotate lives in Settings too, so both toolbars fit on one row. */
+  /* .vp-overlay raises specificity over the phone-wide touch sizes further down. */
+  .vp-overlay .vp-toolbar--left .toggle--icon { display: none; }
+  .vp-overlay .vp-toolbar { gap: 2px; padding: 2px; }
+  .vp-overlay .vp-toolbar--left { left: 6px; }
+  .vp-overlay .vp-toolbar--right { right: 6px; }
+  .vp-overlay .vp-toolbar .seg--sm .seg-btn { min-width: 34px; padding: 0 4px; }
 }
 @container stage (max-height: 360px) {
   .scope-card { display: none; }
@@ -413,7 +433,14 @@
 .dock-tab:hover { color: var(--text); background: var(--panel-hover); }
 .dock-tab[aria-selected="true"] { color: var(--text); background: var(--panel-active); box-shadow: var(--shadow-1), var(--inset-hi); }
 .dock-tab[aria-selected="true"]::before { content: ''; position: absolute; left: -6px; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--part); box-shadow: 0 0 8px var(--part-glow); }
-.dock-body { min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; container-name: dock; }
+.dock-body { position: relative; min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; container-name: dock; }
+.dock-body::after {
+  content: ''; position: absolute; left: 0; right: 10px; bottom: 0; height: 26px;
+  background: linear-gradient(to bottom, transparent, var(--panel-solid));
+  border-radius: 0 0 var(--r-xl) 0;
+  opacity: 0; transition: opacity var(--dur); pointer-events: none;
+}
+.dock-body.has-more::after { opacity: 1; }
 .dock-panel { height: 100%; overflow: auto; }
 .dock-pane { min-height: 100%; }
 
@@ -458,6 +485,15 @@
 .env-graph.is-playing .env-bead { opacity: 1; }
 .knob-row--env { justify-content: space-between; margin-top: 6px; }
 
+@container dock (max-width: 1000px) and (min-width: 900px) {
+  /* Just enough room for four cards in a row: slimmer knobs and gutters. */
+  .dock-pane--sound { grid-template-columns: minmax(272px, 1.3fr) minmax(200px, 1fr) minmax(196px, 1fr) minmax(196px, 1fr); gap: 6px; padding: 8px; }
+  .dock-pane--sound .knob--sm { width: 44px; }
+  .dock-pane--sound .knob--md { width: 54px; }
+  .dock-pane--sound .knob--lg { width: 70px; }
+  .dock-pane--sound .knob-label, .dock-pane--sound .knob-value { font-size: 10.5px; }
+  .dock-pane--sound .dock-card .section-head .section-aside { display: none; }
+}
 @container dock (max-width: 899px) {
   .dock-pane--sound { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -641,11 +677,30 @@
 .toggle--rec .icon { color: var(--rec); width: 12px; height: 12px; }
 .toggle--rec.is-on { background: color-mix(in srgb, var(--rec) 16%, transparent); border-color: color-mix(in srgb, var(--rec) 55%, transparent); color: var(--text); }
 
-@container dock (max-width: 960px) {
-  .dock-pane--seq { grid-template-columns: minmax(0, 1fr); }
+@container dock (max-width: 899px) {
+  .dock-pane--seq { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .seq-side { flex-direction: row; }
-  .seq-block { flex: 1; flex-direction: row; flex-wrap: wrap; align-items: center; }
-  .seq-global, .seq-arp { flex-wrap: wrap; row-gap: 6px; }
+  /* One row of pattern controls: the heading is implied by the tab. */
+  .seq-block { flex: 1; flex-direction: row; flex-wrap: wrap; align-items: flex-end; column-gap: 10px; row-gap: 6px; padding: 6px 10px; }
+  .seq-block .section-head { display: none; }
+  .seq-block .seq-tools { border-top: 0; padding-top: 0; margin-left: auto; }
+  .seq-block .seq-pair { gap: 10px; }
+  .seq-dotline .field-col--grow { width: 72px; flex: none; }
+  .seq-global, .seq-arp { flex-wrap: wrap; row-gap: 6px; gap: 10px; }
+  .seq-global-note { display: none; }
+}
+@container dock (max-width: 1000px) and (min-width: 900px) {
+  .dock-pane--seq { grid-template-columns: 184px minmax(0, 1fr); gap: 10px; }
+  .seq-global, .seq-arp { gap: 10px; }
+  .seq-global-note { display: none; }
+}
+/* Shorter desktop windows: tighten the grid so all nine rows fit without scrolling. */
+@media (max-height: 860px) and (min-width: 900px) {
+  .dock-pane--seq { padding-top: 8px; padding-bottom: 8px; }
+  .seq-main { gap: 5px; }
+  .seq-labels, .seq-col { grid-template-rows: 12px 22px 17px 12px 16px 8px 10px 10px 14px; }
+  .seq-arp { padding-top: 5px; }
+  .seq-block { gap: 6px; padding-top: 7px; padding-bottom: 7px; }
 }
 
 /* MIX */
@@ -703,7 +758,21 @@
 .strip-caption { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .master-limit { display: flex; flex-direction: column; justify-content: flex-end; padding-left: 4px; }
 
-@container dock (max-width: 980px) {
+/* Laptop widths: strips and master stay side by side with slimmer knobs, so
+   Volume and Ceiling never sit below the fold. */
+@container dock (max-width: 1060px) and (min-width: 900px) {
+  .dock-pane--mix { gap: 8px; padding: 8px 8px 10px; }
+  .mix-strips { grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 6px; }
+  .strip { padding: 7px 6px; }
+  .strip-knobs .knob--sm { width: 48px; }
+  .mix-master { padding: 8px; }
+  .master-fx { gap: 6px 6px; }
+  .mix-master .knob--sm { width: 52px; }
+  .mix-master .knob-label, .mix-master .knob-value { font-size: 10.5px; }
+  .master-limit .knob--sm { width: 60px; }
+  .fx-title .select { width: 72px; }
+}
+@container dock (max-width: 899px) {
   .dock-pane--mix { grid-template-columns: minmax(0, 1fr); }
   .mix-strips { min-height: 210px; }
 }
@@ -788,7 +857,7 @@
   .vp-toolbar { top: 8px; padding: 3px; }
   .vp-toolbar--left { left: 8px; }
   .vp-toolbar--right { right: 8px; }
-  .vp-toolbar--left .seg:last-child, .vp-toolbar--left .vp-sep { display: none; }
+  .vp-toolbar--left .seg--style, .vp-toolbar--left .vp-sep, .vp-palette { display: none; }
   .vp-label { display: none; }
   .seg--dot .seg-text { display: none; }
   .vp-bottom { left: 8px; right: 8px; bottom: 8px; }
@@ -857,4 +926,106 @@
   .terrain-art { max-width: 140px; }
   .app.keys-closed .piano { display: flex; }
   .app.keys-closed .pk-bar { display: none; }
+}
+
+/* ================================================================== Round D additions */
+/* Preview (patch tools): lit while the phrase plays. */
+.preview-btn.is-on { color: var(--part-ink); background: var(--part-soft); box-shadow: inset 0 0 0 1px var(--part-line); }
+/* Without presets only the patch half is unavailable; Preview still works. */
+.patch-browser.is-disabled { opacity: 1; }
+.patch-browser.is-disabled .patch-main, .patch-browser.is-disabled .patch-tools > :not(.preview-btn) { opacity: .55; }
+
+/* Macros: four global knobs, each with a line saying how many links use it. */
+.popover--macros { width: 312px; }
+.macro-pop .popover-note { margin: 0 0 12px; max-width: none; }
+.macro-knobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 2px; justify-items: center; }
+.macro-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.macro-use { font-size: var(--fs-2xs); color: var(--part-ink); white-space: nowrap; }
+.macro-use.is-idle { color: var(--text-3); }
+.macro-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+/* In the Links view the macros sit two by two with small knobs (value on hover). */
+.links-macros .macro-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 4px; margin-top: 2px; }
+.links-macros .macro-knobs .knob--sm { width: 72px; }
+.links-macros .macro-use { font-size: var(--fs-2xs); margin-top: -2px; }
+@media (max-height: 860px) and (min-width: 900px) {
+  .links-macros .links-note { display: none; }
+}
+
+/* Palette swatches (Settings > General and the map toolbar). */
+.palette-picker { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.palette-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.palette-swatch {
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  padding: 6px 6px 7px; border-radius: var(--r);
+  background: var(--panel-2); border: 1px solid var(--border);
+  color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; text-align: left;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.palette-swatch:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.palette-swatch.is-on { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
+.palette-swatch:disabled { opacity: .45; }
+.palette-ramp { display: block; height: 20px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18); }
+.palette-ramp.is-plain { background: repeating-linear-gradient(45deg, var(--panel-3), var(--panel-3) 6px, var(--panel-hover) 6px, var(--panel-hover) 12px); }
+.palette-name { padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.palette-note { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+.popover--palette { width: 292px; }
+.palette-picker--pop .palette-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vp-palette { color: var(--text-2); }
+
+/* Bounce popover. */
+.popover--bounce { width: 320px; }
+.bounce-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.bounce-grid { margin: 12px 0 10px; }
+.bounce-pop > .bounce-field { margin-bottom: 10px; }
+.seg--grow { display: flex; width: 100%; }
+.seg--grow .seg-btn { flex: 1; }
+.bounce-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 8px; }
+.bounce-row-text { display: flex; flex-direction: column; font-weight: 600; font-size: var(--fs-sm); }
+.bounce-row-text .setting-hint { font-weight: 400; font-size: var(--fs-xs); margin: 0; }
+.bounce-length { font-size: var(--fs-xs); color: var(--text-3); margin: 0 0 8px; }
+
+/* MIDI: a problem reported while connected (an output that went away). */
+.status-warn { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: var(--warn); font-size: var(--fs-sm); line-height: 1.45; }
+.status-warn .icon { width: 16px; height: 16px; margin-top: 1px; }
+
+/* Desktop app (Electron, macOS inset title bar): the top bar doubles as the
+   window's drag handle and clears the traffic lights. env(titlebar-area-*) is
+   only defined there, so browsers keep the normal padding. Every control in it
+   opts out of dragging, and anything layered on top cancels the drag area. */
+.topbar {
+  -webkit-app-region: drag; app-region: drag;
+  padding-left: max(6px, calc(env(titlebar-area-x, 0px) - var(--gutter)));
+  min-height: env(titlebar-area-height, 0px);
+}
+.topbar :is(button, input, select, a, [role="radio"], [role="slider"], [tabindex]),
+.topbar :is(.part-tabs, .patch-browser, .transport, .utils, .dragnum) {
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+.app[inert] .topbar, .layer-host > *, .modal-backdrop, .popover, .toast {
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+
+@media (max-width: 899px) {
+  .macros-btn { display: none; }
+  /* MOD rows on phones: give the parameter name room; rate stays readable. */
+  .mod-switch { flex-wrap: wrap; row-gap: 6px; }
+  .mod-switch .mod-top { flex-basis: 100%; }
+  .mod-row { grid-template-columns: minmax(74px, 1.4fr) 32px 92px minmax(40px, 1fr) minmax(40px, 1fr) 32px; }
+  .mod-row--head > span { overflow: visible; }
+  .links-pane { grid-template-columns: minmax(0, 1fr); }
+  /* Links on phones: source and destination on top, curve and amount below. */
+  .links-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+    grid-template-areas: "src dst del" "curve amt amt";
+    height: auto; row-gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--divider);
+  }
+  .links-row > :nth-child(1) { grid-area: src; }
+  .links-row > :nth-child(2) { grid-area: curve; }
+  .links-row > :nth-child(3) { grid-area: amt; }
+  .links-row > :nth-child(4) { display: none; }
+  .links-row > :nth-child(5) { grid-area: dst; }
+  .links-row > :nth-child(6) { grid-area: del; width: 40px; height: 40px; }
+  .links-row--head { display: none; }
+  .links-row .select--xs .select-native { height: 40px; font-size: var(--fs-sm); }
+  .palette-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

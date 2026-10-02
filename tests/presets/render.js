@@ -9,7 +9,7 @@ import { NUM_PARTS } from '../../src/core/params.js';
 import { createStore } from '../../src/core/store.js';
 import { migrateState } from '../../src/core/migrate.js';
 import { createMusic } from '../../src/music/music.js';
-import { patchParams, patchMods } from '../../src/presets/apply.js';
+import { patchParams, patchMods, patchLinks } from '../../src/presets/apply.js';
 import { createFakeClock } from '../music/fakes.js';
 
 export const SR = 48000;
@@ -27,10 +27,11 @@ export function terrainLevels(index, seed, detail, size = 512) {
   return chain ? chain.map(l => ({ size: l.size, data: new Float32Array(l.data) })) : null;
 }
 
-/** Send a full part (params, mods, terrains) to the engine. */
-export function loadPart(dsp, part, params, mods) {
+/** Send a full part (params, mods, links, terrains) to the engine, as the audio host does. */
+export function loadPart(dsp, part, params, mods, links) {
   dsp.handleMessage({ t: 'params', part, p: params });
   dsp.handleMessage({ t: 'mods', part, m: mods });
+  if (Array.isArray(links)) dsp.handleMessage({ t: 'links', part, links });
   const a = terrainLevels(params.terrainA, params.seed, params.detail);
   const b = terrainLevels(params.terrainB, params.seed, params.detail);
   if (a) dsp.handleMessage({ t: 'terrain', part, slot: 0, levels: a });
@@ -38,7 +39,7 @@ export function loadPart(dsp, part, params, mods) {
 }
 
 export function loadPatch(dsp, part, patch) {
-  loadPart(dsp, part, patchParams(patch), patchMods(patch));
+  loadPart(dsp, part, patchParams(patch), patchMods(patch), patchLinks(patch));
 }
 
 /**
@@ -150,7 +151,7 @@ export function renderScene(scene, bars = 4) {
   const clock = createFakeClock({ startSec: 0 });
   const dsp = new OrographDSP(SR);
   dsp.handleMessage({ t: 'global', p: { tempo: state.global.tempo } });
-  for (let p = 0; p < NUM_PARTS; p++) loadPart(dsp, p, state.parts[p].params, state.parts[p].mods);
+  for (let p = 0; p < NUM_PARTS; p++) loadPart(dsp, p, state.parts[p].params, state.parts[p].mods, state.parts[p].links);
   const notes = Array(NUM_PARTS).fill(0);
   const engine = {
     context: clock.ctx,

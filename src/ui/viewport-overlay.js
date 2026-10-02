@@ -1,14 +1,16 @@
-// Overlay on the 3D view: camera presets, auto-rotate, map render style, dot
-// behaviour (Pin / Roll / Drift) with its physics popover, and the signal
+// Overlay on the 3D view: camera presets, auto-rotate, map render style and
+// palette, dot behaviour (Pin / Roll / Drift / Explore / Tour) with its
+// settings popover, the waypoint editing chip, and the signal
 // card (scope + cycle view). If the 3D view failed to start, a flat map takes
 // its place so the dot can still be placed anywhere.
 
 import { DOT_MODES } from '../core/params.js';
-import { h, createScope, call, setText, listen } from './dom.js';
+import { h, createScope, call, setText, listen, softDisable } from './dom.js';
 import { createSegmented, createToggle } from './controls.js';
 import { createScopeCard } from './scope.js';
 import { addLoop } from './frame.js';
 import { openDotSettings } from './dot-settings.js';
+import { openPalettePopover } from './palettes.js';
 import { createFlatMap } from './flat-map.js';
 import { icon } from './icons.js';
 
@@ -55,12 +57,18 @@ export function createViewportOverlay(ctx, viewportEl) {
   const rotateBinding = { ...via(binder.uiValue('autoRotate', [0, 1], 1), 'setAutoRotate', v => !!v), def: { id: 'autoRotate', label: 'Auto-rotate', default: 1 } };
   const viewSeg = createSegmented(ctx, viewBinding, { label: 'Camera', iconOnly: true, size: 'sm', options: VIEWS });
   const rotate = createToggle(ctx, rotateBinding, { label: 'Auto-rotate', iconName: 'rotate', text: false, className: 'toggle--icon', tip: 'Slowly circle the map (Orbit view)' });
-  const styleSeg = createSegmented(ctx, styleBinding, { label: 'Map style', iconOnly: true, size: 'sm', options: STYLES });
+  const styleSeg = createSegmented(ctx, styleBinding, { label: 'Map style', iconOnly: true, size: 'sm', className: 'seg--style', options: STYLES });
   for (const c of [viewSeg, rotate, styleSeg]) scope.add(c.dispose);
-
+  const paletteBtn = h('button', { type: 'button', class: 'icon-btn icon-btn--sm vp-palette', 'aria-label': 'Map palette', 'aria-haspopup': 'dialog', dataset: { tip: 'Colours of the land' }, html: icon('palette') });
+  if (!visuals) softDisable(paletteBtn, 'Palettes colour the 3D map, which is not running here', (r) => ctx.toast(r, { kind: 'info' }));
+  let palettePop = null;
+  scope.on(paletteBtn, 'click', () => {
+    if (palettePop && palettePop.isOpen()) { palettePop.close(); return; }
+    palettePop = openPalettePopover(ctx, paletteBtn);
+  });
 
   const left = h('div', { class: 'vp-toolbar vp-toolbar--left', role: 'toolbar', 'aria-label': 'View' },
-    viewSeg.el, rotate.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }), styleSeg.el);
+    viewSeg.el, rotate.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }), styleSeg.el, paletteBtn);
 
   // ---- dot behaviour
   const dotBinding = binder.path('dot.mode', DOT_DEF);
@@ -94,6 +102,12 @@ export function createViewportOverlay(ctx, viewportEl) {
   const renderEdit = () => { editChip.hidden = !store.get('ui.editWaypoints'); };
   scope.add(store.subscribe('ui.editWaypoints', renderEdit));
   renderEdit();
+  // Esc ends waypoint editing too, once no menu or dialog is left to close.
+  scope.on(document, 'keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || !store.get('ui.editWaypoints')) return;
+    if (ctx.layers && ctx.layers.count() > 0) return;
+    store.set('ui.editWaypoints', 0, { source: 'ui' });
+  });
   // Height under the dot from telemetry, a few times a second (it is read, not watched).
   let lastH = 0;
   scope.add(addLoop((t) => {

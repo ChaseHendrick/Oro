@@ -33,8 +33,8 @@ const CARDS = [
   { icon: 'pin', title: 'Move the dot', text: 'Click or drag on the map to place the dot, the centre of the orbit. Pin keeps it still, Roll makes it a marble, Drift lets it wander, Explore plays notes at peaks and valleys, and Tour follows your waypoints.' },
   { icon: 'relief', title: 'Shape the land', text: 'Pick Terrain A and B and Morph between them. Warp ripples the map, Lift drives it harder and Fold adds bright harmonics. Import an image or a WAV to play your own land.' },
   { icon: 'view-top', title: 'Shape the path', text: 'Choose a path shape. Size makes the tone brighter, Laps adds sync-style harmonics and Pace bends the speed along the way. On the map, Shift-drag changes Size and Alt-drag rotates.' },
-  { icon: 'sliders', title: 'Twist the knobs', text: 'Drag up or down (Shift for fine), double-click to reset, and right-click to modulate or MIDI-learn. The bright bead shows the live value. Links route velocity, the marble or a Macro to anything.' },
-  { icon: 'keyboard', title: 'Make music', text: 'Play the on-screen keys or your computer keyboard (A, W, S, E, D...). Program the 16-step sequencer, lock the dot to steps, or turn on the arpeggiator. Space plays and stops.' },
+  { icon: 'sliders', title: 'Twist the knobs', text: 'Drag up or down (Shift for fine), double-click to reset, and right-click to modulate or MIDI-learn. The bright bead shows the live value. Links route velocity, the marble or one of the four Macros (top bar) to anything.' },
+  { icon: 'keyboard', title: 'Make music', text: 'Play the on-screen keys or your computer keyboard (A, W, S, E, D...), or press the headphones to hear a patch play a short phrase. Program the 16-step sequencer, lock the dot to steps, or turn on the arpeggiator. Space plays and stops, and Bounce saves your patterns as a WAV.' },
   { icon: 'mpc', title: 'Connect an MPC', text: 'Settings > MIDI & MPC connects your controller, learns your Q-Links and walks through the Akai MPC XL setup step by step.' },
 ];
 

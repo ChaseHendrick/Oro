@@ -1,5 +1,7 @@
-// Top bar: wordmark, part tabs (name, patch, note LED), the patch browser,
-// transport (play/stop, tempo, record), MIDI activity, theme, settings, help.
+// Top bar: wordmark, part tabs (name, patch, note LED), the patch browser
+// (with Preview), transport (play/stop, tempo, record, bounce), Macros, MIDI
+// activity, theme, settings, help. In the desktop app it is also the window's
+// drag handle (see the app-region rules in panels.css).
 
 import { NUM_PARTS, PART_COLORS } from '../core/params.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
@@ -8,6 +10,7 @@ import { createDragNumber } from './controls.js';
 import { createPatchBrowser } from './patch-browser.js';
 import { createRecorder, formatElapsed } from './record.js';
 import { openBounce, bounceSupported } from './bounce.js';
+import { openMacros } from './macros.js';
 import { partVars, applyVars } from './color.js';
 import { icon, brandGlyph } from './icons.js';
 
@@ -202,7 +205,13 @@ export function createTopbar(ctx, container) {
   scope.on(settingsBtn, 'click', () => ctx.openSettings());
   const helpBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Help', 'aria-haspopup': 'dialog', dataset: { tip: 'How it works ( ? )' }, html: icon('help') });
   scope.on(helpBtn, 'click', () => ctx.openHelp());
-  const utils = h('div', { class: 'utils' }, midiBtn, themeBtn, settingsBtn, helpBtn);
+  const macrosBtn = h('button', { type: 'button', class: 'icon-btn macros-btn', 'aria-label': 'Macros', 'aria-haspopup': 'dialog', dataset: { tip: 'Macros: four knobs you can link to anything' }, html: icon('macro') });
+  let macrosPop = null;
+  scope.on(macrosBtn, 'click', () => {
+    if (macrosPop && macrosPop.isOpen()) { macrosPop.close(); return; }
+    macrosPop = openMacros(ctx, macrosBtn);
+  });
+  const utils = h('div', { class: 'utils' }, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   container.append(brand, partGroup, patch.el, h('span', { class: 'topbar-spacer' }), transport, utils);
   renderParts();

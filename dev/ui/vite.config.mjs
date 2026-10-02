@@ -15,6 +15,10 @@ export default async (env) => {
     ...cfg,
     root,
     cacheDir: path.join(root, 'node_modules/.vite-ui'),
+    // hmr: false also stops Vite's full-reload messages (only connect, ping,
+    // custom and error payloads still go out), so edits elsewhere never reload
+    // a page under test. Keep the socket itself: without it the Vite client
+    // logs connection errors that would fail the console checks.
     server: { ...(cfg.server || {}), host: '127.0.0.1', port: 5184, strictPort: true, hmr: false },
   };
 };

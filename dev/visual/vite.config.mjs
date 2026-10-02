@@ -1,5 +1,5 @@
 // Dev server for the 3D map harness and its end-to-end test.
-//   npx vite --config dev/visual/vite.config.mjs        (port 5183)
+//   npx vite --config dev/visual/vite.config.mjs        (port 5193)
 // Other modules are developed in the same tree at the same time; this config
 // keeps their edits from reloading the harness mid-test (only the visuals and
 // what they import from src/dsp and src/core are watched) and uses its own
@@ -17,7 +17,7 @@ export default defineConfig({
   cacheDir: path.join(root, 'node_modules/.vite-visual'),
   server: {
     host: '127.0.0.1',
-    port: 5183,
+    port: 5193,
     strictPort: true,
     watch: {
       ignored: (p) => {

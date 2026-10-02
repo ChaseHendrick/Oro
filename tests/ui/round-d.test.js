@@ -3,7 +3,7 @@ import { harmonics } from '../../src/ui/scope.js';
 import { cyclePhase } from '../../src/ui/dsp-bridge.js';
 import { formatParam } from '../../src/ui/formats.js';
 import { sanitizeLink, suggestLink, LINK_SOURCES, LINK_CURVES, MAX_LINKS } from '../../src/ui/links-panel.js';
-import { bounceName, slug } from '../../src/ui/bounce.js';
+import { bounceName, stemName, slug } from '../../src/ui/bounce.js';
 import { lfoValue, STEP_COUNT } from '../../src/ui/mod-popover.js';
 import { freshMod } from '../../src/ui/mod-panel.js';
 import { BEAT_CHOICES, DOT_DEFS } from '../../src/ui/dot-settings.js';
@@ -69,6 +69,7 @@ describe('bounce, steps LFO and dot settings', () => {
   it('names bounce files', () => {
     expect(bounceName(new Date(2026, 0, 2, 3, 4, 5))).toBe('orograph-bounce-20260102-030405.wav');
     expect(bounceName(new Date(2026, 0, 2, 3, 4, 5), '-part1-bass')).toBe('orograph-bounce-20260102-030405-part1-bass.wav');
+    expect(stemName(new Date(2026, 0, 2, 3, 4, 5), 2)).toBe('orograph-bounce-20260102-030405-part3.wav');
     expect(slug('Glass Orbit!')).toBe('glass-orbit');
     expect(slug('')).toBe('part');
   });

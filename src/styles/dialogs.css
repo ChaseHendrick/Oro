@@ -196,7 +196,14 @@
 @media (max-width: 899px) {
   .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .settings-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--divider); padding: 8px; }
-  .settings-tab { flex: none; height: 40px; }
+  .settings-tab { flex: none; height: 40px; padding: 0 10px; gap: 6px; }
+  /* Five tabs in one row on a phone: icons give way, labels stay. */
+  .settings-tabs { gap: 2px; scrollbar-width: none; }
+  .settings-tabs::-webkit-scrollbar { display: none; }
+  .settings-tab .icon { display: none; }
+  /* A row whose control is a wide button group puts the control on its own line, so the hint is not squeezed. */
+  .setting-row:has(> .seg) > .setting-text { flex-basis: 100%; }
+  .setting-row:has(> .seg) > .seg { margin-left: auto; }
   .settings-panel { padding: 4px 16px 24px; }
   .setting-row { flex-wrap: wrap; }
   .status-card { grid-template-columns: minmax(0, 1fr); }

@@ -354,7 +354,9 @@ export function createUI(root, modules = {}) {
       prevPatch: () => { if (topbar) topbar.patch.step(-1); },
       nextPatch: () => { if (topbar) topbar.patch.step(1); },
       preview: async () => {
-        if (!music || !has(music, 'preview')) return;
+        if (!music || !has(music, 'preview')) { toast('Preview needs the music engine, which is not available here', { kind: 'info' }); return; }
+        // A second Shift+P while the phrase plays stops it, like the Preview button.
+        if (has(music, 'isPreviewing') && music.isPreviewing()) { call(music, 'stopPreview'); return; }
         await ctx.startAudio();
         call(music, 'preview', 'sel');
       },

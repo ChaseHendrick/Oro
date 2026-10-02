@@ -41,7 +41,8 @@
 }
 .icon-btn:hover:not(:disabled) { background: var(--panel-hover); color: var(--text); }
 .icon-btn:active:not(:disabled) { background: var(--panel-active); }
-.icon-btn:disabled { opacity: .4; }
+.icon-btn:disabled, .icon-btn[aria-disabled="true"] { opacity: .4; }
+.icon-btn[aria-disabled="true"] { cursor: not-allowed; }
 .icon-btn--sm { width: 28px; height: 28px; border-radius: var(--r-sm); }
 .icon-btn--sm .icon { width: 16px; height: 16px; }
 .icon-btn--xs { width: 22px; height: 22px; border-radius: var(--r-xs); }

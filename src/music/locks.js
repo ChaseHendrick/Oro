@@ -26,11 +26,13 @@ export const FRAME_MS = 16;          // glide update period (about 60 Hz)
 export const USER_HOLD_MS = 250;
 // Sources that count as "the user moved the dot" for lock recording.
 const RECORD_SOURCES = new Set(['visual', 'ui', 'midi']);
-// Writers that move the dot on their own (marble physics, drift, tours) and
-// should neither cancel glides nor be recorded. The visuals currently tag every
-// write 'visual', so in non-Pin dot modes 'visual' is treated as simulated too
-// (see isUserMove). A write may also say so explicitly with meta.user.
-const SIM_SOURCES = new Set([LOCK_SOURCE, 'physics', 'sim']);
+// Writers that move the dot on their own (marble physics, drift, Explore,
+// tours) and should neither cancel glides nor be recorded. The visuals tag
+// simulated moves { source: 'physics', user: false } and a person's moves
+// { source: 'visual', user: true }; meta.user always wins. Older writers that
+// send a bare 'visual' are guessed from the dot mode: in non-Pin modes it is
+// treated as simulated (see isUserMove).
+const SIM_SOURCES = new Set([LOCK_SOURCE, 'physics', 'sim', 'marble', 'drift', 'explore', 'tour']);
 const META = Object.freeze({ source: LOCK_SOURCE });
 
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);

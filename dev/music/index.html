@@ -49,6 +49,9 @@
   <header>
     <h1>Orograph <span>music harness</span></h1>
     <button class="primary" id="play">Play</button>
+    <button id="preview" title="Play a short phrase for the selected part's patch (P in the app)">Preview</button>
+    <button id="explore" title="Pretend the selected part's marble passed a random peak or valley (needs Explore mode)">Explore note</button>
+    <button id="render" title="Render 4 bars of events for a bounce and show a summary">Render events</button>
     <span class="pill">Scene <b id="scene">...</b></span>
     <span class="pill">Tempo <b id="tempo">...</b></span>
     <span class="pill">Position <b id="pos">1.1.1</b></span>
@@ -66,6 +69,12 @@
         <dt>Step callback, max</dt><dd id="s-max">-</dd>
       </dl>
       <ul class="checks" id="checks"></ul>
+      <h2 style="margin-top:16px">Round D</h2>
+      <dl class="stats">
+        <dt>Preview</dt><dd id="r-preview">-</dd>
+        <dt>Explore</dt><dd id="r-explore">-</dd>
+        <dt>Render</dt><dd id="r-render">-</dd>
+      </dl>
     </aside>
   </main>
   <script type="module" src="./harness.js"></script>

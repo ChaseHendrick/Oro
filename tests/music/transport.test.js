@@ -271,3 +271,42 @@ describe('transport', () => {
     expect(calls.at(-1).playing).toBe(false);
   });
 });
+
+describe('transport: stalls', () => {
+  it('grows the lookahead after a stall so the next one drops no steps, then shrinks back', () => {
+    const { clock, engine, store, music } = setup({ tempo: 120 });
+    fillPattern(store, 0);
+    music.transport.play();
+    clock.advance(1);
+    expect(music.transport.lookahead()).toBeCloseTo(0.12, 6);
+    // First stall: the main thread is busy for 0.3 s; steps in that window come too late.
+    clock.advance(0.3, 0.3);
+    const grown = music.transport.lookahead();
+    expect(grown).toBeGreaterThan(0.4);
+    clock.advance(0.2);
+    const from = clock.ctx.currentTime;
+    // A second stall of the same length: everything was already scheduled.
+    clock.advance(0.3, 0.3);
+    clock.advance(0.5);
+    const ons = engine.ons(0).filter(e => e.time >= from);
+    for (let i = 1; i < ons.length; i++) expect(ons[i].time - ons[i - 1].time).toBeCloseTo(0.125, 6);
+    expect(ons.length).toBeGreaterThanOrEqual(Math.floor((clock.ctx.currentTime - from) / 0.125));
+    // Smooth running brings it back to normal within a few seconds.
+    clock.advance(4);
+    expect(music.transport.lookahead()).toBeLessThan(0.125);
+    music.transport.stop();
+  });
+
+  it('does not treat the pause between two plays as a stall', () => {
+    const { clock, store, music } = setup({ tempo: 120 });
+    fillPattern(store, 0);
+    music.transport.play();
+    clock.advance(0.5);
+    music.transport.stop();
+    clock.advance(5);
+    music.transport.play();
+    clock.advance(0.2);
+    expect(music.transport.lookahead()).toBeCloseTo(0.12, 6);
+    music.transport.stop();
+  });
+});

@@ -7,6 +7,7 @@
 import { sampleRamp, linearToSrgb } from './palettes.js';
 
 const IMG_RES = 112;
+const MAX_WP = 8, MAX_LOCKS = 16;
 
 function el(tag, cls, style) {
   const e = document.createElement(tag);
@@ -35,6 +36,15 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
   let size = 120, dpr = 1;
   let pressed = false;
   let wedge = null, wedgeKey = -1;
+  // Markers (kept here so draw() needs no arguments for them and allocates nothing).
+  const wpU = new Float64Array(MAX_WP), wpV = new Float64Array(MAX_WP);
+  let wpN = 0;
+  const lkU = new Float64Array(MAX_LOCKS), lkV = new Float64Array(MAX_LOCKS);
+  const lkOn = new Uint8Array(MAX_LOCKS);
+  let route = null, routeN = 0, showWp = false, showLocks = false;
+  const DASH = [3, 2.5], GHOST_DASH = [2, 2], NO_DASH = [];
+  const LABELS = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  let font = '', fontDpr = 0;
 
   function setSize(px) {
     size = Math.round(px);
@@ -81,9 +91,89 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
   wrap.addEventListener('pointercancel', up);
   wrap.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
+  function drawMarkers(W_, H_, css, themeT) {
+    const ink = themeT > 0.5 ? 'rgba(20,16,10,0.9)' : 'rgba(5,8,16,0.9)';
+    if (showLocks) {
+      const s = 3.2 * dpr;
+      ctx.lineWidth = 1 * dpr;
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = themeT > 0.5 ? '#fdf8ef' : '#e8ecf6';
+      for (let i = 0; i < MAX_LOCKS; i++) {
+        if (!lkOn[i]) continue;
+        const x = lkU[i] * W_, y = lkV[i] * H_;
+        ctx.fillRect(x - s, y - s, 2 * s, 2 * s);
+        ctx.strokeRect(x - s, y - s, 2 * s, 2 * s);
+      }
+    }
+    if (!showWp) return;
+    if (route && routeN > 1) {
+      // the route is unwrapped: draw it at each copy that touches the map
+      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+      for (let i = 0; i < routeN; i++) {
+        const u = route[2 * i], v = route[2 * i + 1];
+        if (u < minU) minU = u; if (u > maxU) maxU = u;
+        if (v < minV) minV = v; if (v > maxV) maxV = v;
+      }
+      DASH[0] = 3 * dpr; DASH[1] = 2.5 * dpr;
+      ctx.setLineDash(DASH);
+      ctx.strokeStyle = css;
+      ctx.lineWidth = 1.4 * dpr;
+      for (let oy = -2; oy <= 1; oy++) {
+        if (maxV + oy < 0 || minV + oy > 1) continue;
+        for (let ox = -2; ox <= 1; ox++) {
+          if (maxU + ox < 0 || minU + ox > 1) continue;
+          ctx.beginPath();
+          for (let i = 0; i < routeN; i++) {
+            const x = (route[2 * i] + ox) * W_, y = (route[2 * i + 1] + oy) * H_;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.setLineDash(NO_DASH);
+    }
+    const r = 4.6 * dpr;
+    if (fontDpr !== dpr) { fontDpr = dpr; font = `700 ${Math.round(6.5 * dpr)}px system-ui, sans-serif`; }
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < wpN; i++) {
+      const x = wpU[i] * W_, y = wpV[i] * H_;
+      ctx.fillStyle = css;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 1 * dpr;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ink;
+      ctx.fillText(LABELS[i], x, y + 0.3 * dpr);
+    }
+  }
+
   return {
     el: wrap,
     setSize,
+
+    /** Tour waypoints [{x, y}] of the selected part. */
+    setWaypoints(list) {
+      wpN = Math.min(MAX_WP, Array.isArray(list) ? list.length : 0);
+      for (let i = 0; i < wpN; i++) { wpU[i] = list[i].x; wpV[i] = list[i].y; }
+    },
+
+    /** Sequencer steps [{lock, lx, ly}] of the selected part. */
+    setLocks(steps) {
+      for (let i = 0; i < MAX_LOCKS; i++) {
+        const st = Array.isArray(steps) ? steps[i] : null;
+        lkOn[i] = st && st.lock ? 1 : 0;
+        if (lkOn[i]) { lkU[i] = st.lx; lkV[i] = st.ly; }
+      }
+    },
+
+    /** What to show this frame: the route (unwrapped u, v pairs) and whether waypoints / locks are visible. */
+    setMarkers(routeUV, n, waypointsOn, locksOn) {
+      route = routeUV; routeN = n; showWp = !!waypointsOn; showLocks = !!locksOn;
+    },
 
     /** Rebuild the terrain image (call when the land changes, a few times a second at most). */
     renderTerrain(hf, ramp, tint, tintAmt, sun) {
@@ -178,16 +268,18 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
       ctx.fill();
 
       if (ghostA > 0.01) {
-        ctx.setLineDash([2 * dpr, 2 * dpr]);
+        GHOST_DASH[0] = GHOST_DASH[1] = 2 * dpr;
+        ctx.setLineDash(GHOST_DASH);
         ctx.strokeStyle = css;
         ctx.globalAlpha = ghostA;
         ctx.lineWidth = 1.2 * dpr;
         ctx.beginPath();
         ctx.arc(ghostU * W_, ghostV * H_, 3.5 * dpr, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.setLineDash(NO_DASH);
         ctx.globalAlpha = 1;
       }
+      drawMarkers(W_, H_, css, themeT);
       // Dot with a contrasting ring.
       ctx.fillStyle = css;
       ctx.strokeStyle = themeT > 0.5 ? '#ffffff' : 'rgba(10,14,25,0.9)';

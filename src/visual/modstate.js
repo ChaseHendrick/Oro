@@ -4,7 +4,7 @@
 // store directly for unmodulated values matters for the dot: it then follows
 // the pointer with zero lag instead of trailing telemetry by a frame or two.
 
-import { PART_PARAM_MAP, fromNorm } from '../core/params.js';
+import { PART_PARAM_MAP, fromNorm, toNorm } from '../core/params.js';
 
 // Laps and Pace joined the contract later; follow them when the registry has them.
 export const VIS_IDS = ['morph', 'warp', 'lift', 'fold', 'size', 'stretch', 'rotate', 'centerX', 'centerY', 'pathParam', 'laps', 'pace']
@@ -95,4 +95,75 @@ export class LiveParams {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Per-voice orbits. Telemetry carries the modulated values of the newest
+// voice only, so the other voices are derived from it by what depends on the
+// note: Key>Size (size x 2^(noteSize (note - 60) / 24), clamped to 0..0.5) and
+// Links whose source is Key ((note - 60) / 48 through the link's curve).
+
+export const ORBIT_IDS = ['stretch', 'size', 'rotate', 'centerX', 'centerY', 'pathParam'];
+const KEY_SOURCE = 3;   // index of 'Key' in LINK_SOURCES
+
+/** Key>Size factor for a note (the oscillator applies it per voice). */
+export function noteSizeFactor(noteSize, note) {
+  const k = Number.isFinite(noteSize) ? noteSize : 0;
+  if (k === 0 || !Number.isFinite(note)) return 1;
+  return Math.pow(2, (k * (note - 60)) / 24);
+}
+
+function linkCurve(c, x) {
+  if (c === 1) return Math.sign(x) * x * x;
+  if (c === 2) return Math.sign(x) * Math.sqrt(Math.abs(x));
+  return x;
+}
+
+/** Sum of Key-link contributions to `id` for a note, in normalised knob units. */
+export function keyLinkDelta(links, id, note) {
+  if (!Array.isArray(links) || !Number.isFinite(note)) return 0;
+  let d = 0;
+  const x = (note - 60) / 48;
+  for (let i = 0; i < links.length; i++) {
+    const l = links[i];
+    if (l && l.src === KEY_SOURCE && l.dst === id && l.amt) d += l.amt * linkCurve(l.curve | 0, x < -1 ? -1 : x > 1 ? 1 : x);
+  }
+  return d;
+}
+
+/**
+ * Path values for a voice playing `note`, from the live values `L` (which
+ * belong to the voice playing `refNote`, or to no voice when refNote is NaN).
+ * Writes ORBIT_IDS into out.
+ */
+export function voiceLive(L, note, refNote, links, noteSize, out) {
+  for (let i = 0; i < ORBIT_IDS.length; i++) {
+    const id = ORBIT_IDS[i];
+    let v = L[id];
+    const d = keyLinkDelta(links, id, note) - (Number.isFinite(refNote) ? keyLinkDelta(links, id, refNote) : 0);
+    if (d !== 0) {
+      const def = PART_PARAM_MAP[id];
+      let n = toNorm(def, v) + d;
+      if (PERIOD[id]) n -= Math.floor(n); else n = n < 0 ? 0 : n > 1 ? 1 : n;
+      v = fromNorm(def, n);
+    }
+    out[id] = v;
+  }
+  const s = out.size * noteSizeFactor(noteSize, note);
+  out.size = s < 0 ? 0 : s > 0.5 ? 0.5 : s;
+  return out;
+}
+
+/**
+ * How different two orbits look, 0 = identical; about 1 = clearly different
+ * (6 % in size, 4 degrees of rotation, 0.006 of the map, 0.05 of stretch or shape).
+ */
+export function orbitDifference(a, b) {
+  const sa = Math.max(1e-4, a.size), sb = Math.max(1e-4, b.size);
+  const size = Math.abs(Math.log(sa / sb)) / 0.06;
+  const rot = Math.abs(periodicDelta(a.rotate, b.rotate, 360)) / 4 * Math.min(1, Math.max(sa, sb) * 8);
+  const cen = Math.hypot(periodicDelta(a.centerX, b.centerX, 1), periodicDelta(a.centerY, b.centerY, 1)) / 0.006;
+  const st = Math.abs(a.stretch - b.stretch) / 0.05;
+  const sh = Math.abs(a.pathParam - b.pathParam) / 0.05;
+  return Math.max(size, rot, cen, st, sh);
 }

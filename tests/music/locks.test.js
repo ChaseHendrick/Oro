@@ -243,6 +243,28 @@ describe('never fighting the user', () => {
     expect(music.transport.locks.gliding(0)).toBe(false);
   });
 
+  it('never treats physics writes as user moves, whatever the dot mode, and never records them', () => {
+    for (const mode of [0, 1, 3, 4]) {
+      const { clock, store, music } = setup({ tempo: 60 });
+      store.set('parts.0.dot.mode', mode);
+      pattern(store, 0, { rate: 0, n: 1, locks: { 0: [0.9, 0.9] }, glide: 1 });
+      music.setLockRecord(true);
+      music.transport.play();
+      clock.advance(START_DELAY + 0.2);
+      store.set(CX, 0.55, { source: 'physics' });
+      store.set(CY, 0.45, { source: 'visual', user: false });
+      store.set(CX, 0.6, { source: 'tour' });
+      expect(music.transport.locks.gliding(0), `mode ${mode}`).toBe(true);
+      // The recorded lock is still the one the pattern had: simulation is not a performance.
+      expect(store.get('parts.0.seq.steps.0')).toMatchObject({ lock: 1, lx: 0.9, ly: 0.9 });
+      expect(music.transport.locks.isUserMove(0, { source: 'physics' })).toBe(false);
+      expect(music.transport.locks.isUserMove(0, { source: 'visual', user: false })).toBe(false);
+      expect(music.transport.locks.isUserMove(0, { source: 'visual', user: true })).toBe(true);
+      expect(music.transport.locks.isUserMove(0, { source: 'visual' })).toBe(mode === 0);
+      music.dispose();
+    }
+  });
+
   it('drops the glide when the part is replaced by a patch or scene load', () => {
     const { clock, store, music } = setup({ tempo: 60 });
     pattern(store, 0, { rate: 0, n: 1, locks: { 0: [0.9, 0.9] }, glide: 1 });

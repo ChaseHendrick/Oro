@@ -4,7 +4,7 @@
 
 import { LFO_SHAPES, SYNC_DIVS, MOD_DEFAULT, PART_PARAM_MAP, toNorm, clamp, formatValue } from '../core/params.js';
 import * as paramsModule from '../core/params.js';
-import { h, createScope, setText } from './dom.js';
+import { h, createScope, setText, prefersReducedMotion } from './dom.js';
 import { openPopover } from './layers.js';
 import { addLoop, schedule } from './frame.js';
 import { createKnob } from './knob.js';
@@ -142,7 +142,8 @@ export function openModPopover(ctx, binding, anchor) {
     const base = toNorm(def, ctx.store.get(`parts.${part}.params.${id}`) ?? def.default);
     const hz = lfoHz(m, ctx.store.get('global.tempo') || 120);
     const cycles = 2;
-    const now = (performance.now() - t0) / 1000;
+    // With reduced motion the wave stands still; the shape and depth still read.
+    const now = prefersReducedMotion() ? 0 : (performance.now() - t0) / 1000;
     const phaseNow = now * Math.min(hz, 12);
     const pad = 4 * dpr;
     const y = n => H - pad - clamp(n, 0, 1) * (H - pad * 2);

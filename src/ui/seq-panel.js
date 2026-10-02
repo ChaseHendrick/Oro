@@ -65,7 +65,15 @@ export function createSeqPanel(ctx) {
   const lockGlide = createMiniSlider(ctx, P('seq.lockGlide', { id: 'lockGlide', label: 'Dot glide', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How long the dot takes to reach a step\'s locked spot (0 jumps)' }), {
     ariaLabel: 'Dot lock glide time', format: v => (v < 0.005 ? 'Jump' : Math.round(v * 100) + '% of a step'),
   });
-  const lockRec = createToggle(ctx, { ...binder.uiValue('lockRecord', [0, 1], 0), def: { id: 'lockRecord', label: 'Rec dot', default: 0 } }, {
+  // Lock Record goes through the music module when it has one (it owns the
+  // recording logic); the store flag alone is the fallback it also reads.
+  const lockRecBinding = { ...binder.uiValue('lockRecord', [0, 1], 0), def: { id: 'lockRecord', label: 'Rec dot', default: 0 } };
+  const setLockFlag = lockRecBinding.set;
+  lockRecBinding.set = (v, meta) => {
+    if (has(music, 'setLockRecord')) call(music, 'setLockRecord', !!v);
+    if ((store.get('ui.lockRecord') ? 1 : 0) !== (v ? 1 : 0)) setLockFlag(v ? 1 : 0, meta);
+  };
+  const lockRec = createToggle(ctx, lockRecBinding, {
     label: 'Rec dot', iconName: 'record', className: 'toggle--sm toggle--rec',
     tip: 'While playing, moving the dot records it into the step that is sounding',
   });
@@ -317,11 +325,16 @@ export function createSeqPanel(ctx) {
   function toggleLock(i, recapture) {
     const p = sel();
     const st = (store.get(`parts.${p}.seq.steps.${i}`)) || defaultStep();
-    if (st.lock && !recapture) { setStep(i, 'lock', 0); return; }
+    if (st.lock && !recapture) {
+      if (has(music, 'clearStepLock')) call(music, 'clearStepLock', p, i); else setStep(i, 'lock', 0);
+      return;
+    }
     const x = store.get(`parts.${p}.params.centerX`) ?? 0.5, y = store.get(`parts.${p}.params.centerY`) ?? 0.5;
+    const wx = clamp(x - Math.floor(x), 0, 1), wy = clamp(y - Math.floor(y), 0, 1);
+    if (has(music, 'setStepLock') && call(music, 'setStepLock', p, i, wx, wy) != null) return;
     store.batch(() => {
-      store.set(`parts.${p}.seq.steps.${i}.lx`, clamp(x - Math.floor(x), 0, 1), { source: 'ui' });
-      store.set(`parts.${p}.seq.steps.${i}.ly`, clamp(y - Math.floor(y), 0, 1), { source: 'ui' });
+      store.set(`parts.${p}.seq.steps.${i}.lx`, wx, { source: 'ui' });
+      store.set(`parts.${p}.seq.steps.${i}.ly`, wy, { source: 'ui' });
       store.set(`parts.${p}.seq.steps.${i}.lock`, 1, { source: 'ui' });
     });
   }

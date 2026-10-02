@@ -8,6 +8,9 @@
 // clock and running() tells them whether audio time is actually advancing.
 
 const perfNowDefault = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+// Largest disagreement (seconds) between getOutputTimestamp() and the coarse
+// currentTime-based mapping before the timestamp is treated as stale.
+const MAX_SKEW = 0.25;
 
 export function createTimebase(engine, { perfNow = perfNowDefault } = {}) {
   const ctx = () => (engine && engine.context) || null;
@@ -28,16 +31,23 @@ export function createTimebase(engine, { perfNow = perfNowDefault } = {}) {
   function anchor() {
     const c = ctx();
     if (!c) { const p = perfNow(); return { contextTime: p / 1000, performanceTime: p }; }
+    const latency = (c.outputLatency || 0) + (c.baseLatency || 0);
+    const p = perfNow();
     if (typeof c.getOutputTimestamp === 'function') {
       try {
         const ts = c.getOutputTimestamp();
         if (ts && ts.performanceTime > 0 && ts.contextTime > 0 && c.state === 'running') {
-          return { contextTime: ts.contextTime, performanceTime: ts.performanceTime };
+          // A stale timestamp (just after resume or an output device switch)
+          // can be off by seconds, which would throw every scheduled event far
+          // into the past or future. Trust it only when it roughly agrees with
+          // the coarse mapping below; in normal running they agree to a few ms.
+          const fine = ts.contextTime - ts.performanceTime / 1000;
+          const coarse = c.currentTime - latency - p / 1000;
+          if (Math.abs(fine - coarse) < MAX_SKEW) return { contextTime: ts.contextTime, performanceTime: ts.performanceTime };
         }
       } catch { /* some browsers throw while suspended */ }
     }
-    const latency = (c.outputLatency || 0) + (c.baseLatency || 0);
-    return { contextTime: c.currentTime - latency, performanceTime: perfNow() };
+    return { contextTime: c.currentTime - latency, performanceTime: p };
   }
 
   /** performance.now() time (ms) at which audio time `t` reaches the speakers. */

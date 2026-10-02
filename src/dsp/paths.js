@@ -591,3 +591,166 @@ export function pathBlockAt(shape, order, n, T, param, dParam, X, Y) {
     default: atEllipse(n, T, param, dParam, X, Y, o); break;
   }
 }
+
+// --- Travel: direction (Ping-pong) and traverse (Even) -----------------------
+// Applied to the path phase after Pace and Laps: t -> pingPong(t) -> evenPhase.
+// Ping-pong runs each lap forward and then backward, so the waveform of every
+// lap is symmetric and an open path (Scan) never jumps. Even re-times the trip
+// so the dot moves at constant speed along the curve (Natural follows the
+// curve's own maths, which rushes some stretches and lingers on others).
+// Both maps are monotonic pieces with fixed endpoints, so the cycle length,
+// and with it the pitch, never changes.
+
+// The turning point of a ping-pong lap must be the END of the path: for the
+// open Scan path t = 1 would wrap back to its start, so stay a hair below it.
+const PP_TOP = 1 - 2 ** -40;
+
+/** Ping-pong: 0 -> 1 over the first half of the lap, back to 0 over the second. */
+export function pingPong(t) {
+  const f = t - Math.floor(t);
+  const y = f < 0.5 ? 2 * f : 2 - 2 * f;
+  return y > PP_TOP ? PP_TOP : y;
+}
+
+// Even: per (shape, order, quantised param) an inverse arc-length table maps
+// a fraction of the path's length to the phase t where it is reached. Params
+// between two levels blend the neighbouring tables (both are monotonic, so the
+// blend is too), the same scheme as the perimeter cache. A table costs ~2000
+// path points (~0.1 ms) and is built on first use; the engine calls
+// prepareEven from its message handler for the levels around the current
+// param, so the audio callback only builds one when modulation reaches a
+// level nobody has used yet.
+const EVEN_LEVELS = 32;
+const EVEN_G = 512;
+const EVEN_FINE = 2048;
+const evenCache = new Array(PATH_COUNT * 8 * (EVEN_LEVELS + 1)).fill(null);
+const _ep = { x: 0, y: 0 };
+const _arc = new Float64Array(EVEN_FINE + 1);
+
+function evenTable(shape, order, level) {
+  const idx = (shape * 8 + (order - 1)) * (EVEN_LEVELS + 1) + level;
+  const hit = evenCache[idx];
+  if (hit) return hit;
+  const param = level / EVEN_LEVELS;
+  pathPoint(shape, 0, order, param, _ep);
+  let px = _ep.x, py = _ep.y;
+  _arc[0] = 0;
+  for (let i = 1; i <= EVEN_FINE; i++) {
+    // the last point approaches t = 1 from below: closed paths land on their
+    // start anyway, and the open Scan does not count its seam as distance
+    pathPoint(shape, i < EVEN_FINE ? i / EVEN_FINE : 1 - 1e-9, order, param, _ep);
+    const dx = _ep.x - px, dy = _ep.y - py;
+    _arc[i] = _arc[i - 1] + Math.sqrt(dx * dx + dy * dy);
+    px = _ep.x; py = _ep.y;
+  }
+  const total = _arc[EVEN_FINE];
+  const tab = new Float64Array(EVEN_G + 1);
+  if (!(total > 1e-12)) {
+    for (let k = 0; k <= EVEN_G; k++) tab[k] = k / EVEN_G;
+  } else {
+    let i = 0;
+    for (let k = 1; k < EVEN_G; k++) {
+      const target = total * k / EVEN_G;
+      while (i < EVEN_FINE - 1 && _arc[i + 1] < target) i++;
+      const seg = _arc[i + 1] - _arc[i];
+      const f = seg > 0 ? (target - _arc[i]) / seg : 0;
+      tab[k] = (i + (f < 0 ? 0 : f > 1 ? 1 : f)) / EVEN_FINE;
+    }
+    tab[0] = 0; tab[EVEN_G] = 1;
+  }
+  evenCache[idx] = tab;
+  return tab;
+}
+
+/**
+ * Build the Even tables of one shape and order now (outside the audio
+ * callback): the levels within `reach` of param, or all of them without one.
+ */
+export function prepareEven(shape, order, param = null, reach = 2) {
+  const s = shape >= 0 && shape < PATH_COUNT ? shape | 0 : 0;
+  const n = clampOrder(order);
+  let lo = 0, hi = EVEN_LEVELS;
+  if (param !== null && Number.isFinite(param)) {
+    const l = Math.floor((param < 0 ? 0 : param > 1 ? 1 : param) * EVEN_LEVELS);
+    lo = Math.max(0, l - reach); hi = Math.min(EVEN_LEVELS, l + 1 + reach);
+  }
+  for (let l = lo; l <= hi; l++) evenTable(s, n, l);
+}
+
+/**
+ * Even traverse: the phase where the dot has covered the fraction t of the
+ * path's length (t in [0, 1); 0 -> 0 and 1 -> 1, monotonic). Same shape /
+ * order / param arguments as pathPoint.
+ */
+export function evenPhase(shape, order, param, t) {
+  const s = shape >= 0 && shape < PATH_COUNT ? shape | 0 : 0;
+  const n = order >= 1 && order <= 8 && order === (order | 0) ? order : clampOrder(order);
+  const lp = (param < 0 ? 0 : param > 1 ? 1 : param) * EVEN_LEVELS;
+  let l0 = Math.floor(lp);
+  if (l0 >= EVEN_LEVELS) l0 = EVEN_LEVELS - 1;
+  const lf = lp - l0;
+  const base = (s * 8 + (n - 1)) * (EVEN_LEVELS + 1);
+  const A = evenCache[base + l0] || evenTable(s, n, l0);
+  const B = evenCache[base + l0 + 1] || evenTable(s, n, l0 + 1);
+  const x = (t - Math.floor(t)) * EVEN_G;
+  const i = x | 0;
+  const f = x - i;
+  const a = A[i] + f * (A[i + 1] - A[i]);
+  const b = B[i] + f * (B[i + 1] - B[i]);
+  return a + lf * (b - a);
+}
+
+/**
+ * Block form for the oscillator: in place, T[j] -> pingPong (when pingPong is
+ * set) and then evenPhase (when even is set), with the param ramping exactly
+ * as in pathBlockAt (param + (j + 1) dParam at sample j, clamped), so the
+ * Even tables always match the curve that is drawn.
+ */
+export function travelBlock(shape, order, n, T, param, dParam, pingPongOn, evenOn) {
+  if (pingPongOn) {
+    for (let j = 0; j < n; j++) {
+      const f = T[j];
+      const y = f < 0.5 ? 2 * f : 2 - 2 * f;
+      T[j] = y > PP_TOP ? PP_TOP : y;
+    }
+  }
+  if (!evenOn) return;
+  const s = shape >= 0 && shape < PATH_COUNT ? shape | 0 : 0;
+  const o = order >= 1 && order <= 8 && order === (order | 0) ? order : clampOrder(order);
+  const base = (s * 8 + (o - 1)) * (EVEN_LEVELS + 1);
+  let p = +param;
+  const dp = +dParam;
+  if (dp === 0) {
+    const pc = p < 0 ? 0 : p > 1 ? 1 : p;
+    const lp = pc * EVEN_LEVELS;
+    let l0 = Math.floor(lp);
+    if (l0 >= EVEN_LEVELS) l0 = EVEN_LEVELS - 1;
+    const lf = lp - l0;
+    const A = evenCache[base + l0] || evenTable(s, o, l0);
+    const B = evenCache[base + l0 + 1] || evenTable(s, o, l0 + 1);
+    for (let j = 0; j < n; j++) {
+      const x = T[j] * EVEN_G;
+      const i = x | 0;
+      const f = x - i;
+      const a = A[i] + f * (A[i + 1] - A[i]);
+      T[j] = a + lf * (B[i] + f * (B[i + 1] - B[i]) - a);
+    }
+    return;
+  }
+  for (let j = 0; j < n; j++) {
+    p += dp;
+    T[j] = evenPhase(s, o, p, T[j]);
+  }
+}
+
+/**
+ * The path phase the oscillator traces at cycle phase phi, with every travel
+ * control: Pace, Laps, Direction (0 Forward, 1 Ping-pong) and Traverse
+ * (0 Natural, 1 Even). For the visuals' dot and comet trail.
+ */
+export function travelPhase(phi, { laps = 1, pace = 0, paceShape = 0, direction = 0, traverse = 0, shape = 0, order = 1, param = 0.5 } = {}) {
+  let t = syncPhase(paceWarp(phi - Math.floor(phi), pace, paceShape), laps);
+  if (direction === 1) t = pingPong(t);
+  if (traverse === 1) t = evenPhase(shape, order, param, t);
+  return t;
+}

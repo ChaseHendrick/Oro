@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TERRAINS } from '../../src/dsp/catalog.js';
 import { generateTerrain, decodeUserTerrain, buildMipChain, normalise, base64ToBytes } from '../../src/dsp/terrains.js';
 import { sampleBilinear, wrap01, warpPoint, pathTransform, fastSin, fastCos, mulberry32, makeGradientGrid, gradientNoise, torusRho } from '../../src/dsp/terrain-math.js';
+
+// Offline renders are heavy and the suite may share a busy machine: measure
+// quality here, not wall-clock speed (dev/dsp/bench.mjs measures CPU time).
+vi.setConfig({ testTimeout: 120000 });
 
 const PROC = TERRAINS.map((t, i) => i).filter(i => TERRAINS[i].id !== 'user');
 const USER = TERRAINS.findIndex(t => t.id === 'user');

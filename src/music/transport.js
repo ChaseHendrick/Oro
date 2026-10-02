@@ -20,7 +20,13 @@ import { createEmitter } from './emitter.js';
 import { MIN_GAP, LATE_WINDOW } from './router.js';
 import { createLockPlayer, wrap01 } from './locks.js';
 
-export const LOOKAHEAD = 0.12;       // seconds of audio scheduled ahead
+export const LOOKAHEAD = 0.12;       // seconds of audio scheduled ahead (normal)
+// When the main thread stalls (garbage collection, a heavy redraw, a busy
+// machine) the scheduler wakes late and steps would be dropped as too late.
+// After a stall the lookahead grows to cover a stall of the same length,
+// then shrinks back over a few seconds of smooth running.
+export const MAX_LOOKAHEAD = 0.5;
+const LOOKAHEAD_TAU = 0.8;           // seconds: time constant of the way back to normal
 export const INTERVAL_MS = 25;       // scheduler wake-up period
 export const START_DELAY = 0.06;     // headroom so the first notes are not late
 export const PPQ = 24;               // MIDI clock pulses per quarter note
@@ -55,7 +61,7 @@ export function stepLock(seq, step) {
   return { x: wrap01(finite(step.lx, 0.5)), y: wrap01(finite(step.ly, 0.5)) };
 }
 
-export function createTransport({ store, engine, timebase, router, timers }) {
+export function createTransport({ store, engine, timebase, router, timers, lockPlayer = null }) {
   const emitter = createEmitter();
   let playing = false;
   let follow = false;          // the "follow external clock" setting
@@ -71,9 +77,13 @@ export function createTransport({ store, engine, timebase, router, timers }) {
   let extLastPulse = -Infinity;  // audio time of the latest external pulse (playing or not)
   let engineBeat = -1;
   let timer = null;
+  let lookahead = LOOKAHEAD;   // adaptive, see adaptLookahead()
+  let lastTickMs = null;       // performance time of the previous timer tick
   // heard: [{ time, step }] of the latest scheduled steps, oldest first.
   const ps = Array.from({ length: NUM_PARTS }, () => ({ absStep: 0, rateIdx: null, tie: null, heard: [] }));
-  const locks = createLockPlayer({ store, timebase, timers, currentStep, isPlaying: () => playing });
+  // The offline renderer (render.js) swaps in a lock player that records the
+  // glides as engine messages instead of animating the store.
+  const locks = lockPlayer || createLockPlayer({ store, timebase, timers, currentStep, isPlaying: () => playing });
 
   function tempoNow() {
     return clamp(Number(store.get('global.tempo')) || 120, 20, 400);
@@ -102,11 +112,24 @@ export function createTransport({ store, engine, timebase, router, timers }) {
   const clockArriving = () => timebase.now() - extLastPulse < 0.5;
 
   function ensureTimer() {
-    if (!timer) timer = timers.setInterval(tick, INTERVAL_MS);
+    if (!timer) { timer = timers.setInterval(tick, INTERVAL_MS); lastTickMs = null; }
   }
 
   function stopTimer() {
     if (timer) { timers.clearInterval(timer); timer = null; }
+    lastTickMs = null;
+  }
+
+  /** Grow the lookahead after a late wake-up, shrink it back while ticks arrive on time. */
+  function adaptLookahead() {
+    const ms = timebase.perfNow();
+    if (lastTickMs != null) {
+      const gap = (ms - lastTickMs) / 1000;
+      if (gap > 0.6 * lookahead) lookahead = Math.min(MAX_LOOKAHEAD, Math.max(lookahead, 1.5 * gap));
+      // Time-based, so a burst of catch-up ticks does not shrink it at once.
+      else lookahead -= (lookahead - LOOKAHEAD) * (1 - Math.exp(-gap / LOOKAHEAD_TAU));
+    }
+    lastTickMs = ms;
   }
 
   function resetParts(beat) {
@@ -241,10 +264,11 @@ export function createTransport({ store, engine, timebase, router, timers }) {
   }
 
   function tick() {
-    if (!timebase.running()) return;
+    if (!timebase.running()) { lastTickMs = null; return; }
+    if (timer) adaptLookahead();
     const now = timebase.now();
     if (playing && !anchored && !external) anchorInternal(now);
-    let horizon = now + LOOKAHEAD;
+    let horizon = now + lookahead;
     const live = playing && anchored;
     if (live) {
       if (external) horizon = Math.min(horizon, timeAt(extLastBeat + EXT_AHEAD_BEATS));
@@ -334,8 +358,13 @@ export function createTransport({ store, engine, timebase, router, timers }) {
   /** One MIDI clock pulse at musical position `beat`, heard at audio `time`. */
   function syncTick({ beat, time, bpm }) {
     if (!follow) return;
-    extLastPulse = Math.max(extLastPulse, timebase.now());
+    const now = timebase.now();
+    extLastPulse = Math.max(extLastPulse, now);
     if (!playing || !external) return;
+    // A pulse is heard about now (give or take the output latency). A time
+    // seconds away means the clock mapping hiccuped; anchoring there would
+    // push every step far into the future or drop them all as late.
+    if (!Number.isFinite(time) || Math.abs(time - now) > 1) time = now;
     if (Number.isFinite(bpm) && bpm > 0) spb = 60 / clamp(bpm, 20, 400);
     if (!anchored) {
       anchored = true;
@@ -382,6 +411,20 @@ export function createTransport({ store, engine, timebase, router, timers }) {
     tick();
   }
 
+  /**
+   * Audio time of the first `div`-beat grid line at or after audio time `from`
+   * (swung like the sequencer when `swing`), or null while the transport is
+   * not running on a grid. Used by the preview and Explore notes so they land
+   * in time with the sequencer.
+   */
+  function nextGridTime(div = 0.25, from = timebase.now(), { swing = true } = {}) {
+    if (!playing || !anchored || !(div > 0)) return null;
+    const b = beatAt(from);
+    const k = Math.ceil(b / div - 1e-9);
+    const beat = k * div;
+    return swing ? timeAt(swingBeat(beat, store.get('global.swing'))) : timeAt(beat);
+  }
+
   return {
     play, stop, toggle, position,
     isPlaying: () => playing,
@@ -396,7 +439,14 @@ export function createTransport({ store, engine, timebase, router, timers }) {
     setFollow, syncStart, syncTick, syncStop,
     tick, kick,
     tempo: () => (external ? 60 / spb : tempoNow()),
+    /** Seconds currently scheduled ahead (LOOKAHEAD, more after a stall). */
+    lookahead: () => lookahead,
     beatAt: (time) => (anchored ? beatAt(time) : 0),
+    /** Audio time of musical position `beat` (unswung), or null while not running on a grid. */
+    timeAtBeat: (beat) => (playing && anchored && Number.isFinite(beat) ? timeAt(beat) : null),
+    nextGridTime,
+    /** Seconds per beat right now (the external clock's while following). */
+    spb: () => (anchored ? spb : 60 / tempoNow()),
     dispose() { stopTimer(); locks.dispose(); for (const u of unsubs) u(); },
   };
 }

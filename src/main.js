@@ -46,20 +46,34 @@ async function boot() {
   store.subscribe('', (path) => { if (path === '') persist(); });
 
   const engine = await createEngine({ store });
-  const music = createMusic({ store, engine });
   const presets = createPresets({ store });
+  // The preview picks its phrase from the patch category, which the preset library knows.
+  const music = createMusic({ store, engine, presets });
   if (!saved) presets.loadScene(0);
+  // The transport tells the engine where beat 0 is whenever it starts or stops;
+  // until then the engine should know the transport is stopped at the session tempo.
+  if (engine && typeof engine.setTransport === 'function') {
+    try { engine.setTransport({ playing: false, beatTime: 0, beat: 0, spb: 60 / (Number(store.get('global.tempo')) || 120) }); } catch { /* optional hook */ }
+  }
 
   const viewport = root.querySelector('[data-viewport]') || root;
   let visuals = null;
   try {
-    visuals = await createVisuals(viewport, { store, engine });
+    // music: dot-lock flashes on steps and Tour timing follow the transport.
+    visuals = await createVisuals(viewport, { store, engine, music });
   } catch (err) {
     console.error('[orograph] 3D view failed to start', err);
   }
+  // Explore mode: the marble passing a peak or valley plays an in-key note.
+  // Visuals emit 'extremum' only in Explore mode; music checks the part's settings too.
+  if (visuals && typeof visuals.on === 'function') {
+    try { visuals.on('extremum', (e) => music.exploreNote(e)); } catch (err) { console.warn('[orograph] Explore notes unavailable', err); }
+  }
+
   let midi = null;
   try {
-    midi = await createMidi({ store, router: music.router, engine, transport: music.transport });
+    // presets: MIDI program change loads patches.
+    midi = await createMidi({ store, router: music.router, engine, transport: music.transport, presets });
   } catch (err) {
     console.warn('[orograph] MIDI unavailable', err);
   }

@@ -235,6 +235,8 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     }
     if (part == null) routes.clear();
     else for (const [k, v] of routes) if (v.every(p => list.includes(p))) routes.delete(k);
+    // Lets other note sources (the patch preview) stop with a panic too.
+    emitter.emit('allOff', { parts: list });
   }
 
   function heldNotes(part) {
@@ -246,6 +248,18 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     for (const n of ps.sustained.keys()) out.add(n);
     if (ps.cfgOn && ps.cfgHold) for (const e of ps.latched) out.add(e.note);
     return out;
+  }
+
+  /** Held, sustained and latched keys of one part with their velocities (for the offline bounce). */
+  function heldEntries(part) {
+    const p = resolve(part)[0];
+    if (p == null) return [];
+    const ps = parts[p];
+    const out = new Map();
+    for (const e of ps.down.values()) out.set(e.note, { note: e.note, vel: e.vel });
+    for (const e of ps.sustained.values()) if (!out.has(e.note)) out.set(e.note, { note: e.note, vel: e.vel });
+    if (ps.cfgOn && ps.cfgHold) for (const e of ps.latched) if (!out.has(e.note)) out.set(e.note, { note: e.note, vel: e.vel });
+    return [...out.values()];
   }
 
   // React to arp settings changing under held keys.
@@ -283,6 +297,18 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     syncArpCfg(p);
     unsubs.push(store.subscribe(`parts.${p}.arp`, () => syncArpCfg(p)));
   }
+  // Loading a whole session (a scene, undo) replaces the music: an arp chord
+  // latched in the old one must not keep running into the new one, even when
+  // the new part has Hold on too. Keys that are physically down still play.
+  unsubs.push(store.subscribe('', (path) => {
+    if (path !== '') return;
+    for (let p = 0; p < NUM_PARTS; p++) {
+      const ps = parts[p];
+      if (!ps.latched.length) continue;
+      ps.latched = ps.cfgHold ? [...ps.down.values(), ...ps.sustained.values()].map(e => ({ note: e.note, vel: e.vel, order: e.order })) : [];
+      if (ps.arp.running && !poolOf(p).length) stopArp(p);
+    }
+  }));
 
   // -------------------------------------------------------- arp scheduling
 
@@ -395,7 +421,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   }
 
   return {
-    noteOn, noteOff, sustain, allNotesOff, heldNotes, resolve,
+    noteOn, noteOff, sustain, allNotesOff, heldNotes, heldEntries, resolve,
     on: (type, fn) => emitter.on(type, fn),
     off: (type, fn) => emitter.off(type, fn),
     // Internal hooks used by the transport.

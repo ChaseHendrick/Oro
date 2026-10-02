@@ -1,6 +1,7 @@
 // A stand-in for the audio engine (src/audio/engine.js) that the 3D map can
 // run against on its own. It honours the parts of the engine API the visuals
-// use: on('terrain' | 'tele'), getTerrain(part, slot), level(), plus a few
+// use: on('terrain' | 'tele'), getTerrain(part, slot), level(), marble() (it
+// keeps the latest values per part and a count in `marbles`), plus a few
 // note helpers for the harness. Terrains are the real DSP tables; telemetry is
 // computed the way the worklet does it (normalised values, LFOs in normalised
 // space, wrap for rotate and the dot), with a little arpeggio of voices.
@@ -181,6 +182,13 @@ export function createFakeEngine({ store, tele = true, play = true } = {}) {
     panic() { for (const l of voices) l.length = 0; },
     bend() {},
     wheel(part, v) { wheel = v; },
+    // Round D: the visuals report each marble about 30 times a second.
+    marbles: Array.from({ length: NUM_PARTS }, () => ({ n: 0, speed: 0, height: 0 })),
+    marble(part, speed, height) {
+      const m = this.marbles[part];
+      if (!m) return;
+      m.n++; m.speed = speed; m.height = height;
+    },
     setPlaying(on) { playing = !!on; if (!on) this.allNotesOff(); },
     get playing() { return playing; },
     setTele(on) { teleOn = !!on; },

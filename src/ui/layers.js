@@ -55,6 +55,7 @@ function contains(layer, target) {
   if (!target || !(target instanceof Node)) return false;
   if (layer.el && layer.el.contains(target)) return true;
   if (layer.anchor instanceof Node && layer.anchor.contains(target)) return true;
+  if (layer.within instanceof Node && layer.within.contains(target)) return true;
   return false;
 }
 
@@ -110,6 +111,9 @@ export function openPopover(layers, anchor, content, opts = {}) {
   const {
     className = '', label = '', role = 'dialog', placement = 'bottom-start',
     focus = true, onClose = null, gap = 6, closeOnBlur = true,
+    // Clicks inside `within` (for example the toolbar the popover belongs to)
+    // do not dismiss it, so related controls can be used while it is open.
+    within = null,
   } = opts;
   const el = h('div', { class: ['popover', className], role, 'aria-label': label || null, tabindex: '-1' }, content);
   layers.host.appendChild(el);
@@ -125,11 +129,11 @@ export function openPopover(layers, anchor, content, opts = {}) {
   const onFocusOut = (e) => {
     if (!closeOnBlur || closed) return;
     const to = e.relatedTarget;
-    if (to && !el.contains(to) && !(anchor instanceof Node && anchor.contains(to)) && !to.closest?.('.popover')) close('blur');
+    if (to && !el.contains(to) && !(anchor instanceof Node && anchor.contains(to)) && !(within instanceof Node && within.contains(to)) && !to.closest?.('.popover')) close('blur');
   };
   el.addEventListener('focusout', onFocusOut);
 
-  const layer = { el, anchor: anchor instanceof Node ? anchor : null, modal: false, close };
+  const layer = { el, anchor: anchor instanceof Node ? anchor : null, within: within instanceof Node ? within : null, modal: false, close };
   const pop = layers.push(layer);
 
   function close(reason = 'close') {

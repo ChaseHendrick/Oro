@@ -71,9 +71,11 @@ export function createMidiSettings(ctx) {
   const connectBtn = h('button', { type: 'button', class: 'btn btn--primary', html: icon('midi') + '<span>Connect MIDI</span>' });
   const panicBtn = h('button', { type: 'button', class: 'btn btn--ghost', html: icon('panic') + '<span>Panic</span>', dataset: { tip: 'Stop every note here and on connected devices' } });
   const mpcBadge = h('span', { class: 'badge badge--mpc', hidden: true, html: icon('mpc') + '<span>Akai MPC detected</span>' });
+  // A problem while connected (for example the chosen output was unplugged).
+  const statusWarn = h('p', { class: 'status-warn', hidden: true }, h('span', { html: icon('warn'), 'aria-hidden': 'true' }), h('span'));
   const statusCard = h('section', { class: 'status-card', 'aria-live': 'polite' },
     h('div', { class: 'status-icon', html: icon('midi') }),
-    h('div', { class: 'status-main' }, h('div', { class: 'status-row' }, statusTitle, mpcBadge), statusText, facts),
+    h('div', { class: 'status-main' }, h('div', { class: 'status-row' }, statusTitle, mpcBadge), statusText, statusWarn, facts),
     h('div', { class: 'status-actions' }, connectBtn, panicBtn));
   root.appendChild(statusCard);
 
@@ -100,10 +102,11 @@ export function createMidiSettings(ctx) {
   const outputSelect = h('select', { class: 'select-native', 'aria-label': 'MIDI output' });
   outputSelectWrap.append(outputSelect, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }));
   scope.on(outputSelect, 'change', () => call(midi, 'setSetting', 'outputId', outputSelect.value === 'auto' ? 'auto' : (outputSelect.value || null)));
+  const outputHint = h('div', { class: 'setting-hint' }, 'Where notes and clock are sent');
   devices.append(
     h('h3', { class: 'group-title', id: 'midi-devices' }, 'Devices'),
     h('div', { class: 'mini-label' }, 'Inputs'), inputsList,
-    h('div', { class: 'setting-row' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Output'), h('div', { class: 'setting-hint' }, 'Where notes and clock are sent')), outputSelectWrap));
+    h('div', { class: 'setting-row' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Output'), outputHint), outputSelectWrap));
 
   // Routing
   const S = (key, def) => settingBinding(midi, key, def);
@@ -328,22 +331,32 @@ export function createMidiSettings(ctx) {
     }
     const s = call(midi, 'getSettings') || {};
     outputSelect.textContent = '';
-    const autoName = s.outputAuto && midi.output ? midi.output.name : '';
-    if ('outputAuto' in s) outputSelect.appendChild(h('option', { value: 'auto' }, autoName ? `Automatic: ${autoName}` : 'Automatic (finds an MPC)'));
+    // Automatic picks a port with "MPC" in its name (setSetting('outputId', 'auto')).
+    const canAuto = typeof midi?.setSetting === 'function' && ('outputAuto' in s || 'outputId' in s);
+    const auto = canAuto && !!s.outputAuto;
+    const current = midi && midi.output ? midi.output.name : '';
+    if (canAuto) outputSelect.appendChild(h('option', { value: 'auto' }, 'Automatic (MPC)'));
     outputSelect.appendChild(h('option', { value: '' }, 'None'));
     for (const o of outs) outputSelect.appendChild(h('option', { value: o.id }, `${o.name}${o.isMpc ? '  (MPC)' : ''}`));
-    outputSelect.value = s.outputAuto ? 'auto' : (s.outputId && outs.some(o => o.id === s.outputId) ? s.outputId : '');
-    outputSelect.disabled = !outs.length && !('outputAuto' in s);
+    outputSelect.value = auto ? 'auto' : (s.outputId && outs.some(o => o.id === s.outputId) ? s.outputId : '');
+    outputSelect.disabled = !outs.length && !canAuto;
+    outputHint.textContent = auto
+      ? (current ? `Automatic: sending to ${current}` : 'Automatic: no MPC found yet. Plug one in and it is picked up.')
+      : 'Where notes and clock are sent';
     mpcBadge.hidden = ![...ins, ...outs].some(p => p.isMpc);
   }
   function renderStatus() {
     const st = !midi ? 'unsupported' : midi.supported === false ? 'unsupported' : (midi.status || 'idle');
     const [title, text] = STATUS_TEXT[st] || STATUS_TEXT.idle;
     setText(statusTitle, title);
-    const moduleText = midi && typeof midi.statusText === 'function' ? call(midi, 'statusText') : '';
-    statusText.textContent = (st === 'error' || st === 'denied') && moduleText ? moduleText
-      : st === 'error' && midi && midi.error ? `${text} (${String(midi.error.message || midi.error).slice(0, 120)})` : text;
+    // The MIDI module knows the specific reason (blocked, insecure page, a port
+    // that vanished); prefer its words whenever it reports a problem.
+    const err = midi && midi.error ? String(midi.error.message || midi.error) : '';
+    const moduleText = err && typeof midi.statusText === 'function' ? String(call(midi, 'statusText') || '') : '';
+    statusText.textContent = st !== 'ready' && (moduleText || err) ? (moduleText || err).slice(0, 200) : text;
     if (midi && midi.secure === false) statusText.textContent = 'MIDI needs a secure page. Open Orograph over https, from localhost, or use the desktop app.';
+    statusWarn.hidden = !(st === 'ready' && err);
+    statusWarn.lastChild.textContent = st === 'ready' && err ? (moduleText || err).slice(0, 200) : '';
     statusCard.dataset.status = st;
     const secure = midi ? midi.secure !== false : (typeof isSecureContext === 'boolean' ? isSecureContext : true);
     facts.textContent = '';

@@ -27,7 +27,16 @@ export const DEFAULT_SETTINGS = Object.freeze({
   sendClock: false,
   followClock: false,
   programChange: false,
+  mpe: false,                 // MPE lower zone: channel 1 = master, 2..16 = one note each
 });
+
+// MPE (lower zone). Member channels carry one note each with its own pitch
+// bend (+/-48 semitones unless the controller sets another range with RPN 0),
+// CC74 slide and channel pressure. The master channel (1) speaks for the zone.
+export const MPE_MASTER = 1;
+export const MPE_BEND_RANGE = 48;
+const CC_SLIDE = 74;
+const RPN_CCS = new Set([101, 100, 6, 38]);
 
 export const QLINK_PARAMS = [
   'centerX', 'centerY', 'size', 'rotate', 'morph', 'warp', 'fold', 'lift',
@@ -72,6 +81,7 @@ export function sanitizeSettings(src = {}) {
     sendClock: !!s.sendClock,
     followClock: !!s.followClock,
     programChange: !!s.programChange,
+    mpe: !!s.mpe,
   };
 }
 
@@ -161,6 +171,12 @@ export async function createMidi({
   let lastClockEmit = { bpm: 0, running: false, at: -Infinity };
   let inClockCount = 0;
   let outClockCount = 0;
+  // MPE: per input and channel, the note it is playing and its expression.
+  // Kept per channel even before a note arrives, because controllers send a
+  // note's starting bend / slide / pressure just before its note-on.
+  const mpeState = new Map();     // `${port}:${ch}` -> { note, mapped, parts, bend, slide, pressure }
+  const rpn = new Map();          // `${port}:${ch}` -> { msb, lsb }
+  let memberBendRange = MPE_BEND_RANGE;
 
   // ------------------------------------------------------------ persistence
 
@@ -211,6 +227,7 @@ export async function createMidi({
       attached.delete(input.id);
     }
     releaseInputNotes(input.id);
+    for (const k of [...mpeState.keys()]) if (k.startsWith(input.id + ':')) mpeState.delete(k);
     if (clockSourceId === input.id) {
       clockSourceId = null;
       if (settings.followClock && transport) transport.syncStop();
@@ -316,7 +333,11 @@ export async function createMidi({
 
   // ------------------------------------------------------------ input side
 
+  const isMember = (ch) => settings.mpe && ch !== MPE_MASTER;
+
   function targetsFor(ch) {
+    // In MPE mode every channel of the zone plays the same target (the selected part or Layer).
+    if (settings.mpe) return [settings.omniTarget];
     if (settings.channelMode === 'multi') {
       const out = [];
       settings.multiChannels.forEach((c, p) => { if (c === ch) out.push(p); });
@@ -368,6 +389,7 @@ export async function createMidi({
     heldIn.set(key, { targets, mapped, source, port: input.id });
     const v = Math.max(1 / 127, applyVelocityCurve(vel / 127, settings.velocityCurve));
     for (const t of targets) router.noteOn(t, mapped, v, source);
+    if (isMember(ch)) mpeNoteOn(input, ch, mapped, targets);
   }
 
   function noteOffIn(input, ch, note) {
@@ -377,6 +399,7 @@ export async function createMidi({
     if (held) {
       heldIn.delete(key);
       for (const t of held.targets) router.noteOff(t, held.mapped, held.source);
+      if (isMember(ch)) mpeNoteOff(input, ch, held.mapped);
       return;
     }
     const mapped = mapPadNote(note);
@@ -408,6 +431,11 @@ export async function createMidi({
   }
 
   function ccIn(input, ch, cc, value) {
+    // MPE expression and bend-range setup are performance data, never learnable.
+    if (settings.mpe) {
+      if (RPN_CCS.has(cc)) { rpnIn(input, ch, cc, value); return; }
+      if (cc === CC_SLIDE) { slideIn(input, ch, value / 127); return; }
+    }
     if (learnPending && cc <= LEARNABLE_MAX_CC) {
       const { target, resolve } = learnPending;
       learnPending = null;
@@ -447,10 +475,107 @@ export async function createMidi({
     }
   }
 
-  function bendIn(ch, lsb, msb) {
-    if (!engine || !engine.bend) return;
+  function bendIn(input, ch, lsb, msb) {
     const v = clamp((((msb << 7) | lsb) - 8192) / 8192, -1, 1);
+    if (isMember(ch)) { mpeBendIn(input, ch, v); return; }
+    if (!engine || !engine.bend) return;
     for (const p of partsFor(targetsFor(ch))) engine.bend(p, v);
+  }
+
+  // ------------------------------------------------- pressure / aftertouch / MPE
+
+  const call = (fn, ...args) => {
+    if (!engine || typeof engine[fn] !== 'function') return false;
+    try { engine[fn](...args); return true; } catch (err) { console.warn(`[orograph] engine.${fn} failed`, err); return false; }
+  };
+
+  /** Channel pressure: every voice of the channel's parts, or one note on an MPE member channel. */
+  function channelPressureIn(input, ch, value) {
+    const v = value / 127;
+    if (isMember(ch)) {
+      const st = mpeChannel(input, ch);
+      st.pressure = v;
+      if (st.note != null) for (const p of st.parts) call('pressure', p, v, st.note);
+      return;
+    }
+    for (const p of partsFor(targetsFor(ch))) call('pressure', p, v);
+  }
+
+  /** Polyphonic aftertouch: pressure for one held key. */
+  function polyPressureIn(input, ch, note, value) {
+    const held = heldIn.get(`${input.id}:${ch}:${note}`);
+    const mapped = held ? held.mapped : mapPadNote(note);
+    if (mapped == null) return;
+    for (const p of partsFor(held ? held.targets : targetsFor(ch))) call('pressure', p, value / 127, mapped);
+  }
+
+  function slideIn(input, ch, v) {
+    if (isMember(ch)) {
+      const st = mpeChannel(input, ch);
+      st.slide = v;
+      if (st.note != null) for (const p of st.parts) call('slide', p, v, st.note);
+      return;
+    }
+    // The master channel's CC74 speaks for the whole zone.
+    for (const p of partsFor(targetsFor(ch))) call('slide', p, v);
+  }
+
+  function mpeChannel(input, ch) {
+    const key = `${input.id}:${ch}`;
+    let st = mpeState.get(key);
+    if (!st) { st = { note: null, parts: [], bend: 0, slide: null, pressure: null }; mpeState.set(key, st); }
+    return st;
+  }
+
+  /**
+   * Per-note bend in semitones. Uses engine.noteBend(part, note, semitones)
+   * when the engine has it; otherwise the part's whole bend follows the most
+   * recently played MPE note (scaled into the part's bend range), which is
+   * right for one note at a time and close for chords.
+   */
+  function sendNoteBend(p, note, semis) {
+    if (call('noteBend', p, note, semis)) return;
+    const range = Math.max(1, Number(store.get(`parts.${p}.params.bendRange`)) || 2);
+    call('bend', p, clamp(semis / range, -1, 1));
+  }
+
+  function mpeNoteOn(input, ch, note, targets) {
+    const st = mpeChannel(input, ch);
+    st.note = note;
+    st.parts = partsFor(targets);
+    for (const p of st.parts) {
+      sendNoteBend(p, note, st.bend * memberBendRange);
+      if (st.slide != null) call('slide', p, st.slide, note);
+      if (st.pressure != null) call('pressure', p, st.pressure, note);
+    }
+  }
+
+  function mpeNoteOff(input, ch, note) {
+    const st = mpeState.get(`${input.id}:${ch}`);
+    if (st && st.note === note) { st.note = null; st.parts = []; }
+  }
+
+  function mpeBendIn(input, ch, v) {
+    const st = mpeChannel(input, ch);
+    st.bend = v;
+    if (st.note != null) for (const p of st.parts) sendNoteBend(p, st.note, v * memberBendRange);
+  }
+
+  /** RPN 0 (pitch bend sensitivity) on a member channel sets the member bend range. */
+  function rpnIn(input, ch, cc, value) {
+    const key = `${input.id}:${ch}`;
+    const r = rpn.get(key) || { msb: 127, lsb: 127 };
+    rpn.set(key, r);
+    if (cc === 101) r.msb = value;
+    else if (cc === 100) r.lsb = value;
+    else if (cc === 6 && r.msb === 0 && r.lsb === 0 && ch !== MPE_MASTER) memberBendRange = clamp(value, 1, 96);
+    else if (cc === 6 && r.msb === 0 && r.lsb === 6 && ch === MPE_MASTER) memberBendRange = MPE_BEND_RANGE; // MPE configuration resets ranges
+  }
+
+  function resetMpe() {
+    mpeState.clear();
+    rpn.clear();
+    memberBendRange = MPE_BEND_RANGE;
   }
 
   function programIn(ch, program) {
@@ -550,7 +675,15 @@ export async function createMidi({
           break;
         case 0xe0:
           activity('in', 'other', input);
-          bendIn(ch, data[1], data[2]);
+          bendIn(input, ch, data[1], data[2]);
+          break;
+        case 0xd0:
+          activity('in', 'other', input);
+          channelPressureIn(input, ch, data[1]);
+          break;
+        case 0xa0:
+          activity('in', 'other', input);
+          polyPressureIn(input, ch, data[1], data[2]);
           break;
         case 0xc0:
           activity('in', 'other', input);
@@ -695,6 +828,7 @@ export async function createMidi({
     const next = sanitizeSettings({ ...settings, [key]: value });
     settings = { ...next, outputId: settings.outputId };
     if (key === 'followClock' && transport && typeof transport.setFollow === 'function') transport.setFollow(settings.followClock);
+    if (key === 'mpe' && before !== settings.mpe) resetMpe();
     if (key === 'sendNotes' && before && !settings.sendNotes) releaseOutputNotes();
     if (key === 'sendClock' && before && !settings.sendClock && output) send([STOP]);
     persist();

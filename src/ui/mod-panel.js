@@ -64,6 +64,8 @@ export function createModPanel(ctx) {
       linksHost.appendChild(links.el);
     }
   }
+  // Other places (the top bar's Macros popover) can ask for the Links view.
+  if (ctx.bus) scope.add(ctx.bus.on('mod-view', (v) => { if (v === 'links' || v === 'params') viewBinding.set(v); }));
   const el = h('div', { class: 'dock-pane dock-pane--mod' },
     h('div', { class: 'mod-switch' }, h('h3', { class: 'section-title' }, 'Modulation'), viewSeg.el, paramsTools),
     paramsView, linksHost);

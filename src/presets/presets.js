@@ -5,7 +5,7 @@
 import {
   NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, defaultPart,
 } from '../core/params.js';
-import { sanitizeParams, sanitizeMods, sanitizePart, migrateState } from '../core/migrate.js';
+import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState } from '../core/migrate.js';
 import { createEmitter } from '../music/emitter.js';
 import { FACTORY_PATCHES, CATEGORIES } from './factory-patches.js';
 import { FACTORY_SCENES } from './factory-scenes.js';
@@ -55,6 +55,8 @@ export function sanitizePatch(src) {
     params: sanitizePatchParams(src.params),
     mods: sanitizePatchMods(src.mods),
   };
+  // Patches from before Links existed have none and load with the default routing.
+  if (Array.isArray(src.links)) patch.links = sanitizeLinks(src.links);
   if (src.dot) patch.dot = clean.dot;
   if (clean.userTerrain.A || clean.userTerrain.B) patch.userTerrain = clean.userTerrain;
   return patch;
@@ -180,6 +182,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       tags: from ? (from.tags || []).slice() : [],
       params,
       mods: compactMods(cur.mods),
+      links: sanitizeLinks(cur.links),
       // A deep copy: the dot holds arrays (waypoints) that later edits to the part must not reach.
       dot: JSON.parse(JSON.stringify(cur.dot || {})),
     };

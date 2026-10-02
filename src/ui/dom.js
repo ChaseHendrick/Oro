@@ -182,6 +182,24 @@ export function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+/**
+ * Disable a control but keep it focusable, so mouse, keyboard and screen
+ * reader users all learn why (hover tip, aria-description, and `notify` on
+ * click). Its own click handlers never run.
+ */
+export function softDisable(el, reason, notify) {
+  if (!el) return;
+  el.setAttribute('aria-disabled', 'true');
+  el.classList.add('is-disabled');
+  el.dataset.tip = reason;
+  el.setAttribute('aria-description', reason);
+  el.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (notify) notify(reason);
+  }, true);
+}
+
 /** Focusable descendants in DOM order (for focus traps and roving focus). */
 export function focusables(root) {
   const sel = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
