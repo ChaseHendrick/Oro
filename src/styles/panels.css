@@ -1059,3 +1059,49 @@
   .strip.has-pedal .strip-knobs .knob--sm { --knob-size: 40px; }
   .strip.has-pedal { min-height: 300px; }
 }
+
+/* SEQ on phones and touch screens: every step cell is a 44px finger target.
+   Sixteen 44px columns do not fit a phone, so the grid scrolls sideways inside
+   its panel (snapping to whole steps) while the row names stay pinned on the
+   left. Desktop with a mouse keeps the compact grid above. */
+@media (max-width: 600px), (pointer: coarse) {
+  .seq-grid {
+    --seq-cell: 44px; --seq-gap: 4px; --seq-label-w: 50px;
+    grid-template-columns: var(--seq-label-w) repeat(16, var(--seq-cell));
+    gap: 0 var(--seq-gap);
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-left: calc(var(--seq-label-w) + var(--seq-gap));
+    padding: 4px 4px 10px 0;
+    scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+  }
+  .seq-labels, .seq-col { grid-template-rows: 20px repeat(8, var(--seq-cell)); gap: 4px; }
+  .seq-col { scroll-snap-align: start; }
+  .seq-col::before { inset: -3px -2px; }
+  /* Pinned row names: opaque so scrolled steps pass underneath. */
+  .seq-labels {
+    position: sticky; left: 0; z-index: 2;
+    background: var(--panel-solid);
+    border-right: 1px solid var(--divider);
+    margin-top: -4px; padding-top: 4px; margin-bottom: -10px; padding-bottom: 10px;
+  }
+  .seq-label { font-size: var(--fs-2xs); letter-spacing: .05em; padding-left: 2px; }
+  .seq-num { font-size: var(--fs-xs); line-height: 20px; }
+  .seq-note { font-size: 12px; }
+  .seq-oct { font-size: var(--fs-xs); }
+  .seq-bar { border-radius: var(--r-xs); }
+  /* Accent and Slide: the whole 44px cell is the button, drawn as a bar so it
+     does not read as a second step pad. */
+  .seq-flag, .seq-flag:hover, .seq-flag[aria-pressed="true"], .seq-flag--slide[aria-pressed="true"] {
+    position: relative; background: transparent; border-color: transparent; box-shadow: none;
+  }
+  .seq-flag::before {
+    content: ''; position: absolute; inset: 14px 3px; border-radius: 4px;
+    background: var(--panel-3); border: 1px solid var(--border);
+  }
+  .seq-flag:hover::before { border-color: var(--border-strong); }
+  .seq-flag[aria-pressed="true"]::before { background: var(--part); border-color: var(--part); }
+  .seq-flag--slide[aria-pressed="true"]::before { background: transparent; border-color: var(--part); box-shadow: inset 0 0 0 1.5px var(--part); }
+  .seq-lock-dot { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
+  .seq-lock { -webkit-touch-callout: none; user-select: none; }
+}

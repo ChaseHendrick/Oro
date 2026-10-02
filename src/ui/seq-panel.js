@@ -1,6 +1,8 @@
 // SEQ tab: 16-step sequencer for the selected part plus its arpeggiator and the
 // global key, scale, swing and keyboard mode. Steps store scale degrees, so the
-// note names shown here follow the global key and scale.
+// note names shown here follow the global key and scale. On phones and touch
+// screens the CSS gives every step cell a 44px target and lets the grid scroll
+// sideways with the row names pinned; the code below works either way.
 
 import {
   SEQ_STEPS, SEQ_RATES, ARP_MODES, NOTE_NAMES, SCALES, SCALE_NAMES, stepToMidi, clamp, defaultStep,
@@ -211,9 +213,15 @@ export function createSeqPanel(ctx) {
   // ---------------------------------------------------------------- interaction
   // Pads: click toggles; dragging across paints the same state.
   let paint = null;
+  // The click that follows a press was already handled on pointerdown. Some
+  // touch browsers report that click with detail 0, so also skip clicks that
+  // name a pointer or follow a press; a click from a screen reader (no press,
+  // no pointer type) still toggles.
+  let pressed = false;
   cells.on.forEach((pad, i) => {
     scope.on(pad, 'pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      pressed = true;
       e.preventDefault();
       pad.focus({ preventScroll: true });
       const st = steps()[i];
@@ -222,7 +230,10 @@ export function createSeqPanel(ctx) {
       setStep(i, 'on', next);
       if (next) previewStep(i);
     });
-    scope.on(pad, 'click', (e) => { if (e.detail === 0) { const st = steps()[i]; setStep(i, 'on', st && st.on ? 0 : 1); } });
+    scope.on(pad, 'click', (e) => {
+      if (pressed || e.pointerType) { pressed = false; return; }
+      if (e.detail === 0) { const st = steps()[i]; setStep(i, 'on', st && st.on ? 0 : 1); }
+    });
   });
   scope.on(grid, 'pointermove', (e) => {
     if (!paint || e.pointerId !== paint.id) return;
@@ -230,7 +241,8 @@ export function createSeqPanel(ctx) {
     const i = target ? cells.on.indexOf(target.closest?.('.seq-pad')) : -1;
     if (i >= 0) setStep(i, 'on', paint.value);
   });
-  scope.on(window, 'pointerup', () => { paint = null; });
+  scope.on(window, 'pointerup', () => { paint = null; if (pressed) setTimeout(() => { pressed = false; }, 400); });
+  scope.on(window, 'pointercancel', () => { paint = null; pressed = false; });
 
   // Bars: set from the pointer's position, painting across steps while dragging.
   function barDrag(kind, field, min) {
@@ -250,6 +262,10 @@ export function createSeqPanel(ctx) {
     });
     scope.on(grid, 'pointermove', (e) => {
       if (active !== e.pointerId) return;
+      // On phones the grid scrolls sideways under pinned row names: only paint
+      // steps that are actually visible (not under the names or scrolled off).
+      const g = grid.getBoundingClientRect();
+      if (e.clientX < labels.getBoundingClientRect().right || e.clientX > g.right) return;
       for (let i = 0; i < SEQ_STEPS; i++) {
         const r = cells[field][i].getBoundingClientRect();
         if (e.clientX >= r.left - 1 && e.clientX <= r.right + 1) { setStep(i, field, Math.round(valueAt(cells[field][i], e) * 100) / 100); break; }
