@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orograph packaging stub</title>
+  <!-- The same head tags the real index.html should carry (see the packaging report). -->
+  <meta name="theme-color" content="#070a12">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <!-- Inline script: must run thanks to the per-document CSP hash. -->
+  <script>window.__inlineRan = true;</script>
+  <link rel="stylesheet" href="./assets/stub.css">
+  <script type="module" crossorigin src="./assets/stub.js"></script>
+</head>
+<body>
+  <header>
+    <img src="./favicon.svg" width="40" height="40" alt="">
+    <h1>Orograph desktop shell self-test</h1>
+  </header>
+  <p>This stand-in for <code>dist/</code> exercises everything the real app needs from the
+    Electron shell: module scripts, CSS, WebAssembly, an AudioWorklet and a Worker from blob URLs,
+    fetch, localStorage, Web MIDI permission and the security policy.</p>
+  <p>
+    <a id="ext" href="https://example.com/opened-in-browser" target="_blank" rel="noopener">external link (new window)</a>
+    &middot;
+    <a id="nav" href="https://example.com/navigated">external link (same window)</a>
+  </p>
+  <table id="results"><tbody></tbody></table>
+</body>
+</html>
