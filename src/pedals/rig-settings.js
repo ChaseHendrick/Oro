@@ -11,6 +11,7 @@
 import { PEDAL_PROFILES, PEDAL_IDS, findControl } from './profiles.js';
 import { PEDAL_SOURCES, LFO_SHAPES, MAP_CURVES } from './pedal-midi.js';
 import { DEFAULT_GATE_DB, GATE_MIN_DB, GATE_MAX_DB } from './guitar-notes.js';
+import { MAX_PARTS } from '../core/params.js';
 
 export const RIG_KEY = 'orograph.pedals';
 
@@ -35,10 +36,13 @@ export const SAMPLE_RATE_OPTIONS = Object.freeze([
 ]);
 /** Manual latency offset range (ms), added to the measured round trip. */
 export const COMP_OFFSET_RANGE = Object.freeze({ min: -200, max: 200 });
-/** Guitar plays notes: which part. 'sel' follows the selected part (and Layer key mode). */
+/**
+ * Guitar plays notes: which track. 'sel' follows the selected track (and
+ * Layer key mode); a numbered track past the end of the list plays nothing.
+ */
 export const GUITAR_TARGETS = Object.freeze([
-  Object.freeze({ value: 'sel', label: 'Selected part' }),
-  ...[0, 1, 2, 3].map(p => Object.freeze({ value: p, label: `Part ${p + 1}` })),
+  Object.freeze({ value: 'sel', label: 'Selected track' }),
+  ...Array.from({ length: MAX_PARTS }, (_, p) => Object.freeze({ value: p, label: `Track ${p + 1}` })),
 ]);
 /** Guitar input channel, 1-based as on the interface. */
 export const GUITAR_CHANNELS = Object.freeze([1, 2]);

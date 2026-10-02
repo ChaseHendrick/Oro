@@ -2,7 +2,8 @@
 // channel / pad / velocity options, clock (one master only), the Q-Link learn
 // wizard, the mapping table and the Akai MPC XL setup guide.
 
-import { NUM_PARTS, PART_PARAM_MAP, GLOBAL_PARAM_MAP, NOTE_NAMES } from '../core/params.js';
+import { MAX_PARTS, PART_PARAM_MAP, GLOBAL_PARAM_MAP, NOTE_NAMES } from '../core/params.js';
+import { partCount } from '../core/tracks.js';
 import { h, createScope, setText, listen, call } from './dom.js';
 import { createSegmented, createToggle, createSelect } from './controls.js';
 import { icon } from './icons.js';
@@ -28,9 +29,9 @@ export function describeTarget(t, store) {
   const def = t.scope === 'global' ? GLOBAL_PARAM_MAP[t.id] : PART_PARAM_MAP[t.id];
   const label = def ? def.label : t.id;
   if (t.scope === 'global') return `${label} (global)`;
-  if (t.part === 'sel' || t.part == null) return `${label} (selected part)`;
+  if (t.part === 'sel' || t.part == null) return `${label} (selected track)`;
   const name = store ? store.get(`parts.${t.part}.name`) : null;
-  return `${label} (${name || `Part ${Number(t.part) + 1}`})`;
+  return `${label} (${name || `Track ${Number(t.part) + 1}`})`;
 }
 
 /** A binding (see bind.js) over one MIDI setting. */
@@ -113,17 +114,36 @@ export function createMidiSettings(ctx) {
   const channelMode = createSegmented(ctx, S('channelMode', { label: 'Channels', default: 'omni' }), { label: 'Channel mode', options: [{ value: 'omni', label: 'Omni' }, { value: 'multi', label: 'Multi' }], size: 'sm' });
   const omniTarget = createSelect(ctx, S('omniTarget', { label: 'Plays', default: 'sel' }), {
     label: 'Omni target', className: 'select--sm',
-    options: [{ value: 'sel', label: 'Selected part' }, ...Array.from({ length: NUM_PARTS }, (_, i) => ({ value: i, label: `Part ${i + 1}` }))],
+    options: [{ value: 'sel', label: 'Selected track' }, ...Array.from({ length: MAX_PARTS }, (_, i) => ({ value: i, label: `Track ${i + 1}` }))],
   });
+  // Channels go by track position (track 1, track 2, ...): one cell per
+  // track in the list, the rest hidden until tracks are added.
   const multiRow = h('div', { class: 'channel-grid' });
   const outRow = h('div', { class: 'channel-grid' });
-  for (let i = 0; i < NUM_PARTS; i++) {
-    const inSel = createSelect(ctx, arrayItemBinding(midi, 'multiChannels', i, { label: `Part ${i + 1} channel`, default: i + 1 }), { label: `Part ${i + 1} input channel`, options: CHANNELS, className: 'select--sm' });
-    const outSel = createSelect(ctx, arrayItemBinding(midi, 'outChannels', i, { label: `Part ${i + 1} out`, default: i + 1 }), { label: `Part ${i + 1} output channel`, options: CHANNELS, className: 'select--sm' });
+  const trackCells = [];
+  for (let i = 0; i < MAX_PARTS; i++) {
+    const inSel = createSelect(ctx, arrayItemBinding(midi, 'multiChannels', i, { label: `Track ${i + 1} channel`, default: i + 1 }), { label: `Track ${i + 1} input channel`, options: CHANNELS, className: 'select--sm' });
+    const outSel = createSelect(ctx, arrayItemBinding(midi, 'outChannels', i, { label: `Track ${i + 1} out`, default: i + 1 }), { label: `Track ${i + 1} output channel`, options: CHANNELS, className: 'select--sm' });
     scope.add(inSel.dispose); scope.add(outSel.dispose);
-    multiRow.appendChild(h('div', { class: 'channel-cell' }, h('span', { class: 'mini-label' }, `Part ${i + 1}`), inSel.el));
-    outRow.appendChild(h('div', { class: 'channel-cell' }, h('span', { class: 'mini-label' }, `Part ${i + 1}`), outSel.el));
+    const inCell = h('div', { class: 'channel-cell' }, h('span', { class: 'mini-label' }, `Track ${i + 1}`), inSel.el);
+    const outCell = h('div', { class: 'channel-cell' }, h('span', { class: 'mini-label' }, `Track ${i + 1}`), outSel.el);
+    multiRow.appendChild(inCell);
+    outRow.appendChild(outCell);
+    trackCells.push([inCell, outCell]);
   }
+  const renderTracks = () => {
+    const n = partCount(ctx.store);
+    trackCells.forEach((cells, i) => {
+      const name = ctx.store.get(`parts.${i}.name`);
+      for (const c of cells) { c.hidden = i >= n; c.title = name || ''; }
+    });
+    for (const o of omniTarget.select.options) {
+      const i = Number(o.value);
+      if (Number.isInteger(i)) { o.hidden = i >= n; o.disabled = i >= n; }
+    }
+  };
+  scope.add(ctx.store.subscribe('parts', (path) => { if (path === '' || path === 'parts' || /^parts\.\d+\.name$/.test(path)) renderTracks(); }));
+  renderTracks();
   const padMode = createSegmented(ctx, S('padMode', { label: 'Pads', default: 'notes' }), { label: 'Pad mode', options: [{ value: 'notes', label: 'Notes' }, { value: 'scale', label: 'Scale' }], size: 'sm' });
   const padBase = createSelect(ctx, S('padBaseNote', { label: 'Base note', default: 36 }), {
     label: 'Pad base note', className: 'select--sm', options: Array.from({ length: 128 }, (_, i) => ({ value: i, label: noteLabel(i) })),
@@ -165,8 +185,8 @@ export function createMidiSettings(ctx) {
   const row = (label, hint, control, cls = '') => h('div', { class: ['setting-row', cls] },
     h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
 
-  const omniRow = row('Omni plays', 'Every channel goes to this part', omniTarget.el);
-  const multiBlock = h('div', { class: 'setting-block' }, h('div', { class: 'setting-hint' }, 'Each part listens on its own channel'), multiRow);
+  const omniRow = row('Omni plays', 'Every channel goes to this track', omniTarget.el);
+  const multiBlock = h('div', { class: 'setting-block' }, h('div', { class: 'setting-hint' }, 'Each track listens on its own channel'), multiRow);
   const routing = h('section', { class: 'settings-group', 'aria-labelledby': 'midi-routing' },
     h('h3', { class: 'group-title', id: 'midi-routing' }, 'Input'),
     row('Channels', 'Omni: any channel plays one part. Multi: one channel per part.', channelMode.el),
@@ -176,7 +196,7 @@ export function createMidiSettings(ctx) {
     row('Velocity curve', 'Soft makes gentle playing louder; Hard needs a firmer touch', velCurve.el),
     row('Program change', 'Program change messages step through patches', progChange.el),
     mpeRow);
-  const outBlock = h('div', { class: 'setting-block' }, h('div', { class: 'setting-hint' }, 'Output channel per part (match your MPC tracks)'), outRow);
+  const outBlock = h('div', { class: 'setting-block' }, h('div', { class: 'setting-hint' }, 'Output channel per track (match your MPC tracks)'), outRow);
   const output = h('section', { class: 'settings-group', 'aria-labelledby': 'midi-output' },
     h('h3', { class: 'group-title', id: 'midi-output' }, 'Output'),
     row('Send notes', 'Play the MPC (or any synth) from Orograph\'s keyboard, sequencer and arp', sendNotes.el),

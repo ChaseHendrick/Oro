@@ -3,7 +3,7 @@ import { createTerrainManager } from '../../src/audio/terrain-manager.js';
 import { createTerrainGenerator } from '../../src/audio/terrain-generator.js';
 import { jobFor, jobKey, hashString, buildTerrainLevels } from '../../src/audio/terrain-jobs.js';
 import { createStore } from '../../src/core/store.js';
-import { defaultState, NUM_PARTS } from '../../src/core/params.js';
+import { defaultState, DEFAULT_PARTS } from '../../src/core/params.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { generateTerrain } from '../../src/dsp/terrains.js';
 import { bytesToBase64 } from '../../src/audio/importers.js';
@@ -85,11 +85,11 @@ describe('terrain manager', () => {
   it('fills all 4 parts x 2 slots at start, generating each distinct table once', async () => {
     const { tm, posts, events, generator } = setup();
     await tm.whenIdle();
-    expect(events.length).toBe(NUM_PARTS * 2);
+    expect(events.length).toBe(DEFAULT_PARTS * 2);
     expect(new Set(events.map(e => `${e.part}${e.slot}`)).size).toBe(8);
     expect(generator.jobs.length).toBe(2);           // default patch: Swell + Massif everywhere
     expect(posts.length).toBe(8);
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < DEFAULT_PARTS; p++) {
       expect(tm.get(p, 'A').size).toBe(16);
       expect(tm.get(p, 1).data).toBe(tm.get(p, 'B').data);
     }

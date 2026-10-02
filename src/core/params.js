@@ -5,10 +5,27 @@
 
 import { TERRAIN_NAMES, PATH_NAMES, TERRAIN_INDEX, PATH_INDEX } from '../dsp/catalog.js';
 
-export const NUM_PARTS = 4;
+// Tracks (called parts in the code). The store holds a variable-length list
+// of 1..MAX_PARTS tracks, each with a stable `id`; what exists, and in which
+// order, is always `state.parts`. Code that allocates per-track resources
+// (DSP parts, MIDI channel maps, visual fields, telemetry) sizes them for
+// MAX_PARTS and maps them by index; code that shows, plays or schedules
+// tracks iterates the live list (`parts.length`, see src/core/tracks.js).
+// MAX_PARTS is the practical CPU ceiling and the one place to raise it.
+export const MAX_PARTS = 16;
+export const MIN_PARTS = 1;
+/** Tracks in a new session (and in every session saved before tracks could be added). */
+export const DEFAULT_PARTS = 4;
 export const VOICES_PER_PART = 8;
-export const PART_COLORS = ['#ff7a45', '#3fd0c9', '#b98cff', '#ffd23f'];
-export const PART_NAMES = ['Part 1', 'Part 2', 'Part 3', 'Part 4'];
+// One colour per track slot, picked to stay apart from each other; the UI
+// derives a contrast-safe tone for each theme (src/ui/color.js partVars).
+export const PART_COLORS = [
+  '#ff7a45', '#3fd0c9', '#b98cff', '#ffd23f',
+  '#ff5d8f', '#7ddf64', '#5aa9ff', '#e86bf0',
+  '#c6e84a', '#ff4d4d', '#4fe0a0', '#8a93ff',
+  '#ffb38a', '#4dd2ff', '#e0c27a', '#a0b8c8',
+];
+export const PART_NAMES = Array.from({ length: MAX_PARTS }, (_, i) => `Track ${i + 1}`);
 
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const SCALES = {
@@ -256,9 +273,34 @@ export function defaultStep() {
   // lock/lx/ly: optional dot lock. When lock = 1 the dot glides to (lx, ly) as the step plays.
   return { on: 0, degree: 0, octave: 0, vel: 0.8, gate: 0.5, slide: 0, accent: 0, lock: 0, lx: 0.5, ly: 0.5 };
 }
-export function defaultSeq() {
+/** Patterns a track can hold (the arrangement picks between them). */
+export const MAX_PATTERNS = 16;
+/**
+ * One step-sequencer pattern. A track holds `patterns` (1..MAX_PATTERNS, each
+ * with a stable `id`) and plays `patterns[activePattern]`; whether it plays at
+ * all is the track's `seqOn`.
+ */
+export function defaultPattern(n = 1) {
   // lockGlide: how long the dot takes to reach a step's lock, as a fraction of one step (0 = jump).
-  return { enabled: 0, rate: 3, length: 16, baseOctave: 3, lockGlide: 0.5, steps: Array.from({ length: SEQ_STEPS }, defaultStep) };
+  return { id: `p${n}`, name: `Pattern ${n}`, rate: 3, length: 16, baseOctave: 3, lockGlide: 0.5, steps: Array.from({ length: SEQ_STEPS }, defaultStep) };
+}
+/** Index of the pattern a track plays (always valid for a track with patterns). */
+export function activePatternIndex(part) {
+  const list = part && Array.isArray(part.patterns) ? part.patterns : [];
+  const i = Math.round(Number(part && part.activePattern) || 0);
+  return list.length ? Math.max(0, Math.min(list.length - 1, i)) : 0;
+}
+/**
+ * The pattern a track plays, as the sequencer reads it: the pattern's fields
+ * plus `enabled` (the track's seqOn). null for a missing track.
+ */
+export function activeSeq(part) {
+  if (!part || !Array.isArray(part.patterns) || !part.patterns.length) return null;
+  return { ...part.patterns[activePatternIndex(part)], enabled: part.seqOn ? 1 : 0 };
+}
+/** Store path of the pattern track `p` plays, e.g. 'parts.2.patterns.0'. */
+export function patternPath(store, p) {
+  return `parts.${p}.patterns.${activePatternIndex(store.get(`parts.${p}`))}`;
 }
 export function defaultArp() {
   return { mode: 0, rate: 3, octaves: 1, gate: 0.6, hold: 0 };
@@ -272,14 +314,22 @@ export const DOT_MODES = ['Pin', 'Roll', 'Drift', 'Explore', 'Tour'];
 export const TOUR_MODES = ['Loop', 'Ping-pong', 'Once'];
 export const MAX_WAYPOINTS = 8;
 
-export function defaultPart(i) {
+/**
+ * A fresh track for slot `i`: id `t<i+1>`, name 'Track <i+1>' and the slot's
+ * colour unless given. src/core/tracks.js makes ids unique within a list.
+ */
+export function defaultPart(i = 0, { id, name, color } = {}) {
+  const k = Math.max(0, Math.round(Number(i) || 0));
   return {
-    name: PART_NAMES[i],
-    color: PART_COLORS[i],
+    id: id || `t${k + 1}`,
+    name: name || `Track ${k + 1}`,
+    color: color || PART_COLORS[k % PART_COLORS.length],
     patchName: 'Init',
     params: defaultPartParams(),
     mods: defaultMods(),
-    seq: defaultSeq(),
+    seqOn: 0,
+    patterns: [defaultPattern(1)],
+    activePattern: 0,
     arp: defaultArp(),
     // gravity 0..1 maps to 0..2 g; tiltX/tiltY lean the world (-1..1); flick scales throws;
     // explore*: Explore mode note density, range in octaves, play notes on/off;
@@ -296,13 +346,19 @@ export function defaultPart(i) {
 // 3 = v1.1 pedal presets: a scene may carry `pedalPresets` (one Program Change
 // per pedal, see src/pedals/pedal-presets.js) next to its state. Sessions are
 // unchanged; migrateScene() loads version 1 and 2 scenes with none.
-export const STATE_VERSION = 3;
+// 4 = v1.3 tracks: `parts` is a list of 1..MAX_PARTS tracks with stable ids,
+// and each track's sequencer holds `patterns` (with ids) and `activePattern`
+// plus a `seqOn` switch instead of one `seq`. migrateState() turns the four
+// parts of older sessions and scenes into four tracks (ids t1..t4, the old
+// `seq` as pattern 1).
+export const STATE_VERSION = 4;
 
-export function defaultState() {
+export function defaultState(count = DEFAULT_PARTS) {
+  const n = Math.max(MIN_PARTS, Math.min(MAX_PARTS, Math.round(Number(count) || DEFAULT_PARTS)));
   return {
     version: STATE_VERSION,
     global: defaultGlobalParams(),
-    parts: Array.from({ length: NUM_PARTS }, (_, i) => defaultPart(i)),
+    parts: Array.from({ length: n }, (_, i) => defaultPart(i)),
   };
 }
 

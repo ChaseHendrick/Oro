@@ -1,12 +1,16 @@
-// SEQ tab: 16-step sequencer for the selected part plus its arpeggiator and the
-// global key, scale, swing and keyboard mode. Steps store scale degrees, so the
+// SEQ tab: 16-step sequencer for the selected track plus its arpeggiator and the
+// global key, scale, swing and keyboard mode. A track holds several patterns
+// (the picker in the Pattern block adds, chooses and removes them); the grid
+// edits the one the track plays (its activePattern). Steps store scale degrees, so the
 // note names shown here follow the global key and scale. On phones and touch
 // screens the CSS gives every step cell a 44px target and lets the grid scroll
 // sideways with the row names pinned; the code below works either way.
 
 import {
-  SEQ_STEPS, SEQ_RATES, ARP_MODES, NOTE_NAMES, SCALES, SCALE_NAMES, stepToMidi, clamp, defaultStep,
+  SEQ_STEPS, SEQ_RATES, ARP_MODES, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, stepToMidi, clamp, defaultStep,
+  activePatternIndex, patternPath,
 } from '../core/params.js';
+import { addPattern, selectPattern, removePattern } from '../core/tracks.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
 import { schedule } from './frame.js';
 import { createToggle, createSelect, createStepper, createMiniSlider, createSegmented } from './controls.js';
@@ -21,14 +25,15 @@ const LABELS = ['Step', 'Note', 'Oct', 'Vel', 'Gate', 'Accent', 'Slide', 'Dot'];
 
 // Local pattern tools so editing still works if the music module is missing.
 function localClear(store, part) {
-  store.set(`parts.${part}.seq.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'ui' });
+  store.set(`${patternPath(store, part)}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'ui' });
 }
 function localShift(store, part, dir) {
-  const steps = store.get(`parts.${part}.seq.steps`) || [];
-  const len = clamp(store.get(`parts.${part}.seq.length`) || SEQ_STEPS, 1, SEQ_STEPS);
+  const path = patternPath(store, part);
+  const steps = store.get(`${path}.steps`) || [];
+  const len = clamp(store.get(`${path}.length`) || SEQ_STEPS, 1, SEQ_STEPS);
   const head = steps.slice(0, len), tail = steps.slice(len);
   const rotated = dir > 0 ? [head[len - 1], ...head.slice(0, len - 1)] : [...head.slice(1), head[0]];
-  store.set(`parts.${part}.seq.steps`, [...rotated, ...tail].map(s => ({ ...s })), { source: 'ui' });
+  store.set(`${path}.steps`, [...rotated, ...tail].map(s => ({ ...s })), { source: 'ui' });
 }
 function localRandom(store, part, density = 0.6) {
   const scaleLen = (SCALES[SCALE_NAMES[store.get('global.scaleType')]] || SCALES.Minor).length;
@@ -41,7 +46,7 @@ function localRandom(store, part, density = 0.6) {
     accent: Math.random() < 0.15 ? 1 : 0,
     slide: Math.random() < 0.1 ? 1 : 0,
   }));
-  store.set(`parts.${part}.seq.steps`, steps, { source: 'ui' });
+  store.set(`${patternPath(store, part)}.steps`, steps, { source: 'ui' });
 }
 
 export function createSeqPanel(ctx) {
@@ -49,16 +54,41 @@ export function createSeqPanel(ctx) {
   const { store, binder, music } = ctx;
   const hasMusic = !!(music && music.transport);
   const sel = () => binder.selected();
-  const seqPath = () => `parts.${sel()}.seq`;
+  const seqPath = () => patternPath(store, sel());
 
   // ---------------------------------------------------------------- side controls
   const P = (rel, def) => binder.path(rel, def);
-  const seqOn = createToggle(ctx, P('seq.enabled', { id: 'seqEnabled', label: 'Sequencer', curve: 'bool', min: 0, max: 1, default: 0 }), {
-    label: 'Seq on', iconName: 'seq', className: 'toggle--seq', tip: 'Play this pattern when the transport runs',
+  // A field of the pattern the track plays (follows the track and its active pattern).
+  const PAT = (field, def) => binder.path((p, part) => `patterns.${activePatternIndex(part)}.${field}`, def);
+  const seqOn = createToggle(ctx, P('seqOn', { id: 'seqEnabled', label: 'Sequencer', curve: 'bool', min: 0, max: 1, default: 0 }), {
+    label: 'Seq on', iconName: 'seq', className: 'toggle--seq', tip: 'Play this track\'s pattern when the transport runs',
   });
-  const seqRate = createSelect(ctx, P('seq.rate', { id: 'seqRate', label: 'Step rate', curve: 'enum', min: 0, max: 5, default: 3, options: SEQ_RATES.map(r => r.name) }), { label: 'Step rate', className: 'select--sm' });
-  const seqLen = createStepper(ctx, P('seq.length', { id: 'seqLength', label: 'Length', curve: 'int', min: 1, max: 16, default: 16 }), { label: 'Pattern length', format: v => String(v) });
-  const seqOct = createStepper(ctx, P('seq.baseOctave', { id: 'seqOct', label: 'Octave', curve: 'int', min: 0, max: 7, default: 3 }), { label: 'Base octave', format: v => 'C' + v });
+  const seqRate = createSelect(ctx, PAT('rate', { id: 'seqRate', label: 'Step rate', curve: 'enum', min: 0, max: 5, default: 3, options: SEQ_RATES.map(r => r.name) }), { label: 'Step rate', className: 'select--sm' });
+  const seqLen = createStepper(ctx, PAT('length', { id: 'seqLength', label: 'Length', curve: 'int', min: 1, max: 16, default: 16 }), { label: 'Pattern length', format: v => String(v) });
+  const seqOct = createStepper(ctx, PAT('baseOctave', { id: 'seqOct', label: 'Octave', curve: 'int', min: 0, max: 7, default: 3 }), { label: 'Base octave', format: v => 'C' + v });
+  // Pattern picker: which of the track's patterns plays, plus new (a copy) and remove.
+  const patSelect = h('select', { class: 'select-native', 'aria-label': 'Pattern the track plays' });
+  const patPick = h('div', { class: 'select select--sm seq-pattern-pick' }, patSelect, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }));
+  scope.on(patSelect, 'change', () => selectPattern(store, sel(), Number(patSelect.value)));
+  const patAdd = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': 'New pattern (a copy of this one)', dataset: { tip: 'New pattern: a copy of this one' }, html: icon('plus') });
+  scope.on(patAdd, 'click', () => addPattern(store, sel(), { copy: true }));
+  const patDel = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': 'Remove this pattern', dataset: { tip: 'Remove this pattern (a track keeps at least one)' }, html: icon('minus') });
+  scope.on(patDel, 'click', () => {
+    const p = sel();
+    removePattern(store, p, activePatternIndex(store.get(`parts.${p}`)));
+  });
+  function renderPatterns() {
+    const part = store.get(`parts.${sel()}`) || {};
+    const list = Array.isArray(part.patterns) ? part.patterns : [];
+    const active = activePatternIndex(part);
+    const names = list.map(x => x.name || 'Pattern');
+    if (patSelect.options.length !== names.length || names.some((nm, k) => patSelect.options[k].textContent !== nm)) {
+      patSelect.replaceChildren(...names.map((nm, k) => h('option', { value: String(k) }, nm)));
+    }
+    patSelect.value = String(active);
+    patAdd.disabled = list.length >= MAX_PATTERNS;
+    patDel.disabled = list.length <= 1;
+  }
   const tool = (name, label, fn) => {
     const b = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': label, dataset: { tip: label }, html: icon(name) });
     scope.on(b, 'click', fn);
@@ -111,6 +141,7 @@ export function createSeqPanel(ctx) {
   const side = h('div', { class: 'seq-side' },
     h('section', { class: 'seq-block', 'aria-label': 'Pattern' },
       h('header', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'Pattern')),
+      h('div', { class: 'seq-line seq-patterns' }, patPick, patAdd, patDel),
       h('div', { class: 'seq-line' }, seqOn.el, seqRate.el),
       h('div', { class: 'seq-pair' },
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Length'), seqLen.el),
@@ -118,10 +149,10 @@ export function createSeqPanel(ctx) {
       h('div', { class: 'seq-line seq-dotline' }, lockRec.el, h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Dot glide'), lockGlide.el)),
       tools));
 
-  const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all parts)' },
+  const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },
     field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el),
-    h('span', { class: 'seq-global-note' }, 'All parts'));
-  const arpBar = h('div', { class: 'seq-arp', role: 'group', 'aria-label': 'Arpeggiator for this part' },
+    h('span', { class: 'seq-global-note' }, 'All tracks'));
+  const arpBar = h('div', { class: 'seq-arp', role: 'group', 'aria-label': 'Arpeggiator for this track' },
     h('span', { class: 'section-title' }, 'Arp'), arpMode.el, arpRate.el, field('Octaves', arpOct.el), field('Gate', arpGate.el, 'field-row--gate'), arpHold.el);
 
   // ---------------------------------------------------------------- grid
@@ -163,17 +194,18 @@ export function createSeqPanel(ctx) {
   // ---------------------------------------------------------------- state
   const steps = () => store.get(`${seqPath()}.steps`) || [];
   const setStep = (i, field, value) => {
-    const p = sel();
-    const cur = store.get(`parts.${p}.seq.steps.${i}`);
+    const path = `${seqPath()}.steps.${i}`;
+    const cur = store.get(path);
     if (!cur || cur[field] === value) return;
-    store.set(`parts.${p}.seq.steps.${i}.${field}`, value, { source: 'ui' });
+    store.set(`${path}.${field}`, value, { source: 'ui' });
   };
 
   function render() {
+    renderPatterns();
     const st = steps();
-    const p = sel();
-    const len = clamp(store.get(`parts.${p}.seq.length`) || 16, 1, 16);
-    const baseOct = store.get(`parts.${p}.seq.baseOctave`) ?? 3;
+    const path = seqPath();
+    const len = clamp(store.get(`${path}.length`) || 16, 1, 16);
+    const baseOct = store.get(`${path}.baseOctave`) ?? 3;
     const root = store.get('global.scaleRoot') ?? 9, scaleType = store.get('global.scaleType') ?? 1;
     for (let i = 0; i < SEQ_STEPS; i++) {
       const s = st[i] || defaultStep();
@@ -204,7 +236,7 @@ export function createSeqPanel(ctx) {
     }
   }
   const invalidate = () => schedule(render);
-  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || /^parts\.\d(\.seq.*)?$/.test(path)) invalidate(); }));
+  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || /^parts\.\d+(\.(patterns|activePattern|seqOn).*)?$/.test(path)) invalidate(); }));
   scope.add(store.subscribe('global.scaleRoot', invalidate));
   scope.add(store.subscribe('global.scaleType', invalidate));
   scope.add(store.subscribe('ui.selectedPart', () => { clearPlayhead(); invalidate(); }));
@@ -340,7 +372,7 @@ export function createSeqPanel(ctx) {
   }
   function toggleLock(i, recapture) {
     const p = sel();
-    const st = (store.get(`parts.${p}.seq.steps.${i}`)) || defaultStep();
+    const st = (store.get(`${seqPath()}.steps.${i}`)) || defaultStep();
     if (st.lock && !recapture) {
       if (has(music, 'clearStepLock')) call(music, 'clearStepLock', p, i); else setStep(i, 'lock', 0);
       return;
@@ -348,10 +380,11 @@ export function createSeqPanel(ctx) {
     const x = store.get(`parts.${p}.params.centerX`) ?? 0.5, y = store.get(`parts.${p}.params.centerY`) ?? 0.5;
     const wx = clamp(x - Math.floor(x), 0, 1), wy = clamp(y - Math.floor(y), 0, 1);
     if (has(music, 'setStepLock') && call(music, 'setStepLock', p, i, wx, wy) != null) return;
+    const sp = `${seqPath()}.steps.${i}`;
     store.batch(() => {
-      store.set(`parts.${p}.seq.steps.${i}.lx`, wx, { source: 'ui' });
-      store.set(`parts.${p}.seq.steps.${i}.ly`, wy, { source: 'ui' });
-      store.set(`parts.${p}.seq.steps.${i}.lock`, 1, { source: 'ui' });
+      store.set(`${sp}.lx`, wx, { source: 'ui' });
+      store.set(`${sp}.ly`, wy, { source: 'ui' });
+      store.set(`${sp}.lock`, 1, { source: 'ui' });
     });
   }
   cells.lock.forEach((b, i) => {
@@ -413,7 +446,7 @@ export function createSeqPanel(ctx) {
     const s = steps()[i];
     if (!s) return;
     const p = sel();
-    const note = stepToMidi(s, store.get(`parts.${p}.seq.baseOctave`) ?? 3, store.get('global.scaleRoot') ?? 9, store.get('global.scaleType') ?? 1);
+    const note = stepToMidi(s, store.get(`${seqPath()}.baseOctave`) ?? 3, store.get('global.scaleRoot') ?? 9, store.get('global.scaleType') ?? 1);
     call(music.router, 'noteOn', p, note, s.vel ?? 0.8, 'ui-preview');
     clearTimeout(previewOff);
     previewOff = setTimeout(() => call(music.router, 'noteOff', p, note, 'ui-preview'), 180);

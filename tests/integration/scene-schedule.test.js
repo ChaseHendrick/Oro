@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createStore } from '../../src/core/store.js';
-import { NUM_PARTS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, defaultState, fromNorm } from '../../src/core/params.js';
+import { MAX_PARTS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, defaultState, fromNorm } from '../../src/core/params.js';
 import { migrateState } from '../../src/core/migrate.js';
 import { createMusic } from '../../src/music/music.js';
 import { START_DELAY } from '../../src/music/transport.js';
@@ -102,7 +102,7 @@ describe('scene -> music schedule', () => {
     store.set('global.tempo', 160);
     clock.advance(1.1);
     store.set('global.scaleType', 10);
-    store.set('parts.1.seq.rate', 5);
+    store.set('parts.1.patterns.0.rate', 5);
     clock.advance(1.2);
     music.transport.stop();
     clock.advance(2);
@@ -116,7 +116,7 @@ describe('scene -> music schedule', () => {
 describe('store -> audio sync -> DSP messages', () => {
   // What the worklet would hold after applying every message the sync posted.
   function mirror() {
-    const m = { global: {}, parts: Array.from({ length: NUM_PARTS }, () => ({ params: {}, mods: {}, links: null })), watch: null };
+    const m = { global: {}, parts: Array.from({ length: MAX_PARTS }, () => ({ params: {}, mods: {}, links: null })), watch: null, count: null };
     m.apply = (msgs) => {
       for (const msg of msgs) {
         if (msg.t === 'global') Object.assign(m.global, msg.p);
@@ -124,6 +124,7 @@ describe('store -> audio sync -> DSP messages', () => {
         else if (msg.t === 'mods') for (const [id, v] of Object.entries(msg.m)) m.parts[msg.part].mods[id] = { ...(m.parts[msg.part].mods[id] || {}), ...v };
         else if (msg.t === 'links') m.parts[msg.part].links = msg.links;
         else if (msg.t === 'watch') m.watch = msg.part;
+        else if (msg.t === 'tracks') m.count = msg.count;
       }
     };
     return m;
@@ -131,7 +132,8 @@ describe('store -> audio sync -> DSP messages', () => {
 
   function expectInSync(store, m, label) {
     for (const def of GLOBAL_PARAMS) expect(m.global[def.id], `${label}: global.${def.id}`).toBe(store.get(`global.${def.id}`));
-    for (let p = 0; p < NUM_PARTS; p++) {
+    expect(m.count, `${label}: track count`).toBe(store.get('parts').length);
+    for (let p = 0; p < store.get('parts').length; p++) {
       for (const def of PART_PARAMS) expect(m.parts[p].params[def.id], `${label}: part ${p} ${def.id}`).toBe(store.get(`parts.${p}.params.${def.id}`));
       for (const id of MOD_PARAM_IDS) {
         const want = store.get(`parts.${p}.mods.${id}`);
@@ -167,7 +169,7 @@ describe('store -> audio sync -> DSP messages', () => {
       () => store.batch(() => { store.set('parts.2.params.cutoff', 500 + rng() * 5000); store.set('parts.2.params.morph', rng()); }),
       () => store.set('ui.selectedPart', Math.floor(rng() * 4)),
       () => store.load(migrateState(stripMeta(FACTORY_SCENES[Math.floor(rng() * FACTORY_SCENES.length)]))),
-      () => store.set('parts.1.seq.steps.3.on', 1),
+      () => store.set('parts.1.patterns.0.steps.3.on', 1),
     ];
     for (let i = 0; i < 400; i++) {
       ops[Math.floor(rng() * ops.length)]();

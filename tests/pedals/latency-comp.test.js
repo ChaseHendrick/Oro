@@ -213,12 +213,12 @@ function musicSetup({ tempo = 120 } = {}) {
 }
 
 function fillPattern(store, part, { rate = 3, steps = 16, slide = () => 0 } = {}) {
-  const seq = store.get(`parts.${part}.seq`);
-  seq.enabled = 1;
+  const seq = store.get(`parts.${part}.patterns.0`);
+  store.set(`parts.${part}.seqOn`, 1);
   seq.rate = rate;
   seq.length = steps;
   seq.steps = seq.steps.map((st, i) => ({ ...st, on: 1, degree: i % 7, gate: 0.5, slide: slide(i) ? 1 : 0 }));
-  store.set(`parts.${part}.seq`, seq);
+  store.set(`parts.${part}.patterns.0`, seq);
 }
 
 describe('transport: scheduling offset for parts through the pedals', () => {
@@ -290,9 +290,9 @@ describe('transport: scheduling offset for parts through the pedals', () => {
     const { clock, engine, store, music } = musicSetup({ tempo: 120 });
     // Steps 0..3 slide into each other on the same pitch: one long note.
     fillPattern(store, 0, { slide: (i) => i < 3 });
-    const seq = store.get('parts.0.seq');
+    const seq = store.get('parts.0.patterns.0');
     seq.steps = seq.steps.map((s, i) => ({ ...s, degree: i < 4 ? 0 : i % 7 }));
-    store.set('parts.0.seq', seq);
+    store.set('parts.0.patterns.0', seq);
     music.router.setLead(() => 0.02);
     music.transport.play();
     clock.advance(0.2);

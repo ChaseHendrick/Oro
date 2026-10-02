@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { TERRAINS, PATHS } from '../../src/dsp/catalog.js';
 import { OrographDSP, QUALITY_MODES, HALFBAND_4X } from '../../src/dsp/dsp-core.js';
 import { pathPoint, evenPhase, pingPong, travelPhase, travelBlock } from '../../src/dsp/paths.js';
-import { MOD_PARAM_IDS, PART_PARAM_MAP, PART_PARAM_INDEX as PIX, defaultLinks, defaultMods, toNorm } from '../../src/core/params.js';
+import { MAX_PARTS, MOD_PARAM_IDS, PART_PARAM_MAP, PART_PARAM_INDEX as PIX, defaultLinks, defaultMods, toNorm } from '../../src/core/params.js';
 import { terrainHeight } from '../../src/dsp/terrain-math.js';
 import { SR, makeDSP, render, rms, peak, allFinite, spectrum, terrainChain } from './helpers.js';
 import { REF_SCENES, REF_FRAMES, renderScene } from './fixtures/reference-scenes.js';
@@ -850,8 +850,8 @@ describe('telemetry watch', () => {
     render(dsp, 0.1);
     expect(tele.length).toBeGreaterThan(0);
     expect(tele.every(m => m.part === 2)).toBe(true);
-    // out-of-range parts are ignored
-    dsp.handleMessage({ t: 'watch', part: 9 });
+    // out-of-range parts (past the MAX_PARTS slots) are ignored
+    dsp.handleMessage({ t: 'watch', part: MAX_PARTS });
     tele.length = 0;
     render(dsp, 0.05);
     expect(tele.every(m => m.part === 2)).toBe(true);

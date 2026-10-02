@@ -146,7 +146,7 @@ export function createLinksPanel(ctx) {
     const key = shapeKey();
     if (key !== renderedFor) { renderedFor = key; schedule(render); } else schedule(refreshAmounts);
   };
-  scope.add(store.subscribe('parts', (p) => { if (p === 'parts' || /^parts\.\d(\.links.*)?$/.test(p)) onChange(); }));
+  scope.add(store.subscribe('parts', (p) => { if (p === 'parts' || /^parts\.\d+(\.links.*)?$/.test(p)) onChange(); }));
   scope.add(store.subscribe('ui.selectedPart', onChange));
   scope.add(store.subscribe('', (p) => { if (p === '') onChange(); }));
   render();

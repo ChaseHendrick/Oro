@@ -21,7 +21,7 @@ export const SETTINGS_TABS = [
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '1.2.2';
+export const VERSION = '1.3.0';
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);

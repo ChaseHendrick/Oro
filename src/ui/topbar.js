@@ -1,9 +1,8 @@
-// Top bar: wordmark, part tabs (name, patch, note LED), the patch browser
+// Top bar: wordmark, track tabs (name, patch, note LED; + and a track menu), the patch browser
 // (with Preview), transport (play/stop, tempo, record, loop, bounce), Macros, MIDI
 // activity, theme, settings, help. In the desktop app it is also the window's
 // drag handle (see the app-region rules in panels.css).
 
-import { NUM_PARTS, PART_COLORS } from '../core/params.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
 import { schedule, addLoop } from './frame.js';
 import { createDragNumber } from './controls.js';
@@ -12,7 +11,7 @@ import { createRecorder, formatElapsed } from './record.js';
 import { createLooperButton } from './looper-panel.js';
 import { openBounce, bounceSupported } from './bounce.js';
 import { openMacros } from './macros.js';
-import { partVars, applyVars } from './color.js';
+import { createTrackTabs } from './track-tabs.js';
 import { icon, brandGlyph } from './icons.js';
 
 const THEME_LABEL = { system: 'System', dark: 'Dark', light: 'Light' };
@@ -25,69 +24,11 @@ export function createTopbar(ctx, container) {
   // ---------------------------------------------------------------- brand
   const brand = h('div', { class: 'brand' }, h('span', { class: 'brand-mark', html: brandGlyph(26) }), h('span', { class: 'brand-word' }, 'OROGRAPH'));
 
-  // ---------------------------------------------------------------- parts
-  const tabs = [];
-  const partGroup = h('div', { class: 'part-tabs', role: 'radiogroup', 'aria-label': 'Parts' });
-  for (let i = 0; i < NUM_PARTS; i++) {
-    const led = h('span', { class: 'led part-led', 'aria-hidden': 'true' });
-    const name = h('span', { class: 'part-name' });
-    const patch = h('span', { class: 'part-patch' });
-    const tab = h('button', {
-      type: 'button', class: 'part-tab', role: 'radio', 'aria-checked': 'false', tabindex: '-1', dataset: { part: String(i), tip: `Select part ${i + 1} (key ${i + 1})` },
-    }, led, h('span', { class: 'part-num', 'aria-hidden': 'true' }, String(i + 1)), h('span', { class: 'part-texts' }, name, patch), h('span', { class: 'part-mute', 'aria-hidden': 'true' }, 'M'));
-    scope.on(tab, 'click', () => store.set('ui.selectedPart', i, { source: 'ui' }));
-    tabs.push({ tab, led, name, patch });
-    partGroup.appendChild(tab);
-  }
-  scope.on(partGroup, 'keydown', (e) => {
-    const i = tabs.findIndex(t => t.tab === document.activeElement);
-    if (i < 0) return;
-    let n = -1;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') n = (i + 1) % NUM_PARTS;
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = (i - 1 + NUM_PARTS) % NUM_PARTS;
-    if (n >= 0) { e.preventDefault(); store.set('ui.selectedPart', n, { source: 'ui' }); tabs[n].tab.focus(); }
-  });
-  function renderParts() {
-    const sel = binder.selected();
-    const theme = document.documentElement.dataset.theme;
-    tabs.forEach(({ tab, name, patch }, i) => {
-      const on = i === sel;
-      setAttr(tab, 'aria-checked', String(on));
-      tab.tabIndex = on ? 0 : -1;
-      const nm = store.get(`parts.${i}.name`) || `Part ${i + 1}`;
-      const pn = store.get(`parts.${i}.patchName`) || 'Init';
-      setText(name, nm);
-      setText(patch, pn);
-      setAttr(tab, 'aria-label', `${nm}, ${pn}`);
-      tab.classList.toggle('is-muted', !!store.get(`parts.${i}.params.mute`));
-      applyVars(tab, partVars(store.get(`parts.${i}.color`) || PART_COLORS[i], theme, ctx.panelBg()));
-    });
-  }
-  scope.add(store.subscribe('ui.selectedPart', () => schedule(renderParts)));
-  scope.add(store.subscribe('parts', (path) => { if (/^parts(\.\d(\.(name|patchName|color|params(\.mute)?))?)?$/.test(path)) schedule(renderParts); }));
-  scope.add(store.subscribe('', (path) => { if (path === '') schedule(renderParts); }));
-  scope.on(window, 'orograph:theme', () => schedule(renderParts));
-
-  // Note LEDs: lit while notes sound on a part, with a flash on each new note.
-  const heldCount = new Array(NUM_PARTS).fill(0);
-  if (ctx.notes) {
-    scope.add(ctx.notes.on(({ part, on }) => {
-      if (part < 0 || part >= NUM_PARTS) return;
-      heldCount[part] = Math.max(0, heldCount[part] + (on ? 1 : -1));
-      const led = tabs[part].led;
-      led.classList.toggle('is-on', heldCount[part] > 0);
-      if (on) { led.classList.remove('is-flash'); void led.offsetWidth; led.classList.add('is-flash'); }
-    }));
-  }
-  // Fallback: the engine's voice counts keep LEDs honest if note events are missed.
-  scope.add(addLoop(() => {
-    if (!ctx.tele || !ctx.tele.fresh()) return;
-    for (let i = 0; i < NUM_PARTS; i++) {
-      const active = ctx.tele.activeVoices(i) > 0;
-      if (!active && heldCount[i] > 0) { heldCount[i] = 0; tabs[i].led.classList.remove('is-on'); }
-      tabs[i].led.classList.toggle('is-sounding', active);
-    }
-  }));
+  // ---------------------------------------------------------------- tracks
+  // Tabs, add and track menu: src/ui/track-tabs.js.
+  const trackTabs = createTrackTabs(ctx);
+  scope.add(trackTabs.dispose);
+  const partGroup = trackTabs.el;
 
   // ---------------------------------------------------------------- patch
   const patch = createPatchBrowser(ctx);
@@ -223,7 +164,6 @@ export function createTopbar(ctx, container) {
     : null;
   if (siteBack) brand.prepend(siteBack);
   container.append(brand, partGroup, patch.el, h('span', { class: 'topbar-spacer' }), transport, utils);
-  renderParts();
 
   return {
     recorder,

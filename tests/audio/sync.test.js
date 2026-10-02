@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createStoreSync } from '../../src/audio/sync.js';
 import { createEmitter } from '../../src/audio/emitter.js';
 import { createStore } from '../../src/core/store.js';
-import { defaultState, NUM_PARTS, PART_PARAMS, MOD_PARAM_IDS, GLOBAL_PARAMS } from '../../src/core/params.js';
+import { defaultState, DEFAULT_PARTS, PART_PARAMS, MOD_PARAM_IDS, GLOBAL_PARAMS } from '../../src/core/params.js';
 import { OrographDSP } from '../../src/dsp/dsp-core.js';
 
 function setup() {
@@ -26,8 +26,8 @@ describe('store sync', () => {
     const snap = sync.snapshot();
     const params = snap.filter(m => m.t === 'params');
     const mods = snap.filter(m => m.t === 'mods');
-    expect(params.length).toBe(NUM_PARTS);
-    expect(mods.length).toBe(NUM_PARTS);
+    expect(params.length).toBe(DEFAULT_PARTS);
+    expect(mods.length).toBe(DEFAULT_PARTS);
     for (const p of params) expect(Object.keys(p.p).length).toBe(PART_PARAMS.length);
     for (const m of mods) expect(Object.keys(m.m).sort()).toEqual([...MOD_PARAM_IDS].sort());
     const g = snap.find(m => m.t === 'global');
@@ -42,7 +42,7 @@ describe('store sync', () => {
     store.set('parts.1.params.morph', 0.3);
     store.set('parts.3.mods.size.lfoDepth', 0.4);
     store.set('global.tempo', 128);
-    store.set('parts.1.seq.enabled', 1);        // not for the DSP
+    store.set('parts.1.seqOn', 1);        // not for the DSP
     expect(batches.length).toBe(0);
     run();
     expect(batches.length).toBe(1);
@@ -76,7 +76,7 @@ describe('store sync', () => {
     st.parts[0].params.cutoff = 1234;
     store.load(st);
     run();
-    expect(batches[0].filter(m => m.t === 'params').length).toBe(NUM_PARTS);
+    expect(batches[0].filter(m => m.t === 'params').length).toBe(DEFAULT_PARTS);
     expect(batches[0].find(m => m.t === 'params' && m.part === 0).p.cutoff).toBe(1234);
     expect(batches[0].some(m => m.t === 'watch')).toBe(true);
 
@@ -166,7 +166,7 @@ describe('store sync: Round D state', () => {
     const { store, sync, batches, run } = setup();
     const snap = sync.snapshot();
     const links = snap.filter(m => m.t === 'links');
-    expect(links.length).toBe(NUM_PARTS);
+    expect(links.length).toBe(DEFAULT_PARTS);
     expect(links[0]).toEqual({ t: 'links', part: 0, links: [{ src: 1, dst: 'morph', amt: 1, curve: 0 }] });
     store.set('parts.2.links', [{ src: 5, dst: 'cutoff', amt: -0.5, curve: 2 }, { src: 99, dst: 'notAParam', amt: 1, curve: 0 }]);
     run();
@@ -176,7 +176,7 @@ describe('store sync: Round D state', () => {
     expect(batches[1][0].links[0].amt).toBe(0.25);
     store.load(store.serialize());
     run();
-    expect(batches[2].filter(m => m.t === 'links').length).toBe(NUM_PARTS);
+    expect(batches[2].filter(m => m.t === 'links').length).toBe(DEFAULT_PARTS);
   });
 
   it('forwards macros, the ceiling and every other global', () => {

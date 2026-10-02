@@ -13,7 +13,8 @@
 // Every note that starts inside the render is released by its end, and
 // nothing starts at or after the end.
 
-import { NUM_PARTS, clamp } from '../core/params.js';
+import { MAX_PARTS, clamp } from '../core/params.js';
+import { partCount } from '../core/tracks.js';
 import { createStore } from '../core/store.js';
 import { createTimebase } from './timing.js';
 import { createRouter } from './router.js';
@@ -41,14 +42,15 @@ const tidy = (v) => Math.round(v * 1e9) / 1e9;
  */
 export function renderSessionEvents(store, bars = 4, { parts, held = null, random = Math.random } = {}) {
   const nBars = clamp(Math.round(Number(bars) || 4), 1, 512);
-  const include = new Set((Array.isArray(parts) && parts.length ? parts : Array.from({ length: NUM_PARTS }, (_, i) => i))
-    .map(Number).filter(p => Number.isInteger(p) && p >= 0 && p < NUM_PARTS));
+  const n = Math.min(partCount(store), MAX_PARTS);
+  const include = new Set((Array.isArray(parts) && parts.length ? parts : Array.from({ length: n }, (_, i) => i))
+    .map(Number).filter(p => Number.isInteger(p) && p >= 0 && p < n));
   // A private copy of the session: the offline transport writes ui.playing and
   // the router subscribes to arp settings, none of which may touch the live app.
   const state = store.serialize();
   const off = createStore({ ...state, ui: { selectedPart: Math.round(store.get('ui.selectedPart') || 0) } });
-  for (let p = 0; p < NUM_PARTS; p++) {
-    if (!include.has(p) && off.get(`parts.${p}.seq`)) off.set(`parts.${p}.seq.enabled`, 0);
+  for (let p = 0; p < n; p++) {
+    if (!include.has(p) && off.get(`parts.${p}`)) off.set(`parts.${p}.seqOn`, 0);
   }
 
   const clock = { t: 0 };

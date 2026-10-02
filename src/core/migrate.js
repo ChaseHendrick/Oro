@@ -2,11 +2,12 @@
 // added since it was saved, drops unknown keys, clamps values into range.
 
 import {
-  NUM_PARTS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
+  MAX_PARTS, MIN_PARTS, DEFAULT_PARTS, MAX_PATTERNS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
   LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
   DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION,
-  defaultState, defaultPart, defaultStep, defaultLinks, clamp,
+  defaultState, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
 } from './params.js';
+import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 
 function num(v, fallback) {
@@ -75,10 +76,14 @@ function sanitizeWaypoints(src) {
   }));
 }
 
-function sanitizeSeq(src, base) {
+/** One sequencer pattern (`n` = its number, for the default id and name). */
+export function sanitizePattern(src, n = 1) {
   const s = src || {};
+  const base = defaultPattern(n);
+  const id = typeof s.id === 'string' && /^[\w-]{1,24}$/.test(s.id) ? s.id : base.id;
   const out = {
-    enabled: num(s.enabled, base.enabled) ? 1 : 0,
+    id,
+    name: typeof s.name === 'string' && s.name.trim() ? s.name.slice(0, 40) : base.name,
     rate: Math.round(clamp(num(s.rate, base.rate), 0, 5)),
     length: Math.round(clamp(num(s.length, base.length), 1, SEQ_STEPS)),
     baseOctave: Math.round(clamp(num(s.baseOctave, base.baseOctave), 0, 7)),
@@ -104,6 +109,25 @@ function sanitizeSeq(src, base) {
   return out;
 }
 
+/**
+ * A track's patterns: `patterns` (1..MAX_PATTERNS, unique ids) when present,
+ * otherwise the single `seq` of a pre-v1.3 part as pattern 1.
+ */
+function sanitizePatterns(p) {
+  const src = Array.isArray(p.patterns) && p.patterns.length ? p.patterns.slice(0, MAX_PATTERNS) : [p.seq || {}];
+  const out = src.map((s, i) => sanitizePattern(s && typeof s === 'object' ? s : {}, i + 1));
+  const seen = new Set();
+  out.forEach((pat, i) => {
+    if (seen.has(pat.id)) {
+      let n = i + 1;
+      while (seen.has(`p${n}`) || out.some(q => q.id === `p${n}`)) n++;
+      pat.id = `p${n}`;
+    }
+    seen.add(pat.id);
+  });
+  return out;
+}
+
 function sanitizeUserTerrain(t) {
   if (!t || typeof t !== 'object' || typeof t.data !== 'string') return null;
   const w = Math.round(num(t.w, 0)), h = Math.round(num(t.h, 0));
@@ -118,13 +142,18 @@ function sanitizeUserTerrain(t) {
 export function sanitizePart(src, i) {
   const base = defaultPart(i);
   const p = src || {};
+  const patterns = sanitizePatterns(p);
   return {
+    id: typeof p.id === 'string' && /^[\w-]{1,24}$/.test(p.id) ? p.id : base.id,
     name: typeof p.name === 'string' ? p.name.slice(0, 40) : base.name,
     color: typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : base.color,
     patchName: typeof p.patchName === 'string' ? p.patchName.slice(0, 60) : base.patchName,
     params: sanitizeParams(PART_PARAMS, p.params),
     mods: sanitizeMods(p.mods),
-    seq: sanitizeSeq(p.seq, base.seq),
+    // Older parts kept the on switch inside their one pattern (seq.enabled).
+    seqOn: num(p.seqOn, num(p.seq?.enabled, base.seqOn)) ? 1 : 0,
+    patterns,
+    activePattern: Math.round(clamp(num(p.activePattern, 0), 0, patterns.length - 1)),
     arp: {
       mode: Math.round(clamp(num(p.arp?.mode, base.arp.mode), 0, 6)),
       rate: Math.round(clamp(num(p.arp?.rate, base.arp.rate), 0, 5)),
@@ -158,15 +187,23 @@ export function sanitizePart(src, i) {
  * defaults, so an old session loads with the pedal send, Pre and Insert off.
  * Links already using a source index this build does not know are clamped by
  * sanitizeLinks. Version 2 sessions are already in the version 3 shape (3 only
- * adds optional pedal presets to scenes, see migrateScene).
+ * adds optional pedal presets to scenes, see migrateScene). Version 4 (v1.3)
+ * keeps the track list as saved (1..MAX_PARTS tracks); older sessions and
+ * scenes have four parts and come back as four tracks with ids t1..t4, each
+ * part's `seq` becoming its pattern 1.
  */
 export function migrateState(src) {
   const base = defaultState();
   if (!src || typeof src !== 'object') return base;
+  const list = Array.isArray(src.parts) ? src.parts.slice(0, MAX_PARTS) : [];
+  // Before v1.3 a session always had four parts (missing ones were defaults).
+  const count = list.length >= MIN_PARTS && (num(src.version, 0) >= 4 || list.length > DEFAULT_PARTS) ? list.length : DEFAULT_PARTS;
+  const parts = Array.from({ length: count }, (_, i) => sanitizePart(list[i] || null, i));
+  uniqueIds(parts);
   return {
     version: STATE_VERSION,
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
-    parts: Array.from({ length: NUM_PARTS }, (_, i) => sanitizePart(Array.isArray(src.parts) ? src.parts[i] : null, i)),
+    parts,
   };
 }
 

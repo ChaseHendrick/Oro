@@ -19,6 +19,7 @@ import { createGuitarNotes } from '../pedals/guitar-notes.js';
 import { captureToWavetable } from '../pedals/guitar.js';
 import { addUserTerrain } from '../audio/importers.js';
 import { CAPTURE_SECONDS } from '../audio/pedal-host.js';
+import { partCount } from '../core/tracks.js';
 
 const AUDIO_KEYS = ['enabled', 'outputDeviceId', 'mainPair', 'sendPair', 'ceilingDb'];
 const RETURN_KEYS = ['returnEnabled', 'returnDeviceId', 'returnLayout', 'returnLevel', 'returnDelay', 'returnReverb'];
@@ -165,7 +166,7 @@ export function createPedalRig({
   // The tracker's bend range follows the played part's Bend (and which part that is).
   offs.push(store.subscribe('', (path) => {
     if (!prefs.guitarNotes) return;
-    if (path !== '' && !/bendRange|selectedPart|keyMode|^parts$|^parts\.\d$|^ui$/.test(path)) return;
+    if (path !== '' && !/bendRange|selectedPart|keyMode|^parts$|^parts\.\d+$|^ui$/.test(path)) return;
     const tc = notes.trackerConfig();
     if (JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, tc]) !== trackerSent) applyGuitar();
   }));
@@ -319,10 +320,11 @@ export function createPedalRig({
     return r;
   }
 
-  /** The part Capture writes to: the guitar's part, or the selected part. */
+  /** The track Capture writes to: the guitar's track (when it exists), or the selected track. */
   function capturePart() {
     const t = prefs.guitarTarget;
-    if (t === 'sel') return Math.max(0, Math.min(3, Math.round(Number(store.get('ui.selectedPart')) || 0)));
+    const n = partCount(store);
+    if (t === 'sel' || !(t < n)) return Math.max(0, Math.min(n - 1, Math.round(Number(store.get('ui.selectedPart')) || 0)));
     return t;
   }
 

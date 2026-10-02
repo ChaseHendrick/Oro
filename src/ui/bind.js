@@ -12,11 +12,13 @@
 //   binding.modPath()    store path of this parameter's mod settings, or null
 //   binding.learnTarget() MIDI-learn target { scope, part, id } or null
 
-import { PART_PARAM_MAP, GLOBAL_PARAM_MAP, NUM_PARTS, clamp } from '../core/params.js';
+import { PART_PARAM_MAP, GLOBAL_PARAM_MAP, MAX_PARTS, clamp } from '../core/params.js';
+import { partCount } from '../core/tracks.js';
 
-export function clampPart(v) {
+/** A track index clamped into 0..count-1 (count = tracks in the list; MAX_PARTS when not given). */
+export function clampPart(v, count = MAX_PARTS) {
   const n = Math.round(Number(v));
-  return Number.isFinite(n) ? clamp(n, 0, NUM_PARTS - 1) : 0;
+  return Number.isFinite(n) ? clamp(n, 0, Math.max(1, count) - 1) : 0;
 }
 
 export function snapValue(def, v) {
@@ -31,25 +33,34 @@ export function snapValue(def, v) {
 }
 
 export function createBinder(store) {
-  const selected = () => clampPart(store.get('ui.selectedPart'));
+  const selected = () => clampPart(store.get('ui.selectedPart'), partCount(store));
 
-  function subscribeDynamic(pathFn, fn, followsSelection) {
+  /**
+   * Subscribe to the value at pathFn(), following the selected track and,
+   * for `moving` paths (a track's active pattern), the track's own changes.
+   */
+  function subscribeDynamic(pathFn, fn, followsSelection, moving = false) {
     let current = pathFn();
     let off = store.subscribe(current, fn);
-    if (!followsSelection) return () => off();
-    const offSel = store.subscribe('ui.selectedPart', () => {
+    const follow = () => {
       const next = pathFn();
       if (next !== current) {
         off();
         current = next;
         off = store.subscribe(current, fn);
       }
-      fn();
-    });
-    return () => { off(); offSel(); };
+    };
+    const offs = [];
+    if (followsSelection) offs.push(store.subscribe('ui.selectedPart', () => { follow(); fn(); }));
+    if (moving) {
+      offs.push(store.subscribe('parts', (path) => {
+        if (path === '' || path === 'parts' || /^parts\.\d+(\.activePattern|\.patterns)?$/.test(path)) { follow(); fn(); }
+      }));
+    }
+    return () => { off(); for (const o of offs) o(); };
   }
 
-  function make({ def, id, scope, pathFn, partFn, follows, modPathFn, learn }) {
+  function make({ def, id, scope, pathFn, partFn, follows, modPathFn, learn, moving = false }) {
     return {
       def, id, scope,
       part: partFn,
@@ -63,7 +74,7 @@ export function createBinder(store) {
         if (store.get(pathFn()) !== x) store.set(pathFn(), x, meta);
       },
       reset(meta = { source: 'ui' }) { this.set(def.default, meta); },
-      subscribe(fn) { return subscribeDynamic(pathFn, fn, follows); },
+      subscribe(fn) { return subscribeDynamic(pathFn, fn, follows, moving); },
       modPath: modPathFn || (() => null),
       learnTarget: learn || (() => null),
     };
@@ -74,7 +85,7 @@ export function createBinder(store) {
     const def = PART_PARAM_MAP[id];
     if (!def) throw new Error(`Unknown part parameter "${id}"`);
     const follows = part === 'sel';
-    const partFn = follows ? selected : () => clampPart(part);
+    const partFn = follows ? selected : () => clampPart(part, partCount(store));
     return make({
       def, id, scope: 'part', follows, partFn,
       pathFn: () => `parts.${partFn()}.params.${id}`,
@@ -96,7 +107,7 @@ export function createBinder(store) {
   /** One field of a parameter's modulation settings (lfoDepth, lfoRate, ...). */
   function modField(paramId, field, def, { part = 'sel' } = {}) {
     const follows = part === 'sel';
-    const partFn = follows ? selected : () => clampPart(part);
+    const partFn = follows ? selected : () => clampPart(part, partCount(store));
     return make({
       def: { id: field, ...def }, id: field, scope: 'mod', follows, partFn,
       pathFn: () => `parts.${partFn()}.mods.${paramId}.${field}`,
@@ -105,17 +116,20 @@ export function createBinder(store) {
 
   /**
    * Any other numeric value (seq/arp/dot settings, steps). `rel` is the path
-   * below `parts.N.` when part-scoped, or a full path when part is null.
+   * below `parts.N.` when part-scoped, or a full path when part is null. A
+   * function `rel(p, part)` gives a path that moves with the track's own
+   * state, e.g. its active pattern: (p, part) => `patterns.${k}.rate`.
    */
   function path(rel, def, { part = 'sel' } = {}) {
     if (part === null) {
       return make({ def, id: def.id || rel, scope: 'custom', follows: false, partFn: () => null, pathFn: () => rel });
     }
     const follows = part === 'sel';
-    const partFn = follows ? selected : () => clampPart(part);
+    const partFn = follows ? selected : () => clampPart(part, partCount(store));
+    const moving = typeof rel === 'function';
     return make({
-      def, id: def.id || rel, scope: 'custom', follows, partFn,
-      pathFn: () => `parts.${partFn()}.${rel}`,
+      def, id: def.id || (moving ? 'custom' : rel), scope: 'custom', follows, partFn, moving,
+      pathFn: moving ? () => { const p = partFn(); return `parts.${p}.${rel(p, store.get(`parts.${p}`))}`; } : () => `parts.${partFn()}.${rel}`,
     });
   }
 

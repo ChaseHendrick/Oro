@@ -25,7 +25,7 @@
 // The pure helpers are exported for the Node unit tests; importTerrainFile is
 // the browser entry used by the engine.
 
-import { NUM_PARTS } from '../core/params.js';
+import { partCount } from '../core/tracks.js';
 import { TERRAIN_INDEX } from '../dsp/catalog.js';
 import { wavInfo } from './wav.js';
 import { isPng } from './png.js';
@@ -631,7 +631,7 @@ const slotQueues = new WeakMap();   // store -> Map(slot key -> promise of the l
  */
 async function commitInOrder(store, part, slot, produce, source) {
   const p = Math.round(Number(part));
-  if (!(p >= 0 && p < NUM_PARTS)) throw new Error(`There is no part ${part}`);
+  if (!(p >= 0 && p < partCount(store))) throw new Error(`There is no track ${part}`);
   const S = slotName(slot);
   if (!S) throw new Error(`Terrain slot must be A or B, not ${slot}`);
   let slotQueue = slotQueues.get(store);
@@ -665,7 +665,7 @@ async function commitInOrder(store, part, slot, produce, source) {
  */
 export async function importTerrainFile(store, part, slot, file, options) {
   const p = Math.round(Number(part));
-  if (!(p >= 0 && p < NUM_PARTS)) throw new Error(`There is no part ${part}`);
+  if (!(p >= 0 && p < partCount(store))) throw new Error(`There is no track ${part}`);
   const S = slotName(slot);
   if (!S) throw new Error(`Terrain slot must be A or B, not ${slot}`);
   if (!file || typeof file.slice !== 'function') throw new Error('No file was given to import');

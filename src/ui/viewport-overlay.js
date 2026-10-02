@@ -135,7 +135,7 @@ export function createViewportOverlay(ctx, viewportEl) {
         hintDone = true;
         showHint();
       }
-    } else if (path === 'parts' || /^parts\.\d$/.test(path)) renderCoords();
+    } else if (path === 'parts' || /^parts\.\d+$/.test(path)) renderCoords();
   }));
   scope.add(store.subscribe('ui.selectedPart', () => { lastPart = binder.selected(); renderCoords(); }));
   scope.add(ctx.prefs.on(showHint));

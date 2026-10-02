@@ -5,7 +5,6 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { OrographDSP } from '../../src/dsp/dsp-core.js';
-import { NUM_PARTS } from '../../src/core/params.js';
 import { FACTORY_PATCHES } from '../../src/presets/factory-patches.js';
 import { FACTORY_SCENES } from '../../src/presets/factory-scenes.js';
 import { loadPatch, render, renderScene, stats, db, writeWav, roughMix, SR } from './render.js';
@@ -63,11 +62,11 @@ describe('factory patch levels', () => {
 
 describe('factory scenes render', () => {
   for (const [i, scene] of FACTORY_SCENES.entries()) {
-    it(`"${scene.name}" plays all four parts without clipping`, () => {
+    it(`"${scene.name}" plays all its tracks without clipping`, () => {
       const { out, notes, state } = renderScene(scene, 4);
       const s = stats(out.L, out.R);
       expect(s.finite).toBe(true);
-      for (let p = 0; p < NUM_PARTS; p++) expect(notes[p], `part ${p + 1} played no notes`).toBeGreaterThan(0);
+      for (let p = 0; p < state.parts.length; p++) expect(notes[p], `track ${p + 1} played no notes`).toBeGreaterThan(0);
       expect(db(s.meanRms), 'too quiet').toBeGreaterThan(-36);
       // Dry mix before the master limiter: leave real headroom.
       expect(s.peak, 'dry mix peak').toBeLessThan(1);

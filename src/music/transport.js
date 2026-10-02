@@ -21,7 +21,12 @@
 // past); everything else here (step announcements, locks, currentStep, MIDI
 // out) stays on the heard time.
 
-import { NUM_PARTS, SEQ_RATES, stepToMidi, clamp } from '../core/params.js';
+// Tracks: every track in the list plays the pattern it has selected
+// (activePattern) while its seqOn is set. Per-track scheduling state follows
+// the track when the list is reordered (src/core/tracks.js).
+
+import { MAX_PARTS, SEQ_RATES, stepToMidi, activeSeq, clamp } from '../core/params.js';
+import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 import { MIN_GAP, LATE_WINDOW } from './router.js';
 import { createLockPlayer, wrap01 } from './locks.js';
@@ -86,7 +91,11 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   let lookahead = LOOKAHEAD;   // adaptive, see adaptLookahead()
   let lastTickMs = null;       // performance time of the previous timer tick
   // heard: [{ time, step }] of the latest scheduled steps, oldest first.
-  const ps = Array.from({ length: NUM_PARTS }, () => ({ absStep: 0, rateIdx: null, tie: null, heard: [] }));
+  const freshState = () => ({ absStep: 0, rateIdx: null, tie: null, heard: [] });
+  let ps = Array.from({ length: MAX_PARTS }, freshState);
+  const count = () => partCount(store);
+  /** The pattern track `p` plays, with `enabled` = its seqOn (null for no track). */
+  const seqOf = (p) => activeSeq(store.get(`parts.${p}`));
   // The offline renderer (render.js) swaps in a lock player that records the
   // glides as engine messages instead of animating the store.
   const locks = lockPlayer || createLockPlayer({ store, timebase, timers, currentStep, isPlaying: () => playing });
@@ -139,8 +148,8 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   }
 
   function resetParts(beat) {
-    for (let p = 0; p < NUM_PARTS; p++) {
-      const seq = store.get(`parts.${p}.seq`) || {};
+    for (let p = 0; p < MAX_PARTS; p++) {
+      const seq = seqOf(p) || {};
       const rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
       const rate = SEQ_RATES[rateIdx].beats;
       ps[p].rateIdx = rateIdx;
@@ -152,7 +161,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
 
   /** Index of the step of `part` being heard right now, or -1 (stopped, or before the first step). */
   function currentStep(part) {
-    if (!playing || !(part >= 0 && part < NUM_PARTS)) return -1;
+    if (!playing || !(part >= 0 && part < count())) return -1;
     const heardNow = timebase.perfToAudio(timebase.perfNow()) + 1e-4;
     const list = ps[part].heard;
     for (let i = list.length - 1; i >= 0; i--) if (list[i].time <= heardNow) return list[i].step;
@@ -162,7 +171,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   const leadOf = (p) => (typeof router.leadFor === 'function' ? router.leadFor(p) : 0);
 
   function releaseTies(now) {
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < count(); p++) {
       const tie = ps[p].tie;
       if (!tie) continue;
       router._engineOff(p, tie.note, Math.max(now, tie.onTime + 0.01), 'seq', tie.lead);
@@ -212,8 +221,9 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   }
 
   function scheduleSeq(now, horizon) {
-    for (let p = 0; p < NUM_PARTS; p++) {
-      const seq = store.get(`parts.${p}.seq`);
+    const n = count();
+    for (let p = 0; p < n; p++) {
+      const seq = seqOf(p);
       if (!seq) continue;
       const st = ps[p];
       const rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
@@ -412,6 +422,22 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   // ------------------------------------------------------------- store glue
 
   const unsubs = [];
+  // A reordered track keeps its place in the bar and its tied note; a new
+  // track joins on the next step of the grid; a removed one is dropped (the
+  // engine releases what it was playing).
+  unsubs.push(watchTracks(store, ({ perm, fresh, count: n }) => {
+    ps = permute(ps, perm, fresh, freshState);
+    for (let p = n; p < MAX_PARTS; p++) ps[p] = freshState();
+    if (playing && anchored) {
+      const b = Math.max(beatAt(Math.max(frontier, timebase.now())), 0);
+      for (const i of fresh) {
+        const seq = seqOf(i) || {};
+        const rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
+        ps[i].rateIdx = rateIdx;
+        ps[i].absStep = Math.ceil(b / SEQ_RATES[rateIdx].beats - 1e-9);
+      }
+    }
+  }));
   unsubs.push(store.subscribe('global.tempo', () => {
     if (external) return;
     const next = 60 / tempoNow();

@@ -18,12 +18,12 @@ function setup({ tempo = 120, state } = {}) {
 }
 
 function fill(store, part, { rate = 3, steps = 16, on = () => 1, slide = () => 0, gate = 0.5, lock = null } = {}) {
-  const seq = store.get(`parts.${part}.seq`);
-  seq.enabled = 1;
+  const seq = store.get(`parts.${part}.patterns.0`);
+  store.set(`parts.${part}.seqOn`, 1);
   seq.rate = rate;
   seq.length = steps;
   seq.steps = seq.steps.map((st, i) => ({ ...st, on: on(i) ? 1 : 0, degree: i % 7, gate, slide: slide(i) ? 1 : 0, ...(lock && lock(i) ? { lock: 1, lx: lock(i)[0], ly: lock(i)[1] } : {}) }));
-  store.set(`parts.${part}.seq`, seq);
+  store.set(`parts.${part}.patterns.0`, seq);
 }
 
 const notes = (ev, t) => ev.filter(e => e.msg.t === t);
@@ -88,7 +88,7 @@ describe('music.renderEvents', () => {
 
   it('turns dot locks into timed parameter ramps', () => {
     const { store, music } = setup({ tempo: 120 });
-    store.set('parts.0.seq.lockGlide', 0.5);
+    store.set('parts.0.patterns.0.lockGlide', 0.5);
     fill(store, 0, { rate: 3, steps: 4, on: (i) => i === 0, lock: (i) => (i === 0 ? [0.2, 0.3] : i === 2 ? [0.8, 0.9] : null) });
     const ev = music.renderEvents(1);
     const locks = notes(ev, 'params');

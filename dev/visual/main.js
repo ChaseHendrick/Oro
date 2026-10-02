@@ -60,10 +60,10 @@ function setTour(store, part) {
 }
 
 function setLocks(store, part) {
-  const steps = store.get(`parts.${part}.seq.steps`).map((s, i) => (i % 4 === 0
+  const steps = store.get(`parts.${part}.patterns.0.steps`).map((s, i) => (i % 4 === 0
     ? { ...s, on: 1, lock: 1, lx: [0.2, 0.55, 0.8, 0.4][i / 4], ly: [0.25, 0.2, 0.6, 0.78][i / 4] } : s));
-  store.set(`parts.${part}.seq.steps`, steps, { source: 'ui' });
-  store.set(`parts.${part}.seq.enabled`, 1, { source: 'ui' });
+  store.set(`parts.${part}.patterns.0.steps`, steps, { source: 'ui' });
+  store.set(`parts.${part}.seqOn`, 1, { source: 'ui' });
 }
 
 function setLfo(store, on) {

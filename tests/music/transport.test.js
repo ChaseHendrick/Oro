@@ -16,12 +16,12 @@ function setup({ tempo = 120, state } = {}) {
 }
 
 function fillPattern(store, part, { rate = 3, steps = 16, degree = (i) => i % 7, slide = () => 0, on = () => 1, gate = 0.5 } = {}) {
-  const seq = store.get(`parts.${part}.seq`);
-  seq.enabled = 1;
+  const seq = store.get(`parts.${part}.patterns.0`);
+  store.set(`parts.${part}.seqOn`, 1);
   seq.rate = rate;
   seq.length = steps;
   seq.steps = seq.steps.map((st, i) => ({ ...st, on: on(i) ? 1 : 0, degree: degree(i), gate, slide: slide(i) ? 1 : 0 }));
-  store.set(`parts.${part}.seq`, seq);
+  store.set(`parts.${part}.patterns.0`, seq);
 }
 
 describe('swing', () => {

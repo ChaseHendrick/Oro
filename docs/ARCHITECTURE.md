@@ -67,14 +67,48 @@ Lift and Fold are audio waveshaping after the lookup (DSP's choice of curve); vi
 See `src/core/params.js`. State shape (persisted):
 
 ```
-{ version, global: {paramId: number}, parts: [ { name, color, patchName,
+{ version, global: {paramId: number}, parts: [ { id, name, color, patchName,
     params: {paramId: number},                 // plain units, enums are integer indices
     mods:   {paramId: {lfoShape, lfoRate, lfoSync, lfoDiv, lfoDepth, envDepth, retrig}},
-    seq:    {enabled, rate, length, baseOctave, steps: [{on, degree, octave, vel, gate, slide, accent}]},
+    seqOn: 0|1, activePattern: index,
+    patterns: [ {id, name, rate, length, baseOctave, lockGlide, steps: [{on, degree, octave, vel, gate, slide, accent, lock, lx, ly}]} ],
     arp:    {mode, rate, octaves, gate, hold},
     dot:    {mode: 0 Pin | 1 Roll | 2 Drift, gravity, friction, driftSpeed},
-    userTerrain: {A: UserTerrain|null, B: UserTerrain|null} } x4 ] }
+    userTerrain: {A: UserTerrain|null, B: UserTerrain|null} } x 1..MAX_PARTS ] }
 ```
+
+### Tracks: MAX_PARTS vs the live list (v1.3, STATE_VERSION 4)
+
+`state.parts` is a variable-length list of 1..`MAX_PARTS` (16) tracks, each with a stable
+string `id` (t1, t2, ...; never reused within a list). It is the only source of truth for
+which tracks exist and in which order. `NUM_PARTS` is gone; the rule for every per-track
+array is:
+
+* **Allocation, sized `MAX_PARTS`, mapped by index**: the DSP's parts, the router's held
+  notes and arps, the transport's step state, dot-lock glides, the terrain manager's slots,
+  the engine's controllers and marble readings, the visuals' height fields and terrain cache,
+  the dot simulation, MIDI channel maps (`multiChannels` / `outChannels`, one per track
+  position, track i on channel i), telemetry, the tab elements in the top bar.
+* **Active, the live list (`partCount(store)` / `parts.length`)**: everything shown, played,
+  scheduled or sent: tabs and mixer strips, sequencer and arp scheduling, Layer key mode,
+  MIDI routing, bounce stems, terrain generation, the sync's params, snapshot and flushes.
+
+When the list changes shape (add, remove, duplicate, move, scene load), `src/core/tracks.js`
+`trackPerm(oldIds, newIds)` gives a permutation of all `MAX_PARTS` slots (`perm[new] = old`):
+kept tracks keep their slot contents, new tracks get the slot that has been unused longest
+(listed in `fresh`), removed tracks go to the back. Every module computes the same
+permutation from the same ids through `watchTracks(store, fn)` and moves its per-slot state
+with `permute()`. `src/audio/sync.js` posts `{t:'tracks', count, perm, fresh}` to the DSP at
+once, ahead of anything else about the new list; the DSP moves its Part objects (voices,
+envelopes, LFO phases and terrain tables move with them, so a reorder is sample-identical),
+resets fresh parts, releases parts that left the list and fades them out over 80 ms, after
+which they are dormant and skipped before any work. A scene load passes
+`{ replaceTracks: true }` in the store meta, so all its tracks start in fresh slots while the
+old ones fade. The store ignores writes below `parts.N` for N >= `parts.length`.
+
+Patterns: a track plays `patterns[activePattern]` while `seqOn` is set; `activeSeq(part)`
+gives that pattern with `enabled` = seqOn, `patternPath(store, p)` its store path. Older
+saves are migrated: four parts become tracks t1..t4 and each `seq` becomes pattern p1.
 
 Non-persisted `ui` branch: see `DEFAULT_UI` in `src/core/store.js`.
 

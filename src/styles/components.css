@@ -441,6 +441,13 @@ kbd {
 .menu-label { flex: 1; }
 .menu-hint { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--font-mono); }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--divider); }
+@media (pointer: coarse) { .menu-item { min-height: 44px; } }
+
+/* Rename a track (src/ui/track-actions.js) */
+.popover--rename { padding: 8px; }
+.track-rename { display: flex; gap: 6px; align-items: center; }
+.track-rename .field { width: min(220px, 60vw); }
+@media (pointer: coarse) { .track-rename .field, .track-rename .btn { min-height: 44px; } }
 
 .tooltip {
   position: fixed; top: 0; left: 0;

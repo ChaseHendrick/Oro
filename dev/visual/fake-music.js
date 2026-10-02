@@ -4,12 +4,13 @@
 // part whose sequencer is on, with the lock spot when the step carries one;
 // beatAt() / timebase give the beat for Tour sync; exploreNote() logs.
 
-import { NUM_PARTS, SEQ_RATES } from '../../src/core/params.js';
+import { MAX_PARTS, SEQ_RATES, activeSeq } from '../../src/core/params.js';
+import { partCount } from '../../src/core/tracks.js';
 
 export function createFakeMusic({ store }) {
   const listeners = new Map();
   let playing = false, t0 = 0, timer = 0;
-  const lastStep = new Array(NUM_PARTS).fill(-1);
+  const lastStep = new Array(MAX_PARTS).fill(-1);
   const notes = [];
 
   const on = (type, fn) => {
@@ -24,8 +25,8 @@ export function createFakeMusic({ store }) {
 
   function tick() {
     const b = beat();
-    for (let p = 0; p < NUM_PARTS; p++) {
-      const seq = store.get(`parts.${p}.seq`);
+    for (let p = 0; p < partCount(store); p++) {
+      const seq = activeSeq(store.get(`parts.${p}`));
       if (!seq || !seq.enabled) continue;
       const rate = (SEQ_RATES[seq.rate] || SEQ_RATES[3]).beats;
       const abs = Math.floor(b / rate);

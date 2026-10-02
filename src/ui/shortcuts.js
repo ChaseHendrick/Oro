@@ -19,7 +19,7 @@ export const SHORTCUTS = [
     { keys: ['M'], text: 'Mute or unmute the loop' },
   ] },
   { group: 'Navigating', items: [
-    { keys: ['1', '2', '3', '4'], text: 'Select part', compact: '1 ... 4' },
+    { keys: ['1', '2', '3', '4', '5', '6', '7', '8', '9'], text: 'Select track 1 to 9', compact: '1 ... 9' },
     { keys: ['['], text: 'Previous patch (Size of the orbit when the map has focus)' },
     { keys: [']'], text: 'Next patch (Size of the orbit when the map has focus)' },
     { keys: [','], text: 'Settings' },
@@ -77,7 +77,7 @@ export function installShortcuts({ layers, actions }) {
       return;
     }
     if (e.repeat) return;
-    if (/^[1-4]$/.test(key)) { e.preventDefault(); actions.selectPart(Number(key) - 1); return; }
+    if (/^[1-9]$/.test(key)) { e.preventDefault(); actions.selectPart(Number(key) - 1); return; }
     if (key === '?') { e.preventDefault(); actions.help(); return; }
     if (key === ',') { e.preventDefault(); actions.settings(); return; }
     if (key === '[' || key === ']') {

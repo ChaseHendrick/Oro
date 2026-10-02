@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createStore } from '../../src/core/store.js';
-import { defaultState, defaultPart, PART_PARAM_MAP, MOD_PARAM_IDS, NUM_PARTS } from '../../src/core/params.js';
+import { defaultState, defaultPart, PART_PARAM_MAP, MOD_PARAM_IDS, DEFAULT_PARTS } from '../../src/core/params.js';
 import { migrateState, sanitizePart } from '../../src/core/migrate.js';
 import { createPresets, STORAGE_KEY } from '../../src/presets/presets.js';
 import { FACTORY_PATCHES, CATEGORIES } from '../../src/presets/factory-patches.js';
@@ -65,14 +65,16 @@ describe('factory patches', () => {
 });
 
 describe('factory scenes', () => {
-  it('has at least six four-part songs that survive migration unchanged', () => {
+  it('has at least six songs of four tracks that survive migration unchanged', () => {
     expect(FACTORY_SCENES.length).toBeGreaterThanOrEqual(6);
     for (const scene of FACTORY_SCENES) {
       expect(migrateState(scene), scene.name).toEqual(stripMeta(scene));
-      expect(scene.parts).toHaveLength(NUM_PARTS);
+      expect(scene.parts).toHaveLength(DEFAULT_PARTS);
+      expect(new Set(scene.parts.map(p => p.id)).size, scene.name).toBe(scene.parts.length);
       for (const part of scene.parts) {
-        expect(part.seq.enabled, `${scene.name}/${part.name}`).toBe(1);
-        expect(part.seq.steps.slice(0, part.seq.length).some(s => s.on), `${scene.name}/${part.name}`).toBe(true);
+        expect(part.seqOn, `${scene.name}/${part.name}`).toBe(1);
+        const pat = part.patterns[part.activePattern];
+        expect(pat.steps.slice(0, pat.length).some(s => s.on), `${scene.name}/${part.name}`).toBe(true);
       }
       expect(scene.description.length).toBeGreaterThan(20);
     }
@@ -93,7 +95,7 @@ describe('factory scenes', () => {
     const locked = [];
     for (const scene of FACTORY_SCENES) {
       scene.parts.forEach((part, i) => {
-        const locks = part.seq.steps.slice(0, part.seq.length).filter(st => st.lock);
+        const locks = part.patterns[0].steps.slice(0, part.patterns[0].length).filter(st => st.lock);
         if (locks.length) locked.push({ scene, part, i, locks });
       });
     }
@@ -103,7 +105,7 @@ describe('factory scenes', () => {
       // A rolling or drifting dot would be dragged around by the visuals' simulation.
       expect(part.dot.mode, label).toBe(0);
       expect(new Set(locks.map(l => `${l.lx},${l.ly}`)).size, label).toBeGreaterThanOrEqual(4);
-      expect(part.seq.lockGlide, label).toBeGreaterThan(0);
+      expect(part.patterns[0].lockGlide, label).toBeGreaterThan(0);
     }
     expect(() => applyLocks(parsePattern('0 . . .').steps, { 4: [0.1, 0.1] }, 4)).toThrow(/outside/);
     expect(() => applyLocks(parsePattern('0').steps, { 0: [1, 0.1] }, 1)).toThrow(/0\.\.1/);
@@ -111,7 +113,7 @@ describe('factory scenes', () => {
 
   it('walks the locked dots through their spots when a scene plays', () => {
     for (const scene of FACTORY_SCENES) {
-      const p = scene.parts.findIndex(part => part.seq.steps.some(st => st.lock));
+      const p = scene.parts.findIndex(part => part.patterns[0].steps.some(st => st.lock));
       if (p < 0) continue;
       const clock = createFakeClock({ startSec: 0 });
       const store = createStore(migrateState(scene));
@@ -122,7 +124,7 @@ describe('factory scenes', () => {
         if (meta && meta.source === 'lock') seen.add(`${store.get(`parts.${p}.params.centerX`)},${store.get(`parts.${p}.params.centerY`)}`);
       });
       music.transport.play();
-      const seq = scene.parts[p].seq;
+      const seq = scene.parts[p].patterns[0];
       const stepBeats = [1, 0.5, 1 / 3, 0.25, 1 / 6, 0.125][seq.rate];
       clock.advance(seq.length * stepBeats * 60 / scene.global.tempo + 0.5, 0.004);
       music.dispose();
@@ -164,9 +166,9 @@ describe('presets API', () => {
 
   it('loads a patch but keeps the part\'s sequence, arp, name, colour and mute', () => {
     const { store, presets } = setup();
-    const seq = store.get('parts.1.seq');
+    const seq = store.get('parts.1.patterns.0');
     seq.steps[3].on = 1;
-    store.set('parts.1.seq', seq);
+    store.set('parts.1.patterns.0', seq);
     store.set('parts.1.name', 'Lead line');
     store.set('parts.1.params.mute', 1);
     store.set('parts.1.arp.mode', 2);
@@ -176,7 +178,7 @@ describe('presets API', () => {
     const part = store.get('parts.1');
     expect(part.patchName).toBe('Cirque Bell');
     expect(part.params.pathShape).toBe(FACTORY_PATCHES.find(p => p.name === 'Cirque Bell').params.pathShape);
-    expect(part.seq.steps[3].on).toBe(1);
+    expect(part.patterns[0].steps[3].on).toBe(1);
     expect(part.arp.mode).toBe(2);
     expect(part.name).toBe('Lead line');
     expect(part.params.mute).toBe(1);

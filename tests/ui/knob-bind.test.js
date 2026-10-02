@@ -63,7 +63,9 @@ describe('bindings', () => {
     expect(snapValue(P.octave, 99)).toBe(3);
     expect(snapValue(P.cutoff, 'x')).toBe(P.cutoff.default);
     expect(snapValue(P.spin, -9)).toBe(-4);
-    expect(clampPart(7)).toBe(3);
+    expect(clampPart(7, 4)).toBe(3);
+    expect(clampPart(7)).toBe(7);
+    expect(clampPart(99)).toBe(15);
     expect(clampPart('nope')).toBe(0);
   });
   it('part params follow the selected part and resubscribe', () => {
@@ -98,7 +100,7 @@ describe('bindings', () => {
     binder.modField('cutoff', 'lfoDepth', { curve: 'lin', min: -1, max: 1, default: 0 }).set(0.4);
     expect(store.get('parts.0.mods.cutoff.lfoDepth')).toBe(0.4);
     binder.path('seq.length', { curve: 'int', min: 1, max: 16, default: 16 }).set(40);
-    expect(store.get('parts.0.seq.length')).toBe(16);
+    expect(store.get('parts.0.patterns.0.length')).toBe(16);
     const view = binder.uiValue('view', ['orbit', 'top', 'low'], 'orbit');
     view.set('top');
     expect(store.get('ui.view')).toBe('top');

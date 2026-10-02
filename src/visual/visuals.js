@@ -35,13 +35,14 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-import { NUM_PARTS, MAX_WAYPOINTS, PART_PARAM_MAP, toNorm, fromNorm, formatValue } from '../core/params.js';
+import { MAX_PARTS, MAX_WAYPOINTS, activeSeq, PART_PARAM_MAP, toNorm, fromNorm, formatValue } from '../core/params.js';
 import { wrapDelta, wrap01 } from '../dsp/terrain-math.js';
 import { HeightField, W, H, EXTENT, intersectRay, displayLift, uToX, wrapWorld } from './heightfield.js';
 import { PALETTES, PALETTE_INFO, HEAT_RAMP, makeAtmosphere, blendAtmosphere, blendRamp, hexToLinear, sceneColorLinear } from './palettes.js';
 import { LiveParams, TELE_STALE_MS, isModulated, voiceLive, orbitDifference, ORBIT_IDS } from './modstate.js';
 import { BALL_RADIUS, MODE_PIN, MODE_TOUR } from './physics.js';
 import { createDotSim, USER_META } from './dot-sim.js';
+import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { makePlan, buildPlan, sampleRoute } from './tour.js';
 import { createTerrainLayer } from './terrain-layer.js';
 import { createSkyLayer } from './sky-layer.js';
@@ -214,11 +215,11 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   // ------------------------------------------------------------------ state
   const view = new HeightField();                       // what is displayed (with crossfades)
-  const fields = Array.from({ length: NUM_PARTS }, () => new HeightField()); // physics, per part
+  let fields = Array.from({ length: MAX_PARTS }, () => new HeightField()); // physics, per track slot
   const live = new LiveParams();
   const atm = makeAtmosphere();
   const ramp = Array.from({ length: 6 }, () => [0, 0, 0]);
-  const partLin = Array.from({ length: NUM_PARTS }, (_, i) => hexToLinear(store.get(`parts.${i}.color`) || '#ffffff'));
+  const partLin = Array.from({ length: MAX_PARTS }, (_, i) => hexToLinear(store.get(`parts.${i}.color`) || '#ffffff'));
   const colCur = [1, 0.5, 0.3];      // displayed part colour (scene-adjusted), eased
   const colTarget = [1, 0.5, 0.3];
   const colCss = { value: '#ffffff' };
@@ -226,7 +227,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
   let refs = [];                     // cached store sub-objects per part
   function refreshRefs() {
     refs = [];
-    for (let p = 0; p < NUM_PARTS; p++) {
+    // every slot gets a ref (empty past the track list), so refs[p] is always safe
+    for (let p = 0; p < MAX_PARTS; p++) {
       const part = store.get(`parts.${p}`) || {};
       refs.push({ params: part.params || {}, mods: part.mods || {}, dot: part.dot || {}, links: part.links || null, color: part.color || '#ffffff' });
     }
@@ -234,6 +236,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   refreshRefs();
 
   let sel = clampPart(store.get('ui.selectedPart'));
+  let selId = store.get(`parts.${sel}.id`);
   let themeT = document.documentElement.dataset.theme === 'light' ? 1 : 0;
   let themeTarget = themeT;
   let themeDirty = true;
@@ -255,8 +258,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
   const dispOffset = { u: 0, v: 0 }; // decaying display offset after a part switch
   let dotSrc = 'base';               // which source placed the dot this frame (debug)
   // Which of the 3 x 3 tile copies each part's dot is drawn on (-1, 0 or 1 per axis).
-  const tile = Array.from({ length: NUM_PARTS }, () => ({ u: 0, v: 0 }));
-  const lastWrapped = Array.from({ length: NUM_PARTS }, () => ({ u: NaN, v: NaN }));
+  // per track slot; moved with the tracks on reorder (see watchTracks below)
+  let tile = Array.from({ length: MAX_PARTS }, () => ({ u: 0, v: 0 }));
+  let lastWrapped = Array.from({ length: MAX_PARTS }, () => ({ u: NaN, v: NaN }));
   const fade = { A: 1, B: 1 };
   const ghost = { a: 0 };
   const dotPos = { u: 0.5, v: 0.5, x: 0, y: 0, z: 0 };
@@ -308,6 +312,16 @@ export async function createVisuals(container, { store, engine = null, quality, 
     fade[slot] = xf ? 0 : 1;
     terrain.setFade(fade.A, fade.B);
   }
+
+  // The track list changed shape: height fields and cached tables move with
+  // their tracks (before the dot simulation below re-reads the store), so a
+  // reorder rebuilds nothing.
+  const offTracks = watchTracks(store, ({ perm, fresh }) => {
+    fields = permute(fields, perm, fresh, () => new HeightField());
+    tile = permute(tile, perm, fresh, () => ({ u: 0, v: 0 }));
+    lastWrapped = permute(lastWrapped, perm, fresh, () => ({ u: NaN, v: NaN }));
+    cache.remap(perm, fresh);
+  });
 
   function loadPart(p, crossfade) {
     for (const slot of ['A', 'B']) {
@@ -393,7 +407,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   // ------------------------------------------------------------------ helpers
   function num(v, d) { return typeof v === 'number' && Number.isFinite(v) ? v : d; }
-  function clampPart(p) { const n = Math.round(num(p, 0)); return n < 0 ? 0 : n >= NUM_PARTS ? NUM_PARTS - 1 : n; }
+  function clampPart(p) { const n = Math.round(num(p, 0)); const max = partCount(store) - 1; return n < 0 ? 0 : n > max ? max : n; }
   // read every frame: cached from the store (store.get splits its path each call)
   let editOn = !!store.get('ui.editWaypoints');
   function editing() { return editOn; }
@@ -875,7 +889,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   // ------------------------------------------------------------------ store
   function applyColors() {
-    for (let p = 0; p < NUM_PARTS; p++) partLin[p] = hexToLinear(refs[p].color);
+    for (let p = 0; p < MAX_PARTS; p++) partLin[p] = hexToLinear(refs[p].color);
     colorDirty = true;
   }
   let colorDirty = true;
@@ -886,6 +900,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     // keep the dot where it was on screen and let it glide to its new home
     const oldU = dotPos.u, oldV = dotPos.v;
     sel = p;
+    selId = store.get(`parts.${p}.id`);
     if (press) endPress(false);
     ctl.mode = 'idle';
     loadPart(p, animate);
@@ -910,14 +925,19 @@ export async function createVisuals(container, { store, engine = null, quality, 
   }
 
   const offStore = store.subscribe('', (path, value, meta) => {
-    if (path === '' || path === 'parts' || /^parts\.\d+$/.test(path) || /^parts\.\d+\.(params|dot|mods|links|seq)$/.test(path)) {
+    if (path === '' || path === 'parts' || /^parts\.\d+$/.test(path) || /^parts\.\d+\.(params|dot|mods|links|patterns|activePattern|seqOn)$/.test(path)) {
       // dot-sim.js re-syncs the dots itself (it listens to the same store)
       refreshRefs();
       applyColors();
       cache.invalidateAll();
       markersDirty = true;
       schedule();
-      if (path === '') selectPart(clampPart(store.get('ui.selectedPart')), true);
+      if (path === '' || path === 'parts') {
+        // a different track may now sit at the selected index (one was removed or moved)
+        const p = clampPart(store.get('ui.selectedPart'));
+        if (store.get(`parts.${p}.id`) !== selId) sel = -1;
+        selectPart(p, true);
+      }
       return;
     }
     if (path.startsWith('ui')) {
@@ -943,12 +963,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const m = /^parts\.(\d+)\.(\w+)(?:\.(\w+))?/.exec(path);
     if (!m) return;
     const p = Number(m[1]);
-    if (!(p >= 0 && p < NUM_PARTS)) return;
+    if (!(p >= 0 && p < partCount(store))) return;
     const branch = m[2], leaf = m[3];
     if (branch === 'color') { refs[p].color = store.get(path) || refs[p].color; applyColors(); return; }
     if (branch === 'userTerrain') { cache.invalidate(p); return; }
     if (branch === 'dot') { if (p === sel) markersDirty = true; schedule(); return; }
-    if (branch === 'seq') { if (p === sel) markersDirty = true; return; }
+    if (branch === 'patterns' || branch === 'activePattern' || branch === 'seqOn') { if (p === sel) markersDirty = true; return; }
     if (branch === 'params') {
       if (leaf === 'terrainA' || leaf === 'terrainB' || leaf === 'seed' || leaf === 'detail') { cache.invalidate(p); return; }
       // someone else moved the dot (a lock, a knob): a click-glide in flight gives way
@@ -1141,7 +1161,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   /** Physics, glides and store writes: everything that affects the sound. */
   function stepSimulation(dt, now) {
     // non-selected parts roll on their stored morph / warp / lift
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < partCount(store); p++) {
       if (p === sel) continue;
       const pr = refs[p].params;
       fields[p].setShape(num(pr.morph, 0), num(pr.warp, 0), num(pr.lift, 1));
@@ -1198,7 +1218,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     markers.setWaypoints(list);
     buildPlan(list, Math.round(num(d.tourMode, 0)), routePlan);
     routeN = sampleRoute(routePlan, ROUTE_PER_LEG, routeUV, _tmpUV);
-    const seq = store.get(`parts.${sel}.seq`) || {};
+    const seq = activeSeq(store.get(`parts.${sel}`)) || {};
     markers.setLocks(seq.steps, !!seq.enabled);
     minimap.setWaypoints(list);
     minimap.setLocks(seq.steps);
@@ -1613,6 +1633,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       handlers.clear();
       controls.dispose();
       sim.dispose();
+      offTracks();
       cache.dispose();
       terrain.dispose(); sky.dispose(); orbit.dispose(); dot.dispose(); markers.dispose(); env.dispose();
       if (composer) { composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); }
@@ -1650,7 +1671,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
           drawCalls: info.render.calls, triangles: info.render.triangles,
           quality: qualityName, view: rig.view, themeT, running, autoRotate: controls.autoRotate,
           reducedMotion: reduced, selectedPart: sel,
-          physics: Array.from({ length: NUM_PARTS }, (_, p) => sim.engineName(p)),
+          physics: Array.from({ length: partCount(store) }, (_, p) => sim.engineName(p)),
           music: !!music,
           floatLinear: terrain.floatLinear, size: [width, height, pixelRatio],
         };

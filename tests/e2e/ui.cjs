@@ -226,15 +226,15 @@ async function functional(browser) {
   // Sequencer
   await page.locator('#dtab-seq').click();
   await sleep(200);
-  const on0 = await get('parts.0.seq.steps.2.on');
+  const on0 = await get('parts.0.patterns.0.steps.2.on');
   await page.locator('.seq-col[data-step="2"] .seq-pad').click();
-  check(await get('parts.0.seq.steps.2.on') === (on0 ? 0 : 1), 'clicking a step pad toggles it');
-  const deg0 = await get('parts.0.seq.steps.2.degree');
+  check(await get('parts.0.patterns.0.steps.2.on') === (on0 ? 0 : 1), 'clicking a step pad toggles it');
+  const deg0 = await get('parts.0.patterns.0.steps.2.degree');
   await page.locator('.seq-col[data-step="2"] .seq-note').focus();
   await page.keyboard.press('ArrowUp');
-  check(await get('parts.0.seq.steps.2.degree') === deg0 + 1, 'arrow up raises a step note');
+  check(await get('parts.0.patterns.0.steps.2.degree') === deg0 + 1, 'arrow up raises a step note');
   await page.locator('.seq-col[data-step="5"] .seq-flag--acc').click();
-  check(await get('parts.0.seq.steps.5.accent') === 1, 'accent toggle works');
+  check(await get('parts.0.patterns.0.steps.5.accent') === 1, 'accent toggle works');
   await page.locator('button[aria-label="Play"]').click();
   await sleep(700);
   check(await get('ui.playing') === 1, 'Play starts the transport');
@@ -388,10 +388,10 @@ async function functional(browser) {
   await page.locator('#dtab-seq').click();
   await page.evaluate(() => { const s = window.orograph.store; s.set('parts.0.params.centerX', 0.25); s.set('parts.0.params.centerY', 0.75); });
   await page.locator('.seq-col[data-step="3"] .seq-lock').click();
-  const lock = await get('parts.0.seq.steps.3');
+  const lock = await get('parts.0.patterns.0.steps.3');
   check(lock.lock === 1 && Math.abs(lock.lx - 0.25) < 1e-6 && Math.abs(lock.ly - 0.75) < 1e-6, 'a Dot cell locks the step to the current dot position');
   await page.locator('.seq-col[data-step="3"] .seq-lock').click();
-  check((await get('parts.0.seq.steps.3.lock')) === 0, 'clicking the Dot cell again clears the lock');
+  check((await get('parts.0.patterns.0.steps.3.lock')) === 0, 'clicking the Dot cell again clears the lock');
 
   await page.locator('.seg--dot .seg-btn[data-value="4"]').click();
   await page.locator('button[aria-label="Dot settings"]').click();
@@ -540,17 +540,17 @@ async function roundD(browser) {
   check(await get('ui.lockRecord') === 1 && (await page.evaluate(() => window.__lockRec)).includes(true), 'Rec dot turns on Lock Record through music.setLockRecord');
   await page.locator('.toggle--rec').click();
   check(await get('ui.lockRecord') === 0, 'Rec dot turns Lock Record off again');
-  const g0 = await get('parts.0.seq.lockGlide');
+  const g0 = await get('parts.0.patterns.0.lockGlide');
   await page.locator('[aria-label="Dot lock glide time"]').focus();
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
-  check(await get('parts.0.seq.lockGlide') > g0, 'Dot glide slider writes seq.lockGlide');
+  check(await get('parts.0.patterns.0.lockGlide') > g0, 'Dot glide slider writes seq.lockGlide');
   await page.evaluate(() => { const s = window.orograph.store; s.set('parts.0.params.centerX', 0.6); s.set('parts.0.params.centerY', 0.4); });
   await page.locator('.seq-col[data-step="7"] .seq-lock').focus();
   await page.keyboard.press('Enter');
-  check((await get('parts.0.seq.steps.7.lock')) === 1, 'Enter on a Dot cell locks the step');
+  check((await get('parts.0.patterns.0.steps.7.lock')) === 1, 'Enter on a Dot cell locks the step');
   await page.evaluate(() => window.orograph.store.set('parts.0.params.centerX', 0.1));
   await page.keyboard.press('Shift+Enter');
-  check(Math.abs((await get('parts.0.seq.steps.7.lx')) - 0.1) < 1e-6, 'Shift+Enter moves the lock to the current dot');
+  check(Math.abs((await get('parts.0.patterns.0.steps.7.lx')) - 0.1) < 1e-6, 'Shift+Enter moves the lock to the current dot');
 
   // Dot: Roll and Explore extras
   await page.locator('.seg--dot .seg-btn[data-value="1"]').click();
@@ -855,7 +855,7 @@ async function degraded(browser) {
   check(x > 0.5, `clicking the flat map moves the dot (centerX ${x.toFixed(3)})`);
   await page.locator('#dtab-seq').click();
   await page.locator('.seq-col[data-step="0"] .seq-pad').click();
-  check(await page.evaluate(() => window.orograph.store.get('parts.0.seq.steps.0.on')) === 1, 'steps can be edited without the music engine');
+  check(await page.evaluate(() => window.orograph.store.get('parts.0.patterns.0.steps.0.on')) === 1, 'steps can be edited without the music engine');
   await shot(page, 'degraded-seq');
   await page.evaluate(() => window.orograph.ui.openSettings('midi'));
   await sleep(200);

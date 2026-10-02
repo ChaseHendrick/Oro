@@ -1,4 +1,8 @@
-// Orograph's audio engine: 4 parts x 8 voices of wave terrain synthesis.
+// Orograph's audio engine: up to MAX_PARTS parts (tracks) x 8 voices of wave
+// terrain synthesis. All MAX_PARTS parts exist from the start; the host says
+// how many are in use ({t:'tracks', count, perm?, fresh?}, see setTracks) and
+// the rest cost nothing: a part past the count that has finished fading out
+// is skipped before any work is done on it.
 //
 // Pure computation, no Web Audio dependency: the same class runs inside the
 // AudioWorklet (worklet.js), inside a ScriptProcessorNode fallback, and in
@@ -31,7 +35,7 @@
 
 import {
   PART_PARAMS, PART_PARAM_INDEX, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT,
-  NUM_PARTS, VOICES_PER_PART, SYNC_DIVS, LFO_STEP_COUNT, DEFAULT_LFO_STEPS,
+  MAX_PARTS, DEFAULT_PARTS, VOICES_PER_PART, SYNC_DIVS, LFO_STEP_COUNT, DEFAULT_LFO_STEPS,
   LINK_SOURCES, LINK_CURVES, MAX_LINKS, defaultLinks, toNorm, fromNorm,
 } from '../core/params.js';
 import {
@@ -58,6 +62,7 @@ const SUB_GAIN = 0.8;                   // Sub at 1: a sine 2 dB under a full-sc
 const SNAP = 1e-5;
 const QUALITY_FADE = 0.012;             // crossfade when the quality changes rate or mips (s)
 const FILTER_FADE = 0.008;              // crossfade when the filter type changes (s)
+const TRACK_FADE_TIME = 0.08;           // fade-out of a track removed from the list (s)
 const TRAVEL_FADE = 0.012;              // crossfade when Direction / Travel change (s)
 const TABLE_FADE = 0.006;               // Pristine: table <-> direct rendering crossfade (s)
 const TABLE_DRIFT = 0.01;               // Pristine: orbit travel (knob units) that earns a new table
@@ -590,6 +595,7 @@ class Part {
     // mixer
     this.gain = 0; this.dGain = 0; this.dly = 0; this.dDly = 0; this.rev = 0; this.dRev = 0;
     this.ped = 0; this.dPed = 0;   // pedal send (v1.1), the fourth bus
+    this.exit = 1;                 // 1 while in the track list, fades to 0 after leaving it
     // Dry delay of a Send mode part (pedal latency compensation): a ring
     // buffer at the host rate, allocated the first time it is needed.
     this.ddL = null; this.ddR = null; this.ddW = 0; this.ddN = 0;
@@ -816,7 +822,11 @@ export class OrographDSP {
     /** Telemetry hook; the worklet points this at port.postMessage. */
     this.postMessage = () => {};
     this.parts = [];
-    for (let i = 0; i < NUM_PARTS; i++) this.parts.push(new Part(i, this.sr, this.os));
+    for (let i = 0; i < MAX_PARTS; i++) this.parts.push(new Part(i, this.sr, this.os));
+    // Parts (tracks) in use: 0..count-1. The rest only render while they fade
+    // out after being removed (see setTracks and dormant()).
+    this.count = DEFAULT_PARTS;
+    this.liveN = DEFAULT_PARTS;   // parts 0..liveN-1 may need work this call (see process)
 
     this.tempo = 112;
     this.macros = new Float64Array(4);
@@ -843,6 +853,7 @@ export class OrographDSP {
     this.kPress = 1 - Math.exp(-CTRL / (this.sr * PRESS_TIME));
     this.kMarble = 1 - Math.exp(-CTRL / (this.sr * MARBLE_TIME));
     this.fadeStep = CTRL / (this.sr * TERRAIN_FADE_TIME);
+    this.exitStep = CTRL / (this.sr * TRACK_FADE_TIME);
     /** Octaves added to the mip level choice (see mipRaw); -99 disables mip mapping (tests). */
     this.mipBias = 1;
     /** false: hard-sync restarts are left naive (no polyBLEP), for A/B tests. */
@@ -931,10 +942,11 @@ export class OrographDSP {
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
+      case 'tracks': this.setTracks(msg); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
         const i = Math.round(finiteOr(msg.part, 0));
-        if (i < 0) { this.watch = -1; this.teleCount = 0; } else if (i < NUM_PARTS) this.watch = i;
+        if (i < 0) { this.watch = -1; this.teleCount = 0; } else if (i < MAX_PARTS) this.watch = i;
         break;
       }
       case 'transport':
@@ -948,7 +960,80 @@ export class OrographDSP {
 
   partAt(i) {
     const n = Math.round(finiteOr(i, -1));
-    return n >= 0 && n < NUM_PARTS ? this.parts[n] : null;
+    return n >= 0 && n < MAX_PARTS ? this.parts[n] : null;
+  }
+
+  /**
+   * {t:'tracks', count, perm?, fresh?}: the host's track list changed.
+   *   count  tracks in use (parts 0..count-1), 1..MAX_PARTS
+   *   perm   optional, MAX_PARTS long: new part i is the old part perm[i]
+   *          (a reorder moves the Part objects, so voices, envelopes, LFO
+   *          phases and terrain tables carry on without a glitch)
+   *   fresh  optional: indices of new tracks; their part starts clean
+   * A part that drops out of the list releases its notes and fades out over
+   * a few milliseconds (controlUpdate), then stops costing anything.
+   */
+  setTracks(msg) {
+    const prevCount = this.count;
+    const count = Math.max(1, Math.min(MAX_PARTS, Math.round(finiteOr(msg.count, prevCount))));
+    const wasIn = new Set(this.parts.slice(0, prevCount));
+    const perm = msg.perm;
+    if (Array.isArray(perm) && perm.length === MAX_PARTS) {
+      const seen = new Uint8Array(MAX_PARTS);
+      let ok = true;
+      for (const j of perm) {
+        if (!Number.isInteger(j) || j < 0 || j >= MAX_PARTS || seen[j]) { ok = false; break; }
+        seen[j] = 1;
+      }
+      if (ok) {
+        const old = this.parts;
+        const inv = new Int32Array(MAX_PARTS);
+        this.parts = perm.map((j, i) => { inv[j] = i; return old[j]; });
+        this.parts.forEach((P, i) => { P.index = i; });
+        for (const e of this.events) e.part = inv[e.part];
+        if (this.watch >= 0) this.watch = inv[this.watch];
+      }
+    }
+    this.count = count;
+    if (Array.isArray(msg.fresh)) {
+      for (const f of msg.fresh) {
+        const i = Math.round(finiteOr(f, -1));
+        if (i >= 0 && i < count) this.resetPart(i);
+      }
+    }
+    for (let i = count; i < MAX_PARTS; i++) {
+      const P = this.parts[i];
+      if (wasIn.has(P)) this.releasePart(P);
+    }
+    // queued notes and parameter changes of parts that left the list go with them
+    if (this.events.some(e => e.part >= count)) this.events = this.events.filter(e => e.part < count);
+  }
+
+  /**
+   * A brand-new part in slot `i` (a new track): default sound, silent, no
+   * history. A slot still sounding (only when every other slot is taken, e.g.
+   * a scene of 16 tracks replacing 16) is not cut off: its notes are released
+   * and the new track's settings arrive on top, as before tracks existed.
+   */
+  resetPart(i) {
+    const old = this.parts[i];
+    if (old && (old.activeCount() > 0 || old.tail > 0 || (old.ghost !== null && old.ghost.left > 0))) {
+      this.releasePart(old);
+      old.exit = 1;
+      return;
+    }
+    const P = new Part(i, this.sr, this.os);
+    P.rc.dcR = this.dcR;
+    const air = this.airTabs[String(this.os)];
+    if (air) { P.rc.tiltA = air.a; P.rc.airNorm = air.tab; }
+    this.parts[i] = P;
+    this.events = this.events.filter(e => e.part !== i);
+    if (this.pristine) this.ensurePristine();
+  }
+
+  /** A part past the track count that has gone quiet: nothing to do for it. */
+  dormant(P) {
+    return P.index >= this.count && P.tail <= 0 && (P.ghost === null || P.ghost.left <= 0) && P.activeCount() === 0;
   }
 
   setParams(part, p) {
@@ -1108,7 +1193,7 @@ export class OrographDSP {
 
   schedule(type, msg) {
     const P = this.partAt(msg.part);
-    if (!P) return;
+    if (!P || (type === 1 && P.index >= this.count)) return;
     const note = +msg.note;
     if (!Number.isFinite(note)) return;
     const time = finiteOr(msg.time, 0);
@@ -1318,7 +1403,10 @@ export class OrographDSP {
       this.tT = new Float64Array(TAB_MAX);
       this.tX = new Float64Array(TAB_MAX); this.tY = new Float64Array(TAB_MAX); this.tLv = new Float64Array(TAB_MAX);
     }
+    // Only parts that can sound need the tables; a track added later gets
+    // them from setTracks -> resetPart, or here on the next quality change.
     for (const P of this.parts) {
+      if (P.index >= this.count && P.activeCount() === 0) continue;
       for (const v of P.voices) {
         if (!v.tabA) { v.tabA = new Float64Array(TAB_MAX + 3); v.tabB = new Float64Array(TAB_MAX + 3); }
       }
@@ -2149,14 +2237,18 @@ export class OrographDSP {
   controlUpdate(elapsed) {
     this.tabBudget = TABLE_BUDGET;
     let anySolo = false;
-    for (const P of this.parts) if (P.params[PI.solo] >= 0.5) anySolo = true;
+    const count = this.count;
+    for (let i = 0; i < count; i++) if (this.parts[i].params[PI.solo] >= 0.5) anySolo = true;
     const k = this.kSmooth;
     const dt = elapsed / this.sr;
     const n2 = this.os * CTRL;
     const gtr = this.guitar;
     this.sGuitar = Math.abs(gtr - this.sGuitar) < 1e-6 ? gtr : this.sGuitar + (gtr - this.sGuitar) * this.kMarble;
     const pedalOn = this.pedalOn;
-    for (const P of this.parts) {
+    const parts = this.parts, liveN = this.liveN;
+    for (let i = 0; i < liveN; i++) {
+      const P = parts[i];
+      if (i >= count && this.dormant(P)) continue;
       if (P.nRamps > 0) this.advanceRamps(P);
       this.advanceLfos(P, dt);
       // the marble arrives at ~30 Hz: glide between its readings
@@ -2170,14 +2262,19 @@ export class OrographDSP {
       const active = P.activeCount();
       if (active > 0 || P.index === this.watch) this.partMods(P);
 
-      // mixer targets: perceptual (squared) level, post-fader sends
-      const audible = P.params[PI.mute] < 0.5 && (!anySolo || P.params[PI.solo] >= 0.5);
+      // mixer targets: perceptual (squared) level, post-fader sends. A part
+      // that left the track list fades to silence over TRACK_FADE_TIME (its
+      // notes release meanwhile) and then stops its voices.
+      const inList = P.index < count;
+      if (inList) P.exit = 1;
+      else if (P.exit > 0) P.exit = Math.max(0, P.exit - this.exitStep);
+      const audible = P.exit > 0 && P.params[PI.mute] < 0.5 && (!anySolo || P.params[PI.solo] >= 0.5);
       const lv = clamp01(P.params[PI.level]);
-      const post = audible ? lv * lv * VOICE_GAIN : 0;
+      const post = audible ? lv * lv * VOICE_GAIN * P.exit * P.exit : 0;
       // Pedal send: pre-fader follows mute/solo but not the level fader. Insert
       // mutes the dry sound and its delay/reverb sends (the pedal return comes
       // back into the master and the effects instead), only while the send runs.
-      const pT = pedalOn ? (P.params[PI.pedalPre] >= 0.5 ? (audible ? VOICE_GAIN : 0) : post) * clamp01(P.params[PI.pedalSend]) : 0;
+      const pT = pedalOn ? (P.params[PI.pedalPre] >= 0.5 ? (audible ? VOICE_GAIN * P.exit * P.exit : 0) : post) * clamp01(P.params[PI.pedalSend]) : 0;
       const gT = pedalOn && P.params[PI.pedalInsert] >= 0.5 ? 0 : post;
       const dT = gT * clamp01(P.params[PI.delaySend]), rT = gT * clamp01(P.params[PI.reverbSend]);
       // one-pole towards the targets, snapping when close so muting reaches true zero
@@ -2192,6 +2289,10 @@ export class OrographDSP {
       P.dPed = (P.pedS - P.ped) / CTRL;
       // Send mode with compensation: the dry sound waits for the pedal return.
       P.setDryDelay(pedalOn && this.dryDelayN > 0 && P.params[PI.pedalInsert] < 0.5 && P.params[PI.pedalSend] > 0 ? this.dryDelayN : 0);
+      if (!inList && P.gainS === 0 && P.dlyS === 0 && P.revS === 0 && P.pedS === 0 && Math.abs(P.gain) < 1e-9) {
+        // faded out: the rest of its release would be inaudible, end it now
+        for (const v of P.voices) if (v.active) { v.active = false; v.gate = false; v.pending = false; v.resetState(); }
+      }
 
       // terrain crossfades
       if (P.oldA) {
@@ -3516,7 +3617,10 @@ export class OrographDSP {
   }
 
   renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR, pedL, pedR) {
-    for (const P of this.parts) {
+    const count = this.count, parts = this.parts, liveN = this.liveN;
+    for (let i = 0; i < liveN; i++) {
+      const P = parts[i];
+      if (i >= count && this.dormant(P)) continue;
       const g = P.ghost;
       const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
@@ -3623,7 +3727,14 @@ export class OrographDSP {
     if (dlyL) { dlyL.fill(0, 0, n); dlyR.fill(0, 0, n); }
     if (revL) { revL.fill(0, 0, n); revR.fill(0, 0, n); }
     if (pedL) { pedL.fill(0, 0, n); pedR.fill(0, 0, n); }
-    for (const P of this.parts) {
+    // Parts past the last one that can sound are never touched in this call
+    // (a part past the count cannot start a note, so it cannot wake up).
+    let liveN = this.count;
+    for (let i = MAX_PARTS - 1; i >= this.count; i--) if (!this.dormant(this.parts[i])) { liveN = i + 1; break; }
+    this.liveN = liveN;
+    for (let i = 0; i < liveN; i++) {
+      const P = this.parts[i];
+      if (i >= this.count && this.dormant(P)) continue;
       P.ensureBus(n);
       P.busL.fill(0, P.hist, P.hist + P.os * n);
       P.busR.fill(0, P.hist, P.hist + P.os * n);
@@ -3644,6 +3755,7 @@ export class OrographDSP {
         if (off > pos) break;
         E.shift();
         const P = this.parts[ev.part];
+        if (!P || ev.part >= this.count) continue;
         if (ev.type === 2) this.applyParams(P, ev.p, ev.ramp, ev.time, true);
         else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel);
         else this.noteOff(P, ev.note);
@@ -3667,7 +3779,9 @@ export class OrographDSP {
     }
     this.nextTime = now + n / sr;
 
-    for (const P of this.parts) {
+    for (let i = 0; i < liveN; i++) {
+      const P = this.parts[i];
+      if (i >= this.count && this.dormant(P)) continue;
       const H = P.os * n;
       P.busL.copyWithin(0, H, H + P.hist);
       P.busR.copyWithin(0, H, H + P.hist);
@@ -3729,14 +3843,15 @@ export class OrographDSP {
       if (!v.active) continue;
       voices.push({ id: v.index, note: v.pending ? v.pendNote : v.note, amp: v.envLvl * v.velGain * v.stealGain });
     }
-    const activeVoices = this.parts.map(p => p.activeCount());
+    // one entry per track in use
+    const activeVoices = this.parts.slice(0, this.count).map(p => p.activeCount());
     // height under the modulated dot: the newest voice's smoothed dot, else the part's
     const PP = P.partPlain;
     const terrainHeight = best
       ? this.terrainHeightAt(P, best.sCx, best.sCy, best.sMorph, best.sWarp)
       : this.terrainHeightAt(P, PP[M_CX], PP[M_CY], PP[M_MORPH], PP[M_WARP]);
     const msg = {
-      t: 'tele', part: this.watch, n: nobj, spinPhase: P.spinPhase, voices, peak: [this.peakL, this.peakR], activeVoices,
+      t: 'tele', part: this.watch, n: nobj, spinPhase: P.spinPhase, voices, peak: [this.peakL, this.peakR], activeVoices, count: this.count,
       terrainHeight, quality: this.quality,
     };
     this.peakL = 0; this.peakR = 0;

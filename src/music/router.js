@@ -6,8 +6,13 @@
 // with the transport stopped it free-runs from the first key press, and while
 // the transport plays it locks to the bar grid so it stays in time with the
 // sequencer and with external clock.
+//
+// Per-track state lives in MAX_PARTS slots that follow their tracks when the
+// track list is reordered (src/core/tracks.js). A removed track's state is
+// dropped here; the engine releases and fades out its sound itself.
 
-import { NUM_PARTS, SEQ_RATES, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, clamp } from '../core/params.js';
+import { partCount, watchTracks, permute, inversePerm } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 
 export const ARP = { OFF: 0, UP: 1, DOWN: 2, UPDOWN: 3, RANDOM: 4, PLAYED: 5, CHORD: 6 };
@@ -33,7 +38,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   // same parts even if the key mode or selected part changed in between.
   const routes = new Map();
 
-  const parts = Array.from({ length: NUM_PARTS }, () => ({
+  const freshPart = () => ({
     down: new Map(),       // physically held keys: note -> { note, vel, order, sources:Set }
     sustainOn: false,
     sustained: new Map(),  // released while the pedal is down: note -> { note, vel, order }
@@ -42,7 +47,10 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     cfgOn: false,
     cfgHold: false,
     arp: freshArp(),
-  }));
+  });
+  let parts = Array.from({ length: MAX_PARTS }, freshPart);
+  const count = () => partCount(store);
+  const live = () => parts.slice(0, count());
 
   function freshArp() {
     return { running: false, index: 0, nextTime: null, nextBeat: null, pendingTime: null, rateIdx: null, fresh: false, gatherUntil: 0, lastRandom: -1 };
@@ -50,14 +58,16 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   // ---------------------------------------------------------------- helpers
 
-  const validPart = (p) => Number.isInteger(p) && p >= 0 && p < NUM_PARTS;
+  const validPart = (p) => Number.isInteger(p) && p >= 0 && p < count();
 
   function resolve(target) {
     if (target === 'sel' || target == null) {
-      const sel = clamp(Math.round(store.get('ui.selectedPart') || 0), 0, NUM_PARTS - 1);
+      const n = count();
+      const sel = clamp(Math.round(store.get('ui.selectedPart') || 0), 0, n - 1);
       if (Math.round(store.get('global.keyMode') || 0) === 1) {
+        // Layer: every unmuted track in the list
         const list = [];
-        for (let p = 0; p < NUM_PARTS; p++) if (!store.get(`parts.${p}.params.mute`)) list.push(p);
+        for (let p = 0; p < n; p++) if (!store.get(`parts.${p}.params.mute`)) list.push(p);
         return list.length ? list : [sel];
       }
       return [sel];
@@ -231,7 +241,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     on = !!on;
     let list = resolve(target);
     // Lifting the pedal must reach every part it went down on.
-    if (!on && (target === 'sel' || target == null)) list = parts.map((ps, i) => (ps.sustainOn ? i : -1)).filter(i => i >= 0);
+    if (!on && (target === 'sel' || target == null)) list = live().map((ps, i) => (ps.sustainOn ? i : -1)).filter(i => i >= 0);
     for (const p of list) {
       const ps = parts[p];
       if (on) { ps.sustainOn = true; continue; }
@@ -248,7 +258,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   }
 
   function allNotesOff(part) {
-    const list = part == null ? parts.map((_, i) => i) : resolve(part);
+    const list = part == null ? live().map((_, i) => i) : resolve(part);
     for (const p of list) {
       const ps = parts[p];
       ps.down.clear();
@@ -319,16 +329,32 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   }
 
   const unsubs = [];
-  for (let p = 0; p < NUM_PARTS; p++) {
-    syncArpCfg(p);
-    unsubs.push(store.subscribe(`parts.${p}.arp`, () => syncArpCfg(p)));
-  }
+  for (let p = 0; p < count(); p++) syncArpCfg(p);
+  // The track list changed shape: per-track state follows its track, a new
+  // track starts empty and a removed one is forgotten (its sound is released
+  // by the engine). Routed note-offs follow their tracks too. Registered
+  // before the listener below, so that one already sees the moved state.
+  unsubs.push(watchTracks(store, ({ perm, fresh, count: n }) => {
+    parts = permute(parts, perm, fresh, freshPart);
+    for (let p = n; p < MAX_PARTS; p++) parts[p] = freshPart();
+    const inv = inversePerm(perm);
+    for (const [k, list] of [...routes]) {
+      const next = list.map(p => inv[p]).filter(p => p >= 0 && p < n);
+      if (next.length) routes.set(k, next); else routes.delete(k);
+    }
+  }));
+  // React to arp settings changing under held keys.
+  unsubs.push(store.subscribe('parts', (path) => {
+    if (path === '' || path === 'parts') { for (let p = 0; p < count(); p++) syncArpCfg(p); return; }
+    const m = /^parts\.(\d+)(\.arp(\..*)?)?$/.exec(path);
+    if (m && Number(m[1]) < count()) syncArpCfg(Number(m[1]));
+  }));
   // Loading a whole session (a scene, undo) replaces the music: an arp chord
   // latched in the old one must not keep running into the new one, even when
   // the new part has Hold on too. Keys that are physically down still play.
   unsubs.push(store.subscribe('', (path) => {
     if (path !== '') return;
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < count(); p++) {
       const ps = parts[p];
       if (!ps.latched.length) continue;
       ps.latched = ps.cfgHold ? [...ps.down.values(), ...ps.sustained.values()].map(e => ({ note: e.note, vel: e.vel, order: e.order })) : [];
@@ -384,7 +410,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
    * stopped; otherwise { spb, timeAt(beat, rateIdx), beatAt(time) }.
    */
   function scheduleArps(now, horizon, grid, tempo) {
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < count(); p++) {
       const ps = parts[p];
       const arp = ps.arp;
       if (!arp.running) continue;
@@ -447,7 +473,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   }
 
   function arpActive() {
-    return parts.some(ps => ps.arp.running);
+    return live().some(ps => ps.arp.running);
   }
 
   return {
@@ -466,7 +492,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     /** The largest lead of any part (the transport starts this much later). */
     maxLead() {
       let m = 0;
-      if (leadFn) for (let p = 0; p < NUM_PARTS; p++) m = Math.max(m, leadFor(p));
+      if (leadFn) for (let p = 0; p < count(); p++) m = Math.max(m, leadFor(p));
       return m;
     },
     _emit: (type, detail) => emitter.emit(type, detail),

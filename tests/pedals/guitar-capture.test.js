@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createPedalRig, noteLabel } from '../../src/ui/pedal-rig.js';
 import { createStore } from '../../src/core/store.js';
-import { defaultState } from '../../src/core/params.js';
+import { defaultState, MAX_PARTS } from '../../src/core/params.js';
 import { RIG_KEY, defaultRig, sanitizeRig, guitarChannelOptions, GUITAR_TARGETS } from '../../src/pedals/rig-settings.js';
 import { addUserTerrain } from '../../src/audio/importers.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
@@ -78,10 +78,11 @@ function setup({ samples = null, prefs = null } = {}) {
 describe('rig settings: guitar', () => {
   it('defaults to notes off, the selected part, channel 2, a -50 dB gate, bends on, slot A', () => {
     expect(defaultRig()).toMatchObject({ guitarNotes: 0, guitarTarget: 'sel', guitarChannel: 2, guitarGateDb: -50, guitarBends: 1, captureSlot: 'A' });
-    const s = sanitizeRig({ guitarNotes: true, guitarTarget: 7, guitarChannel: 3, guitarGateDb: -500, guitarBends: 'yes', captureSlot: 'C' });
+    const s = sanitizeRig({ guitarNotes: true, guitarTarget: MAX_PARTS, guitarChannel: 3, guitarGateDb: -500, guitarBends: 'yes', captureSlot: 'C' });
     expect(s).toMatchObject({ guitarNotes: 1, guitarTarget: 'sel', guitarChannel: 2, guitarGateDb: -75, guitarBends: 1, captureSlot: 'A' });
     expect(sanitizeRig({ guitarTarget: 3, guitarChannel: 1, captureSlot: 'B', guitarGateDb: -33.4 })).toMatchObject({ guitarTarget: 3, guitarChannel: 1, captureSlot: 'B', guitarGateDb: -33 });
-    expect(GUITAR_TARGETS.map(t => t.label)).toEqual(['Selected part', 'Part 1', 'Part 2', 'Part 3', 'Part 4']);
+    expect(sanitizeRig({ guitarTarget: 7 })).toMatchObject({ guitarTarget: 7 });   // track 8 (when it exists)
+    expect(GUITAR_TARGETS.map(t => t.label)).toEqual(['Selected track', ...Array.from({ length: MAX_PARTS }, (_, i) => `Track ${i + 1}`)]);
     expect(guitarChannelOptions('mono+guitar')[1].label).toMatch(/guitar DI/);
     expect(guitarChannelOptions('stereo').map(o => o.value)).toEqual([1, 2]);
   });
@@ -215,7 +216,7 @@ describe('addUserTerrain', () => {
     expect(store.get('parts.2.userTerrain.B')).toEqual(ut);
     expect(store.get('parts.2.params.terrainB')).toBe(TERRAIN_INDEX.user);
     await expect(addUserTerrain(store, 2, 'A', { w: 1, h: 1, data: '' })).rejects.toThrow(/empty or damaged/);
-    await expect(addUserTerrain(store, 9, 'A', { w: 4, h: 4, data: 'AAAA' })).rejects.toThrow(/no part/);
+    await expect(addUserTerrain(store, 9, 'A', { w: 4, h: 4, data: 'AAAA' })).rejects.toThrow(/no track/);
     await expect(addUserTerrain(store, 0, 'C', { w: 4, h: 4, data: 'AAAA' })).rejects.toThrow(/slot/);
   });
 });

@@ -10,7 +10,7 @@
 // Swing, slides, ties, gates and accents follow src/music/transport.js;
 // arpeggiators need held keys and are not rendered here.
 
-import { NUM_PARTS, SEQ_RATES, stepToMidi, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, stepToMidi, activeSeq, clamp } from '../core/params.js';
 
 const MIN_GAP = 0.003;        // between a note-off and the next note-on (as the router)
 const SLIDE_OVERLAP = 0.004;  // a slid note overlaps the next one (legato)
@@ -38,13 +38,15 @@ export function sequencerEvents(state, bars = 4, { parts } = {}) {
   const spb = 60 / tempo;
   const totalBeats = clamp(Math.round(finite(bars, 4)), 1, 512) * 4;
   const end = totalBeats * spb;
-  const include = new Set(Array.isArray(parts) ? parts : Array.from({ length: NUM_PARTS }, (_, i) => i));
+  const list = (state && Array.isArray(state.parts) ? state.parts : []).slice(0, MAX_PARTS);
+  const include = new Set(Array.isArray(parts) ? parts : list.map((_, i) => i));
   const out = [{ time: 0, msg: { t: 'transport', playing: true, beatTime: 0, beat: 0, spb } }];
   let order = 0;
   const push = (time, msg) => out.push({ time: Math.max(0, Math.min(end, time)), msg, order: order++ });
 
-  for (let p = 0; p < NUM_PARTS; p++) {
-    const seq = state && state.parts && state.parts[p] && state.parts[p].seq;
+  for (let p = 0; p < list.length; p++) {
+    // the pattern each track plays (its activePattern), on when its seqOn is
+    const seq = activeSeq(list[p]);
     if (!include.has(p) || !seq || !seq.enabled || !Array.isArray(seq.steps)) continue;
     const rateIdx = clamp(Math.round(finite(seq.rate, 3)), 0, SEQ_RATES.length - 1);
     const rate = SEQ_RATES[rateIdx].beats;

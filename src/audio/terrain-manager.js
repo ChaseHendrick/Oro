@@ -10,8 +10,13 @@
 //
 // Main-thread work per applied table is one copy of the chain (~1.4 MB for
 // 512 x 512) plus the post; stats().maxApplyMs records the worst case.
+//
+// Slots are kept for all MAX_PARTS DSP parts and follow their tracks when the
+// track list is reordered (the DSP moves its parts, and their tables, the same
+// way), so a reorder regenerates nothing; only tracks in use are refreshed.
 
-import { NUM_PARTS } from '../core/params.js';
+import { MAX_PARTS } from '../core/params.js';
+import { partCount, trackIds, trackChange } from '../core/tracks.js';
 import { jobFor, jobKey } from './terrain-jobs.js';
 
 const SLOT_NAMES = ['A', 'B'];
@@ -35,11 +40,14 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
  * @param {number} [o.cacheSize] maximum number of cached tables (LRU)
  */
 export function createTerrainManager({ store, post, emit, generator, debounceMs = 60, cacheSize = 24 }) {
-  const slots = Array.from({ length: NUM_PARTS }, () => [0, 1].map(() => ({ want: null, have: null, failed: null, levels: null })));
+  const emptySlots = () => [0, 1].map(() => ({ want: null, have: null, failed: null, levels: null }));
+  let slots = Array.from({ length: MAX_PARTS }, emptySlots);
   const cache = new Map();
   const queue = new Map();      // key -> job, waiting for a free generator
   const running = new Set();    // keys being generated
-  const timers = new Array(NUM_PARTS).fill(0);
+  let timers = new Array(MAX_PARTS).fill(0);
+  let ids = trackIds(store.get('parts'));
+  const live = () => partCount(store);
   let waiters = [];
   let disposed = false;
   const st = { generated: 0, cacheHits: 0, applied: 0, evicted: 0, errors: 0, maxApplyMs: 0, posted: 0 };
@@ -67,7 +75,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
   }
 
   function isWanted(key) {
-    for (const part of slots) for (const sl of part) if (sl.want === key && sl.have !== key) return true;
+    for (let p = 0; p < live(); p++) for (const sl of slots[p]) if (sl.want === key && sl.have !== key) return true;
     return false;
   }
 
@@ -92,6 +100,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
   function refresh(part) {
     if (disposed) return;
     timers[part] = 0;
+    if (part >= live()) return;
     for (let s = 0; s < 2; s++) {
       const job = wantedJob(part, s);
       const key = jobKey(job);
@@ -117,7 +126,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
         if (disposed) return;
         st.generated++;
         cacheSet(key, levels);
-        for (let p = 0; p < NUM_PARTS; p++) {
+        for (let p = 0; p < live(); p++) {
           for (let s = 0; s < 2; s++) {
             const sl = slots[p][s];
             if (sl.want === key && sl.have !== key) apply(p, s, key, levels);
@@ -135,7 +144,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
 
   function idle() {
     if (timers.some(Boolean) || queue.size || running.size) return false;
-    for (const part of slots) for (const sl of part) if (sl.want !== sl.have && sl.want !== sl.failed) return false;
+    for (let p = 0; p < live(); p++) for (const sl of slots[p]) if (sl.want !== sl.have && sl.want !== sl.failed) return false;
     return true;
   }
 
@@ -152,20 +161,33 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
   }
 
   function partsByPriority() {
-    const sel = Math.round(store.get('ui.selectedPart') || 0);
+    const n = live();
+    const sel = Math.min(n - 1, Math.max(0, Math.round(store.get('ui.selectedPart') || 0)));
     const order = [];
-    for (let i = 0; i < NUM_PARTS; i++) order.push((sel + i) % NUM_PARTS);
+    for (let i = 0; i < n; i++) order.push((sel + i) % n);
     return order;
+  }
+
+  /** The track list changed shape: slots move with their tracks, new tracks start empty. */
+  function retrack(meta) {
+    const r = trackChange(ids, store, meta);
+    ids = r.ids;
+    const change = r.change;
+    if (!change) return;
+    slots = change.perm.map(j => slots[j]);
+    timers = change.perm.map(j => timers[j]);
+    for (const i of change.fresh) { clearTimeout(timers[i]); timers[i] = 0; slots[i] = emptySlots(); }
+    for (let i = change.count; i < MAX_PARTS; i++) { clearTimeout(timers[i]); timers[i] = 0; }
   }
 
   const offFree = typeof generator.onFree === 'function' ? generator.onFree(() => { pump(); settle(); }) : () => {};
 
-  const off = store.subscribe('', (path) => {
-    if (path === '' || path === 'parts') { for (const p of partsByPriority()) schedule(p); return; }
+  const off = store.subscribe('', (path, value, meta) => {
+    if (path === '' || path === 'parts') { retrack(meta); for (const p of partsByPriority()) schedule(p); settle(); return; }
     const k = path.split('.');
     if (k[0] !== 'parts') return;
     const part = Number(k[1]);
-    if (!(part >= 0 && part < NUM_PARTS)) return;
+    if (!(part >= 0 && part < live())) return;
     if (k.length === 2 || k[2] === 'userTerrain' || (k[2] === 'params' && (k.length === 3 || REGEN_KEYS.has(k[3])))) schedule(part);
   });
 
@@ -177,7 +199,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
     get(part, slot) {
       const s = slotIndex(slot);
       const p = Math.round(part);
-      if (s < 0 || !(p >= 0 && p < NUM_PARTS)) return null;
+      if (s < 0 || !(p >= 0 && p < MAX_PARTS)) return null;
       const lv = slots[p][s].levels;
       return lv ? { size: lv[0].size, data: lv[0].data } : null;
     },
@@ -191,7 +213,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
      */
     messages() {
       const out = [];
-      for (let p = 0; p < NUM_PARTS; p++) {
+      for (let p = 0; p < live(); p++) {
         for (let s = 0; s < 2; s++) {
           const lv = slots[p][s].levels;
           if (lv) out.push({ t: 'terrain', part: p, slot: s, levels: lv.map(l => ({ size: l.size, data: l.data })) });
@@ -201,7 +223,7 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
     },
     /** Re-post every current table (after the DSP node was rebuilt). */
     resendAll() {
-      for (let p = 0; p < NUM_PARTS; p++) for (let s = 0; s < 2; s++) if (slots[p][s].levels) sendLevels(p, s, slots[p][s].levels);
+      for (let p = 0; p < live(); p++) for (let s = 0; s < 2; s++) if (slots[p][s].levels) sendLevels(p, s, slots[p][s].levels);
     },
     /** Rebuild everything now (no debounce). */
     refreshAll() { for (const p of partsByPriority()) { clearTimeout(timers[p]); refresh(p); } },

@@ -31,8 +31,8 @@ function setup({ tempo = 120, dot = [0.5, 0.5] } = {}) {
 
 /** Pattern for part `p`: `n` steps, locks as {index: [x, y]}, notes on the listed steps. */
 function pattern(store, p, { rate = 3, n = 4, locks = {}, notes = [], glide = 0.5, enabled = 1 } = {}) {
-  const seq = store.get(`parts.${p}.seq`);
-  seq.enabled = enabled;
+  const seq = store.get(`parts.${p}.patterns.0`);
+  store.set(`parts.${p}.seqOn`, enabled);
   seq.rate = rate;
   seq.length = n;
   seq.lockGlide = glide;
@@ -40,7 +40,7 @@ function pattern(store, p, { rate = 3, n = 4, locks = {}, notes = [], glide = 0.
     const l = locks[i];
     return { ...defaultStep(), on: notes.includes(i) ? 1 : 0, lock: l ? 1 : 0, lx: l ? l[0] : 0.5, ly: l ? l[1] : 0.5 };
   });
-  store.set(`parts.${p}.seq`, seq);
+  store.set(`parts.${p}.patterns.0`, seq);
 }
 
 describe('lock maths', () => {
@@ -256,7 +256,7 @@ describe('never fighting the user', () => {
       store.set(CX, 0.6, { source: 'tour' });
       expect(music.transport.locks.gliding(0), `mode ${mode}`).toBe(true);
       // The recorded lock is still the one the pattern had: simulation is not a performance.
-      expect(store.get('parts.0.seq.steps.0')).toMatchObject({ lock: 1, lx: 0.9, ly: 0.9 });
+      expect(store.get('parts.0.patterns.0.steps.0')).toMatchObject({ lock: 1, lx: 0.9, ly: 0.9 });
       expect(music.transport.locks.isUserMove(0, { source: 'physics' })).toBe(false);
       expect(music.transport.locks.isUserMove(0, { source: 'visual', user: false })).toBe(false);
       expect(music.transport.locks.isUserMove(0, { source: 'visual', user: true })).toBe(true);
@@ -293,31 +293,31 @@ describe('lock recording', () => {
       store.set(CX, 0.25, { source: 'visual' });
       store.set(CY, 0.75, { source: 'visual' });
     });
-    expect(store.get('parts.0.seq.steps.3')).toMatchObject({ lock: 1, lx: 0.25, ly: 0.75, on: 0 });
+    expect(store.get('parts.0.patterns.0.steps.3')).toMatchObject({ lock: 1, lx: 0.25, ly: 0.75, on: 0 });
     store.set(CX, 0.3, { source: 'midi' });
-    expect(store.get('parts.0.seq.steps.3')).toMatchObject({ lock: 1, lx: 0.3, ly: 0.75 });
+    expect(store.get('parts.0.patterns.0.steps.3')).toMatchObject({ lock: 1, lx: 0.3, ly: 0.75 });
     // The next step gets its own lock; notes stay as they were.
     clock.advance(0.125);
     expect(music.currentStep(0)).toBe(4);
     store.set(CY, 1.25 - 1, { source: 'ui' });
-    const steps = store.get('parts.0.seq.steps');
+    const steps = store.get('parts.0.patterns.0.steps');
     expect(steps[4]).toMatchObject({ lock: 1, lx: 0.3, ly: 0.25, on: 1 });
     expect(steps.filter(s => s.lock).length).toBe(2);
     // Locks and other parts' moves are not recorded; nothing is recorded once stopped or with recording off.
     store.set('parts.1.params.centerX', 0.9, { source: 'visual' });
-    expect(store.get('parts.1.seq.steps').some(s => s.lock)).toBe(false);
+    expect(store.get('parts.1.patterns.0.steps').some(s => s.lock)).toBe(false);
     store.set('ui.lockRecord', 0, { source: 'ui' });
     expect(music.isLockRecording()).toBe(false);
     clock.advance(0.125);
     store.set(CX, 0.6, { source: 'visual' });
-    expect(store.get('parts.0.seq.steps.5.lock')).toBe(0);
+    expect(store.get('parts.0.patterns.0.steps.5.lock')).toBe(0);
     music.setLockRecord(true);
     music.transport.stop();
     store.set(CX, 0.65, { source: 'visual' });
-    expect(store.get('parts.0.seq.steps').filter(s => s.lock).length).toBe(2);
+    expect(store.get('parts.0.patterns.0.steps').filter(s => s.lock).length).toBe(2);
     // What was recorded is clean state.
     const state = store.serialize();
-    expect(migrateState(state).parts[0].seq).toEqual(state.parts[0].seq);
+    expect(migrateState(state).parts[0].patterns[0]).toEqual(state.parts[0].patterns[0]);
   });
 
   it('records into the selected part only, and plays the recording back on the next loop', () => {
@@ -329,13 +329,13 @@ describe('lock recording', () => {
     music.transport.play();
     clock.advance(START_DELAY + 0.125 + 0.02);
     store.set(CX, 0.4, { source: 'visual' });
-    expect(store.get('parts.0.seq.steps').some(s => s.lock)).toBe(false);
+    expect(store.get('parts.0.patterns.0.steps').some(s => s.lock)).toBe(false);
     store.set('parts.2.params.centerX', 0.15, { source: 'visual' });
-    expect(store.get('parts.2.seq.steps.1')).toMatchObject({ lock: 1, lx: 0.15 });
+    expect(store.get('parts.2.patterns.0.steps.1')).toMatchObject({ lock: 1, lx: 0.15 });
     // The user drags elsewhere afterwards; next time round step 1 brings the dot back.
     clock.advance(0.2);
     store.set('parts.2.params.centerX', 0.85, { source: 'visual' });
-    expect(store.get('parts.2.seq.steps.2')).toMatchObject({ lock: 1, lx: 0.85 });
+    expect(store.get('parts.2.patterns.0.steps.2')).toMatchObject({ lock: 1, lx: 0.85 });
     clock.advance(0.38);
     expect(store.get('parts.2.params.centerX')).toBe(0.15);
   });
@@ -347,14 +347,14 @@ describe('lock recording', () => {
     music.transport.play();
     clock.advance(START_DELAY + 0.02);
     store.set(CX, 0.2, { source: 'visual' });
-    expect(store.get('parts.0.seq.enabled')).toBe(1);
-    expect(store.get('parts.0.seq.steps.0')).toMatchObject({ lock: 1, lx: 0.2 });
+    expect(store.get('parts.0.seqOn')).toBe(1);
+    expect(store.get('parts.0.patterns.0.steps.0')).toMatchObject({ lock: 1, lx: 0.2 });
     // A switched-off pattern with notes keeps its switch, but still gets the lock.
     pattern(store, 0, { n: 4, enabled: 0, notes: [1] });
     clock.advance(0.125);
     store.set(CX, 0.35, { source: 'visual' });
-    expect(store.get('parts.0.seq.enabled')).toBe(0);
-    expect(store.get(`parts.0.seq.steps.${music.currentStep(0)}`)).toMatchObject({ lock: 1, lx: 0.35 });
+    expect(store.get('parts.0.seqOn')).toBe(0);
+    expect(store.get(`parts.0.patterns.0.steps.${music.currentStep(0)}`)).toMatchObject({ lock: 1, lx: 0.35 });
   });
 });
 
@@ -371,39 +371,39 @@ describe('lock editing', () => {
     store.set('ui.selectedPart', 0);
     expect(music.setStepLock('sel', 7, 0.6, 0.4)).toMatchObject({ lock: 1 });
     let state = store.serialize();
-    expect(migrateState(state).parts[0].seq).toEqual(state.parts[0].seq);
+    expect(migrateState(state).parts[0].patterns[0]).toEqual(state.parts[0].patterns[0]);
     expect(music.clearStepLock(0, 2)).toMatchObject({ lock: 0, lx: 0.5, ly: 0.5 });
-    expect(store.get('parts.0.seq.steps').filter(s => s.lock).length).toBe(2);
+    expect(store.get('parts.0.patterns.0.steps').filter(s => s.lock).length).toBe(2);
     music.clearLocks(0);
-    expect(store.get('parts.0.seq.steps').some(s => s.lock)).toBe(false);
+    expect(store.get('parts.0.patterns.0.steps').some(s => s.lock)).toBe(false);
     state = store.serialize();
-    expect(migrateState(state).parts[0].seq).toEqual(state.parts[0].seq);
+    expect(migrateState(state).parts[0].patterns[0]).toEqual(state.parts[0].patterns[0]);
   });
 
   it('rotates locks with their steps, clears them with the pattern, and keeps them through randomise', () => {
     const { store, music } = setup();
-    const seq = store.get('parts.0.seq');
+    const seq = store.get('parts.0.patterns.0');
     seq.length = 8;
-    store.set('parts.0.seq', seq);
+    store.set('parts.0.patterns.0', seq);
     music.setStepLock(0, 0, 0.1, 0.2);
     music.setStepLock(0, 7, 0.3, 0.4);
     music.setStepLock(0, 12, 0.9, 0.9); // outside the pattern length
     music.shiftPattern(0, 1);
-    let st = store.get('parts.0.seq.steps');
+    let st = store.get('parts.0.patterns.0.steps');
     expect(st[1]).toMatchObject({ lock: 1, lx: 0.1, ly: 0.2 });
     expect(st[0]).toMatchObject({ lock: 1, lx: 0.3, ly: 0.4 });
     expect(st[12]).toMatchObject({ lock: 1, lx: 0.9 });
     music.shiftPattern(0, -1);
-    st = store.get('parts.0.seq.steps');
+    st = store.get('parts.0.patterns.0.steps');
     expect(st[0]).toMatchObject({ lock: 1, lx: 0.1 });
     expect(st[7]).toMatchObject({ lock: 1, lx: 0.3 });
     const locked = st.map(s => [s.lock, s.lx, s.ly]);
     music.randomizePattern(0, { density: 0.9, rng: makeRng(5) });
-    st = store.get('parts.0.seq.steps');
+    st = store.get('parts.0.patterns.0.steps');
     expect(st.some(s => s.on)).toBe(true);
     expect(st.map(s => [s.lock, s.lx, s.ly])).toEqual(locked);
     music.clearPattern(0);
-    st = store.get('parts.0.seq.steps');
+    st = store.get('parts.0.patterns.0.steps');
     expect(st.every(s => !s.lock && !s.on)).toBe(true);
     expect(keepLocks([{ on: 1 }], null)).toEqual([{ on: 1 }]);
   });

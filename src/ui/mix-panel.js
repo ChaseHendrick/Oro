@@ -1,11 +1,16 @@
-// MIX tab: four channel strips (level fader, activity meter, pan, delay and
-// reverb sends, mute / solo, part colour and name) and the master section
+// MIX tab: one channel strip per track (level fader, activity meter, pan,
+// delay and reverb sends, mute / solo, track colour and name; the strips
+// scroll sideways when they do not fit, and an Add track tile ends the row)
+// and the master section
 // (delay, reverb, chorus, warmth, volume with a stereo meter). While the pedal
 // send is switched on in Settings > Pedals (v1.1), each strip also shows its
 // Pedal send with Pre and Insert.
 
-import { NUM_PARTS, PART_COLORS, GLOBAL_PARAM_MAP, PART_PARAM_MAP, formatValue, clamp } from '../core/params.js';
+import { MAX_PARTS, PART_COLORS, GLOBAL_PARAM_MAP, PART_PARAM_MAP, formatValue, clamp } from '../core/params.js';
+import { partCount } from '../core/tracks.js';
 import { h, createScope, setText } from './dom.js';
+import { icon } from './icons.js';
+import { addTrackAction, openTrackMenu } from './track-actions.js';
 import { schedule, addLoop } from './frame.js';
 import { createKnob } from './knob.js';
 import { createToggle, createMiniSlider, createSelect } from './controls.js';
@@ -23,8 +28,25 @@ export function meterPos(peak) {
 export function createMixPanel(ctx) {
   const scope = createScope();
   const { store, binder } = ctx;
+  // One strip per track, built when the track list grows and disposed when
+  // it shrinks (a strip reads its track by index, so a reorder only re-renders).
   const strips = [];
-  for (let i = 0; i < NUM_PARTS; i++) strips.push(createStrip(ctx, scope, i));
+  const stripRow = h('div', { class: 'mix-strips', role: 'group', 'aria-label': 'Track channels' });
+  const addTile = h('button', {
+    type: 'button', class: 'strip-add', 'aria-label': 'Add track',
+    dataset: { tip: `Add a track (up to ${MAX_PARTS})` },
+  }, h('span', { class: 'strip-add-icon', html: icon('plus'), 'aria-hidden': 'true' }), h('span', null, 'Add track'));
+  scope.on(addTile, 'click', () => addTrackAction(ctx));
+  function syncStrips() {
+    const n = partCount(store);
+    while (strips.length > n) { const s = strips.pop(); s.dispose(); s.el.remove(); }
+    while (strips.length < n) { const s = createStrip(ctx, strips.length); strips.push(s); stripRow.insertBefore(s.el, addTile); }
+    addTile.disabled = n >= MAX_PARTS;
+  }
+  stripRow.appendChild(addTile);
+  syncStrips();
+  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || path === '') syncStrips(); }));
+  scope.add(() => { for (const s of strips) s.dispose(); });
 
   // ---- master
   const g = (id, opts = {}) => {
@@ -64,18 +86,16 @@ export function createMixPanel(ctx) {
         h('div', { class: 'strip-caption' }, h('span', { class: 'mini-label' }, 'Volume'), volVal)),
       h('div', { class: 'master-limit' }, ceilingKnob)));
 
-  const el = h('div', { class: 'dock-pane dock-pane--mix' },
-    h('div', { class: 'mix-strips', role: 'group', 'aria-label': 'Part channels' }, strips.map(s => s.el)),
-    master);
+  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, master);
 
   // ---- meters (one loop for everything)
-  const levels = new Float32Array(NUM_PARTS);
-  const kicks = new Float32Array(NUM_PARTS);
-  if (ctx.notes) scope.add(ctx.notes.on(({ part, vel, on }) => { if (on && part >= 0 && part < NUM_PARTS) kicks[part] = Math.max(kicks[part], vel ?? 0.8); }));
+  const levels = new Float32Array(MAX_PARTS);
+  const kicks = new Float32Array(MAX_PARTS);
+  if (ctx.notes) scope.add(ctx.notes.on(({ part, vel, on }) => { if (on && part >= 0 && part < MAX_PARTS) kicks[part] = Math.max(kicks[part], vel ?? 0.8); }));
   let mL = 0, mR = 0, hL = 0, hR = 0, holdT = 0;
   scope.add(addLoop((t) => {
     if (!el.isConnected || el.offsetParent === null) return;
-    for (let i = 0; i < NUM_PARTS; i++) {
+    for (let i = 0; i < strips.length; i++) {
       const voices = ctx.tele ? ctx.tele.activeVoices(i) : 0;
       const lvl = store.get(`parts.${i}.params.level`) ?? 0.75;
       const muted = store.get(`parts.${i}.params.mute`);
@@ -104,29 +124,30 @@ export function createMixPanel(ctx) {
   return { el, dispose: scope.dispose };
 }
 
-function createStrip(ctx, parentScope, i) {
+function createStrip(ctx, i) {
   const { store, binder } = ctx;
+  const parentScope = createScope();
   const P = (id) => binder.partParam(id, { part: i });
   const nameBtn = h('button', { type: 'button', class: 'strip-name', dataset: { tip: 'Click to select, double-click to rename' } });
   const patch = h('span', { class: 'strip-patch' });
   const colorInput = h('input', { type: 'color', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
-  const swatch = h('button', { type: 'button', class: 'strip-swatch', 'aria-label': `Change the colour of part ${i + 1}`, dataset: { tip: 'Part colour' } });
-  const level = createMiniSlider(ctx, P('level'), { vertical: true, relative: true, ariaLabel: `Part ${i + 1} level`, className: 'fader' });
+  const swatch = h('button', { type: 'button', class: 'strip-swatch', 'aria-label': `Change the colour of track ${i + 1}`, dataset: { tip: 'Track colour' } });
+  const level = createMiniSlider(ctx, P('level'), { vertical: true, relative: true, ariaLabel: `Track ${i + 1} level`, className: 'fader' });
   const meterFill = h('span', { class: 'meter-fill' });
   const meter = h('div', { class: 'meter meter--mono', 'aria-hidden': 'true' }, h('span', { class: 'meter-ch' }, meterFill));
   const levelVal = h('span', { class: 'fader-value' });
-  const knobs = ['pan', 'delaySend', 'reverbSend'].map(id => createKnob(ctx, P(id), { size: 'sm', ariaLabel: (l) => `Part ${i + 1} ${l}` }));
-  const mute = createToggle(ctx, P('mute'), { label: 'M', className: 'toggle--mute', ariaLabel: `Mute part ${i + 1}`, tip: 'Mute' });
-  const solo = createToggle(ctx, P('solo'), { label: 'S', className: 'toggle--solo', ariaLabel: `Solo part ${i + 1}`, tip: 'Solo' });
+  const knobs = ['pan', 'delaySend', 'reverbSend'].map(id => createKnob(ctx, P(id), { size: 'sm', ariaLabel: (l) => `Track ${i + 1} ${l}` }));
+  const mute = createToggle(ctx, P('mute'), { label: 'M', className: 'toggle--mute', ariaLabel: `Mute track ${i + 1}`, tip: 'Mute' });
+  const solo = createToggle(ctx, P('solo'), { label: 'S', className: 'toggle--solo', ariaLabel: `Solo track ${i + 1}`, tip: 'Solo' });
   for (const c of [level, ...knobs, mute, solo]) parentScope.add(c.dispose);
   // Pedal send (v1.1): only shown while the pedal send runs, so the mixer is unchanged otherwise.
   const hasPedal = !!PART_PARAM_MAP.pedalSend;
-  const pedalKnob = hasPedal ? createKnob(ctx, P('pedalSend'), { size: 'sm', ariaLabel: () => `Part ${i + 1} pedal send` }) : null;
-  const pedalPre = hasPedal ? createToggle(ctx, P('pedalPre'), { label: 'Pre', className: 'toggle--pedal', ariaLabel: `Part ${i + 1} pedal send before the fader`, tip: 'Pedal send before the level fader' }) : null;
-  const pedalIns = hasPedal ? createToggle(ctx, P('pedalInsert'), { label: 'Ins', className: 'toggle--pedal toggle--insert', ariaLabel: `Part ${i + 1} insert: hear it only through the pedals`, tip: 'Insert: mute the dry sound, hear this part only through the pedals' }) : null;
+  const pedalKnob = hasPedal ? createKnob(ctx, P('pedalSend'), { size: 'sm', ariaLabel: () => `Track ${i + 1} pedal send` }) : null;
+  const pedalPre = hasPedal ? createToggle(ctx, P('pedalPre'), { label: 'Pre', className: 'toggle--pedal', ariaLabel: `Track ${i + 1} pedal send before the fader`, tip: 'Pedal send before the level fader' }) : null;
+  const pedalIns = hasPedal ? createToggle(ctx, P('pedalInsert'), { label: 'Ins', className: 'toggle--pedal toggle--insert', ariaLabel: `Track ${i + 1} insert: hear it only through the pedals`, tip: 'Insert: mute the dry sound, hear this track only through the pedals' }) : null;
   for (const c of [pedalKnob, pedalPre, pedalIns]) if (c) { parentScope.add(c.dispose); c.el.classList.add('is-pedal-ctl'); }
 
-  const el = h('section', { class: 'strip', 'aria-label': `Part ${i + 1} channel`, dataset: { part: String(i) } },
+  const el = h('section', { class: 'strip', 'aria-label': `Track ${i + 1} channel`, dataset: { part: String(i) } },
     h('header', { class: 'strip-head' }, swatch, h('div', { class: 'strip-titles' }, nameBtn, patch), colorInput),
     h('div', { class: 'strip-body' },
       h('div', { class: 'strip-fader' }, h('div', { class: 'fader-wrap' }, level.el, meter), levelVal),
@@ -134,11 +155,12 @@ function createStrip(ctx, parentScope, i) {
     h('footer', { class: 'strip-foot' }, mute.el, solo.el, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
 
   function render() {
-    const name = store.get(`parts.${i}.name`) || `Part ${i + 1}`;
+    if (!store.get(`parts.${i}`)) return;  // the track was just removed; this strip is going too
+    const name = store.get(`parts.${i}.name`) || `Track ${i + 1}`;
     setText(nameBtn, name);
-    nameBtn.setAttribute('aria-label', `${name}: select this part`);
+    nameBtn.setAttribute('aria-label', `${name}: select this track`);
     setText(patch, store.get(`parts.${i}.patchName`) || 'Init');
-    const color = store.get(`parts.${i}.color`) || PART_COLORS[i];
+    const color = store.get(`parts.${i}.color`) || PART_COLORS[i % PART_COLORS.length];
     colorInput.value = color;
     applyVars(el, partVars(color, document.documentElement.dataset.theme, ctx.panelBg()));
     el.classList.toggle('is-selected', binder.selected() === i);
@@ -160,11 +182,13 @@ function createStrip(ctx, parentScope, i) {
   parentScope.on(nameBtn, 'click', () => store.set('ui.selectedPart', i, { source: 'ui' }));
   parentScope.on(nameBtn, 'dblclick', () => rename());
   parentScope.on(nameBtn, 'keydown', (e) => { if (e.key === 'F2') { e.preventDefault(); rename(); } });
+  // Right-click (or the context-menu key) on the strip head: the track menu.
+  parentScope.on(el.firstChild, 'contextmenu', (e) => { e.preventDefault(); store.set('ui.selectedPart', i, { source: 'ui' }); openTrackMenu(ctx, nameBtn, i); });
   parentScope.on(swatch, 'click', () => colorInput.click());
   parentScope.on(colorInput, 'input', () => store.set(`parts.${i}.color`, colorInput.value, { source: 'ui' }));
 
   function rename() {
-    const input = h('input', { class: 'field field--inline', type: 'text', value: store.get(`parts.${i}.name`) || '', maxlength: '40', 'aria-label': `Name for part ${i + 1}` });
+    const input = h('input', { class: 'field field--inline', type: 'text', value: store.get(`parts.${i}.name`) || '', maxlength: '40', 'aria-label': `Name for track ${i + 1}` });
     nameBtn.replaceWith(input);
     input.focus();
     input.select();
@@ -189,6 +213,7 @@ function createStrip(ctx, parentScope, i) {
   return {
     el,
     setMeter(v) { meterFill.style.transform = `scaleY(${v.toFixed(3)})`; },
+    dispose: parentScope.dispose,
   };
 }
 

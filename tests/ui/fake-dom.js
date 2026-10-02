@@ -14,6 +14,19 @@ class FakeNode {
     return c;
   }
   append(...cs) { for (const c of cs) this.appendChild(typeof c === 'string' ? new FakeText(c) : c); }
+  insertBefore(c, ref) {
+    if (!ref) return this.appendChild(c);
+    if (c.parentNode) c.parentNode.removeChild(c);
+    c.parentNode = this;
+    this.childNodes.splice(this.childNodes.indexOf(ref), 0, c);
+    return c;
+  }
+  replaceChildren(...cs) {
+    for (const c of this.childNodes) c.parentNode = null;
+    this.childNodes = [];
+    this.append(...cs);
+  }
+  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   removeChild(c) {
     const i = this.childNodes.indexOf(c);
     if (i >= 0) this.childNodes.splice(i, 1);
@@ -40,7 +53,7 @@ class FakeElement extends FakeNode {
     this.tagName = tag.toUpperCase();
     this.attributes = new Map();
     this.dataset = {};
-    this.style = { cssText: '', setProperty(k, v) { this[k] = v; } };
+    this.style = { cssText: '', setProperty(k, v) { this[k] = v; }, getPropertyValue(k) { return this[k] ?? ''; }, removeProperty(k) { delete this[k]; } };
     this.listeners = new Map();
     this.hidden = false;
     this.disabled = false;

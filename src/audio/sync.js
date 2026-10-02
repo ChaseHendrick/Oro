@@ -5,11 +5,18 @@
 // posts one batch of protocol messages. A knob drag, a preset load inside
 // store.batch() or a full scene load therefore all become a single
 // postMessage, and the DSP always receives the latest state.
+//
+// Tracks: the DSP has MAX_PARTS parts and is told how many are in use
+// ({t:'tracks', count}). When the track list is reordered, grows or shrinks
+// (src/core/tracks.js), the matching {t:'tracks', count, perm, fresh} goes
+// out at once, before anything else about the new list, so the DSP moves its
+// parts with their tracks and a reorder never interrupts a sound.
 
 import {
-  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, GLOBAL_PARAMS, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, MOD_FIELDS, LFO_STEP_COUNT,
+  MAX_PARTS, PART_PARAMS, PART_PARAM_MAP, GLOBAL_PARAMS, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, MOD_FIELDS, LFO_STEP_COUNT,
 } from '../core/params.js';
 import { sanitizeLinks } from '../core/migrate.js';
+import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
 
 const MOD_SET = new Set(MOD_PARAM_IDS);
 
@@ -49,8 +56,9 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   const partAll = new Set();
   const paramsAll = new Set();
   const modsAll = new Set();
-  const params = Array.from({ length: NUM_PARTS }, () => new Set());
-  const mods = Array.from({ length: NUM_PARTS }, () => new Set());
+  let params = Array.from({ length: MAX_PARTS }, () => new Set());
+  let mods = Array.from({ length: MAX_PARTS }, () => new Set());
+  let ids = trackIds(store.get('parts'));
   const links = new Set();
   let globalAll = false;
   const globals = new Set();
@@ -105,8 +113,10 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
 
   function watchMsg() {
     const sel = Math.round(Number(store.get('ui.selectedPart')) || 0);
-    return { t: 'watch', part: sel >= 0 && sel < NUM_PARTS ? sel : 0 };
+    return { t: 'watch', part: sel >= 0 && sel < partCount(store) ? sel : 0 };
   }
+
+  const tracksMsg = () => ({ t: 'tracks', count: partCount(store) });
 
   const ALL_PARAM_IDS = PART_PARAMS.map(p => p.id);
   const ALL_GLOBAL_IDS = GLOBAL_PARAMS.map(p => p.id);
@@ -117,10 +127,11 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
    * load changes the patch, not the quality setting or the controllers).
    */
   function snapshot(withExtra = true) {
-    const out = [];
+    const out = [tracksMsg()];
     const g = globalMsg(ALL_GLOBAL_IDS);
     if (g) out.push(g);
-    for (let i = 0; i < NUM_PARTS; i++) {
+    const n = partCount(store);
+    for (let i = 0; i < n; i++) {
       const p = partParams(i, ALL_PARAM_IDS);
       if (p) out.push(p);
       const m = partMods(i, MOD_PARAM_IDS);
@@ -157,7 +168,8 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         if (g) out.push(g);
         globalChanged = ids;
       }
-      for (let i = 0; i < NUM_PARTS; i++) {
+      const n = partCount(store);
+      for (let i = 0; i < n; i++) {
         const allP = partAll.has(i) || paramsAll.has(i);
         const allM = partAll.has(i) || modsAll.has(i);
         if (allP || params[i].size) {
@@ -195,14 +207,41 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     defer(() => { if (scheduled) flush(); });
   }
 
-  function route(path) {
+  /**
+   * The track list changed shape: move what is pending with the tracks, tell
+   * the DSP right away (ahead of any note for the new list) and resend the
+   * new tracks in full.
+   */
+  function retrack(meta) {
+    const r = trackChange(ids, store, meta);
+    ids = r.ids;
+    const change = r.change;
+    if (!change) return;
+    const inv = inversePerm(change.perm);
+    const move = (set) => new Set([...set].map(i => inv[i]).filter(i => i >= 0 && i < change.count));
+    params = change.perm.map(j => params[j]);
+    mods = change.perm.map(j => mods[j]);
+    for (const set of [partAll, paramsAll, modsAll, links]) {
+      const moved = move(set);
+      set.clear();
+      for (const i of moved) set.add(i);
+    }
+    for (const i of change.fresh) partAll.add(i);
+    watchDirty = true;
+    mark();
+    posts++;
+    post([{ t: 'tracks', count: change.count, perm: change.perm, fresh: change.fresh }]);
+  }
+
+  function route(path, meta) {
+    if (path === '' || path === 'parts') retrack(meta);
     if (path === '') { full = true; mark(); return; }
     const k = path.split('.');
     const head = k[0];
     if (head === 'parts') {
-      if (k.length === 1) { for (let i = 0; i < NUM_PARTS; i++) partAll.add(i); mark(); return; }
+      if (k.length === 1) { for (let i = 0; i < MAX_PARTS; i++) partAll.add(i); mark(); return; }
       const i = Number(k[1]);
-      if (!(i >= 0 && i < NUM_PARTS) || !Number.isInteger(i)) return;
+      if (!(i >= 0 && i < MAX_PARTS) || !Number.isInteger(i)) return;
       if (k.length === 2) { partAll.add(i); mark(); return; }
       if (k[2] === 'params') {
         if (k.length === 3) paramsAll.add(i); else params[i].add(k[3]);
@@ -227,7 +266,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     }
   }
 
-  const off = store.subscribe('', (path) => route(path));
+  const off = store.subscribe('', (path, value, meta) => route(path, meta));
 
   return {
     snapshot,
