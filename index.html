@@ -15,7 +15,8 @@
     // Resolve the theme before first paint so the page never flashes the wrong colours.
     (function () {
       var pref = 'system';
-      try { pref = localStorage.getItem('orograph.theme') || 'system'; } catch (e) { /* storage blocked */ }
+      // Follows the hosting site's Appearance setting until the player picks a theme in Orograph.
+      try { pref = localStorage.getItem('orograph.theme') || localStorage.getItem('hendrick-appearance') || 'system'; } catch (e) { /* storage blocked */ }
       if (pref !== 'dark' && pref !== 'light') pref = 'system';
       var dark = true;
       try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { /* old browser */ }

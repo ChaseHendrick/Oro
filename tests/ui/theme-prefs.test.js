@@ -73,3 +73,14 @@ describe('device preferences', () => {
     prefs.dispose();
   });
 });
+
+describe('site appearance fallback', () => {
+  const mem = (o) => ({ getItem: (k) => (k in o ? o[k] : null) });
+  it('follows the hosting site until Orograph has its own choice', async () => {
+    const { readStoredPref } = await import('../../src/ui/theme.js');
+    expect(readStoredPref(mem({ 'hendrick-appearance': 'light' }))).toBe('light');
+    expect(readStoredPref(mem({ 'hendrick-appearance': 'light', 'orograph.theme': 'dark' }))).toBe('dark');
+    expect(readStoredPref(mem({ 'hendrick-appearance': 'bogus' }))).toBe('system');
+    expect(readStoredPref(mem({}))).toBe('system');
+  });
+});
