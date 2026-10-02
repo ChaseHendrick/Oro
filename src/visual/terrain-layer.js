@@ -429,18 +429,23 @@ void main() {
   float out_ = max(abs(vWorld.x), abs(vWorld.z)) - TILE * 0.5;
   float edge = clamp(out_ / TILE, 0.0, 1.0);
   float lum = luma(col);
+  // The whole 3 x 3 plane is playable (the dot can roam over every copy), so
+  // the neighbour tiles are only lightly quieted, and the haze only gathers
+  // at the outer edge.
   float echoK = smoothstep(0.0, 0.06, edge);
-  vec3 echoCol = mix(vec3(lum), col, 0.45);
-  // night: the echoes sink into darkness; day: they dissolve into the haze
-  echoCol = mix(echoCol * 0.34, mix(echoCol, uEdge, 0.55), uThemeT);
-  col = mix(col, echoCol, echoK * 0.92);
-  col = mix(col, uEdge, smoothstep(0.2, 0.95, edge) * 0.55);
-  // A fine frame around the playable tile.
+  vec3 echoCol = mix(vec3(lum), col, 0.7);
+  // night: the copies dim a little; day: they lean towards the haze
+  echoCol = mix(echoCol * 0.78, mix(echoCol, uEdge, 0.25), uThemeT);
+  col = mix(col, echoCol, echoK * 0.6);
+  col = mix(col, uEdge, smoothstep(0.82, 1.0, edge) * 0.55);
+  // Faint seams around the centre tile (where the land repeats), and a fine
+  // frame at the outer edge of the play area.
   {
     float fw = max(fwidth(out_), 1e-4);
-    float frame = 1.0 - smoothstep(0.5 * fw, 1.8 * fw, abs(out_));
+    float seam = 1.0 - smoothstep(0.5 * fw, 1.8 * fw, abs(out_));
+    float outer = 1.0 - smoothstep(0.5 * fw, 1.8 * fw, abs(out_ - TILE));
     vec3 fc = mix(mix(uGrid, uPart, 0.35) * 1.6, mix(uContour, uPart, 0.3), uThemeT);
-    col = mix(col, fc, frame * mix(0.42, 0.45, uThemeT));
+    col = mix(col, fc, seam * mix(0.18, 0.2, uThemeT) + outer * mix(0.42, 0.45, uThemeT));
   }
 
   // Distance fog, matched to the sky's horizon.

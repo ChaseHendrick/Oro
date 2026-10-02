@@ -75,6 +75,17 @@ export const SANITIZE_SHADER = {
 /** Minimum gap between minimap terrain rebuilds while the land moves (ms); 0 = every frame. */
 export const MINIMAP_TERRAIN_MS = 0;
 
+/**
+ * The play area is the whole 3 x 3 plane of tiles (-1 .. 2 in tile units).
+ * The sound only uses the position within one tile (the terrain wraps), so
+ * the dot can roam over all nine copies; a person's moves stop at the outer
+ * edge instead of wrapping to the other side.
+ */
+export const PLAY_MIN = -1, PLAY_MAX = 2;
+export function clampEdge(x) {
+  return Number.isFinite(x) ? Math.min(PLAY_MAX - 1e-4, Math.max(PLAY_MIN, x)) : 0.5;
+}
+
 export const QUALITY = {
   high: { pixelRatio: 2, bloom: true, samples: 4 },
   medium: { pixelRatio: 1.5, bloom: true, samples: 4 },
@@ -243,6 +254,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
   let switchT = 1;                   // 0..1 progress of a part switch
   const dispOffset = { u: 0, v: 0 }; // decaying display offset after a part switch
   let dotSrc = 'base';               // which source placed the dot this frame (debug)
+  // Which of the 3 x 3 tile copies each part's dot is drawn on (-1, 0 or 1 per axis).
+  const tile = Array.from({ length: NUM_PARTS }, () => ({ u: 0, v: 0 }));
+  const lastWrapped = Array.from({ length: NUM_PARTS }, () => ({ u: NaN, v: NaN }));
   const fade = { A: 1, B: 1 };
   const ghost = { a: 0 };
   const dotPos = { u: 0.5, v: 0.5, x: 0, y: 0, z: 0 };
@@ -498,16 +512,19 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   // ------------------------------------------------------------------ dot control
   function currentBase(out) {
+    // in play-area coordinates (ctl already is; the others add the part's tile)
     if (ctl.mode !== 'idle') { out.u = ctl.u; out.v = ctl.v; return out; }
-    if (sim.isActive(sel)) { const s = sim.state(sel); out.u = s.u; out.v = s.v; return out; }
-    return baseCenter(out);
+    if (sim.isActive(sel)) { const s = sim.state(sel); out.u = s.u + tile[sel].u; out.v = s.v + tile[sel].v; return out; }
+    baseCenter(out); out.u += tile[sel].u; out.v += tile[sel].v;
+    return out;
   }
 
   function startGlide(u, v) {
     currentBase(_base);
     ctl.fromU = _base.u; ctl.fromV = _base.v;
-    ctl.toU = _base.u + wrapDelta(wrap01(u), _base.u);
-    ctl.toV = _base.v + wrapDelta(wrap01(v), _base.v);
+    // straight to the target, never across the seam (the edges are walls for a person's moves)
+    ctl.toU = clampEdge(u);
+    ctl.toV = clampEdge(v);
     ctl.t0 = clock;
     const d = Math.hypot(ctl.toU - ctl.fromU, ctl.toV - ctl.fromV);
     ctl.dur = reduced ? 140 : Math.min(620, GLIDE_MS * (0.6 + d * 2));
@@ -519,11 +536,19 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const part = sel;
     glideTimer = setTimeout(() => {
       if (disposed || ctl.mode !== 'glide' || part !== sel) return;
-      ctl.u = wrap01(ctl.toU); ctl.v = wrap01(ctl.toV);
+      ctl.u = ctl.toU; ctl.v = ctl.toV;
       ctl.mode = 'idle';
-      sim.userWrite(part, ctl.u, ctl.v, true, clock);
+      settleTile(part);
+      sim.userWrite(part, wrap01(ctl.u), wrap01(ctl.v), true, clock);
       if (sim.isActive(part)) sim.release(part, 0, 0);
     }, ctl.dur + 120);
+  }
+
+  /** After a person's move, remember which tile copy the dot ended on (play-area coordinates in ctl). */
+  function settleTile(p) {
+    tile[p].u = Math.max(-1, Math.min(1, Math.floor(ctl.u)));
+    tile[p].v = Math.max(-1, Math.min(1, Math.floor(ctl.v)));
+    lastWrapped[p].u = wrap01(ctl.u); lastWrapped[p].v = wrap01(ctl.v);
   }
 
   function cancelGlide() { clearTimeout(glideTimer); if (ctl.mode === 'glide') ctl.mode = 'idle'; }
@@ -678,12 +703,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
       _base.u = dotPos.u; _base.v = dotPos.v;
       dispOffset.u = 0; dispOffset.v = 0;
       if (pickTerrain(e.clientX, e.clientY, hit)) {
-        press.offU = wrapDelta(_base.u, wrap01(hit.u));
-        press.offV = wrapDelta(_base.v, wrap01(hit.v));
+        press.offU = _base.u - hit.u;
+        press.offV = _base.v - hit.v;
       }
       ctl.mode = 'drag';
       ctl.u = _base.u; ctl.v = _base.v;
-      if (sim.isActive(sel)) sim.hold(sel, ctl.u, ctl.v);
+      if (sim.isActive(sel)) sim.hold(sel, wrap01(ctl.u), wrap01(ctl.v));
       canvas.style.cursor = 'grabbing';
     } else {
       startGlide(hit.u, hit.v);
@@ -695,11 +720,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
   function dragTo(clientX, clientY) {
     if (!pickTerrain(clientX, clientY, hit)) return;
     ctl.mode = 'drag';
-    ctl.u = wrap01(hit.u + press.offU);
-    ctl.v = wrap01(hit.v + press.offV);
+    // dragging past an edge stops the dot at the edge instead of wrapping it to the other side
+    ctl.u = clampEdge(hit.u + press.offU);
+    ctl.v = clampEdge(hit.v + press.offV);
     recordHist(hit.x, hit.z);
-    if (sim.isActive(sel)) sim.hold(sel, ctl.u, ctl.v);
-    sim.userWrite(sel, ctl.u, ctl.v, false, clock);
+    if (sim.isActive(sel)) sim.hold(sel, wrap01(ctl.u), wrap01(ctl.v));
+    sim.userWrite(sel, wrap01(ctl.u), wrap01(ctl.v), false, clock);
   }
 
   function onPointerMove(e) {
@@ -755,7 +781,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (p.kind === 'wp') markers.setActive(-1);
     if (ctl.mode === 'drag') {
       ctl.mode = 'idle';
-      sim.userWrite(sel, ctl.u, ctl.v, true, clock);
+      settleTile(sel);
+      sim.userWrite(sel, wrap01(ctl.u), wrap01(ctl.v), true, clock);
       if (sim.isActive(sel)) {
         flickVelocity(_flick);
         if (!commit) { _flick.x = 0; _flick.z = 0; }
@@ -795,9 +822,10 @@ export async function createVisuals(container, { store, engine = null, quality, 
       const du = k === 'ArrowLeft' ? -step : k === 'ArrowRight' ? step : 0;
       const dv = k === 'ArrowUp' ? -step : k === 'ArrowDown' ? step : 0;
       cancelGlide();
-      const u = wrap01(_base.u + du), v = wrap01(_base.v + dv);
-      if (sim.isActive(sel)) sim.teleport(sel, u, v);
-      sim.userWrite(sel, u, v, true, clock);
+      const u = clampEdge(_base.u + du), v = clampEdge(_base.v + dv);
+      ctl.u = u; ctl.v = v; settleTile(sel);
+      if (sim.isActive(sel)) sim.teleport(sel, wrap01(u), wrap01(v));
+      sim.userWrite(sel, wrap01(u), wrap01(v), true, clock);
       rig.poke();
       e.preventDefault();
       e.stopPropagation();
@@ -866,8 +894,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
     live.setTargets(refs[p].params, refs[p].mods, t, refs[p].links);
     currentBase(_base);
     if (animate && !reduced) {
-      dispOffset.u = wrapDelta(oldU, _base.u);
-      dispOffset.v = wrapDelta(oldV, _base.v);
+      // both in play-area coordinates (currentBase adds the new part's tile)
+      dispOffset.u = oldU - _base.u;
+      dispOffset.v = oldV - _base.v;
       switchT = 0;
     } else {
       dispOffset.u = dispOffset.v = 0;
@@ -1120,13 +1149,14 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (ctl.mode === 'glide') {
       const t = Math.min(1, (now - ctl.t0) / ctl.dur);
       const e = easeOutCubic(t);
-      ctl.u = wrap01(ctl.fromU + (ctl.toU - ctl.fromU) * e);
-      ctl.v = wrap01(ctl.fromV + (ctl.toV - ctl.fromV) * e);
-      if (sim.isActive(sel)) sim.hold(sel, ctl.u, ctl.v);
-      sim.userWrite(sel, ctl.u, ctl.v, false, now);
+      ctl.u = ctl.fromU + (ctl.toU - ctl.fromU) * e;
+      ctl.v = ctl.fromV + (ctl.toV - ctl.fromV) * e;
+      if (sim.isActive(sel)) sim.hold(sel, wrap01(ctl.u), wrap01(ctl.v));
+      sim.userWrite(sel, wrap01(ctl.u), wrap01(ctl.v), false, now);
       if (t >= 1) {
         ctl.mode = 'idle';
-        sim.userWrite(sel, ctl.u, ctl.v, true, now);
+        settleTile(sel);
+        sim.userWrite(sel, wrap01(ctl.u), wrap01(ctl.v), true, now);
         if (sim.isActive(sel)) sim.release(sel, 0, 0);
       }
     }
@@ -1293,17 +1323,39 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const prevU = dotPos.u, prevV = dotPos.v, prevSrc = dotSrc;
     const centreMod = isModulated(r.mods, 'centerX', r.links) || isModulated(r.mods, 'centerY', r.links);
     if (ctl.mode !== 'idle') { dotPos.u = ctl.u; dotPos.v = ctl.v; dotSrc = 'ctl'; }
-    else if (simActive) { const s = sim.state(sel); dotPos.u = s.u; dotPos.v = s.v; dotSrc = 'sim'; }
-    else if (centreMod) { dotPos.u = L.centerX; dotPos.v = L.centerY; dotSrc = 'live'; }
-    else { baseCenter(_base); dotPos.u = _base.u; dotPos.v = _base.v; dotSrc = 'base'; }
-    if (dotSrc !== prevSrc && switchT >= 1 && Number.isFinite(prevU)) {
-      dispOffset.u = wrapDelta(prevU, dotPos.u);
-      dispOffset.v = wrapDelta(prevV, dotPos.v);
+    else {
+      let wu, wv;
+      if (simActive) { const s = sim.state(sel); wu = s.u; wv = s.v; dotSrc = 'sim'; }
+      else if (centreMod) { wu = L.centerX; wv = L.centerY; dotSrc = 'live'; }
+      else { baseCenter(_base); wu = _base.u; wv = _base.v; dotSrc = 'base'; }
+      wu = wrap01(wu); wv = wrap01(wv);
+      // A rolling marble or a modulated centre that crosses a tile seam moves
+      // on to the neighbouring copy instead of jumping back across the tile;
+      // past the outer edge of the plane it wraps to the far side.
+      const tp = tile[sel], lw = lastWrapped[sel];
+      if (dotSrc !== prevSrc && Number.isFinite(prevU)) {
+        // control changed hands (released, a glide or physics took over): show
+        // the dot on the copy nearest to where it was drawn
+        tp.u = Math.max(-1, Math.min(1, Math.round(prevU - wu)));
+        tp.v = Math.max(-1, Math.min(1, Math.round(prevV - wv)));
+      } else if (Number.isFinite(lw.u)) {
+        if (wu - lw.u > 0.5) tp.u -= 1; else if (wu - lw.u < -0.5) tp.u += 1;
+        if (wv - lw.v > 0.5) tp.v -= 1; else if (wv - lw.v < -0.5) tp.v += 1;
+        if (tp.u > 1) tp.u = -1; else if (tp.u < -1) tp.u = 1;
+        if (tp.v > 1) tp.v = -1; else if (tp.v < -1) tp.v = 1;
+      }
+      lw.u = wu; lw.v = wv;
+      dotPos.u = wu + tp.u; dotPos.v = wv + tp.v;
     }
-    dotPos.u = wrap01(dotPos.u + dispOffset.u);
-    dotPos.v = wrap01(dotPos.v + dispOffset.v);
-    dotPos.x = wrapWorld(uToX(dotPos.u));
-    dotPos.z = wrapWorld(uToX(dotPos.v));
+    if (dotSrc !== prevSrc && switchT >= 1 && Number.isFinite(prevU)) {
+      dispOffset.u = prevU - dotPos.u;
+      dispOffset.v = prevV - dotPos.v;
+      if (Math.abs(dispOffset.u) > 1 || Math.abs(dispOffset.v) > 1) { dispOffset.u = 0; dispOffset.v = 0; }
+    }
+    dotPos.u += dispOffset.u;
+    dotPos.v += dispOffset.v;
+    dotPos.x = uToX(dotPos.u);
+    dotPos.z = uToX(dotPos.v);
     const ground = view.yAt(dotPos.x, dotPos.z);
     // Zoomed far out the marble keeps a findable size on screen; it grows
     // around its contact point so it still sits on the land.
@@ -1350,8 +1402,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
     for (let id = 0; id < 8; id++) {
       if (!voiceSeen[id]) { voiceSlots[id] = null; continue; }
       const vl = voiceLive(L, voiceNote[id], refNote, r.links, noteSize, voiceLives[id]);
-      vl.centerX = wrap01(dotPos.u + (vl.centerX - L.centerX));
-      vl.centerY = wrap01(dotPos.v + (vl.centerY - L.centerY));
+      vl.centerX = dotPos.u + (vl.centerX - L.centerX);
+      vl.centerY = dotPos.v + (vl.centerY - L.centerY);
       voiceSlots[id] = vl;
       if (orbitDifference(vl, orbitLive) > 1) voiceShow = 1;
     }
@@ -1360,8 +1412,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
     baseLive.pathParam = num(pr0.pathParam, 0.5);
     baseCenter(_base);
     // the knob-only orbit sits at the knob centre (a held dot's knob centre is ctl)
-    baseLive.centerX = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.u : ctl.u) : dotPos.u;
-    baseLive.centerY = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.v : ctl.v) : dotPos.v;
+    baseLive.centerX = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.u + tile[sel].u : ctl.u) : dotPos.u;
+    baseLive.centerY = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.v + tile[sel].v : ctl.v) : dotPos.v;
     const baseShow = switchT >= 1 && orbitDifference(baseLive, orbitLive) > 1 ? 1 : 0;
 
     const shape = Math.round(num(r.params.pathShape, 0));
@@ -1445,7 +1497,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       minimapAt = now;
       const camAz = Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
       minimap.setMarkers(showWp ? routeUV : null, showWp ? routeN : 0, showWp, markers.lockCount > 0);
-      minimap.draw(orbit.uvs, orbit.count, orbit.closed, dotPos.u, dotPos.v, _base.u, _base.v, ghost.a, colCss.value, camAz, themeT);
+      minimap.draw(orbit.uvs, orbit.count, orbit.closed, wrap01(dotPos.u), wrap01(dotPos.v), _base.u, _base.v, ghost.a, colCss.value, camAz, themeT);
     }
     if (!musicGiven && !music && now - musicLookAt > 1000) {
       musicLookAt = now;

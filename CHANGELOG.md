@@ -3,6 +3,17 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.2.2 (October 2026)
+
+* A bigger map to play on. The whole 3 x 3 field of terrain copies is now playable: drag the
+  dot across a tile edge and it carries on into the neighbouring copy (the land repeats, so
+  the sound is the same as wrapping), up to a wall at the outer edge. It no longer jumps to
+  the opposite side. Clicking glides straight to the spot you clicked, and the arrow keys
+  stop at the outer edge too. The neighbouring copies are only lightly dimmed now, with
+  faint seams where the land repeats and a frame around the outer edge.
+* A rolling marble or a modulated dot that crosses a seam also moves on to the next copy
+  instead of jumping back across the tile.
+
 ## 1.2.1 (October 2026)
 
 * Smoother visuals. The minimap (top right of the map) rebuilds its terrain image on every
