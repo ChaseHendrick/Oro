@@ -3,7 +3,9 @@
 
 import {
   NUM_PARTS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
-  defaultState, defaultPart, defaultStep, clamp,
+  LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
+  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS,
+  defaultState, defaultPart, defaultStep, defaultLinks, clamp,
 } from './params.js';
 
 function num(v, fallback) {
@@ -27,16 +29,49 @@ export function sanitizeMods(src = {}, base = {}) {
     const s = (src && src[id]) || {};
     const b = (base && base[id]) || MOD_DEFAULT;
     out[id] = {
-      lfoShape: Math.round(clamp(num(s.lfoShape, b.lfoShape), 0, 5)),
+      lfoShape: Math.round(clamp(num(s.lfoShape, b.lfoShape), 0, LFO_SHAPES.length - 1)),
       lfoRate: clamp(num(s.lfoRate, b.lfoRate), 0.01, 30),
       lfoSync: num(s.lfoSync, b.lfoSync) ? 1 : 0,
       lfoDiv: Math.round(clamp(num(s.lfoDiv, b.lfoDiv), 0, 12)),
       lfoDepth: clamp(num(s.lfoDepth, b.lfoDepth), -1, 1),
       envDepth: clamp(num(s.envDepth, b.envDepth), -1, 1),
       retrig: num(s.retrig, b.retrig) ? 1 : 0,
+      steps: sanitizeSteps(s.steps, b.steps),
     };
   }
   return out;
+}
+
+function sanitizeSteps(src, base) {
+  const fallback = Array.isArray(base) && base.length === LFO_STEP_COUNT ? base : DEFAULT_LFO_STEPS;
+  const out = [];
+  for (let i = 0; i < LFO_STEP_COUNT; i++) out.push(clamp(num(Array.isArray(src) ? src[i] : undefined, fallback[i]), -1, 1));
+  return out;
+}
+
+export function sanitizeLinks(src) {
+  if (!Array.isArray(src)) return defaultLinks();
+  const out = [];
+  for (const l of src) {
+    if (out.length >= MAX_LINKS) break;
+    if (!l || typeof l !== 'object' || !PART_PARAM_MAP[l.dst] || !PART_PARAM_MAP[l.dst].mod) continue;
+    out.push({
+      src: Math.round(clamp(num(l.src, 0), 0, LINK_SOURCES.length - 1)),
+      dst: l.dst,
+      amt: clamp(num(l.amt, 0), -1, 1),
+      curve: Math.round(clamp(num(l.curve, 0), 0, LINK_CURVES.length - 1)),
+    });
+  }
+  return out;
+}
+
+function sanitizeWaypoints(src) {
+  if (!Array.isArray(src)) return [];
+  return src.slice(0, MAX_WAYPOINTS).filter(w => w && typeof w === 'object').map(w => ({
+    x: clamp(num(w.x, 0.5), 0, 1),
+    y: clamp(num(w.y, 0.5), 0, 1),
+    beats: clamp(num(w.beats, 2), 0.25, 16),
+  }));
 }
 
 function sanitizeSeq(src, base) {
@@ -93,11 +128,21 @@ export function sanitizePart(src, i) {
       hold: num(p.arp?.hold, base.arp.hold) ? 1 : 0,
     },
     dot: {
-      mode: Math.round(clamp(num(p.dot?.mode, base.dot.mode), 0, 2)),
+      mode: Math.round(clamp(num(p.dot?.mode, base.dot.mode), 0, DOT_MODES.length - 1)),
       gravity: clamp(num(p.dot?.gravity, base.dot.gravity), 0, 1),
       friction: clamp(num(p.dot?.friction, base.dot.friction), 0, 1),
       driftSpeed: clamp(num(p.dot?.driftSpeed, base.dot.driftSpeed), 0, 1),
+      bounce: clamp(num(p.dot?.bounce, base.dot.bounce), 0, 0.95),
+      tiltX: clamp(num(p.dot?.tiltX, base.dot.tiltX), -1, 1),
+      tiltY: clamp(num(p.dot?.tiltY, base.dot.tiltY), -1, 1),
+      flick: clamp(num(p.dot?.flick, base.dot.flick), 0, 1),
+      exploreRate: clamp(num(p.dot?.exploreRate, base.dot.exploreRate), 0, 1),
+      exploreRange: Math.round(clamp(num(p.dot?.exploreRange, base.dot.exploreRange), 1, 4)),
+      exploreNotes: num(p.dot?.exploreNotes, base.dot.exploreNotes) ? 1 : 0,
+      waypoints: sanitizeWaypoints(p.dot?.waypoints),
+      tourMode: Math.round(clamp(num(p.dot?.tourMode, base.dot.tourMode), 0, TOUR_MODES.length - 1)),
     },
+    links: p.links === undefined ? defaultLinks() : sanitizeLinks(p.links),
     userTerrain: { A: sanitizeUserTerrain(p.userTerrain?.A), B: sanitizeUserTerrain(p.userTerrain?.B) },
   };
 }

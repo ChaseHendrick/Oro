@@ -26,7 +26,8 @@ export const SCALES = {
 };
 export const SCALE_NAMES = Object.keys(SCALES);
 
-export const LFO_SHAPES = ['Sine', 'Triangle', 'Saw', 'Square', 'S&H', 'Drift'];
+export const LFO_SHAPES = ['Sine', 'Triangle', 'Saw', 'Square', 'S&H', 'Drift', 'Steps'];
+export const LFO_STEP_COUNT = 16;
 // Tempo-synced LFO / delay divisions, expressed in beats (quarter notes).
 export const SYNC_DIVS = [
   { name: '4 bar', beats: 16 }, { name: '2 bar', beats: 8 }, { name: '1 bar', beats: 4 },
@@ -80,7 +81,7 @@ export const PART_PARAMS = [
   P('velSens',   'Velocity', 'voice', 'lin', 0, 1, 0.6),
   P('bendRange', 'Bend',     'voice', 'int', 0, 24, 2,    { unit: 'st' }),
   // Filter
-  P('filterType', 'Filter',  'filter', 'enum', 0, 4, 1,   { options: ['Off', 'Low', 'Band', 'High', 'Notch'] }),
+  P('filterType', 'Filter',  'filter', 'enum', 0, 6, 1,   { options: ['Off', 'Low', 'Band', 'High', 'Notch', 'Comb', 'Vowel'] }),
   P('cutoff',    'Cutoff',   'filter', 'exp', 30, 18000, 9000, { mod: true, unit: 'Hz' }),
   P('resonance', 'Reso',     'filter', 'lin', 0, 1, 0.15, { mod: true }),
   P('filterEnv', 'Env Amt',  'filter', 'lin', -1, 1, 0.15, { hint: 'Envelope 2 to cutoff, up to ±6 octaves' }),
@@ -108,6 +109,12 @@ export const PART_PARAMS = [
   P('pace',      'Pace',     'path', 'lin', -1, 1, 0,    { mod: true, hint: 'Speed up and slow down along the path within each cycle (phase distortion)' }),
   P('paceShape', 'Curve',    'path', 'enum', 0, 2, 0,    { options: ['Bend', 'Skew', 'Pinch'], hint: 'How Pace bends the traversal speed' }),
   P('sub',       'Sub',      'voice', 'lin', 0, 1, 0,    { hint: 'Clean sine one octave below the note' }),
+  P('traverse',  'Travel',   'path', 'enum', 0, 1, 0,    { options: ['Natural', 'Even'], hint: 'Natural follows the curve maths (corners speed up and slow down); Even moves at constant speed along the path' }),
+  P('direction', 'Direction','path', 'enum', 0, 1, 0,    { options: ['Forward', 'Ping-pong'], hint: 'Ping-pong runs the path forward then backward each cycle, so open paths never jump' }),
+  P('noteSize',  'Key>Size', 'path', 'lin', -1, 1, 0,    { hint: 'Higher notes shrink (negative) or grow (positive) the orbit. Negative keeps high notes smooth' }),
+  P('air',       'Air',      'voice', 'lin', 0, 1, 0,    { hint: 'Breathy noise layer that follows the amp envelope' }),
+  P('airTone',   'Air Tone', 'voice', 'lin', -1, 1, 0,   { hint: 'Dark to bright noise colour' }),
+  P('formant',   'Vowel',    'filter', 'lin', 0, 1, 0.5, { mod: true, hint: 'Vowel filter position A, E, I, O, U (also sets the Comb filter spread)' }),
 ];
 
 export const GLOBAL_PARAMS = [
@@ -126,6 +133,11 @@ export const GLOBAL_PARAMS = [
   P('chorus',       'Chorus',   'master', 'lin', 0, 1, 0.15),
   P('saturation',   'Warmth',   'master', 'lin', 0, 1, 0.15),
   P('keyMode',      'Keys',     'master', 'enum', 0, 1, 0, { options: ['Selected', 'Layer'], hint: 'Keyboard/MIDI plays the selected part, or every unmuted part at once' }),
+  P('macro1',       'Macro 1',  'macro', 'lin', 0, 1, 0, { hint: 'Assign with Links in any part' }),
+  P('macro2',       'Macro 2',  'macro', 'lin', 0, 1, 0, { hint: 'Assign with Links in any part' }),
+  P('macro3',       'Macro 3',  'macro', 'lin', 0, 1, 0, { hint: 'Assign with Links in any part' }),
+  P('macro4',       'Macro 4',  'macro', 'lin', 0, 1, 0, { hint: 'Assign with Links in any part' }),
+  P('ceiling',      'Ceiling',  'master', 'lin', -6, 0, -0.3, { unit: 'dB', hint: 'Output limiter ceiling' }),
 ];
 
 export const PART_PARAM_MAP = Object.fromEntries(PART_PARAMS.map(p => [p.id, p]));
@@ -142,8 +154,25 @@ export const PART_PARAM_INDEX = Object.fromEntries(PART_PARAMS.map((p, i) => [p.
 //   lfoDepth: -1..1, in normalised knob units (1 = full knob travel)
 //   envDepth: -1..1, Envelope 2 contribution in normalised knob units
 //   retrig:   1 = LFO phase resets on each new note when no other notes are held
-export const MOD_DEFAULT = Object.freeze({ lfoShape: 0, lfoRate: 0.5, lfoSync: 0, lfoDiv: 5, lfoDepth: 0, envDepth: 0, retrig: 0 });
+//   steps:    LFO_STEP_COUNT values in -1..1 used by the 'Steps' LFO shape (one step per
+//             1/LFO_STEP_COUNT of the LFO period, held, with a 2 ms de-click slew)
+export const DEFAULT_LFO_STEPS = Object.freeze([0.8, -0.4, 0.2, -0.9, 0.6, -0.1, 0.4, -0.7, 0.9, -0.3, 0.1, -0.8, 0.5, 0, 0.3, -0.6]);
+export const MOD_DEFAULT = Object.freeze({ lfoShape: 0, lfoRate: 0.5, lfoSync: 0, lfoDiv: 5, lfoDepth: 0, envDepth: 0, retrig: 0, steps: DEFAULT_LFO_STEPS });
 export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
+
+// Links: per-part modulation routing (source -> any modulatable parameter), applied
+// in normalised space on top of the per-parameter LFO/Env depths.
+// Source value ranges: Velocity, Mod Wheel, Pressure, Slide, Macros, Marble Speed,
+// Env 1, Env 2 are 0..1; Key ((note - 60) / 48), Marble Height, Random (per note) and
+// Terrain Height (height under the modulated dot) are -1..1.
+export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
+  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height'];
+export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
+export const MAX_LINKS = 8;
+export function defaultLinks() {
+  // Mod wheel -> Morph used to be hard-wired; it is now an ordinary, editable link.
+  return [{ src: 1, dst: 'morph', amt: 1, curve: 0 }];
+}
 
 export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -199,7 +228,7 @@ export function defaultGlobalParams() {
   return Object.fromEntries(GLOBAL_PARAMS.map(p => [p.id, p.default]));
 }
 export function defaultMods() {
-  return Object.fromEntries(MOD_PARAM_IDS.map(id => [id, { ...MOD_DEFAULT }]));
+  return Object.fromEntries(MOD_PARAM_IDS.map(id => [id, { ...MOD_DEFAULT, steps: [...DEFAULT_LFO_STEPS] }]));
 }
 
 export const SEQ_STEPS = 16;
@@ -227,7 +256,12 @@ export function defaultArp() {
 }
 
 // How the dot (orbit centre) behaves on the map.
-export const DOT_MODES = ['Pin', 'Roll', 'Drift'];
+//   Pin: stays where you put it. Roll: a marble under gravity. Drift: smooth wander.
+//   Explore: the marble roams under slowly turning gravity and plays in-key notes at peaks/valleys.
+//   Tour: the dot travels through up to MAX_WAYPOINTS waypoints.
+export const DOT_MODES = ['Pin', 'Roll', 'Drift', 'Explore', 'Tour'];
+export const TOUR_MODES = ['Loop', 'Ping-pong', 'Once'];
+export const MAX_WAYPOINTS = 8;
 
 export function defaultPart(i) {
   return {
@@ -238,7 +272,12 @@ export function defaultPart(i) {
     mods: defaultMods(),
     seq: defaultSeq(),
     arp: defaultArp(),
-    dot: { mode: 0, gravity: 0.6, friction: 0.25, driftSpeed: 0.3 },
+    // gravity 0..1 maps to 0..2 g; tiltX/tiltY lean the world (-1..1); flick scales throws;
+    // explore*: Explore mode note density, range in octaves, play notes on/off;
+    // waypoints [{x, y, beats}] (beats = travel time to the next waypoint, 0.25..16), tourMode index into TOUR_MODES.
+    dot: { mode: 0, gravity: 0.5, friction: 0.25, driftSpeed: 0.3, bounce: 0.25, tiltX: 0, tiltY: 0, flick: 0.5,
+      exploreRate: 0.5, exploreRange: 2, exploreNotes: 1, waypoints: [], tourMode: 0 },
+    links: defaultLinks(),
     userTerrain: { A: null, B: null },
   };
 }

@@ -182,3 +182,64 @@ createUI(rootEl, { store, engine, visuals, music, presets, midi });
 * Band-limited: oversampled oscillator and mip-mapped terrain so high notes do not alias badly.
 * 16 simultaneous voices with unison 2 must run in under 35% of one core.
 * Every control reachable by mouse, touch and keyboard; visible focus; respects `prefers-reduced-motion`.
+
+## Round D additions (research-brief features)
+
+All new parameters and state fields are defined in `src/core/params.js` / `migrate.js` / `store.js`. Summary:
+
+| Area | Contract |
+|---|---|
+| Path | `traverse` (Natural / Even: Even = constant arc-length speed using cached arc-length tables), `direction` (Forward / Ping-pong: t goes 0→1→0 within each cycle, applied after Pace and Laps), `noteSize` (−1..1: size × 2^(noteSize · (note − 60) / 24), clamped to 0..0.5) |
+| Voice | `air` (noise layer after the DC blocker, follows the amp envelope), `airTone` (−1 dark … +1 bright, a tilt filter on the noise) |
+| Filter | `filterType` adds 5 = Comb (cutoff = comb frequency, resonance = feedback, `formant` = positive/negative comb blend) and 6 = Vowel (formant filter morphing A–E–I–O–U with `formant`, resonance sharpens, cutoff shifts the formants ±1 octave around 1 kHz). `formant` is modulatable. |
+| LFO | shape 6 = `Steps`: 16 values in `mods[id].steps` (−1..1), held per step, 2 ms slew |
+| Links | `parts.N.links = [{src, dst, amt, curve}]` (≤ 8). `src` indexes `LINK_SOURCES`, `dst` is any modulatable param id, `amt` −1..1, `curve` indexes `LINK_CURVES`. Contribution `amt · curve(srcValue)` is added in normalised space, per voice, after LFO/Env. The default link (Mod Wheel → Morph, +1) replaces the old hard-wired wheel→morph. |
+| Macros | `global.macro1..4` (0..1) are Link sources |
+| Ceiling | `global.ceiling` (−6..0 dB) sets the master limiter ceiling |
+| Quality | `ui.audioQuality`: `eco` (1× oversampling, mip bias +1), `standard` (2×, current), `high` (4×, two half-band stages), `pristine` (2× plus per-voice band-limited single-cycle tables refreshed every ~256 samples with crossfade when the orbit is not audio-rate modulated; falls back to standard per voice otherwise), `raw` (2×, mips off: deliberate aliasing). Device setting, persisted in `orograph.settings`. |
+| Dot | `dot.mode` adds 3 = Explore, 4 = Tour. `dot.gravity` 0..1 → 0..2 g, `bounce`, `tiltX/tiltY` (lean the world), `flick` (throw strength), `exploreRate/exploreRange/exploreNotes`, `waypoints [{x, y, beats}]` (≤ 8), `tourMode` (Loop / Ping-pong / Once). |
+
+### Worklet protocol additions
+
+| message | meaning |
+|---|---|
+| `{t:'links', part, links:[...]}` | replace the part's links |
+| `{t:'pressure', part, v, note?}` | channel pressure (all voices) or per-note pressure when `note` given (poly AT / MPE) |
+| `{t:'slide', part, v, note?}` | MPE slide (CC74) 0..1 |
+| `{t:'marble', part, speed, height}` | from the visuals' physics, ~30 Hz (speed 0..1, height −1..1) |
+| `{t:'quality', mode}` | `'eco' \| 'standard' \| 'high' \| 'pristine' \| 'raw'` |
+| `{t:'params', part, p, time?, ramp?}` | when `time` is given the change is applied sample-accurately at that AudioContext time; `ramp` (s) glides to the new values (wrap-aware for rotate/centerX/centerY). Used by dot locks and offline bounces. |
+
+Telemetry `tele.n` includes Links contributions. `tele.terrainHeight` = height under the watched part's modulated dot.
+
+### Engine API additions
+
+```js
+engine.pressure(part, v, note?); engine.slide(part, v, note?); engine.marble(part, speed, height)
+engine.setQuality(mode)                                   // also follows store ui.audioQuality
+engine.bounce({ bars = 4, stems = false, fx = true, tailSeconds = 2, events }) -> Promise<{ mix: Blob, stems: Blob[] }>
+  // OfflineAudioContext render of `events` (from music.renderEvents) through the worklet + FX graph;
+  // stems renders each part solo (with its own sends through the FX). 24-bit WAV blobs. Progress via engine 'bounce' events {done, total}.
+engine.importTerrainFile(part, slot, file, { channel = 'luma' | 'r' | 'g' | 'b', smooth = 0.3, tile = 'mirror' | 'wrap' })
+  // 16-bit grayscale PNG heightmaps (DEMs) are decoded at full precision (own PNG parser + DecompressionStream)
+```
+
+### Music API additions
+
+```js
+music.preview(part = 'sel')                    // play a short tempo-synced phrase on the part (keyboard shortcut P)
+music.exploreNote({ part, kind: 'peak'|'valley', height, x, y })  // Explore mode: in-key note from height, range dot.exploreRange octaves
+music.renderEvents(bars, { parts }) -> [{ time, msg }]  // sequencer/arp notes + dot-lock param ramps for offline bounce, times from 0
+music.on('preview', fn)
+```
+
+MIDI: channel pressure and poly aftertouch → `engine.pressure`; MPE mode (setting `mpe: true`, lower zone, member channels 2–16 → selected part or Layer): per-note pitch bend (±48 st), CC74 slide → `engine.slide`, pressure → `engine.pressure`. Macros and any global param are MIDI-learnable.
+
+### Visuals API additions
+
+```js
+visuals.on('extremum', fn({ part, kind, height, x, y }))   // Explore mode: the marble passed a local peak or valley
+visuals.setRenderStyle('relief'|'wire'|'contour'|'heat'|'points'); visuals.setPalette(i); visuals.palettes() -> [{ name, dark, light }]
+```
+
+Visuals send `engine.marble(part, speed, height)` from the physics, draw dot-lock markers (numbered, flashing on 'step' events with a lock), Tour waypoints (editable when `ui.editWaypoints`: click adds, drag moves, right-click deletes), the base orbit (thin) and modulated orbit (bright), per-voice orbits when voices differ, and a comet trail whose density follows `paceSpeed`. Dot gestures: Shift-drag = Size, Alt-drag = Rotate, wheel over the dot = Size, `[` / `]` = Size when the map has focus.

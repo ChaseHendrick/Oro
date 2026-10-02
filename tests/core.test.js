@@ -19,7 +19,7 @@ describe('params', () => {
       expect(fromNorm(d, 1)).toBeCloseTo(d.max, 6);
     }
   });
-  it('has modulatable params', () => { expect(MOD_PARAM_IDS).toContain('centerX'); expect(MOD_PARAM_IDS.length).toBe(17); expect(MOD_PARAM_IDS).toContain('laps'); expect(MOD_PARAM_IDS).toContain('pace'); });
+  it('has modulatable params', () => { expect(MOD_PARAM_IDS).toContain('centerX'); expect(MOD_PARAM_IDS.length).toBe(18); expect(MOD_PARAM_IDS).toContain('laps'); expect(MOD_PARAM_IDS).toContain('pace'); });
   it('resolves scale degrees to MIDI notes', () => {
     // A minor (root 9, scaleType 1), base octave 3: degree 0 -> A3 = 57
     expect(stepToMidi({ degree: 0, octave: 0 }, 3, 9, 1)).toBe(57);
@@ -61,5 +61,28 @@ describe('migrate', () => {
     expect(migrateState({ parts: [{ seq: { steps: [{ lock: 1, lx: 7, ly: -1 }] } }] }).parts[0].seq.steps[0]).toMatchObject({ lock: 1, lx: 1, ly: 0 });
     expect(m.parts.length).toBe(4);
     expect(migrateState(null).parts.length).toBe(4);
+  });
+});
+
+describe('round D contract', () => {
+  it('migrates links, lfo steps, dot extras', () => {
+    const m = migrateState({ parts: [{
+      links: [{ src: 99, dst: 'cutoff', amt: 3, curve: 1 }, { src: 0, dst: 'nope', amt: 1 }, { src: 2, dst: 'tune', amt: 1 }],
+      mods: { morph: { lfoShape: 6, steps: [2, -2] } },
+      dot: { mode: 4, waypoints: [{ x: 2, y: 0.3, beats: 99 }, null], tourMode: 9 },
+    }] });
+    const p = m.parts[0];
+    expect(p.links).toEqual([{ src: 14, dst: 'cutoff', amt: 1, curve: 1 }]);
+    expect(p.mods.morph.lfoShape).toBe(6);
+    expect(p.mods.morph.steps.length).toBe(16);
+    expect(p.mods.morph.steps.slice(0, 3)).toEqual([1, -1, 0.2]);
+    expect(p.dot).toMatchObject({ mode: 4, tourMode: 2, waypoints: [{ x: 1, y: 0.3, beats: 16 }] });
+    expect(m.parts[1].links).toEqual([{ src: 1, dst: 'morph', amt: 1, curve: 0 }]);
+  });
+  it('gives every part its own lfo step arrays', () => {
+    const s = defaultState();
+    s.parts[0].mods.morph.steps[0] = 0.123;
+    expect(s.parts[0].mods.warp.steps[0]).not.toBe(0.123);
+    expect(s.parts[1].mods.morph.steps[0]).not.toBe(0.123);
   });
 });

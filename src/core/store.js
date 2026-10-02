@@ -28,6 +28,9 @@ export const DEFAULT_UI = Object.freeze({
   autoRotate: 1,
   settingsOpen: 0,
   helpOpen: 0,
+  audioQuality: 'standard', // 'eco' | 'standard' | 'high' | 'pristine' | 'raw' (device setting)
+  lockRecord: 0,          // sequencer dot-lock recording
+  editWaypoints: 0,       // map clicks add Tour waypoints instead of moving the dot
 });
 
 function splitPath(path) {
