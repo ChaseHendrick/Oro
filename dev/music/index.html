@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orograph music harness</title>
+  <style>
+    :root {
+      --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e7ebf0; --muted: #8a94a3;
+      --p0: #ff7a45; --p1: #3fd0c9; --p2: #b98cff; --p3: #ffd23f; --ok: #5bd68a; --bad: #ff6b6b;
+      font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 24px; }
+    header { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+    h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
+    h1 span { color: var(--muted); font-weight: 400; }
+    .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+    .pill b { color: var(--text); font-weight: 600; }
+    button { font: inherit; font-size: 13px; padding: 7px 16px; border-radius: 8px; border: 1px solid var(--line); background: #222833; color: var(--text); cursor: pointer; }
+    button:hover { background: #2a313d; }
+    button.primary { background: #2b6cf0; border-color: #2b6cf0; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+    .part { display: grid; grid-template-columns: 150px 14px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .part:last-child { border-bottom: 0; }
+    .name { font-size: 13px; font-weight: 600; }
+    .name small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; }
+    .led { width: 10px; height: 10px; border-radius: 50%; background: #2a313b; transition: background 60ms, box-shadow 60ms; }
+    .led.on { background: var(--c); box-shadow: 0 0 10px var(--c); }
+    .steps { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 4px; }
+    .step { height: 26px; border-radius: 5px; background: #1e242c; border: 1px solid #252c36; position: relative; }
+    .step.on { background: color-mix(in srgb, var(--c) 45%, #1e242c); border-color: color-mix(in srgb, var(--c) 70%, #252c36); }
+    .step.off-len { opacity: 0.25; }
+    .step.head { outline: 2px solid #fff; outline-offset: -1px; }
+    .stats { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; font-size: 13px; }
+    .stats dt { color: var(--muted); }
+    .stats dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+    h2 { font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .checks { list-style: none; margin: 16px 0 0; padding: 0; font-size: 13px; }
+    .checks li { padding: 4px 0; display: flex; gap: 8px; }
+    .checks li::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-top: 5px; flex: none; }
+    .checks li.pass::before { background: var(--ok); }
+    .checks li.fail::before { background: var(--bad); }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } .part { grid-template-columns: 110px 14px minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Orograph <span>music harness</span></h1>
+    <button class="primary" id="play">Play</button>
+    <span class="pill">Scene <b id="scene">...</b></span>
+    <span class="pill">Tempo <b id="tempo">...</b></span>
+    <span class="pill">Position <b id="pos">1.1.1</b></span>
+    <span class="pill">Engine <b id="engine">loading</b></span>
+  </header>
+  <main>
+    <section class="card" id="parts"></section>
+    <aside class="card">
+      <h2>Timing</h2>
+      <dl class="stats">
+        <dt>Step events</dt><dd id="s-steps">0</dd>
+        <dt>Notes scheduled</dt><dd id="s-notes">0</dd>
+        <dt>Min note-on lead</dt><dd id="s-lead">-</dd>
+        <dt>Step callback, mean</dt><dd id="s-mean">-</dd>
+        <dt>Step callback, max</dt><dd id="s-max">-</dd>
+      </dl>
+      <ul class="checks" id="checks"></ul>
+    </aside>
+  </main>
+  <script type="module" src="./harness.js"></script>
+</body>
+</html>

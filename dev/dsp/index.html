@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orograph DSP harness</title>
+  <style>
+    :root { color-scheme: dark; --bg: #121417; --fg: #e8e6e3; --mut: #8b9099; --acc: #ff7a45; }
+    body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p { color: var(--mut); margin: 0 0 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+    button, select { background: #1d2127; color: var(--fg); border: 1px solid #2c323a; border-radius: 6px; padding: 6px 10px; font: inherit; }
+    button:focus-visible, select:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    label { color: var(--mut); }
+    canvas { width: 100%; max-width: 720px; height: 140px; background: #0b0d10; border-radius: 8px; display: block; }
+    pre { background: #0b0d10; padding: 10px; border-radius: 8px; max-width: 700px; overflow: auto; font-size: 12px; }
+    .keys button { min-width: 38px; }
+  </style>
+</head>
+<body>
+  <h1>Orograph DSP harness</h1>
+  <p>Loads the AudioWorklet bundle exactly as the app does (virtual:worklet → Blob URL → addModule) and plays notes on part 1.</p>
+  <div class="row">
+    <button id="start">Start audio</button>
+    <label>Terrain <select id="terrain"></select></label>
+    <label>Path <select id="path"></select></label>
+    <label>Order <select id="order"></select></label>
+  </div>
+  <div class="row keys" id="keys"></div>
+  <canvas id="scope" width="1440" height="280"></canvas>
+  <pre id="log">idle</pre>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

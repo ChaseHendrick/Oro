@@ -1,0 +1,133 @@
+{
+  "main": "electron/main.cjs",
+  "desktopName": "orograph.desktop",
+  "homepage": "https://github.com/ChaseHendrick/synth",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChaseHendrick/synth.git"
+  },
+  "scripts": {
+    "electron": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "icons": "node dev/packaging/make-icons.cjs",
+    "test:electron": "node tests/e2e/electron-smoke.cjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "three": "^0.186.1",
+    "vite": "^8.3.2",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^5.0.3"
+  },
+  "build": {
+    "appId": "com.hendrickresearch.orograph",
+    "productName": "Orograph",
+    "copyright": "Copyright (c) 2026 Chase",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "icon": "build/icon.png",
+    "publish": null,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": "-",
+      "artifactName": "Orograph-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Orograph-mac-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Orograph",
+      "uninstallDisplayName": "Orograph",
+      "artifactName": "Orograph-windows-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "Orograph-windows-portable.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Audio",
+      "icon": "build/icon.png",
+      "executableName": "orograph",
+      "synopsis": "3D wave terrain synthesizer",
+      "artifactName": "Orograph-linux-${arch}.${ext}",
+      "syncDesktopName": true
+    }
+  }
+}

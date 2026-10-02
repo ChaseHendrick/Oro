@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 1024 1024">
+  <title>Orograph</title>
+  <defs>
+    <radialGradient id="ogs-sky" cx="500" cy="330" r="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f2678"/><stop offset="0.55" stop-color="#18133f"/><stop offset="1" stop-color="#0b0920"/>
+    </radialGradient>
+    <radialGradient id="ogs-halo">
+      <stop offset="0" stop-color="#ff7a45" stop-opacity="0.32"/><stop offset="1" stop-color="#ff7a45" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ogs-glow">
+      <stop offset="0" stop-color="#fff1e6" stop-opacity="0.95"/><stop offset="0.35" stop-color="#ff9a6a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ff7a45" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ogs-land0" x1="0" y1="200" x2="0" y2="1000" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#231b5c"/><stop offset="1" stop-color="#0d0a26"/></linearGradient>
+    <linearGradient id="ogs-land1" x1="0" y1="545" x2="0" y2="1000" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#231b5c"/><stop offset="1" stop-color="#0d0a26"/></linearGradient>
+    <clipPath id="ogs-tile"><rect x="0" y="0" width="1000" height="1000" rx="225"/></clipPath>
+    <clipPath id="ogs-front">
+      <rect x="-200" y="420" width="1400" height="800" transform="rotate(-11 500 420)"/>
+    </clipPath>
+    
+  </defs>
+  <g transform="translate(0 0) scale(1.024)">
+    <g clip-path="url(#ogs-tile)">
+      <rect width="1000" height="1000" fill="url(#ogs-sky)"/>
+      <!-- back of the orbit: drawn first so the land hides it -->
+      <ellipse cx="500" cy="420" rx="405" ry="118" transform="rotate(-11 500 420)" fill="none" stroke="#ffc9ad" stroke-opacity="0.55" stroke-width="66"/>
+      
+      <path d="M-300 720 L-280 720 L-260 720 L-240 720 L-220 720 L-200 720 L-180 720 L-160 720 L-140 720 L-120 720 L-100 720 L-80 720 L-60 720 L-40 720 L-20 720 L0 720 L20 720 L40 720 L60 720 L80 719.4 L100 715.7 L120 708.9 L140 699.3 L160 687.1 L180 672.3 L200 655 L220 635.3 L240 613.2 L260 588.8 L280 562.1 L300 533.2 L320 502 L340 468.7 L360 433.2 L380 395.5 L400 355.7 L420 313.8 L440 269.8 L460 223.8 L470 200 L480 222.2 L500 265.1 L520 306.3 L540 345.7 L560 383.2 L580 419 L600 452.8 L620 484.9 L640 515 L660 543.2 L680 569.5 L700 593.8 L720 616.2 L740 636.5 L760 654.8 L780 671 L800 685 L820 696.8 L840 706.4 L860 713.6 L880 718.2 L900 720 L920 720 L940 720 L960 720 L980 720 L1000 720 L1020 720 L1040 720 L1060 720 L1080 720 L1100 720 L1120 720 L1140 720 L1160 720 L1180 720 L1200 720 L1220 720 L1240 720 L1260 720 L1280 720 L1300 720 L1300 1300 L-300 1300 Z" fill="url(#ogs-land0)"/><path d="M-300 720 L-280 720 L-260 720 L-240 720 L-220 720 L-200 720 L-180 720 L-160 720 L-140 720 L-120 720 L-100 720 L-80 720 L-60 720 L-40 720 L-20 720 L0 720 L20 720 L40 720 L60 720 L80 719.4 L100 715.7 L120 708.9 L140 699.3 L160 687.1 L180 672.3 L200 655 L220 635.3 L240 613.2 L260 588.8 L280 562.1 L300 533.2 L320 502 L340 468.7 L360 433.2 L380 395.5 L400 355.7 L420 313.8 L440 269.8 L460 223.8 L470 200 L480 222.2 L500 265.1 L520 306.3 L540 345.7 L560 383.2 L580 419 L600 452.8 L620 484.9 L640 515 L660 543.2 L680 569.5 L700 593.8 L720 616.2 L740 636.5 L760 654.8 L780 671 L800 685 L820 696.8 L840 706.4 L860 713.6 L880 718.2 L900 720 L920 720 L940 720 L960 720 L980 720 L1000 720 L1020 720 L1040 720 L1060 720 L1080 720 L1100 720 L1120 720 L1140 720 L1160 720 L1180 720 L1200 720 L1220 720 L1240 720 L1260 720 L1280 720 L1300 720" fill="none" stroke="#ff8b57" stroke-width="104" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M-300 1065 L-280 1065 L-260 1065 L-240 1065 L-220 1065 L-200 1065 L-180 1065 L-160 1065 L-140 1065 L-120 1065 L-100 1065 L-80 1065 L-60 1065 L-40 1065 L-20 1065 L0 1065 L20 1065 L40 1065 L60 1065 L80 1065 L100 1063 L120 1057.7 L140 1049.4 L160 1038.5 L180 1025 L200 1008.9 L220 990.4 L240 969.5 L260 946.3 L280 920.8 L300 892.9 L320 862.9 L340 830.6 L360 796.2 L380 759.6 L400 720.9 L420 680 L440 637.1 L460 592.1 L480 545 L480 545 L500 588.9 L520 630.9 L540 671.2 L560 709.7 L580 746.3 L600 781.1 L620 814.1 L640 845.2 L660 874.3 L680 901.6 L700 926.9 L720 950.2 L740 971.6 L760 990.9 L780 1008.1 L800 1023.2 L820 1036.2 L840 1046.9 L860 1055.3 L880 1061.2 L900 1064.5 L920 1065 L940 1065 L960 1065 L980 1065 L1000 1065 L1020 1065 L1040 1065 L1060 1065 L1080 1065 L1100 1065 L1120 1065 L1140 1065 L1160 1065 L1180 1065 L1200 1065 L1220 1065 L1240 1065 L1260 1065 L1280 1065 L1300 1065 L1300 1300 L-300 1300 Z" fill="url(#ogs-land1)"/><path d="M-300 1065 L-280 1065 L-260 1065 L-240 1065 L-220 1065 L-200 1065 L-180 1065 L-160 1065 L-140 1065 L-120 1065 L-100 1065 L-80 1065 L-60 1065 L-40 1065 L-20 1065 L0 1065 L20 1065 L40 1065 L60 1065 L80 1065 L100 1063 L120 1057.7 L140 1049.4 L160 1038.5 L180 1025 L200 1008.9 L220 990.4 L240 969.5 L260 946.3 L280 920.8 L300 892.9 L320 862.9 L340 830.6 L360 796.2 L380 759.6 L400 720.9 L420 680 L440 637.1 L460 592.1 L480 545 L480 545 L500 588.9 L520 630.9 L540 671.2 L560 709.7 L580 746.3 L600 781.1 L620 814.1 L640 845.2 L660 874.3 L680 901.6 L700 926.9 L720 950.2 L740 971.6 L760 990.9 L780 1008.1 L800 1023.2 L820 1036.2 L840 1046.9 L860 1055.3 L880 1061.2 L900 1064.5 L920 1065 L940 1065 L960 1065 L980 1065 L1000 1065 L1020 1065 L1040 1065 L1060 1065 L1080 1065 L1100 1065 L1120 1065 L1140 1065 L1160 1065 L1180 1065 L1200 1065 L1220 1065 L1240 1065 L1260 1065 L1280 1065 L1300 1065" fill="none" stroke="#d9512c" stroke-width="104" stroke-linejoin="round" stroke-linecap="round"/>
+      <!-- front of the orbit -->
+      <g clip-path="url(#ogs-front)">
+        <ellipse cx="500" cy="420" rx="405" ry="118" transform="rotate(-11 500 420)" fill="none" stroke="#ffd9c4" stroke-width="66"/>
+      </g>
+      <circle cx="849.1" cy="415.8" r="170" fill="url(#ogs-glow)"/>
+      <circle cx="849.1" cy="415.8" r="104" fill="#fff3ea"/>
+    </g>
+    <rect x="1.5" y="1.5" width="997" height="997" rx="223.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
+  </g>
+</svg>
