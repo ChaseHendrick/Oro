@@ -3,6 +3,12 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.5.1 (October 2026): Pedal profile explanation
+
+* Settings > Pedals explains why these MIDI pedal profiles are included:
+  **Why these pedals?** These are the ones I have. The user guide and pedal notes
+  include the same explanation.
+
 ## 1.5.0 (October 2026): Experimental guitar chords
 
 * **Settings > Pedals > Guitar > Tracking** offers **Single** and **Chords**. Single

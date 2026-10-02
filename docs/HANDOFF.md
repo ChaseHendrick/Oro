@@ -46,11 +46,19 @@ The earlier release blocker is resolved. Checked on 2026-10-02:
 * GitHub Release **v1.4.0** has Mac ARM64 and x64 DMG/ZIP, Windows installer and
   portable EXE, Linux AppImage/tar.gz, web ZIP and the offline HTML file.
 * Website PR #14 is merged. Its source declares Orograph **1.4.0**.
-* This continuation prepares **1.5.0: experimental guitar chords**. The implementation
+* Synth PR #10 is merged as `058e03f`; main's CI and Desktop apps workflows passed.
+  GitHub Release **v1.5.0** has all ten platform, web and offline assets uploaded.
+  Website PR #15 is merged as `4ca638f`; the public app passed the generated-chord
+  input and note cleanup checks after deployment.
+* **1.5.0: experimental guitar chords** is published. The implementation
   replaces the unreliable draft with a conservative spectral detector, adds Single /
   Chords selection and per-note routing, and fixes stale source routes after Panic.
   Chords may miss quiet and octave-doubled strings. Physical guitar and pedal tests
   remain outstanding.
+* The follow-up **1.5.1** patch adds the owner's brief pedal profile explanation to
+  Settings > Pedals, the user guide and pedal notes: **Why these pedals?** These are
+  the ones I have. Release and website publication for this patch still need
+  verification.
 
 Follow the release routine in section 6: test both web builds, check browser input
 paths, merge the feature PR only once CI is green, verify all download assets, then

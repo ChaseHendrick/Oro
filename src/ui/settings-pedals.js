@@ -417,6 +417,7 @@ export function createPedalSettings(ctx) {
     const cards = h('div', { class: 'pedal-cards' });
     const group = h('section', { class: 'settings-group', 'aria-labelledby': 'pedals-midi' },
       h('h3', { class: 'group-title', id: 'pedals-midi' }, 'Pedal MIDI'),
+      h('p', { class: 'setting-hint' }, h('strong', null, 'Why these pedals?'), ' These are the ones I have.'),
       h('p', { class: 'setting-hint' }, `Profiles for the pedals that take MIDI. Suggested route: ${MIDI_ROUTES.mpcA}; ${MIDI_ROUTES.mpcB}.`),
       row('MIDI output', 'Connect MIDI in MIDI & MPC first', outWrap),
       row('Patches recall pedal presets', 'Off by default, so loading a patch someone shared never changes your pedals. Scenes always send their pedal presets to the pedals switched on here.', recallPatches.el),

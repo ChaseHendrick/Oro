@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.5.0, including the guitar pedal features
+going on under the hood. It describes version 1.5.1, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -1143,6 +1143,10 @@ pedals on the same cable share a channel. Each card has **Effect on**, **Bypass*
 tempo** (four taps at the song tempo) and **Send preset** where the pedal supports them.
 Messages go to the output chosen in MIDI & MPC unless you pick another one here. Values
 marked as not confirmed come from the manuals but have not been checked on the pedal.
+
+**Why these pedals?**
+
+These are the ones I have.
 
 **Moving pedal controls.** Each pedal card has two **Mod** slots. In each, pick a
 **Source** (Off, Macro 1-4, Guitar level or LFO) and the pedal **Control** it moves. **Min**

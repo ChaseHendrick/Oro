@@ -44,6 +44,10 @@ Program Change through (see below).
 
 ## The rig (from the owner's notes in ChaseHendrick/music-field-manual, checked against manuals)
 
+**Why these pedals?**
+
+These are the ones I have.
+
 | Pedal | MIDI | Notes for Orograph |
 |---|---|---|
 | Origin Effects Cali76 Stacked | none | audio loop only |
