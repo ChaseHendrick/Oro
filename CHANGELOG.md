@@ -3,7 +3,11 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
-## 1.1 (unreleased): guitar pedals
+## 1.1.0 (October 2026): guitar pedals
+
+The first public release. It includes everything in 0.1.0 below.
+
+Planned for 1.2: chord tracking for the guitar input (polyphonic pitch detection).
 
 Orograph can now run parts through a real pedalboard. These features follow the pedal and
 MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet**. See
@@ -89,7 +93,7 @@ MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet*
   notes. Live guitar notes are played as they arrive and are not latency compensated.
 * Pedal LFOs synced to the tempo follow its speed but are not locked to the bar line.
 
-## 0.1.0 (first release, October 2026)
+## 0.1.0 (October 2026, not released on its own)
 
 The first public version: a complete wave terrain synthesizer that runs as a desktop app
 on Mac, Windows and Linux, in a web browser, or offline from a single HTML file.
