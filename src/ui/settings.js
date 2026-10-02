@@ -7,6 +7,7 @@ import { createSegmented, createToggle, createSelect } from './controls.js';
 import { createMidiSettings } from './settings-midi.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { STYLES } from './viewport-overlay.js';
+import { openBounce, bounceSupported } from './bounce.js';
 import { icon } from './icons.js';
 
 export const SETTINGS_TABS = [
@@ -101,6 +102,8 @@ function audioTab(ctx, scope) {
   const testBtn = h('button', { type: 'button', class: 'btn btn--sm', html: icon('speaker') + '<span>Test tone</span>', disabled: !engine });
   const panicBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', html: icon('panic') + '<span>Panic</span>' });
   const deviceWrap = h('div', { class: 'device-pick' });
+  const bounceBtn = h('button', { type: 'button', class: 'btn btn--sm', html: icon('bounce') + '<span>Bounce...</span>', disabled: !bounceSupported(ctx) });
+  scope.on(bounceBtn, 'click', () => openBounce(ctx, bounceBtn));
 
   function render() {
     status.textContent = '';
@@ -162,7 +165,9 @@ function audioTab(ctx, scope) {
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Engine'), status, h('div', { class: 'btn-row' }, startBtn, testBtn, panicBtn)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Quality'),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Oscillator quality'), qText), qSeg.el)),
-    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap)));
+    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap)),
+    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Export'),
+      row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn)));
 }
 
 export function shortcutsList() {

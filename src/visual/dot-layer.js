@@ -85,8 +85,35 @@ export function createDotLayer() {
   band2.scale.setScalar(0.995);
   marble.add(band2);
 
+  // Where hills hide the marble, its silhouette still shows faintly (drawn
+  // only where something is in front of it), so the dot is never lost.
+  const xrayMat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(1, 1, 1) }, uOpacity: { value: 0.5 } },
+    vertexShader: /* glsl */`
+      varying vec3 vN;
+      varying vec3 vV;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying vec3 vN;
+      varying vec3 vV;
+      void main() {
+        float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 1.5);
+        gl_FragColor = vec4(uColor * (0.6 + 1.2 * rim), (0.25 + 0.75 * rim) * uOpacity);
+      }`,
+    transparent: true, depthWrite: false, depthFunc: THREE.GreaterDepth,
+  });
+  const xray = new THREE.Mesh(marble.geometry, xrayMat);
+  xray.renderOrder = 10;
+
   const haloTex = haloTexture();
-  const haloMat = new THREE.SpriteMaterial({ map: haloTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 });
+  const haloMat = new THREE.SpriteMaterial({ map: haloTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, opacity: 0.6 });
   const halo = new THREE.Sprite(haloMat);
   halo.scale.setScalar(BALL_RADIUS * 7);
   halo.renderOrder = 9;
@@ -99,7 +126,7 @@ export function createDotLayer() {
   beamGeo.translate(0, 0.5, 0);
   const beam = new THREE.Mesh(beamGeo, new THREE.ShaderMaterial({
     vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG, uniforms: beamUniforms,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   }));
   beam.frustumCulled = false;
   beam.renderOrder = 9;
@@ -112,7 +139,7 @@ export function createDotLayer() {
   ghost.renderOrder = 3;
   ghost.visible = false;
 
-  group.add(marble, halo, beam, ghost);
+  group.add(marble, xray, halo, beam, ghost);
 
   const roll = new THREE.Quaternion();
   const axis = new THREE.Vector3();
@@ -132,6 +159,7 @@ export function createDotLayer() {
       marbleMat.sheenColor.copy(tmpColor);
       bandMat.color.copy(tmpColor).multiplyScalar(themeT > 0.5 ? 1.1 : 2.2);
       haloMat.color.copy(tmpColor);
+      xrayMat.uniforms.uColor.value.copy(tmpColor).multiplyScalar(themeT > 0.5 ? 0.8 : 1.5);
       beamUniforms.uColor.value.set(lin[0], lin[1], lin[2]);
       ghostMat.color.copy(tmpColor);
       ghostMat.emissive.copy(tmpColor);
@@ -148,7 +176,7 @@ export function createDotLayer() {
      * Place the marble. Rotation integrates the ground distance travelled, so
      * the marble visibly rolls in the direction it moves.
      */
-    update(x, y, z, level, time, themeT, visibility) {
+    update(x, y, z, level, time, themeT, visibility, scale = 1) {
       if (primed) {
         const dx = x - lastX, dz = z - lastZ;
         const dist = Math.sqrt(dx * dx + dz * dz);
@@ -161,13 +189,17 @@ export function createDotLayer() {
       }
       lastX = x; lastZ = z; primed = true;
       marble.position.set(x, y, z);
+      marble.scale.setScalar(scale);
+      xray.position.set(x, y, z);
+      xray.scale.setScalar(scale);
+      xrayMat.uniforms.uOpacity.value = (0.75 - 0.25 * themeT) * visibility;
       halo.position.set(x, y, z);
-      beam.position.set(x, y - BALL_RADIUS * 0.6, z);
+      beam.position.set(x, y - BALL_RADIUS * scale * 0.6, z);
       const pulse = 0.5 + 0.5 * Math.sin(time * 2.4);
       const day = themeT;
       marbleMat.emissiveIntensity = (0.32 + 0.5 * level + 0.08 * pulse) * (1 - 0.55 * day);
       haloMat.opacity = (0.35 + 0.45 * level + 0.08 * pulse) * (1 - 0.6 * day) * visibility;
-      halo.scale.setScalar(BALL_RADIUS * (6 + 2.5 * level));
+      halo.scale.setScalar(BALL_RADIUS * scale * (6 + 2.5 * level));
       beamUniforms.uAlpha.value = (0.75 - 0.4 * day) * visibility;
       beamUniforms.uTime.value = time;
       marble.visible = visibility > 0.01;
@@ -181,7 +213,7 @@ export function createDotLayer() {
     },
 
     dispose() {
-      marble.geometry.dispose(); marbleMat.dispose();
+      marble.geometry.dispose(); marbleMat.dispose(); xrayMat.dispose();
       band.geometry.dispose(); bandMat.dispose();
       haloTex.dispose(); haloMat.dispose();
       beam.geometry.dispose(); beam.material.dispose();

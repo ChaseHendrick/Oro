@@ -187,6 +187,7 @@ export async function createVisuals(container, { store, engine = null, quality }
   const pendU = new Float64Array(NUM_PARTS), pendV = new Float64Array(NUM_PARTS);
   const ghost = { a: 0 };
   const dotPos = { u: 0.5, v: 0.5, x: 0, y: 0, z: 0 };
+  let dotScale = 1;
   const orbitLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5 };
   const clearColor = new THREE.Color();
   let minimapVersion = -1;
@@ -324,7 +325,7 @@ export async function createVisuals(container, { store, engine = null, quality }
     const sx = rect.left + (projV.x * 0.5 + 0.5) * rect.width;
     const sy = rect.top + (-projV.y * 0.5 + 0.5) * rect.height;
     const dist = camera.position.distanceTo(projV.set(dotPos.x, dotPos.y, dotPos.z));
-    const pxR = (BALL_RADIUS / (dist * Math.tan((FOV * Math.PI) / 360))) * rect.height * 0.5;
+    const pxR = ((BALL_RADIUS * dotScale) / (dist * Math.tan((FOV * Math.PI) / 360))) * rect.height * 0.5;
     const radius = Math.max(touch ? 30 : 18, pxR * 1.7);
     const dx = clientX - sx, dy = clientY - sy;
     return dx * dx + dy * dy <= radius * radius;
@@ -880,7 +881,11 @@ export async function createVisuals(container, { store, engine = null, quality }
     dotPos.x = wrapWorld(uToX(dotPos.u));
     dotPos.z = wrapWorld(uToX(dotPos.v));
     const ground = view.yAt(dotPos.x, dotPos.z);
-    let dy = ground + BALL_RADIUS + 0.01;
+    // Zoomed far out the marble keeps a findable size on screen; it grows
+    // around its contact point so it still sits on the land.
+    const camDist = camera.position.distanceTo(controls.target);
+    dotScale = Math.max(1, camDist / 20);
+    let dy = ground + BALL_RADIUS * dotScale + 0.01;
     if (physics.mode(sel) === MODE_ROLL && ctl.mode === 'idle') {
       const s = physics.state(sel);
       if (s.y > dy) dy = s.y;
@@ -925,7 +930,7 @@ export async function createVisuals(container, { store, engine = null, quality }
     if (colorDirty || switchT < 1) applyPartColor(dt);
 
     // ---- the dot
-    dot.update(dotPos.x, dotPos.y, dotPos.z, level, time, themeT, 1);
+    dot.update(dotPos.x, dotPos.y, dotPos.z, level, time, themeT, 1, dotScale);
     baseCenter(_base);
     const gd = Math.hypot(wrapDelta(_base.u, dotPos.u), wrapDelta(_base.v, dotPos.v));
     const ghostWant = ctl.mode === 'idle' && switchT >= 1 && !physics.isActive(sel) && gd > 0.004 ? 1 : 0;
@@ -941,7 +946,7 @@ export async function createVisuals(container, { store, engine = null, quality }
     u.uLift.value = L.lift;
     u.uFold.value = L.fold;
     u.uStyle.value = styleIndex;
-    u.uDot.value.set(dotPos.u, dotPos.v, dotPos.y - ground - BALL_RADIUS, 1);
+    u.uDot.value.set(dotPos.u, dotPos.v, dotPos.y - ground - BALL_RADIUS * dotScale, 1);
     u.uGhost.value.set(_base.u, _base.v, ghost.a);
     u.uTime.value = time;
     u.uLevel.value = level;

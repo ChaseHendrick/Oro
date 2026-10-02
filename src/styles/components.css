@@ -411,7 +411,7 @@ kbd {
   transform: translateY(-4px) scale(.98);
   transform-origin: top left;
   transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
-  z-index: 110;
+  z-index: 125; /* above dialogs, so pickers opened from Settings show on top */
 }
 .popover[data-side="top"] { transform: translateY(4px) scale(.98); transform-origin: bottom left; }
 .popover.is-open { opacity: 1; transform: none; }

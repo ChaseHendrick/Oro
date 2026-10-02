@@ -244,7 +244,11 @@
 .scope-cell { position: relative; width: 150px; height: 64px; border-radius: var(--r); background: color-mix(in srgb, var(--panel-solid) 55%, transparent); overflow: hidden; }
 .scope-cell--harm { width: 112px; }
 .scope-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.scope-label { position: absolute; left: 7px; top: 5px; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); pointer-events: none; }
+.scope-label {
+  position: absolute; left: 5px; top: 4px; padding: 1px 4px; border-radius: 4px;
+  background: color-mix(in srgb, var(--panel-solid) 70%, transparent);
+  font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); pointer-events: none;
+}
 .scope-note { text-transform: none; letter-spacing: 0; font-weight: 500; }
 
 .flatmap { position: absolute; inset: 0; }
@@ -767,6 +771,8 @@
   .utils { grid-area: utils; justify-self: end; }
   .utils { gap: 0; }
   .utils .icon-btn { width: 40px; height: 40px; }
+  .bounce-btn { display: none; }
+  .tempo .dragnum-suffix { display: none; }
   .transport { grid-area: transport; justify-self: center; height: 48px; gap: 2px; }
   .transport-btn { height: 40px; min-width: 40px; }
   .tempo { height: 40px; }
