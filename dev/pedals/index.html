@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pedal Harness</title>
+  <style>
+    :root {
+      --bg: #f6f4f0; --panel: #ffffff; --line: #ddd8cf; --fg: #23211d; --mut: #6d685f;
+      --acc: #0f8f88; --ok: #2f8a43; --bad: #c2412f; --code: #efebe4;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #11141a; --panel: #181c24; --line: #2a303b; --fg: #e9e6e1; --mut: #8d94a0;
+        --acc: #3fd0c9; --ok: #7bd88f; --bad: #ff6b5e; --code: #0a0c10;
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #11141a; --panel: #181c24; --line: #2a303b; --fg: #e9e6e1; --mut: #8d94a0;
+      --acc: #3fd0c9; --ok: #7bd88f; --bad: #ff6b5e; --code: #0a0c10;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px 16px; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+    main { max-width: 1080px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 15px; margin: 0 0 8px; }
+    p.sub { color: var(--mut); margin: 0 0 16px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 0 0 14px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+    button, select, input[type=number] { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    button.primary { background: var(--acc); color: #fff; border-color: transparent; }
+    label { color: var(--mut); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+    .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 13px; }
+    .kv b { font-weight: 600; color: var(--mut); }
+    .reason { color: var(--mut); font-size: 13px; margin: 6px 0 0; }
+    canvas { width: 100%; display: block; border-radius: 6px; background: var(--code); }
+    pre, .log { background: var(--code); border-radius: 6px; padding: 8px; font: 12px/1.4 ui-monospace, monospace; max-height: 220px; overflow: auto; margin: 6px 0 0; white-space: pre-wrap; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; table-layout: fixed; }
+    td { border-top: 1px solid var(--line); padding: 4px 8px; vertical-align: top; overflow-wrap: anywhere; }
+    td:first-child { width: 64px; white-space: nowrap; overflow-wrap: normal; }
+    td:nth-child(2) { width: 42%; }
+    td:last-child { color: var(--mut); font-size: 12px; }
+    @media (max-width: 640px) { td:nth-child(2) { width: 50%; } }
+    td.ok { color: var(--ok); font-weight: 600; } td.bad { color: var(--bad); font-weight: 600; }
+    .meter { height: 8px; width: 160px; background: var(--code); border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; }
+    .meter > i { display: block; height: 100%; width: 0; background: var(--acc); }
+    .status { font-weight: 600; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Pedal harness</h1>
+  <p class="sub">src/pedals in a real browser. An OscillatorNode stands in for the guitar and a DelayNode for the pedal loop. Add <code>?auto</code> to run every check.</p>
+
+  <section>
+    <div class="row">
+      <button id="start" class="primary">Start audio</button>
+      <span class="status" id="status">Not started</span>
+    </div>
+    <table id="checks"></table>
+  </section>
+
+  <div class="grid">
+    <section>
+      <h2>Output routing</h2>
+      <div class="kv" id="routing"></div>
+      <p class="reason" id="routingReason"></p>
+    </section>
+
+    <section>
+      <h2>Ping the pedal loop</h2>
+      <div class="row">
+        <label>Loop delay <input id="loopMs" type="number" value="37.5" step="0.1" min="1" max="300" style="width:90px"> ms</label>
+        <select id="pingSignal"><option value="chirp">Chirp</option><option value="mls">MLS</option></select>
+        <button id="ping">Ping</button>
+      </div>
+      <div class="kv" id="pingOut"></div>
+      <p class="reason" id="pingReason"></p>
+    </section>
+
+    <section>
+      <h2>Feedback guard</h2>
+      <div class="row"><button id="howl">Start a feedback loop</button><button id="unmute">Unmute</button></div>
+      <div class="kv" id="guardOut"></div>
+      <p class="reason" id="guardReason"></p>
+    </section>
+
+    <section>
+      <h2>Guitar notes</h2>
+      <div class="row"><button id="play">Play the test riff</button> <span class="meter"><i id="lvl"></i></span></div>
+      <div class="kv" id="guitarOut"></div>
+      <div class="log" id="noteLog"></div>
+    </section>
+
+    <section>
+      <h2>Capture to wavetable</h2>
+      <div class="row"><button id="capture">Capture a held note</button></div>
+      <canvas id="wt" width="512" height="256" aria-label="Captured wavetable, attack at the top"></canvas>
+      <div class="kv" id="capOut"></div>
+    </section>
+
+    <section>
+      <h2>MIDI to pedals</h2>
+      <div class="row">
+        <button id="purrOn">Purr-ting on</button><button id="purrOff">Purr-ting off</button>
+        <button id="pc">Lost + Found live (PC 0)</button><button id="taps">Tap 120 BPM</button>
+      </div>
+      <div class="row">
+        <label>Macro 1 to Purr-ting Mix <input id="macro" type="range" min="0" max="1" step="0.001" value="0"></label>
+        <button id="lfo">LFO to Lost + Found Blend</button>
+        <select id="midiOut"><option value="">Log only (no MIDI port)</option></select>
+      </div>
+      <div class="kv" id="midiOutStats"></div>
+      <div class="log" id="midiLog"></div>
+    </section>
+  </div>
+</main>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
