@@ -46,6 +46,11 @@ export const GUITAR_TARGETS = Object.freeze([
 ]);
 /** Guitar input channel, 1-based as on the interface. */
 export const GUITAR_CHANNELS = Object.freeze([1, 2]);
+/** Single-note tracking stays the default; chord tracking is experimental. */
+export const GUITAR_MODE_OPTIONS = Object.freeze([
+  Object.freeze({ value: 'single', label: 'Single' }),
+  Object.freeze({ value: 'chords', label: 'Chords' }),
+]);
 export const CAPTURE_SLOTS = Object.freeze([Object.freeze({ value: 'A', label: 'Slot A' }), Object.freeze({ value: 'B', label: 'Slot B' })]);
 export { GATE_MIN_DB as GUITAR_GATE_MIN_DB, GATE_MAX_DB as GUITAR_GATE_MAX_DB };
 
@@ -115,6 +120,7 @@ export function defaultRig() {
     compOffsetMs: 0,
     sampleRate: 'auto',
     guitarNotes: 0,
+    guitarMode: 'single',
     guitarTarget: 'sel',
     guitarChannel: 2,
     guitarGateDb: DEFAULT_GATE_DB,
@@ -182,6 +188,7 @@ export function sanitizeRig(src) {
     compOffsetMs: Math.round(clamp(num(src.compOffsetMs, d.compOffsetMs), COMP_OFFSET_RANGE.min, COMP_OFFSET_RANGE.max) * 10) / 10,
     sampleRate: SAMPLE_RATE_OPTIONS.some(o => o.value === src.sampleRate) ? src.sampleRate : d.sampleRate,
     guitarNotes: flag(src.guitarNotes, d.guitarNotes),
+    guitarMode: GUITAR_MODE_OPTIONS.some(o => o.value === src.guitarMode) ? src.guitarMode : d.guitarMode,
     guitarTarget: GUITAR_TARGETS.some(t => t.value === src.guitarTarget) ? src.guitarTarget : d.guitarTarget,
     guitarChannel: GUITAR_CHANNELS.includes(src.guitarChannel) ? src.guitarChannel : d.guitarChannel,
     guitarGateDb: Math.round(clamp(num(src.guitarGateDb, d.guitarGateDb), GATE_MIN_DB, GATE_MAX_DB)),

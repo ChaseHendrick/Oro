@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { createStore } from '../../src/core/store.js';
 import { defaultState } from '../../src/core/params.js';
+import { moveTrack, removeTrack } from '../../src/core/tracks.js';
 import { createMusic } from '../../src/music/music.js';
 import { makeRng } from '../../src/music/patterns.js';
 import {
@@ -14,14 +15,14 @@ import { trackBuffer } from '../../src/pedals/pitch.js';
 import { createFakeClock, createFakeEngine } from '../music/fakes.js';
 import { pluck, midiToHz } from './signals.js';
 
-function setup({ enabled = true, ...cfg } = {}) {
+function setup({ enabled = true, source = GUITAR_SOURCE, ...cfg } = {}) {
   const clock = createFakeClock({ startSec: 2 });
   const engine = createFakeEngine(clock);
   const store = createStore(defaultState());
   const music = createMusic({ store, engine, timers: clock.timers, perfNow: clock.perfNow, random: makeRng(7) });
   const sched = [];
   music.router.on('sched', (e) => sched.push(e));
-  const notes = createGuitarNotes({ store, router: music.router, engine });
+  const notes = createGuitarNotes({ store, router: music.router, engine, source });
   notes.configure({ enabled, ...cfg });
   const notesOf = () => engine.events.filter(e => e.type === 'on' || e.type === 'off').map(e => `${e.type}:${e.part}:${e.note}`);
   return { clock, engine, store, router: music.router, notes, sched, notesOf };
@@ -201,6 +202,116 @@ describe('guitar notes: bends', () => {
     notes.configure({ bends: false });
     expect(engine.of('bend').map(e => e.v)).toEqual([0.5, 0]);
     expect(notes.sounding).toBe(60);
+  });
+});
+
+describe('guitar notes: chords', () => {
+  it('holds several notes and releases only the requested note', () => {
+    const { notes, notesOf, engine } = setup({ guitarMode: 'chords' });
+    for (const note of [52, 55, 59]) notes.handle({ type: 'noteOn', note, velocity: 0.7 });
+    expect(notes.soundingNotes).toEqual([52, 55, 59]);
+    notes.handle({ type: 'bend', semitones: 1 });
+    expect(engine.of('bend')).toEqual([]);
+    notes.handle({ type: 'noteOff', note: 55 });
+    expect(notes.soundingNotes).toEqual([52, 59]);
+    notes.handle({ type: 'noteOff', note: 55 });
+    expect(notesOf()).toEqual(['on:0:52', 'on:0:55', 'on:0:59', 'off:0:55']);
+    notes.stop();
+    expect(notes.soundingNotes).toEqual([]);
+    expect(notesOf().slice(-2)).toEqual(['off:0:52', 'off:0:59']);
+  });
+
+  it('releases all held notes on gate, retarget, disable and mode changes', () => {
+    for (const change of ['gate', 'target', 'enabled', 'mode']) {
+      const { notes, notesOf } = setup({ guitarMode: 'chords' });
+      for (const note of [48, 52, 55]) notes.handle({ type: 'noteOn', note });
+      if (change === 'gate') notes.handle({ type: 'level', db: -80 });
+      if (change === 'target') notes.configure({ target: 2 });
+      if (change === 'enabled') notes.configure({ enabled: false });
+      if (change === 'mode') notes.configure({ guitarMode: 'single' });
+      expect(notes.soundingNotes).toEqual([]);
+      expect(notesOf().slice(-3)).toEqual(['off:0:48', 'off:0:52', 'off:0:55']);
+    }
+  });
+
+  it('routes each off to the tracks it played, across selection changes and reorder', () => {
+    const { notes, store, notesOf } = setup({ guitarMode: 'chords' });
+    notes.handle({ type: 'noteOn', note: 52 });
+    store.set('ui.selectedPart', 1);
+    notes.handle({ type: 'noteOn', note: 55 });
+    moveTrack(store, 0, 3);
+    notes.stop();
+    expect(notesOf()).toEqual(['on:0:52', 'on:1:55', 'off:3:52', 'off:0:55']);
+  });
+
+  it('does not release a keyboard note after its guitar track is removed', () => {
+    const { notes, store, router, engine } = setup({ guitarMode: 'chords', target: 1 });
+    notes.handle({ type: 'noteOn', note: 60 });
+    removeTrack(store, 1);
+    router.noteOn(1, 60, 0.8, 'ui');
+    engine.clear();
+    notes.handle({ type: 'noteOff', note: 60 });
+    notes.stop();
+    expect(engine.offs()).toEqual([]);
+    expect(router.heldNotes(1)).toEqual(new Set([60]));
+  });
+
+  it('preserves a keyboard note of the same pitch when the guitar chord stops', () => {
+    const { notes, router, engine } = setup({ guitarMode: 'chords' });
+    router.noteOn(0, 60, 0.8, 'ui');
+    for (const note of [60, 64, 67]) notes.handle({ type: 'noteOn', note });
+    engine.clear();
+    notes.stop();
+    expect(engine.offs().map(event => event.note)).toEqual([64, 67]);
+    expect(router.heldNotes(0)).toEqual(new Set([60]));
+    router.noteOff(0, 60, 'ui');
+    expect(engine.offs().at(-1).note).toBe(60);
+  });
+
+  it('forgets notes after global or track Panic for Single, Chords and Voice input', () => {
+    for (const config of [{ guitarMode: 'single' }, { guitarMode: 'chords' }, { source: 'voice' }]) {
+      for (const part of [undefined, 0]) {
+        const { notes, router, engine } = setup(config);
+        notes.handle({ type: 'noteOn', note: 60 });
+        notes.handle({ type: 'bend', semitones: 1 });
+        router.allNotesOff(part);
+        expect(notes.soundingNotes).toEqual([]);
+        router.noteOn(0, 60, 0.8, 'ui');
+        engine.clear();
+        notes.handle({ type: 'noteOff', note: 60 });
+        notes.stop();
+        expect(engine.offs()).toEqual([]);
+        expect(router.heldNotes(0)).toEqual(new Set([60]));
+      }
+    }
+  });
+
+  it('keeps unaffected Layer voices while per-track Panic protects new keyboard notes', () => {
+    const { notes, router, store, engine } = setup({ guitarMode: 'chords' });
+    store.set('global.keyMode', 1);
+    notes.handle({ type: 'noteOn', note: 60 });
+    router.allNotesOff(0);
+    expect(notes.soundingNotes).toEqual([60]);
+    router.noteOn(0, 60, 0.8, 'ui');
+    engine.clear();
+    notes.handle({ type: 'noteOff', note: 60 });
+    expect(engine.offs().map(event => event.part)).toEqual([1, 2, 3]);
+    expect(router.heldNotes(0)).toEqual(new Set([60]));
+    expect(router.heldNotes(1)).toEqual(new Set());
+  });
+
+  it('keeps Voice input monophonic when passed guitar mode settings', () => {
+    const played = [], stopped = [];
+    const notes = createGuitarNotes({
+      source: 'voice', router: { resolve: () => [0], noteOn: (target, note) => played.push(note), noteOff: (target, note) => stopped.push(note) },
+    });
+    notes.configure({ enabled: true, guitarMode: 'chords' });
+    notes.handle({ type: 'noteOn', note: 60 });
+    notes.handle({ type: 'noteOn', note: 64 });
+    expect(notes.config.guitarMode).toBe('single');
+    expect(played).toEqual([60, 64]);
+    expect(stopped).toEqual([60]);
+    notes.dispose();
   });
 });
 

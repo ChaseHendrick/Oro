@@ -2,7 +2,8 @@
 //
 //   createGuitarInput(ctx, sourceNode)  envelope follower + pitch tracker on the
 //       input, in the 'orograph-guitar' AudioWorklet (guitar-worklet.js) when it is
-//       loaded, else on the main thread through a ScriptProcessor. Emits
+//       loaded, else through a ScriptProcessor. Optional Chords estimation
+//       uses a dedicated Worker, with a main-thread fallback. Emits
 //       'noteOn' / 'noteOff' / 'bend' / 'level' / 'pitch' with AudioContext times.
 //   captureToWavetable(samples, sampleRate)  a held note -> a wavetable terrain:
 //       finds the note's period, cuts one cycle at a time from the attack to the
@@ -10,10 +11,12 @@
 //       src/audio/importers.js wavetables ({kind: 'wavetable', w: 256, h: frames,
 //       mirror: 1, data, lo}).
 //
-// The analysis itself lives in pitch.js so the worklet bundle stays small.
+// Both live paths use guitar-analysis.js, backed by pitch.js or chords.js.
 
 import { fft, ifft, nextPow2, freqToMidi, gainToDb, bytesToBase64 } from './signal.js';
-import { createMpm, createPitchTracker, createEnvelopeFollower } from './pitch.js';
+import { createMpm, createEnvelopeFollower } from './pitch.js';
+import { createGuitarAnalysis, normalizeGuitarMode } from './guitar-analysis.js';
+import { createChordRunner } from './guitar-chord-runner.js';
 
 export { createPitchTracker, createEnvelopeFollower, createMpm, trackBuffer, quantizeNote } from './pitch.js';
 
@@ -212,19 +215,43 @@ export function captureToWavetable(samples, sampleRate, {
  * Events (all times are AudioContext seconds):
  *   noteOn {note, velocity, time, freq, legato}  noteOff {note, time}
  *   bend {semitones, time}   level {value 0..1, db, open, time} at ~100 Hz
- *   pitch {freq, midi, clarity, voiced, time} at ~30 Hz (for a tuner display)
+ *   pitch {mode: 'single', freq, midi, clarity, voiced, time} at ~30 Hz
+ *      or {mode: 'chords', notes: [MIDI], heard: [MIDI], voiced, time}.
+ * Chords is optional; the default Single detector also serves Voice input.
  */
-export function createGuitarInput(ctx, source, { channel = 0, tracker = {}, envelope = {}, envRateHz = 100, pitchRateHz = 30 } = {}) {
+export function createGuitarInput(ctx, source, { channel = 0, guitarMode = 'single', tracker = {}, envelope = {}, envRateHz = 100, pitchRateHz = 30 } = {}) {
   const listeners = new Map();
   const emit = (type, e) => { for (const fn of [...(listeners.get(type) || [])]) { try { fn(e); } catch (err) { console.error('[guitar] listener failed', err); } } };
-  const state = { level: 0, db: -240, note: null };
+  const state = { level: 0, db: -240, guitarMode: normalizeGuitarMode(guitarMode), revision: 0, notes: new Set() };
   let node = null, via = 'worklet', script = null;
+  let disposed = false;
+  let chordRunner = null, trackerOptions = { ...tracker };
+
+  function releaseNotes() {
+    for (const note of [...state.notes]) handle({ t: 'noteOff', note, mode: state.guitarMode, time: ctx.currentTime });
+    handle({ t: 'pitch', mode: state.guitarMode, notes: [], voiced: false, time: ctx.currentTime });
+  }
+
+  function chords() {
+    if (!chordRunner) chordRunner = createChordRunner({
+      sampleRate: ctx.sampleRate, tracker: trackerOptions, emit: handle,
+      onReset: () => { if (!disposed && state.guitarMode === 'chords') releaseNotes(); },
+    });
+    return chordRunner;
+  }
 
   function handle(m) {
-    if (!m || !m.t) return;
+    if (disposed || !m || !m.t) return;
+    // A mode change can overtake messages already queued by the audio thread.
+    if (m.mode && m.mode !== state.guitarMode && m.t !== 'level') return;
+    if (m.revision !== undefined && m.revision !== state.revision && m.t !== 'level') return;
+    if (m.t === 'samples') { if (state.guitarMode === 'chords') chords().process(m.data, m.time); return; }
     if (m.t === 'level') { state.level = m.value; state.db = m.db; }
-    if (m.t === 'noteOn') state.note = m.note;
-    if (m.t === 'noteOff' && state.note === m.note) state.note = null;
+    if (m.t === 'noteOn') state.notes.add(m.note);
+    if (m.t === 'noteOff') {
+      if (!state.notes.has(m.note)) return;
+      state.notes.delete(m.note);
+    }
     const { t, ...rest } = m;
     emit(t, rest);
   }
@@ -232,12 +259,12 @@ export function createGuitarInput(ctx, source, { channel = 0, tracker = {}, enve
   try {
     node = new AudioWorkletNode(ctx, 'orograph-guitar', {
       numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
-      processorOptions: { channel, tracker, envelope, envRateHz, pitchRateHz },
+      processorOptions: { channel, guitarMode: state.guitarMode, revision: state.revision, tracker, envelope, envRateHz, pitchRateHz },
     });
     node.port.onmessage = (e) => handle(e.data);
   } catch {
     via = 'script';
-    const tr = createPitchTracker({ sampleRate: ctx.sampleRate, ...tracker });
+    const tr = createGuitarAnalysis({ sampleRate: ctx.sampleRate, tracker });
     const env = createEnvelopeFollower({ sampleRate: ctx.sampleRate, ...envelope });
     // Large buffer: this path only runs when the worklet cannot, and a busy main
     // thread drops small ScriptProcessor buffers (gaps the tracker hears as notes ending).
@@ -246,6 +273,7 @@ export function createGuitarInput(ctx, source, { channel = 0, tracker = {}, enve
     let lastLevel = -1, lastPitch = -1, lastPlayback = null;
     script = { tr, env, dropouts: 0 };
     node.onaudioprocess = (ev) => {
+      if (disposed) return;
       const ib = ev.inputBuffer;
       const x = ib.getChannelData(Math.min(channel, ib.numberOfChannels - 1));
       const step = size / ctx.sampleRate;
@@ -256,15 +284,17 @@ export function createGuitarInput(ctx, source, { channel = 0, tracker = {}, enve
       // hands us is the buffer that ended where that output begins, so it
       // started two buffers before playbackTime.
       const t0 = ev.playbackTime - 2 * step;
-      const before = tr.samples;
-      for (const e of tr.process(x)) handle({ t: e.type, ...e, time: t0 + (e.sample - before) / ctx.sampleRate });
+      if (state.guitarMode === 'chords') chords().process(x.slice(), t0);
+      else {
+        const before = tr.samples;
+        for (const e of tr.process(x)) handle({ t: e.type, ...e, mode: 'single', time: t0 + (e.sample - before) / ctx.sampleRate });
+      }
       const s = env.process(x);
       const now = ev.playbackTime;
       if (now - lastLevel >= 1 / envRateHz) { lastLevel = now; handle({ t: 'level', value: s.value, db: s.db, open: s.open, time: now }); }
-      if (now - lastPitch >= 1 / pitchRateHz) {
+      if (state.guitarMode === 'single' && now - lastPitch >= 1 / pitchRateHz) {
         lastPitch = now;
-        const f = tr.lastFrame;
-        handle({ t: 'pitch', freq: f.freq, midi: f.midi, clarity: f.clarity, voiced: f.voiced, time: now });
+        handle({ t: 'pitch', ...tr.pitch, time: now });
       }
     };
   }
@@ -273,25 +303,51 @@ export function createGuitarInput(ctx, source, { channel = 0, tracker = {}, enve
   source.connect(node);
   node.connect(sink);
   sink.connect(ctx.destination);
+  if (state.guitarMode === 'chords') chords();
 
   return {
     via,
     /** ScriptProcessor fallback only: callbacks the browser skipped (main thread too busy). */
     get dropouts() { return script ? script.dropouts : 0; },
+    get chordAnalysisMode() { return chordRunner ? chordRunner.mode : null; },
+    get analysisDropouts() { return chordRunner ? chordRunner.dropouts : 0; },
     get level() { return state.level; },
     get db() { return state.db; },
-    get note() { return state.note; },
+    get note() { return state.notes.size ? [...state.notes].at(-1) : null; },
+    get notes() { return [...state.notes].sort((a, b) => a - b); },
+    get guitarMode() { return state.guitarMode; },
     on(type, fn) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(fn); return () => listeners.get(type).delete(fn); },
     off(type, fn) { const s = listeners.get(type); if (s) s.delete(fn); },
     /** Change tracker / envelope settings live (clarityThreshold, hysteresisCents, bendRange, gateDb, attackMs, releaseMs ...). */
-    configure({ tracker: t = {}, envelope: e = {} } = {}) {
-      if (via === 'worklet') node.port.postMessage({ t: 'config', tracker: t, envelope: e });
-      else { script.tr.configure(t); script.env.configure(e); }
+    configure({ guitarMode: value, tracker: t = {}, envelope: e = {} } = {}) {
+      if (disposed) return;
+      const mode = value === undefined ? state.guitarMode : normalizeGuitarMode(value);
+      const changed = mode !== state.guitarMode;
+      trackerOptions = { ...trackerOptions, ...t };
+      if (changed) {
+        releaseNotes();
+        state.guitarMode = mode;
+        state.revision++;
+        chordRunner?.dispose(); chordRunner = null;
+      }
+      if (mode === 'chords') chords().configure(t);
+      if (via === 'worklet') node.port.postMessage({ t: 'config', guitarMode: mode, revision: state.revision, tracker: t, envelope: e });
+      else {
+        if (changed) script.tr.reset();
+        script.tr.configure({ tracker: t });
+        script.env.configure(e);
+        if (mode === 'single') handle({ t: 'pitch', ...script.tr.pitch, time: ctx.currentTime });
+      }
     },
     dispose() {
+      if (disposed) return;
+      for (const note of [...state.notes]) handle({ t: 'noteOff', note, mode: state.guitarMode, time: ctx.currentTime });
+      disposed = true;
+      chordRunner?.dispose(); chordRunner = null;
       try { source.disconnect(node); } catch { /* ignore */ }
       try { node.disconnect(); sink.disconnect(); } catch { /* ignore */ }
       if (via === 'worklet') { try { node.port.postMessage({ t: 'stop' }); } catch { /* ignore */ } }
+      else node.onaudioprocess = null;
       listeners.clear();
     },
   };

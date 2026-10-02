@@ -19,6 +19,7 @@ describe('rig settings', () => {
     expect(Object.keys(d.pedals)).toEqual(PEDAL_IDS);
     expect(d.pedals.purrting).toEqual({ enabled: 0, channel: 1, mods: [defaultModSlot(), defaultModSlot()] });
     expect(d.patchesRecallPedals).toBe(0);
+    expect(d.guitarMode).toBe('single');
     expect(d.pedals.lostAndFound.channel).toBe(2);
     expect(pairChannels(2)).toEqual([2, 3]);
     expect(OUTPUT_PAIRS.map(p => p.label)).toEqual(['Outputs 1/2', 'Outputs 3/4', 'Outputs 5/6', 'Outputs 7/8']);
@@ -47,6 +48,18 @@ describe('rig settings', () => {
     expect(loadRig(st)).toMatchObject({ enabled: 1, sendPair: 4 });
     expect(loadRig(memStorage({ [RIG_KEY]: '{not json' }))).toEqual(defaultRig());
     expect(loadRig(null)).toEqual(defaultRig());
+  });
+
+  it('preserves an explicit chord mode while older or invalid preferences use Single', () => {
+    expect(sanitizeRig({ guitarNotes: 1 }).guitarMode).toBe('single');
+    for (const guitarMode of [null, '', 'polyphonic', 'Chords', 1, {}, []]) {
+      expect(sanitizeRig({ guitarMode }).guitarMode).toBe('single');
+    }
+    const st = memStorage();
+    saveRig({ ...defaultRig(), guitarMode: 'chords', guitarBends: 1 }, st);
+    expect(loadRig(st)).toMatchObject({ guitarMode: 'chords', guitarBends: 1 });
+    saveRig({ ...loadRig(st), guitarMode: 'single' }, st);
+    expect(loadRig(st)).toMatchObject({ guitarMode: 'single', guitarBends: 1 });
   });
 });
 

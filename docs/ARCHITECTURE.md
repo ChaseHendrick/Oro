@@ -312,3 +312,20 @@ MIDI learn accepts action targets `{ scope: 'action', id }` with ids from `LEARN
 (`looper.main`, `looper.stop`, `looper.undo`, `looper.clear`, `looper.mute`, `looper.resample`);
 a mapped CC rising past 64 emits `midi.on('action', { id })`. Saved session state is unchanged
 (resampled terrains are ordinary `userTerrain` wavetables with `lo` planes).
+
+
+## Experimental guitar Chords (v1.5)
+
+`guitarMode: 'single' | 'chords'` is a per-computer pedal rig preference. Single is
+its default and remains mandatory for Voice plays notes. `createGuitarAnalysis`
+shares detector selection, resets and releases. Single-note analysis stays in the
+AudioWorklet; chord sample batches go to a dedicated Worker. The ScriptProcessor
+fallback uses that same Worker when available. `src/pedals/chords.js` is a pure generated-signal-tested
+spectral detector; no physical guitar accuracy has been established.
+
+Chord pitch telemetry is `{mode:'chords', notes:[MIDI], heard:[MIDI], voiced,time}`;
+Single keeps `{mode:'single',freq,midi,clarity,voiced,time}`. Chords emits individual
+noteOn/noteOff events and no channel-wide bends. The driver keeps each held note's
+source route, follows track reorders and removes entries on global or per-track
+Panic. Mode changes release held notes through the router, respecting sustain.
+Capture remains one held note, regardless of tracking mode.

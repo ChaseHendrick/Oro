@@ -73,3 +73,26 @@ export function mix(len, parts) {
 export const GUITAR_NOTES = [40, 45, 50, 55, 59, 64, 69, 76, 81, 86, 88];
 
 export const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+/** A deterministic strum, with a separate plucked string for each MIDI note. */
+export function strum(notes, {
+  sampleRate = 48000, start = 0.1, duration = 1.5, spread = 0.008, amp = 0.35, seed = 1,
+  levels = null, decay = 2.2, up = false,
+} = {}) {
+  const n = Math.round((start + duration) * sampleRate);
+  const order = up ? notes.slice().reverse() : notes.slice();
+  const parts = order.map((m, i) => {
+    const s = (seed * 7919 + m * 31 + i * 17) % 1000;
+    const level = levels ? levels[notes.indexOf(m)] : 0.8 + 0.4 * ((s % 97) / 97);
+    const sig = pluck({
+      sampleRate, freq: midiToHz(m), duration: duration - i * spread, start: 0, amp: amp * level,
+      beta: 0.12 + 0.12 * ((s % 13) / 13), decay: decay * (m < 52 ? 1.2 : 0.9),
+      inharm: m < 50 ? 1.5e-4 : 5e-5, harmonics: 40, seed: seed * 101 + i, noise: 0,
+    });
+    return { at: Math.round((start + i * spread) * sampleRate), sig };
+  });
+  const out = mix(n, parts);
+  const rnd = makeRandom(seed * 13 + 5);
+  for (let i = 0; i < n; i++) out[i] += 0.0003 * (rnd() * 2 - 1);
+  return out;
+}

@@ -16,7 +16,7 @@ import { programHint } from '../pedals/pedal-presets.js';
 import {
   OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, MOD_SOURCES, MOD_SLOTS, LFO_SHAPES, MAP_CURVES,
   LFO_RATE_MIN, LFO_RATE_MAX, LFO_BEAT_OPTIONS, SAMPLE_RATE_OPTIONS, COMP_OFFSET_RANGE,
-  GUITAR_TARGETS, CAPTURE_SLOTS, GUITAR_GATE_MIN_DB, GUITAR_GATE_MAX_DB, guitarChannelOptions,
+  GUITAR_TARGETS, GUITAR_MODE_OPTIONS, CAPTURE_SLOTS, GUITAR_GATE_MIN_DB, GUITAR_GATE_MAX_DB, guitarChannelOptions,
 } from '../pedals/rig-settings.js';
 import { DEFAULT_GATE_DB } from '../pedals/guitar-notes.js';
 import { noteLabel } from './pedal-rig.js';
@@ -160,6 +160,10 @@ export function createPedalSettings(ctx) {
 
   // ================================================================ guitar
   const gNotes = own(createToggle(ctx, rigBinding(rig, 'guitarNotes', { label: 'Guitar plays notes', default: 0 }), { label: 'Guitar plays notes', className: 'toggle--switch' }));
+  const gMode = own(createSegmented(ctx, rigBinding(rig, 'guitarMode', { label: 'Guitar note mode', default: 'single' }), {
+    label: 'Guitar note mode', size: 'sm', options: GUITAR_MODE_OPTIONS,
+  }));
+  const gModeHint = h('p', { class: 'setting-hint guitar-mode-hint' });
   const gTarget = own(createSelect(ctx, rigBinding(rig, 'guitarTarget', { label: 'Guitar track', default: 'sel' }), { label: 'Track the guitar plays', options: GUITAR_TARGETS }));
   // Only tracks that exist can be picked.
   const renderGTargets = () => {
@@ -221,19 +225,39 @@ export function createPedalSettings(ctx) {
     capOut.classList.toggle('is-bad', !!c && c.stage === 'error');
   }
   scope.add(rig.on('capture', () => schedule(renderCapture)));
-  scope.add(rig.on('pitch', (p) => schedule(() => setText(gPitch, p ? `Hearing ${noteLabel(p.midi)} (${p.freq.toFixed(1)} Hz)` : 'Hearing no clear pitch'))));
+  function renderGuitarPitch(st = rig.status()) {
+    const p = st.prefs;
+    const a = st.audio;
+    const g = a && a.guitar || {};
+    const open = !!(a && a.ret && a.ret.open && p.returnEnabled);
+    const pitch = st.guitar && st.guitar.pitch;
+    if (!p.guitarNotes) setText(gPitch, '');
+    else if (!open) setText(gPitch, 'Waiting for the pedal return to open.');
+    else if (!g.tracking) setText(gPitch, 'Starting the pitch tracker...');
+    else if (p.guitarMode === 'chords') {
+      const heard = pitch && pitch.mode === 'chords' && (pitch.notes || pitch.heard);
+      const notes = Array.isArray(heard) ? heard.filter(Number.isFinite) : [];
+      setText(gPitch, notes.length ? `Hearing ${notes.map(noteLabel).join(', ')}` : 'Hearing no clear chord notes');
+    } else if (pitch && Number.isFinite(pitch.midi) && Number.isFinite(pitch.freq)) {
+      setText(gPitch, `Hearing ${noteLabel(pitch.midi)} (${pitch.freq.toFixed(1)} Hz)`);
+    } else setText(gPitch, 'Hearing no clear pitch');
+  }
+  const refreshGuitarPitch = () => renderGuitarPitch();
+  scope.add(rig.on('pitch', () => schedule(refreshGuitarPitch)));
   renderCapture();
 
   const guitarGroup = h('section', { class: 'settings-group', 'aria-labelledby': 'pedals-guitar' },
     h('h3', { class: 'group-title', id: 'pedals-guitar' }, 'Guitar'),
     h('p', { class: 'setting-hint' }, 'Uses one channel of the pedal return, so it only runs while the return is open. Track the clean DI (before any drive) for steady notes. Not tested with a real guitar yet.'),
     row('Input channel', 'Mono return + guitar: channel 2 is the clean DI. Stereo return: pick the side the guitar is on.', gChanWrap),
-    row('Guitar plays notes', 'Single notes from the guitar play a part, like a keyboard (MIDI out too)', gNotes.el),
+    row('Guitar plays notes', 'Notes from the guitar play a part, like a keyboard (MIDI out too)', gNotes.el),
+    row('Note mode', 'Single follows one melody note. Chords can play several held notes together.', gMode.el),
+    gModeHint,
     row('Part', 'The part the guitar plays and Capture fills. Selected part follows the part you are editing (and Layer key mode).', gTarget.el),
     row('Gate', 'Notes start above this level and stop below it. Lower is more sensitive; raise it if hum or string noise plays notes.', gGate.el),
-    row('Bends as pitch bend', 'Bends and vibrato move the part\'s pitch bend within its Bend range (Sound panel). Off, or with Bend at 0: a bend steps to the next note.', gBends.el),
+    row('Bends as pitch bend', 'Single mode only. Bends and vibrato move the part\'s pitch bend within its Bend range (Sound panel). Off, or with Bend at 0: a bend steps to the next note.', gBends.el),
     gPitch,
-    row('Capture', 'Records one held note and turns it into a wavetable terrain, attack to decay, on the guitar\'s part', h('div', { class: 'inline-controls' }, capSlot.el, capBtn), 'setting-row--stack'),
+    row('Capture', 'Records one held note in either mode and turns it into a wavetable terrain, attack to decay, on the guitar\'s part. Capture does not record chords.', h('div', { class: 'inline-controls' }, capSlot.el, capBtn), 'setting-row--stack'),
     capMeter, capOut);
 
   // ================================================================ ping
@@ -330,14 +354,16 @@ export function createPedalSettings(ctx) {
       buildChannel();
       const g = a.guitar || {};
       const open = !!(r.open && p.returnEnabled);
-      for (const c of [gGate, gBends]) c.setDisabled(!p.guitarNotes, 'Turn on Guitar plays notes first');
+      for (const c of [gMode, gGate]) c.setDisabled(!p.guitarNotes, 'Turn on Guitar plays notes first');
+      const chords = p.guitarMode === 'chords';
+      gBends.setDisabled(!p.guitarNotes || chords, chords ? 'Bends are available in Single mode' : 'Turn on Guitar plays notes first');
+      setText(gModeHint, chords
+        ? 'Chords are experimental and respond more slowly than Single. Low notes may take longer. Not tested with a real guitar yet.'
+        : 'Single follows one note with bends and vibrato. Chords is an experimental option for several notes at once.');
       const capBusy = !!g.capturing;
       capBtn.disabled = !open || capBusy;
       capBtn.dataset.tip = open ? 'Record one held note' : 'Turn on the pedal return first';
-      if (!p.guitarNotes) setText(gPitch, '');
-      else if (!open) setText(gPitch, 'Waiting for the pedal return to open.');
-      else if (!g.tracking) setText(gPitch, 'Starting the pitch tracker...');
-      else if (!gPitch.textContent || /Waiting|Starting/.test(gPitch.textContent)) setText(gPitch, 'Listening to the guitar.');
+      renderGuitarPitch(st);
     }
     renderComp(st);
   }

@@ -98,9 +98,9 @@ describe('pedal rig: guitar plays notes', () => {
   it('sends the saved guitar settings to the host tracker at start-up and on change', async () => {
     const { rig, host } = setup();
     await rig.restore();
-    expect(host.setGuitar).toHaveBeenLastCalledWith({ channel: 1, notes: false, gateDb: -50, bendRange: 2 });
+    expect(host.setGuitar).toHaveBeenLastCalledWith({ channel: 1, notes: false, guitarMode: 'single', gateDb: -50, bendRange: 2 });
     await rig.set({ guitarNotes: 1, guitarChannel: 1, guitarGateDb: -40 });
-    expect(host.setGuitar).toHaveBeenLastCalledWith({ channel: 0, notes: true, gateDb: -40, bendRange: 2 });
+    expect(host.setGuitar).toHaveBeenLastCalledWith({ channel: 0, notes: true, guitarMode: 'single', gateDb: -40, bendRange: 2 });
     await rig.set({ guitarBends: 0 });
     expect(host.setGuitar.mock.calls.at(-1)[0].bendRange).toBe(0.5);
   });

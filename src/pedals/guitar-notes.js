@@ -4,14 +4,15 @@
 // behaves like any other keyboard: source 'guitar', MIDI out echo, Layer mode,
 // the arpeggiator and sustain all apply as they do to the on-screen keys.
 //
-// The tracker already decides note-on at an onset (with pitch hysteresis),
+// Single mode's tracker decides note-on at an onset (with pitch hysteresis),
 // note-off when its own envelope drops below the gate, legato note changes,
 // and bends relative to the sounding note. This driver adds:
-//   * one sounding guitar note at a time (a legato change releases the old one);
+//   * one sounding guitar note at a time in Single (legato releases the old one),
+//     or independent note lifetimes in optional Chords mode;
 //   * a second, independent gate on the level stream: the note ends when the
 //     envelope falls `GATE_HYSTERESIS_DB` below the gate even if the tracker
 //     still hears a pitch (a muted string with hum on it);
-//   * bends sent to the part's pitch bend, scaled into the part's Bend range
+//   * Single-mode bends sent to the part's pitch bend, scaled into its Bend range
 //     (params.bendRange, 0..24 semitones). A part with Bend at 0 cannot bend,
 //     so the guitar steps through notes instead; without any range (an engine
 //     or store without the param) DEFAULT_BEND_RANGE (+/-2 semitones) is used.
@@ -19,6 +20,7 @@
 // Pure: no Web Audio. Tests feed it synthetic tracker / level events.
 
 import { MAX_PARTS } from '../core/params.js';
+import { watchTracks, inversePerm } from '../core/tracks.js';
 
 export const GUITAR_SOURCE = 'guitar';
 export const DEFAULT_BEND_RANGE = 2;
@@ -46,8 +48,9 @@ export function normalizeTarget(t, numParts = MAX_PARTS) {
  * @param {string} [o.source] note source tag for the router (v1.4 Voice plays notes uses 'voice')
  */
 export function createGuitarNotes({ store, router, engine = null, numParts = MAX_PARTS, source = GUITAR_SOURCE } = {}) {
-  const cfg = { enabled: false, target: 'sel', gateDb: DEFAULT_GATE_DB, bends: true };
-  let current = null;   // { note, parts: number[], target }
+  const cfg = { enabled: false, target: 'sel', gateDb: DEFAULT_GATE_DB, bends: true, guitarMode: 'single' };
+  const held = new Map();   // note -> { note, parts: number[], target }
+  const current = () => held.size ? [...held.values()].at(-1) : null;
   let bentParts = [];   // parts whose pitch bend this driver moved away from 0
   const stats = { notes: 0, lastNote: null, lastVelocity: 0, bends: 0 };
   const listeners = new Set();
@@ -85,40 +88,46 @@ export function createGuitarNotes({ store, router, engine = null, numParts = MAX
     if (bentParts.length) { sendBend(bentParts, 0); bentParts = []; }
   }
 
-  function release(reason = 'off') {
-    if (!current) { unbend(); return; }
-    const c = current;
-    current = null;
-    unbend();
+  function releaseNote(note, reason = 'off') {
+    const c = held.get(note);
+    if (!c) return;
+    held.delete(note);
     try { router.noteOff(c.target, c.note, source); } catch (err) { console.warn('[guitar notes] noteOff failed', err); }
     emit({ type: 'noteOff', note: c.note, parts: c.parts, reason });
+  }
+
+  function release(reason = 'off') {
+    unbend();
+    for (const note of [...held.keys()]) releaseNote(note, reason);
   }
 
   function noteOn(e) {
     const note = Math.round(Number(e.note));
     if (!Number.isFinite(note) || note < 0 || note > 127) return;
-    release('legato');
+    if (cfg.guitarMode === 'single') release('legato');
+    else releaseNote(note, 'retrigger');
     const target = cfg.target;
     const parts = partsFor(target);
     if (!parts.length) return;
     const vel = clamp(Number.isFinite(e.velocity) ? e.velocity : 0.8, 0.05, 1);
-    current = { note, parts, target };
+    held.set(note, { note, parts, target });
     stats.notes++; stats.lastNote = note; stats.lastVelocity = vel;
-    try { router.noteOn(target, note, vel, source); } catch (err) { console.warn('[guitar notes] noteOn failed', err); current = null; return; }
+    try { router.noteOn(target, note, vel, source); } catch (err) { console.warn('[guitar notes] noteOn failed', err); held.delete(note); return; }
     emit({ type: 'noteOn', note, velocity: vel, parts, legato: !!e.legato, freq: e.freq });
   }
 
   function bend(e) {
-    if (!current || !cfg.bends) return;
-    const r = bendRange(current.parts);
+    const c = current();
+    if (!c || !cfg.bends || cfg.guitarMode === 'chords') return;
+    const r = bendRange(c.parts);
     if (!(r > 0)) return;
     const semis = Number(e.semitones);
     if (!Number.isFinite(semis)) return;
     const v = clamp(semis / r, -1, 1);
-    sendBend(current.parts, v);
-    bentParts = v !== 0 ? current.parts.slice() : [];
+    sendBend(c.parts, v);
+    bentParts = v !== 0 ? c.parts.slice() : [];
     stats.bends++;
-    emit({ type: 'bend', semitones: semis, value: v, parts: current.parts });
+    emit({ type: 'bend', semitones: semis, value: v, parts: c.parts });
   }
 
   /** One tracker or level event: {type: 'noteOn'|'noteOff'|'bend'|'level'|'stop', ...}. */
@@ -128,10 +137,15 @@ export function createGuitarNotes({ store, router, engine = null, numParts = MAX
     if (!cfg.enabled) return;
     switch (e.type) {
       case 'noteOn': noteOn(e); break;
-      case 'noteOff': if (current && Math.round(e.note) === current.note) release('tracker'); break;
+      case 'noteOff':
+        if (held.has(Math.round(e.note))) {
+          if (cfg.guitarMode === 'single') unbend();
+          releaseNote(Math.round(e.note), 'tracker');
+        }
+        break;
       case 'bend': bend(e); break;
       case 'level':
-        if (current && Number.isFinite(e.db) && e.db < cfg.gateDb - GATE_HYSTERESIS_DB) release('gate');
+        if (held.size && Number.isFinite(e.db) && e.db < cfg.gateDb - GATE_HYSTERESIS_DB) release('gate');
         break;
       default: break;
     }
@@ -143,11 +157,43 @@ export function createGuitarNotes({ store, router, engine = null, numParts = MAX
     if (o.target !== undefined) cfg.target = normalizeTarget(o.target, numParts);
     if (o.gateDb != null && Number.isFinite(Number(o.gateDb))) cfg.gateDb = clamp(Number(o.gateDb), GATE_MIN_DB, GATE_MAX_DB);
     if (o.bends != null) cfg.bends = !!o.bends;
+    if (o.guitarMode !== undefined) cfg.guitarMode = source === 'voice' ? 'single' : o.guitarMode === 'chords' ? 'chords' : 'single';
     if (!cfg.enabled && before.enabled) release('disabled');
-    else if (current && cfg.target !== before.target) release('target');
-    else if (current && before.bends && !cfg.bends) unbend();
+    else if (held.size && cfg.target !== before.target) release('target');
+    else if (cfg.guitarMode !== before.guitarMode) release('mode');
+    else if (held.size && before.bends && !cfg.bends) unbend();
     return { ...cfg };
   }
+
+  // Router note routes move with tracks. Keep bend destinations and diagnostics
+  // on the same tracks, and forget removed notes so a later off cannot hit a new track.
+  const offTracks = store && typeof store.subscribe === 'function' ? watchTracks(store, ({ perm, count }) => {
+    const inv = inversePerm(perm);
+    const remap = list => list.map(p => inv[p]).filter(p => p >= 0 && p < count);
+    bentParts = remap(bentParts);
+    for (const [note, entry] of held) {
+      entry.parts = remap(entry.parts);
+      if (!entry.parts.length) {
+        held.delete(note);
+        emit({ type: 'noteOff', note, parts: [], reason: 'tracks' });
+      }
+    }
+  }) : () => {};
+  // Panic already released these router voices. Forget the corresponding
+  // input holds before a delayed tracker off can reach a newly played key.
+  const offPanic = router && typeof router.on === 'function' ? router.on('allOff', (event) => {
+    const cleared = new Set(event?.parts || []);
+    const bent = bentParts.filter(part => cleared.has(part));
+    if (bent.length) sendBend(bent, 0);
+    bentParts = bentParts.filter(part => !cleared.has(part));
+    for (const [note, entry] of held) {
+      entry.parts = entry.parts.filter(part => !cleared.has(part));
+      if (!entry.parts.length) {
+        held.delete(note);
+        emit({ type: 'noteOff', note, parts: [], reason: 'panic' });
+      }
+    }
+  }) : null;
 
   return {
     handle,
@@ -158,9 +204,10 @@ export function createGuitarNotes({ store, router, engine = null, numParts = MAX
     stop: () => release('stop'),
     get config() { return { ...cfg }; },
     get source() { return source; },
-    get sounding() { return current ? current.note : null; },
-    stats: () => ({ ...stats, sounding: current ? current.note : null }),
+    get sounding() { return current()?.note ?? null; },
+    get soundingNotes() { return [...held.keys()].sort((a, b) => a - b); },
+    stats: () => ({ ...stats, sounding: current()?.note ?? null, soundingNotes: [...held.keys()].sort((a, b) => a - b) }),
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
-    dispose() { release('stop'); listeners.clear(); },
+    dispose() { release('stop'); offTracks(); if (typeof offPanic === 'function') offPanic(); listeners.clear(); },
   };
 }

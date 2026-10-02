@@ -109,7 +109,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
   let guitar = null;
   let guitarLevel = 0, guitarSent = 0;   // the DSP starts at 0
   // Guitar plays notes / Capture: one channel of the return, tracked on demand.
-  const guitarCfg = { channel: DEFAULT_GUITAR_CHANNEL, notes: false, tracker: { gateDb: -50, bendRange: 2 } };
+  const guitarCfg = { channel: DEFAULT_GUITAR_CHANNEL, notes: false, guitarMode: 'single', tracker: { gateDb: -50, bendRange: 2 } };
   let tap = null;            // { node, owned: AudioNode[] } carrying only guitarCfg.channel
   let noteInput = null;      // the createGuitarInput whose note events become 'guitarNote'
   let noteShared = false;    // noteInput is the Guitar Level input (not ours to dispose)
@@ -286,6 +286,9 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
     const had = !!noteInput;
     for (const off of noteOffs) { try { off(); } catch { /* ignore */ } }
     noteOffs = [];
+    if (noteInput && noteShared) {
+      try { noteInput.configure({ guitarMode: 'single' }); } catch { /* old input */ }
+    }
     if (noteInput && !noteShared) { try { noteInput.dispose(); } catch { /* ignore */ } }
     noteInput = null;
     noteShared = false;
@@ -315,7 +318,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
         try {
           await deps.loadPedalWorklets(ctx);
           if (!ret || disposed || noteInput || !guitarCfg.notes) return;
-          noteInput = deps.createGuitarInput(ctx, node, { tracker: { ...guitarCfg.tracker } });
+          noteInput = deps.createGuitarInput(ctx, node, { guitarMode: guitarCfg.guitarMode, tracker: { ...guitarCfg.tracker } });
           noteShared = false;
         } catch (err) {
           noteInput = null;
@@ -326,7 +329,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
       const fwd = (type) => noteInput.on(type, (e) => events.emit('guitarNote', { ...e, type }));
       noteOffs = ['noteOn', 'noteOff', 'bend', 'level', 'pitch'].map(fwd).filter(f => typeof f === 'function');
     }
-    try { noteInput.configure({ tracker: { ...guitarCfg.tracker } }); } catch { /* old input */ }
+    try { noteInput.configure({ guitarMode: guitarCfg.guitarMode, tracker: { ...guitarCfg.tracker } }); } catch { /* old input */ }
   }
 
   /**
@@ -340,6 +343,14 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
       if (disposed) return status();
       const ch = o.channel != null ? clamp(Math.round(Number(o.channel)) || 0, 0, 1) : guitarCfg.channel;
       if (ch !== guitarCfg.channel) { guitarCfg.channel = ch; closeGuitarTap(); }
+      if (o.guitarMode !== undefined) {
+        const mode = o.guitarMode === 'chords' ? 'chords' : 'single';
+        if (mode !== guitarCfg.guitarMode) {
+          guitarCfg.guitarMode = mode;
+          // Release through the router before a different detector takes over.
+          if (noteInput) events.emit('guitarNote', { type: 'stop' });
+        }
+      }
       if (o.notes != null) guitarCfg.notes = !!o.notes;
       if (o.gateDb != null && Number.isFinite(Number(o.gateDb))) guitarCfg.tracker.gateDb = clamp(Number(o.gateDb), -90, 0);
       if (o.bendRange != null && Number.isFinite(Number(o.bendRange))) guitarCfg.tracker.bendRange = clamp(Number(o.bendRange), 0.1, 24);
@@ -503,6 +514,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
       guitar: {
         on: !!guitar, level: guitarLevel, via: guitar ? guitar.via : null,
         channel: guitarCfg.channel, notes: guitarCfg.notes, tracking: !!noteInput,
+        guitarMode: guitarCfg.guitarMode,
         gateDb: guitarCfg.tracker.gateDb, bendRange: guitarCfg.tracker.bendRange,
         capturing: !!capturing, captureProgress: capturing ? capturing.progress : 0,
       },

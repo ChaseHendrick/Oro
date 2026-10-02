@@ -12,6 +12,7 @@ import { defaultState } from '../../src/core/params.js';
 import { createMusic } from '../../src/music/music.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { makeRandom } from '../../src/pedals/signal.js';
+import { RIG_KEY } from '../../src/pedals/rig-settings.js';
 import { createFakeClock, createFakeEngine } from '../music/fakes.js';
 
 let dom, createPedalSettings;
@@ -64,7 +65,7 @@ function setup(recording) {
   dom.flush();
   const group = pane.el.querySelectorAll('section').find(s => /^Guitar/.test(s.querySelector('h3').textContent));
   const button = (re) => group.querySelectorAll('button').find(b => re.test(b.textContent) || re.test(b.innerHTML));
-  return { host, rig, store, engine, guitars, uiCtx, pane, group, button, music };
+  return { host, rig, store, engine, guitars, uiCtx, pane, group, button, music, storage };
 }
 
 const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0)); dom.flush(); };
@@ -74,10 +75,65 @@ describe('Settings > Pedals > Guitar', () => {
     const { group, button } = setup(sineNote(220));
     expect(group).toBeTruthy();
     const text = group.textContent;
-    for (const label of ['Input channel', 'Guitar plays notes', 'Part', 'Gate', 'Bends as pitch bend', 'Capture']) expect(text).toContain(label);
+    for (const label of ['Input channel', 'Guitar plays notes', 'Single', 'Chords', 'Part', 'Gate', 'Bends as pitch bend', 'Capture']) expect(text).toContain(label);
     expect(text).toMatch(/Not tested with a real guitar yet/);
     expect(button(/Guitar plays notes/).getAttribute('aria-pressed')).toBe('false');
+    expect(button(/^Single$/).getAttribute('aria-checked')).toBe('true');
+    expect(button(/^Chords$/).getAttribute('aria-checked')).toBe('false');
     expect(button(/<span>Capture<\/span>/).disabled).toBe(true);
+  });
+
+  it('persists chord mode, explains its latency and disables bends without losing the Single preference', async () => {
+    const { rig, group, button, guitars, storage } = setup(sineNote(220));
+    button(/Guitar plays notes/).click();
+    await rig.set({ returnEnabled: 1, returnLayout: 'mono+guitar' });
+    await settle();
+    button(/^Chords$/).click();
+    await settle();
+    expect(rig.prefs.guitarMode).toBe('chords');
+    expect(JSON.parse(storage.m.get(RIG_KEY)).guitarMode).toBe('chords');
+    expect(button(/^Chords$/).getAttribute('aria-checked')).toBe('true');
+    expect(button(/Bends as pitch bend/).disabled).toBe(true);
+    expect(rig.prefs.guitarBends).toBe(1);
+    expect(guitars[0].configure).toHaveBeenLastCalledWith(expect.objectContaining({ guitarMode: 'chords' }));
+    expect(group.textContent).toMatch(/Chords are experimental and respond more slowly than Single/);
+    expect(group.textContent).toContain('Not tested with a real guitar yet');
+    expect(group.textContent).toContain('Capture does not record chords');
+    button(/^Single$/).click();
+    await settle();
+    expect(button(/Bends as pitch bend/).disabled).toBe(false);
+    expect(button(/Bends as pitch bend/).getAttribute('aria-pressed')).toBe('true');
+    expect(rig.prefs.guitarMode).toBe('single');
+  });
+
+  it('shows every heard chord note and clears the display when the tracker clears or notes are switched off', async () => {
+    const { rig, group, guitars } = setup(sineNote(220));
+    await rig.set({ guitarNotes: 1, guitarMode: 'chords', returnEnabled: 1, returnLayout: 'mono+guitar' });
+    await settle();
+    const out = group.querySelector('p.guitar-pitch');
+    guitars[0].emit('pitch', { mode: 'chords', notes: [40, 47, 52, 56, 59, 64], heard: [40, 47, 52, 56, 59, 64], voiced: true, time: 0.5 });
+    dom.flush();
+    expect(out.textContent).toBe('Hearing E2, B2, E3, G#3, B3, E4');
+    guitars[0].emit('pitch', { mode: 'chords', notes: [], heard: [], voiced: false, time: 0.7 });
+    dom.flush();
+    expect(out.textContent).toBe('Hearing no clear chord notes');
+    guitars[0].emit('pitch', { mode: 'chords', notes: [45, 52, 57], heard: [45, 52, 57], voiced: true });
+    await rig.set({ guitarNotes: 0 });
+    dom.flush();
+    expect(out.textContent).toBe('');
+  });
+
+  it('keeps Single pitch telemetry readable after returning from Chords', async () => {
+    const { rig, group, button, guitars } = setup(sineNote(220));
+    await rig.set({ guitarNotes: 1, guitarMode: 'chords', returnEnabled: 1, returnLayout: 'mono+guitar' });
+    await settle();
+    guitars[0].emit('pitch', { mode: 'chords', notes: [40, 47], heard: [40, 47], voiced: true });
+    dom.flush();
+    button(/^Single$/).click();
+    await settle();
+    guitars[0].emit('pitch', { voiced: true, midi: 45, freq: 110, clarity: 0.96 });
+    dom.flush();
+    expect(group.querySelector('p.guitar-pitch').textContent).toBe('Hearing A2 (110.0 Hz)');
   });
 
   it('turns guitar notes on, opens the return and plays the selected part from the tracker', async () => {
@@ -101,7 +157,7 @@ describe('Settings > Pedals > Guitar', () => {
 
   it('captures a held note into the part and shows the pitch it found', { timeout: 60000 }, async () => {
     const { rig, group, button, store, uiCtx } = setup(sineNote(220));
-    await rig.set({ returnEnabled: 1, returnLayout: 'mono+guitar' });
+    await rig.set({ guitarNotes: 1, guitarMode: 'chords', returnEnabled: 1, returnLayout: 'mono+guitar' });
     await settle();
     button(/<span>Capture<\/span>/).click();
     await settle();
@@ -110,6 +166,7 @@ describe('Settings > Pedals > Guitar', () => {
     expect(store.get('parts.0.userTerrain.A')).toMatchObject({ kind: 'wavetable', name: 'Guitar A3' });
     expect(store.get('parts.0.params.terrainA')).toBe(TERRAIN_INDEX.user);
     expect(uiCtx.toast).toHaveBeenCalledWith(expect.stringMatching(/Captured Guitar A3 into part 1, slot A/), expect.anything());
+    expect(rig.guitarNotes.config).toMatchObject({ enabled: true, guitarMode: 'chords' });
   });
 
   it('shows a clear error when there is no stable pitch', { timeout: 60000 }, async () => {

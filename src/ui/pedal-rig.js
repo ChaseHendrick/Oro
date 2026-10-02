@@ -24,7 +24,7 @@ import { partCount } from '../core/tracks.js';
 const AUDIO_KEYS = ['enabled', 'outputDeviceId', 'mainPair', 'sendPair', 'ceilingDb'];
 const RETURN_KEYS = ['returnEnabled', 'returnDeviceId', 'returnLayout', 'returnLevel', 'returnDelay', 'returnReverb'];
 const COMP_KEYS = ['compensate', 'compOffsetMs', 'lastLatencyMs'];
-const GUITAR_KEYS = ['guitarNotes', 'guitarTarget', 'guitarChannel', 'guitarGateDb', 'guitarBends'];
+const GUITAR_KEYS = ['guitarNotes', 'guitarMode', 'guitarTarget', 'guitarChannel', 'guitarGateDb', 'guitarBends'];
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 /** MIDI note -> 'A2' (C4 = 60, as on the keyboard). */
 export function noteLabel(m) {
@@ -146,29 +146,35 @@ export function createPedalRig({
 
   // ---------------------------------------------------------------- guitar
   const notes = createGuitarNotes({ store, router, engine });
-  let lastPitch = null;      // { freq, midi, clarity } from the tracker, for the display
+  let lastPitch = null;      // Single pitch, or { mode: 'chords', notes, heard }, for the display
   let capture = null;        // { stage, progress, ... } of the running or last Capture
   if (host) {
     offs.push(host.on('guitarNote', (e) => {
-      if (e && e.type === 'pitch') { lastPitch = e.voiced ? { freq: e.freq, midi: e.midi, clarity: e.clarity } : null; events.emit('pitch', lastPitch); return; }
+      if (e && e.type === 'pitch') {
+        lastPitch = e.mode === 'chords'
+          ? { mode: 'chords', notes: [...(e.notes || [])], heard: [...(e.heard || [])], voiced: !!e.voiced, time: e.time }
+          : e.voiced ? { freq: e.freq, midi: e.midi, clarity: e.clarity } : null;
+        events.emit('pitch', lastPitch);
+        return;
+      }
       notes.handle(e);
     }));
   }
   offs.push(notes.on((e) => events.emit('guitarNote', e)));
   let trackerSent = '';
   function applyGuitar() {
-    notes.configure({ enabled: !!prefs.guitarNotes, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
+    notes.configure({ enabled: !!prefs.guitarNotes, guitarMode: prefs.guitarMode, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
     if (!host || typeof host.setGuitar !== 'function') return Promise.resolve(null);
     const tc = notes.trackerConfig();
-    trackerSent = JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, tc]);
-    return host.setGuitar({ channel: prefs.guitarChannel - 1, notes: !!prefs.guitarNotes, gateDb: tc.gateDb, bendRange: tc.bendRange });
+    trackerSent = JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, prefs.guitarMode, tc]);
+    return host.setGuitar({ channel: prefs.guitarChannel - 1, notes: !!prefs.guitarNotes, guitarMode: prefs.guitarMode, gateDb: tc.gateDb, bendRange: tc.bendRange });
   }
   // The tracker's bend range follows the played part's Bend (and which part that is).
   offs.push(store.subscribe('', (path) => {
     if (!prefs.guitarNotes) return;
     if (path !== '' && !/bendRange|selectedPart|keyMode|^parts$|^parts\.\d+$|^ui$/.test(path)) return;
     const tc = notes.trackerConfig();
-    if (JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, tc]) !== trackerSent) applyGuitar();
+    if (JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, prefs.guitarMode, tc]) !== trackerSent) applyGuitar();
   }));
 
   // ---------------------------------------------------------------- pedal presets
@@ -346,12 +352,12 @@ export function createPedalRig({
     setCapture({ stage: 'recording', progress: 0, part, slot });
     // The held note is for the wavetable, not the synth: pause Guitar plays notes while recording.
     const muteNotes = !!prefs.guitarNotes;
-    if (muteNotes) notes.configure({ enabled: false, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
+    if (muteNotes) notes.configure({ enabled: false, guitarMode: prefs.guitarMode, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
     let rec;
     try {
       rec = await host.captureGuitar({ seconds, onProgress: (p) => setCapture({ stage: 'recording', progress: p, part, slot }) });
     } finally {
-      if (muteNotes) notes.configure({ enabled: !!prefs.guitarNotes, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
+      if (muteNotes) notes.configure({ enabled: !!prefs.guitarNotes, guitarMode: prefs.guitarMode, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
     }
     if (!rec || !rec.ok) return fail((rec && rec.reason) || 'Nothing was recorded.');
     setCapture({ stage: 'analysing', progress: 1, part, slot });

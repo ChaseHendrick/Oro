@@ -3,6 +3,23 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.5.0 (October 2026): Experimental guitar chords
+
+* **Settings > Pedals > Guitar > Tracking** offers **Single** and **Chords**. Single
+  remains the default. Chords detects several pitches from one clean guitar input
+  and sends individual notes through the same router, arpeggiator and MIDI output.
+* Audio is sampled by an AudioWorklet or ScriptProcessor fallback. Chord analysis
+  runs in a separate Worker to keep its heavier calculations off the audio thread. Mode changes, retargeting, closing the return and quiet
+  input release the previous notes. Capture still records one held note.
+* The pane lists heard chord notes. Bends remain available in Single mode, with the
+  preference retained when switching to Chords. Tracking mode is saved per computer.
+* Chords is experimental and responds more slowly than Single. Quiet strings and
+  octave-doubled strings can be missed; distortion makes detection harder. Validated
+  with generated signals, not real guitar or pedal hardware.
+* Panic clears the guitar and voice drivers' held notes, so a late input note-off
+  cannot stop a newer keyboard note. A Panic on one Layer track preserves source
+  routes on the other tracks.
+
 ## 1.4.0 (October 2026): Voice input
 
 ### Voice
