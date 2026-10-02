@@ -473,6 +473,7 @@ async function sweep(browser, viewport, theme) {
     }
     // Touch targets in the mobile tab bar and transport
     const small = await page.evaluate(() => [...document.querySelectorAll('.mtab, .transport-btn, .utils .icon-btn, .part-tab')]
+      .filter(el => el.getClientRects().length > 0) // skip controls hidden at this width
       .filter(el => el.getBoundingClientRect().height < 40 || el.getBoundingClientRect().width < 36).map(el => el.className));
     check(small.length === 0, `${tag}: primary touch targets are at least 40 px`, small.join(', '));
   }
