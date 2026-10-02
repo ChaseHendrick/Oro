@@ -243,3 +243,38 @@ visuals.setRenderStyle('relief'|'wire'|'contour'|'heat'|'points'); visuals.setPa
 ```
 
 Visuals send `engine.marble(part, speed, height)` from the physics, draw dot-lock markers (numbered, flashing on 'step' events with a lock), Tour waypoints (editable when `ui.editWaypoints`: click adds, drag moves, right-click deletes), the base orbit (thin) and modulated orbit (bright), per-voice orbits when voices differ, and a comet trail whose density follows `paceSpeed`. Dot gestures: Shift-drag = Size, Alt-drag = Rotate, wheel over the dot = Size, `[` / `]` = Size when the map has focus.
+
+## v1.2 looper and Resample
+
+| Module | Contract |
+|---|---|
+| `src/audio/looper-core.js` | `LooperCore(sampleRate, { emit })`: pure looper logic (`handle(msg, frame)`, `process(inL, inR, outL, outR, n, frame0)`), shared by the worklet and Node tests. States `empty / armed / record / play / overdub / paused`. Float32 buffers at the context rate; seam, overdub, start/stop and undo fades of `FADE_SECONDS` (8 ms); `softLimit` on stored samples; undo snapshots per overdub layer (`MAX_LAYERS` 8, `UNDO_BUDGET_BYTES`). |
+| `src/audio/looper-worklet.js` | Processor `'orograph-looper'`: 1 stereo input, 1 stereo output. |
+| `src/audio/looper.js` | `createLooper(ctx, { input, output, worklet })`; `engine.looper` (see below). |
+| `src/audio/resample.js` | `resampleToWavetable(L, R, sampleRate, { slice: 'auto'\|'tempo'\|'root', tempo, rootNote, name })` -> `{ ok, userTerrain, mode, detail }`; `nextResampleName(state)`. |
+| `src/ui/looper-control.js`, `src/ui/looper-panel.js` | The shared UI control (`ctx.looper`), the LOOP dock tab and the top-bar loop button. Device settings in `localStorage['orograph.looper']`. |
+
+Graph: `fx.masterTap` (master volume, after every effect) -> looper -> `fx.masterReturn`
+(the 1/ceiling stage before the limiter). The return is downstream of the tap, so the loop
+never reaches its own input; the recorder (post-limiter) records loop and live together.
+Offline bounces do not include the looper.
+
+Worklet messages: `{t:'main'|'stop'|'undo'|'clear'}`, `{t:'bars', v}`, `{t:'volume', v}`,
+`{t:'mute', v}`, `{t:'feedback', v}`, `{t:'transport', playing, beatTime, beat, spb}` (forwarded
+by `engine.setTransport`; bars are 4 beats and beat 0 is a bar line), `{t:'get', id}` ->
+`{t:'loop', id, L, R, len}`, `{t:'capture', id, bars | frames}` -> `{t:'captured', id, L, R}`.
+Out: `{t:'state', ...}` on changes, `{t:'pos', ...}` about 30 times a second.
+
+```js
+engine.looper.available; engine.looper.reason
+engine.looper.main(); stop(); undo(); clear(); setBars(n); setVolume(v); setMute(on); setFeedback(v)
+engine.looper.getLoop() -> Promise<{ L, R, len, sampleRate } | null>
+engine.looper.capture({ bars }) -> Promise<{ L, R, len, sampleRate } | null>
+engine.looper.exportWav({ format: 'pcm24' | 'float32' }) -> Promise<Blob | null>   // 24-bit uses TPDF dither
+engine.looper.status(); engine.looper.on('change' | 'pos' | 'info' | 'error', fn)
+```
+
+MIDI learn accepts action targets `{ scope: 'action', id }` with ids from `LEARNABLE_ACTIONS`
+(`looper.main`, `looper.stop`, `looper.undo`, `looper.clear`, `looper.mute`, `looper.resample`);
+a mapped CC rising past 64 emits `midi.on('action', { id })`. Saved session state is unchanged
+(resampled terrains are ordinary `userTerrain` wavetables with `lo` planes).

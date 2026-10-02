@@ -3,7 +3,9 @@
 // Writing: 24-bit integer PCM, built incrementally so a long recording never
 // needs one giant Float32 copy: the recorder converts each incoming block to
 // packed little-endian bytes straight away and the Blob is assembled from those
-// pieces plus a 44-byte header at the end.
+// pieces plus a 44-byte header at the end. The looper's export (v1.2) adds
+// 24-bit with TPDF dither and 32-bit IEEE float (format tag 3), both at the
+// context rate.
 //
 // Reading: a tolerant parser for the importer. decodeAudioData resamples to
 // the context rate, which would break wavetable frame sizes (a 2048-sample
@@ -22,7 +24,7 @@ function writeAscii(view, offset, str) {
  * 44-byte canonical WAV header (format tag 1, integer PCM).
  * @returns {Uint8Array}
  */
-export function wavHeader({ sampleRate, channels = 2, bitsPerSample = 24, frames }) {
+export function wavHeader({ sampleRate, channels = 2, bitsPerSample = 24, frames, format = 1 }) {
   const sr = Math.round(sampleRate);
   const nch = Math.max(1, Math.round(channels));
   const blockAlign = nch * (bitsPerSample >> 3);
@@ -35,7 +37,7 @@ export function wavHeader({ sampleRate, channels = 2, bitsPerSample = 24, frames
   writeAscii(v, 8, 'WAVE');
   writeAscii(v, 12, 'fmt ');
   v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);
+  v.setUint16(20, format === 3 ? 3 : 1, true);
   v.setUint16(22, nch, true);
   v.setUint32(24, sr, true);
   v.setUint32(28, sr * blockAlign, true);
@@ -93,6 +95,87 @@ export function encodeWav24(channels, sampleRate) {
   const frames = channels[0] ? channels[0].length : 0;
   const head = wavHeader({ sampleRate, channels: channels.length, bitsPerSample: 24, frames });
   const body = encodePCM24(channels, frames);
+  const pad = body.length & 1;
+  const out = new Uint8Array(head.length + body.length + pad);
+  out.set(head, 0);
+  out.set(body, head.length);
+  return out;
+}
+
+/**
+ * Small deterministic noise source for dither (xorshift32), uniform in [0, 1).
+ * Deterministic so exports are reproducible and testable.
+ */
+export function createDitherRng(seed = 0x9e3779b9) {
+  let x = (seed >>> 0) || 1;
+  return () => {
+    x ^= x << 13; x >>>= 0;
+    x ^= x >>> 17;
+    x ^= x << 5; x >>>= 0;
+    return x / 4294967296;
+  };
+}
+
+/**
+ * Interleave and pack as 24-bit PCM with TPDF dither: two uniform noises of
+ * one LSB each are added before rounding (triangular, +-1 LSB peak), which
+ * turns the quantisation error into a constant, signal-independent noise floor
+ * near -141 dBFS instead of distortion on quiet tails. Exact digital silence
+ * stays exactly zero.
+ */
+export function encodePCM24Dither(channels, frames = channels[0] ? channels[0].length : 0, rng = createDitherRng()) {
+  const nch = channels.length;
+  const out = new Uint8Array(frames * nch * 3);
+  let o = 0;
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < nch; c++) {
+      const ch = channels[c];
+      const x = i < ch.length ? ch[i] : 0;
+      let s = 0;
+      if (x === x && x !== 0) {
+        const v = x * INT24_SCALE + (rng() - rng());
+        s = Math.round(v);
+        if (s > INT24_MAX) s = INT24_MAX; else if (s < -INT24_SCALE) s = -INT24_SCALE;
+      }
+      out[o] = s & 255;
+      out[o + 1] = (s >> 8) & 255;
+      out[o + 2] = (s >> 16) & 255;
+      o += 3;
+    }
+  }
+  return out;
+}
+
+/** Interleave as 32-bit little-endian IEEE float (no quantisation; NaN/Inf become 0). */
+export function encodeFloat32(channels, frames = channels[0] ? channels[0].length : 0) {
+  const nch = channels.length;
+  const out = new Uint8Array(frames * nch * 4);
+  const view = new DataView(out.buffer);
+  let o = 0;
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < nch; c++) {
+      const ch = channels[c];
+      const x = i < ch.length ? ch[i] : 0;
+      view.setFloat32(o, Number.isFinite(x) ? x : 0, true);
+      o += 4;
+    }
+  }
+  return out;
+}
+
+/**
+ * One-shot WAV encoder for the looper export.
+ * @param {Float32Array[]} channels
+ * @param {number} sampleRate
+ * @param {{format?: 'pcm24'|'float32', dither?: boolean, rng?: () => number}} [o]
+ *   'pcm24' (default) is 24-bit with TPDF dither unless dither is false; 'float32' is IEEE float.
+ * @returns {Uint8Array}
+ */
+export function encodeWav(channels, sampleRate, { format = 'pcm24', dither = true, rng } = {}) {
+  const frames = channels[0] ? channels[0].length : 0;
+  const isFloat = format === 'float32';
+  const head = wavHeader({ sampleRate, channels: channels.length, bitsPerSample: isFloat ? 32 : 24, frames, format: isFloat ? 3 : 1 });
+  const body = isFloat ? encodeFloat32(channels, frames) : dither ? encodePCM24Dither(channels, frames, rng) : encodePCM24(channels, frames);
   const pad = body.length & 1;
   const out = new Uint8Array(head.length + body.length + pad);
   out.set(head, 0);

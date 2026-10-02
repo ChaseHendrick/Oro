@@ -12,6 +12,7 @@
 
 import workletCode from 'virtual:worklet:src/dsp/worklet.js';
 import recorderCode from 'virtual:worklet:src/audio/recorder-worklet.js';
+import looperCode from 'virtual:worklet:src/audio/looper-worklet.js';
 import terrainWorkerCode from 'virtual:worklet:src/audio/terrain-worker.js';
 import { NUM_PARTS } from '../core/params.js';
 import { createEmitter } from './emitter.js';
@@ -20,6 +21,7 @@ import { createStoreSync } from './sync.js';
 import { createTerrainGenerator } from './terrain-generator.js';
 import { createTerrainManager } from './terrain-manager.js';
 import { createRecorder, MAX_RECORD_SECONDS } from './recorder.js';
+import { createLooper } from './looper.js';
 import { importTerrainFile as importIntoStore, importStats } from './importers.js';
 import { wavHeader } from './wav.js';
 import { loadWorkletModule, withTimeout } from './worklet-loader.js';
@@ -74,11 +76,13 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let workletVia = null;
   const loadErrors = [];
   let recorderWorklet = false;
+  let looperWorklet = false;
   if (ctx) {
     if (wantMode !== 'script') {
-      const [main, rec] = await Promise.all([loadWorkletModule(ctx, workletCode), loadWorkletModule(ctx, recorderCode)]);
+      const [main, rec, loop] = await Promise.all([loadWorkletModule(ctx, workletCode), loadWorkletModule(ctx, recorderCode), loadWorkletModule(ctx, looperCode)]);
       if (main.ok) { dspMode = 'worklet'; workletVia = main.via; } else loadErrors.push(...main.errors);
       recorderWorklet = rec.ok;
+      looperWorklet = loop.ok;
     }
     if (dspMode === 'none') dspMode = 'script';
   }
@@ -293,6 +297,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     onEvent: (e) => events.emit('recording', e),
   }) : null;
 
+  // v1.2 looper: hears the master after the effects (fx.masterTap) and plays
+  // into the limiter input (fx.masterReturn). See src/audio/looper.js.
+  const looper = createLooper(ctx, { input: fx ? fx.masterTap : null, output: fx ? fx.masterReturn : null, worklet: looperWorklet });
+
   // ---- context state ----------------------------------------------------------------
   let wantRunning = false;
   const resumeIfWanted = () => {
@@ -389,6 +397,13 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     get outputDeviceId() { return outputDeviceId; },
     get recording() { return !!(recorder && recorder.isRecording()); },
     /**
+     * v1.2 looper on the master bus (src/audio/looper.js): main(), stop(), undo(), clear(),
+     * setBars(n), setVolume(v), setMute(on), setFeedback(v), getLoop(), capture({bars}),
+     * exportWav({format}), status(), on('change' | 'pos' | 'info' | 'error', fn).
+     * `available` is false (with `reason`) when AudioWorklet cannot load.
+     */
+    get looper() { return looper; },
+    /**
      * v1.1 pedal loop (src/audio/pedal-host.js), or null without Web Audio:
      * configure({enabled, sendChannels, mainChannels, ceilingDb}), setReturn({...}),
      * ping(), resetGuard(), status(), on('change' | 'guitar' | 'ping', fn).
@@ -467,6 +482,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       transportMsg = t;
       sync.flush();
       send(msgs);
+      // The looper starts recordings on bar lines and follows Play / Stop.
+      looper.transport({ ...t, spb: t.spb || (60 / clamp(Number(store.get('global.tempo')) || 120, 20, 400)) });
     },
 
     /** Channel pressure 0..1 (all voices of the part), or per-note pressure when `note` is given (poly AT / MPE). */
@@ -671,6 +688,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         workletVia,
         loadErrors: [...loadErrors],
         recorder: recorder ? recorder.mode : null,
+        looper: looper.available ? looper.status().state : null,
         recoveries,
         state: ctx ? ctx.state : 'none',
         sampleRate: ctx ? ctx.sampleRate : 0,
@@ -699,6 +717,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       sync.dispose();
       generator.dispose();
       if (recorder) recorder.dispose();
+      looper.dispose();
       if (pedals) { try { pedals.dispose(); } catch { /* ignore */ } }
       teardownSource();
       if (fx) fx.dispose();

@@ -1,5 +1,5 @@
 // Top bar: wordmark, part tabs (name, patch, note LED), the patch browser
-// (with Preview), transport (play/stop, tempo, record, bounce), Macros, MIDI
+// (with Preview), transport (play/stop, tempo, record, loop, bounce), Macros, MIDI
 // activity, theme, settings, help. In the desktop app it is also the window's
 // drag handle (see the app-region rules in panels.css).
 
@@ -9,6 +9,7 @@ import { schedule, addLoop } from './frame.js';
 import { createDragNumber } from './controls.js';
 import { createPatchBrowser } from './patch-browser.js';
 import { createRecorder, formatElapsed } from './record.js';
+import { createLooperButton } from './looper-panel.js';
 import { openBounce, bounceSupported } from './bounce.js';
 import { openMacros } from './macros.js';
 import { partVars, applyVars } from './color.js';
@@ -159,7 +160,10 @@ export function createTopbar(ctx, container) {
     if (bouncePop && bouncePop.isOpen()) { bouncePop.close(); return; }
     bouncePop = openBounce(ctx, bounceBtn);
   });
-  const transport = h('div', { class: 'transport', role: 'group', 'aria-label': 'Transport' }, play, h('div', { class: 'tempo-wrap' }, tempo.el, ext), rec, bounceBtn);
+  // v1.2 looper: Record / Play / Overdub with the loop position ring.
+  const loopBtn = createLooperButton(ctx);
+  scope.add(loopBtn.dispose);
+  const transport = h('div', { class: 'transport', role: 'group', 'aria-label': 'Transport' }, play, h('div', { class: 'tempo-wrap' }, tempo.el, ext), rec, loopBtn.el, bounceBtn);
 
   // ---------------------------------------------------------------- utilities
   const midiLed = h('span', { class: 'led midi-led', 'aria-hidden': 'true' });

@@ -1,0 +1,110 @@
+/* v1.2 looper: the LOOP dock tab and the loop button in the top bar.
+   State colours come from the theme tokens, so dark and light both work:
+   record = --rec, play = --success, overdub = --warn, stopped = --text-3. */
+
+.loop-main {
+  --loop-tone: var(--text-3);
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 56px; min-width: 132px; padding: 0 18px 0 8px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-weight: 650; font-size: var(--fs-md);
+  transition: background var(--dur-fast), border-color var(--dur-fast), box-shadow var(--dur);
+}
+.loop-main:hover:not(:disabled) { background: var(--panel-hover); }
+.loop-main:disabled { opacity: .45; }
+.loop-main[data-tone="idle"], .loop-main[data-tone="armed"], .loop-main[data-tone="record"] { --loop-tone: var(--rec); }
+.loop-main[data-tone="play"] { --loop-tone: var(--success); }
+.loop-main[data-tone="overdub"] { --loop-tone: var(--warn); }
+.loop-main[data-tone="paused"], .loop-main[data-tone="off"] { --loop-tone: var(--text-3); }
+.loop-main[data-tone="record"] { background: color-mix(in srgb, var(--rec) 16%, var(--panel-3)); border-color: color-mix(in srgb, var(--rec) 55%, transparent); }
+.loop-main[data-tone="play"] { border-color: color-mix(in srgb, var(--success) 50%, transparent); }
+.loop-main[data-tone="overdub"] { background: color-mix(in srgb, var(--warn) 16%, var(--panel-3)); border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
+.loop-main[data-tone="armed"] .loop-icon { animation: loop-blink .9s steps(2, jump-none) infinite; }
+.loop-main.is-busy { opacity: .7; }
+.loop-glyph { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; color: var(--loop-tone); }
+.loop-icon { display: grid; }
+.loop-glyph .icon { width: 20px; height: 20px; }
+.loop-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.loop-ring circle { fill: none; stroke-width: 2.6; }
+.loop-ring-track { stroke: var(--knob-track); }
+.loop-ring-fill { stroke: var(--loop-tone); stroke-dasharray: 100; stroke-dashoffset: 100; stroke-linecap: round; }
+.loop-ring.is-hidden .loop-ring-fill { opacity: 0; }
+.loop-label { min-width: 52px; text-align: left; }
+@keyframes loop-blink { 50% { opacity: .2; } }
+
+/* top bar: compact, the ring around the glyph */
+.loop-main--compact.loop-btn {
+  height: 34px; min-width: 38px; width: 40px; padding: 0;
+  border-radius: var(--r); background: transparent; border-color: transparent; gap: 0;
+}
+.loop-main--compact .loop-glyph { width: 30px; height: 30px; }
+.loop-main--compact .loop-glyph .icon { width: 14px; height: 14px; }
+.loop-main--compact.loop-btn:hover:not(:disabled) { background: var(--panel-hover); }
+.loop-main--compact[data-tone="record"], .loop-main--compact[data-tone="overdub"] { border-color: transparent; }
+
+/* LOOP tab */
+.dock-pane--loop {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.4fr) minmax(240px, 1fr) minmax(200px, .8fr);
+  gap: 12px; padding: 10px 12px 12px; align-content: start;
+}
+.loop-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.loop-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.loop-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.loop-tool {
+  position: relative;
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  width: 52px; height: 48px;
+  border-radius: var(--r);
+  color: var(--text-2);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: var(--fs-2xs); font-weight: 650; letter-spacing: .04em;
+}
+.loop-tool .icon { width: 18px; height: 18px; }
+.loop-tool:hover:not(:disabled) { background: var(--panel-hover); color: var(--text); }
+.loop-tool:disabled { opacity: .4; }
+.loop-tool.is-on { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: var(--warn-soft); }
+.loop-tool--danger:hover:not(:disabled) { color: var(--error); }
+.loop-badge { position: absolute; top: 3px; right: 4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; font-size: 9px; line-height: 14px; font-weight: 800; background: var(--accent); color: var(--accent-contrast); }
+.loop-badge:empty { display: none; }
+.loop-status { margin: 0; min-height: 2.6em; font-size: var(--fs-sm); color: var(--text-2); }
+.loop-note { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.4; }
+.loop-grid { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; align-items: end; }
+.loop-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.loop-slider-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.loop-slider { flex: 1; min-width: 80px; }
+.loop-value { font-size: var(--fs-xs); color: var(--text-2); width: 36px; text-align: right; }
+.loop-actions { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.loop-action { height: 32px; }
+.loop-actions .select { min-width: 110px; }
+
+@media (max-width: 1239px) and (min-width: 900px) {
+  .dock-pane--loop { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+/* phone: the Loop tab shows the dock; every target is at least 44 px */
+@media (max-width: 899px) {
+  .app[data-mtab="loop"] .dock { display: block; overflow: auto; }
+  /* Seven tabs with Loop: a little narrower so they fit a phone (still 44 px tall). */
+  .mtab { min-width: 48px; }
+  .dock-pane--loop { grid-template-columns: minmax(0, 1fr); padding: 8px; }
+  .loop-main { height: 56px; flex: 1 1 auto; }
+  .loop-tool { width: 56px; height: 52px; }
+  .loop-grid { grid-template-columns: minmax(0, 1fr); }
+  .loop-action { height: 44px; }
+  .loop-slider { min-height: 44px; }
+  .dock-pane--loop .seg-btn { height: 44px; min-width: 44px; }
+  .dock-pane--loop .select-native { height: 44px; }
+  /* The top bar is full on a phone: the Loop tab has the looper. */
+  .loop-btn { display: none; }
+}
+@media (pointer: coarse) {
+  .loop-tool { min-width: 44px; min-height: 44px; }
+  .loop-action { min-height: 44px; }
+}
+.loop-btn-icon { display: grid; }

@@ -3,6 +3,49 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.2.0 (October 2026): Looper and resampling
+
+### Looper
+
+* A **looper** on the master output, in the new **Loop** tab and as a loop button in the top
+  bar. One button cycles **Record**, **Play** and **Overdub**; **Stop**, **Undo**, **Clear**,
+  **Mute**, a loop **Volume** and an overdub **Feedback** (0 to 100%, how much of the loop
+  each overdub pass keeps) sit next to it. A ring around the button shows where the loop is.
+* **Locked to the tempo.** With the transport playing, recording starts on the next bar line
+  and closes by itself after 1, 2, 4 or 8 bars (2 by default), exact to the sample. A press
+  just after a bar line still starts on that bar. With the transport stopped, recording
+  starts at once and a second press closes the loop at any length.
+* **Follows the transport.** Stop stops the loop; Play restarts it on bar 1. Following
+  external MIDI clock works the same way.
+* **Overdub** sums new playing onto the loop on every pass. **Undo** steps back one overdub
+  layer at a time (up to 8 layers, within a memory limit).
+* **Clean sound.** Loops are stored as 32-bit float at the audio rate, never resampled.
+  The loop seam, punching in and out of overdub, starting, stopping, undo and every level
+  change are faded over a few milliseconds, so nothing clicks. Stacked overdubs pass a
+  gentle soft limit instead of clipping, and Feedback never goes above 100%.
+* **No feedback loops.** The looper listens to the master after the effects and before the
+  limiter, and plays back into the limiter, so the loop is never recorded into itself
+  except by overdub. Record (R) captures the loop together with everything else.
+* **Export WAV** saves the loop as 24-bit with TPDF dither, or as 32-bit float, at the
+  audio rate. Bounces and stems are unchanged and do not include the loop.
+
+### Resample
+
+* **Resample** turns the loop, or, when the looper is empty, the chosen number of bars of
+  the output, into a wavetable terrain in slot A or B of the selected part, named
+  Resample 1, Resample 2 and so on. Play the new terrain, loop it and resample again.
+* It uses the same high-precision path as guitar Capture (16-bit tables): with a steady
+  pitch it cuts one cycle per frame at that pitch. Material without one (drums, chords, a
+  whole mix) is cut at a fixed period from the tempo or from a root note you choose, and
+  the message says which. Every frame is band-limited, DC-free and levelled.
+
+### Controls
+
+* Keyboard: **Q** record / play / overdub, **Shift+Q** stop or restart the loop, **B** undo,
+  **Shift+B** clear, **M** mute.
+* **MIDI Learn** on the looper buttons and Resample: right-click (or long-press) a button and
+  press a button on your controller.
+
 ## 1.1.2 (October 2026)
 
 * Fixed: grabbing the dot made it jump when its position was modulated (by an LFO, Env 2 or

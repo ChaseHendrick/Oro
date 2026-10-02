@@ -1,4 +1,4 @@
-// Bottom dock: a slim vertical tab rail (SOUND / MOD / SEQ / MIX) and the
+// Bottom dock: a slim vertical tab rail (SOUND / MOD / SEQ / MIX / LOOP) and the
 // active pane. Panes are built the first time they are shown.
 
 import { h, createScope } from './dom.js';
@@ -7,12 +7,14 @@ import { createSoundPanel } from './sound-panel.js';
 import { createModPanel } from './mod-panel.js';
 import { createSeqPanel } from './seq-panel.js';
 import { createMixPanel } from './mix-panel.js';
+import { createLooperPanel } from './looper-panel.js';
 
 export const DOCK_TABS = [
   { id: 'sound', label: 'Sound', icon: 'sound', build: createSoundPanel },
   { id: 'mod', label: 'Mod', icon: 'mod', build: createModPanel },
   { id: 'seq', label: 'Seq', icon: 'seq', build: createSeqPanel },
   { id: 'mix', label: 'Mix', icon: 'mix', build: createMixPanel },
+  { id: 'loop', label: 'Loop', icon: 'loop', build: createLooperPanel },
 ];
 
 export function createDock(ctx, container) {

@@ -2,8 +2,9 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.1.2, including the guitar pedal features
-([section 15](#15-guitar-pedals)).
+going on under the hood. It describes version 1.2.0, including the guitar pedal features
+([section 15](#15-guitar-pedals)), and the looper and Resample
+([section 12](#12-recording-and-bouncing)).
 
 ![Orograph in the dark theme: the 3D map with the dot and its orbit, the Map panel on the right, the Sound tab below](screenshots/orograph-dark.webp)
 
@@ -726,6 +727,103 @@ Only what the sequencers, arpeggiators and dot locks play is rendered; parts wit
 pattern stay silent. Files are 24-bit WAVs named like
 `orograph-bounce-20261002-143015.wav`, and stems add `-part1`, `-part2` and so on.
 
+### Looper (1.2)
+
+The looper records what you hear and plays it back in a loop, so you can layer parts on top
+of each other live. It is in the **Loop** tab, and its main button is also in the top bar
+next to Record (on a phone, use the Loop tab).
+
+**The main button** (or **Q**) steps through the looper's states:
+
+| The button shows | What is happening | Pressing it |
+|---|---|---|
+| Loop (red dot) | Empty | Starts recording |
+| Wait (blinking) | Armed: waiting for the next bar line | Cancels |
+| Rec (red) | Recording the first pass | Closes the loop |
+| Play (green) | The loop plays | Starts overdubbing |
+| Dub (amber) | Overdub: what you play is added to the loop on every pass | Back to Play |
+| Stopped | The loop is kept but silent | Plays it |
+
+A ring around the button fills as the loop (or the recording) goes round.
+
+**Length and timing.** When the transport is playing, recording starts on the next bar line
+and stops by itself after the number of **Bars** you chose (1, 2, 4 or 8; 2 by default),
+exactly that long at the current tempo. If you press a moment after the downbeat (up to an
+eighth of a bar, at most 0.2 s), the recording still starts on that downbeat: the looper
+keeps the last half second of audio for this. Pressing the button again while it records
+closes the loop at the next whole bar instead. When the transport is stopped, recording
+starts at once and the next press closes the loop, at any length.
+
+**The transport.** Stopping the transport stops the loop, and pressing Play starts it again
+from its beginning on bar 1, in time with the sequencers. When Orograph follows an external
+MIDI clock, the clock's start and stop do the same. Changing the tempo afterwards does not
+stretch a loop that is already recorded.
+
+**The other controls:**
+
+* **Stop** (**Shift+Q**) stops the loop, or plays it again. A loop you stopped yourself stays
+  stopped when the transport starts.
+* **Undo** (**B**) removes the last overdub layer. The badge shows how many layers can be
+  undone (up to 8; very long loops keep fewer to save memory). Undo during the first
+  recording throws that recording away.
+* **Clear** (**Shift+B**) empties the looper.
+* **Mute** (**M**) silences the loop without stopping it.
+* **Volume** sets the loop's playback level (100% plays it back as it was recorded).
+* **Feedback** sets how much of the loop each overdub pass keeps: 100% keeps everything and
+  adds the new playing on top; lower values let older layers fade a little on every pass,
+  like tape echo. It never goes above 100%, so a loop cannot grow by itself.
+
+**What it records.** The looper listens to the master after the delay, reverb, chorus,
+warmth and master volume, and plays the loop back just before the limiter, so the limiter
+handles the loop and your live playing together. The loop is never fed back into its own
+input, so it only gets louder when you overdub something. **Record** (R) captures
+everything you hear, the loop included. Bounces do not include the loop.
+
+**Sound quality.** Loops are kept as 32-bit floating point at the audio device's rate and are
+never resampled. The seam where the loop wraps, punching in and out of overdub, starting,
+stopping, undo, and changes of volume, mute and feedback are all faded over a few
+milliseconds, so they do not click. If many overdubs pile up above full scale, a gentle soft
+limit keeps the loop under control instead of clipping it.
+
+**Export WAV** saves the loop to your downloads, named like
+`orograph-loop-20261002-143015.wav`, at the audio rate: **24-bit** (with TPDF dither, which
+keeps quiet tails clean) or **32-bit float** (every sample exactly as stored).
+
+Loops are not saved with your session: export the ones you want to keep.
+
+### Resample (1.2)
+
+**Resample** turns audio into a new wavetable terrain, so you can play a loop as a synth
+sound, loop that, and resample again.
+
+1. Choose the **Slot** (A or B) and select the part that should get the terrain.
+2. Press **Resample**. It uses the loop if there is one. If the looper is empty, it records
+   the chosen number of **Bars** of the output first (from the next bar line when the
+   transport plays), exactly as it comes out of the effects, with nothing added.
+3. The terrain appears in that slot of the selected part, named **Resample 1**,
+   **Resample 2** and so on, and the part switches to it.
+
+How the audio is cut into frames (**Frames**):
+
+* **Find pitch** (the default) looks for one steady pitch. If it finds one, each frame is
+  one cycle at that pitch, from the start of the audio to the end, just like guitar
+  Capture. If it does not (drums, chords, noise, a busy mix), it falls back to tempo slices
+  and the message says so.
+* **Tempo slices** cut the audio at a fixed period taken from the tempo: the beat is halved
+  until it lands between 55 and 110 Hz, so the slices stay in step with the music. The
+  message names the note that plays the slices back near their original speed.
+* **Root C2 ... C5** cut at the period of the note you choose. Playing that note on the new
+  terrain plays each slice at its original speed.
+
+Each frame is band-limited to what it can hold before it becomes a row of the table, its DC
+offset is removed and frame levels are evened out (by up to 12 dB). The table is stored at
+16-bit precision, like Capture, and plays back through the same anti-aliased tables as
+every other terrain. Resampled terrains are saved with your session like imported ones.
+
+**MIDI Learn.** Right-click (or long-press) the loop button, Stop, Undo, Clear, Mute or
+Resample and choose **MIDI Learn**, then press a button on your controller. A mapped button
+fires each time its value rises past the middle (use momentary buttons).
+
 ---
 
 ## 13. Settings
@@ -979,6 +1077,16 @@ typing in a text field.
 | C / V | Keyboard velocity down / up |
 | R | Record on / off (saves a WAV) |
 | Shift + P | Preview the selected part with a short phrase (P alone plays a note) |
+
+**Looper**
+
+| Keys | Action |
+|---|---|
+| Q | Loop: record, then play, then overdub |
+| Shift + Q | Stop or restart the loop |
+| B | Undo the last overdub layer |
+| Shift + B | Clear the loop |
+| M | Mute or unmute the loop |
 
 **Navigating**
 
