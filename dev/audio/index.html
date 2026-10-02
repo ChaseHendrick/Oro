@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orograph audio host harness</title>
+  <style>
+    :root { color-scheme: dark; --bg: #11141a; --panel: #181c24; --line: #2a303b; --fg: #e9e6e1; --mut: #8d94a0; --acc: #3fd0c9; --bad: #ff6b5e; --ok: #7bd88f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 2px; }
+    p.sub { color: var(--mut); margin: 0 0 14px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+    button, select, input[type=file] { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+    button:focus-visible, select:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    label { color: var(--mut); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; max-width: 980px; }
+    .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+    .tile canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 4px; image-rendering: pixelated; }
+    .tile span { font-size: 12px; color: var(--mut); }
+    canvas#scope { width: 100%; max-width: 980px; height: 120px; background: #0a0c10; border-radius: 8px; display: block; margin: 10px 0; }
+    #meter { height: 8px; width: 240px; background: #0a0c10; border-radius: 4px; overflow: hidden; }
+    #meter > i { display: block; height: 100%; width: 0; background: var(--acc); }
+    table { border-collapse: collapse; font-size: 13px; max-width: 980px; width: 100%; margin-top: 10px; }
+    td { border-top: 1px solid var(--line); padding: 3px 8px; vertical-align: top; }
+    td.ok { color: var(--ok); } td.bad { color: var(--bad); }
+    pre { background: #0a0c10; padding: 10px; border-radius: 8px; max-width: 980px; overflow: auto; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Orograph audio host harness</h1>
+  <p class="sub">createEngine({ store }) with the real worklet, effects, terrain manager, importer and recorder. Add <code>?auto</code> for the scripted checks, <code>&amp;mode=script</code> to force the ScriptProcessor host, <code>&amp;inline</code> for main-thread terrains.</p>
+  <div class="row">
+    <button id="start">Start audio</button>
+    <button id="note">Play A3</button>
+    <label>Part 1 terrain A <select id="terrain"></select></label>
+    <label>Delay send <input id="dsend" type="range" min="0" max="1" step="0.01" value="0.12"></label>
+    <label>Reverb send <input id="rsend" type="range" min="0" max="1" step="0.01" value="0.22"></label>
+    <input id="file" type="file" accept="image/*,.wav">
+    <button id="rec">Record</button>
+    <button id="panic">Panic</button>
+    <span id="meter"><i></i></span>
+  </div>
+  <canvas id="scope" width="980" height="120"></canvas>
+  <div class="grid" id="tiles"></div>
+  <table id="checks"></table>
+  <pre id="log">booting…</pre>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

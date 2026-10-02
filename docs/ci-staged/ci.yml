@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test-and-build:
+    name: Test and build the web app
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The web build never runs Electron; skip its 100 MB binary download.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build web app (dist/)
+        run: npm run build
+
+      - name: Build offline single file (dist-single/)
+        run: npm run build:single
+
+      - name: Name the offline file
+        run: |
+          mkdir -p offline
+          cp dist-single/index.html offline/Orograph.html
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: orograph-web
+          path: dist
+          if-no-files-found: error
+
+      - name: Upload offline HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: orograph-offline-html
+          path: offline/Orograph.html
+          if-no-files-found: error

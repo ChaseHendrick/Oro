@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Orograph</title>
+  <meta name="description" content="Orograph is a 3D wave terrain synthesizer: place a dot anywhere on a landscape, twist knobs, and play the sound of the land under a moving orbit.">
+  <meta name="theme-color" content="#070a12" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4eee2" media="(prefers-color-scheme: light)">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <script>
+    // Resolve the theme before first paint so the page never flashes the wrong colours.
+    (function () {
+      var pref = 'system';
+      try { pref = localStorage.getItem('orograph.theme') || 'system'; } catch (e) { /* storage blocked */ }
+      if (pref !== 'dark' && pref !== 'light') pref = 'system';
+      var dark = true;
+      try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { /* old browser */ }
+      var theme = pref === 'system' ? (dark ? 'dark' : 'light') : pref;
+      var root = document.documentElement;
+      root.dataset.theme = theme;
+      root.dataset.themePref = pref;
+      root.style.colorScheme = theme;
+      root.style.background = theme === 'light' ? '#efe7d8' : '#070a12';
+    })();
+  </script>
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar" data-region="topbar"></header>
+    <main class="stage" data-region="stage" aria-label="3D map">
+      <div class="viewport" data-viewport></div>
+    </main>
+    <nav class="mobile-tabs" data-region="mtabs"></nav>
+    <aside class="mappanel" data-region="map"></aside>
+    <section class="dock" data-region="dock"></section>
+    <section class="keys" data-region="keys"></section>
+  </div>
+  <noscript>
+    <div class="noscript" style="position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;font:16px/1.5 system-ui,sans-serif">
+      Orograph is an instrument that runs in your browser, so it needs JavaScript. Please turn JavaScript on and reload the page.
+    </div>
+  </noscript>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

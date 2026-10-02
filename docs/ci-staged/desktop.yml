@@ -1,0 +1,187 @@
+name: Desktop apps
+
+# Builds the Mac, Windows and Linux apps on every push and pull request.
+# Pushes to main (and v* tags) also publish everything to a GitHub Release, so
+# https://github.com/ChaseHendrick/synth/releases/latest always has the newest build.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  web:
+    name: Web and offline builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:single
+
+      - name: Package the web downloads
+        run: |
+          mkdir -p out
+          cp dist-single/index.html out/Orograph.html
+          (cd dist && zip -qr ../out/Orograph-web.zip .)
+
+      - name: Upload offline HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: orograph-offline-html
+          path: out/Orograph.html
+          if-no-files-found: error
+
+      - name: Upload web zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: orograph-web-zip
+          path: out/Orograph-web.zip
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: mac
+          - os: windows-latest
+            label: windows
+          - os: ubuntu-latest
+            label: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      # No Apple or Windows signing certificates: never search the keychain for one.
+      # The Mac app is still ad-hoc signed (build.mac.identity "-") so Apple silicon runs it.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # electron-builder downloads its own Electron for each platform.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package with electron-builder
+        run: npx electron-builder --publish never
+
+      - name: List the packages
+        run: ls -la release
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: orograph-${{ matrix.label }}
+          # Named patterns skip helper files such as NSIS's __uninstaller-*.exe and *.blockmap.
+          path: |
+            release/Orograph-*.dmg
+            release/Orograph-*.zip
+            release/Orograph-*.exe
+            release/Orograph-*.AppImage
+            release/Orograph-*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish GitHub Release
+    needs: [web, desktop]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download every build
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ls -la assets
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+            VERSION="${TAG#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+            TAG="v$VERSION"
+            # Point v<version> at this commit (create it the first time), so the
+            # release's source archive always matches its binaries.
+            if gh api "repos/$GH_REPO/git/ref/tags/$TAG" --silent 2>/dev/null; then
+              gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true --silent
+            else
+              gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" --silent
+            fi
+          fi
+
+          URL="https://github.com/$GH_REPO/releases/download/$TAG"
+          cat > notes.md <<EOF
+          Orograph $VERSION, built automatically from commit ${GITHUB_SHA:0:7}.
+
+          | Your computer | Download |
+          |---|---|
+          | Mac with Apple silicon (M1 or newer) | [Orograph-mac-arm64.dmg]($URL/Orograph-mac-arm64.dmg) |
+          | Mac with an Intel processor | [Orograph-mac-x64.dmg]($URL/Orograph-mac-x64.dmg) |
+          | Windows 10 or 11 (installer) | [Orograph-windows-setup.exe]($URL/Orograph-windows-setup.exe) |
+          | Windows (no installation) | [Orograph-windows-portable.exe]($URL/Orograph-windows-portable.exe) |
+          | Linux | [Orograph-linux-x86_64.AppImage]($URL/Orograph-linux-x86_64.AppImage) |
+          | Any computer, in Chrome or Edge, even offline | [Orograph.html]($URL/Orograph.html) |
+
+          The apps are not signed with paid Apple or Microsoft certificates, so the first launch
+          needs one extra click. The README explains it step by step:
+          https://github.com/$GH_REPO#download
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Orograph $VERSION" --notes-file notes.md --draft=false --prerelease=false --latest
+            gh release upload "$TAG" assets/* --clobber
+            # Drop files that this build no longer produces.
+            for name in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
+              if [[ ! -e "assets/$name" ]]; then gh release delete-asset "$TAG" "$name" --yes; fi
+            done
+          else
+            gh release create "$TAG" assets/* --verify-tag --title "Orograph $VERSION" --notes-file notes.md --latest
+          fi
+
+          echo "Published https://github.com/$GH_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

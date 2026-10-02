@@ -1,0 +1,202 @@
+/* Orograph design tokens.
+   Dark: a deep blue-black night with luminous accents.
+   Light: warm ivory paper with copper accents.
+   Part colours arrive at runtime as --part / --part-ink / --part-soft (see ui/color.js),
+   tuned per theme so they keep their contrast on either background. */
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r: 9px;
+  --r-lg: 13px;
+  --r-xl: 18px;
+
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --dur-fast: 110ms;
+  --dur: 180ms;
+  --dur-slow: 340ms;
+
+  --topbar-h: 56px;
+  --dock-h: 262px;
+  --map-w: 328px;
+  --gutter: 8px;
+  --hit: 32px;
+
+  /* Fallback part colour until the UI sets the real one. */
+  --part: #3fd0c9;
+  --part-raw: #3fd0c9;
+  --part-ink: #3fd0c9;
+  --part-soft: rgba(63, 208, 201, 0.16);
+  --part-line: rgba(63, 208, 201, 0.45);
+  --part-glow: rgba(63, 208, 201, 0.55);
+  --part-contrast: #0b0f18;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #070a12;
+  --bg-1: #0a0f1b;
+  --bg-glow: radial-gradient(1200px 600px at 70% -10%, rgba(76, 104, 190, 0.16), transparent 60%),
+             radial-gradient(900px 500px at 0% 110%, rgba(40, 140, 160, 0.08), transparent 60%);
+  --panel: rgba(14, 19, 32, 0.92);
+  --panel-solid: #0e1320;
+  --panel-2: #121929;
+  --panel-3: #182033;
+  --panel-hover: #1f2940;
+  --panel-active: #26314b;
+  --glass: rgba(10, 14, 25, 0.64);
+  --glass-strong: rgba(10, 14, 25, 0.82);
+  --border: rgba(148, 166, 214, 0.11);
+  --border-2: rgba(148, 166, 214, 0.18);
+  --border-strong: rgba(148, 166, 214, 0.3);
+  --divider: rgba(148, 166, 214, 0.08);
+
+  --text: #e8ecf6;
+  --text-2: #adb6cb;
+  --text-3: #8d97ae;
+  --text-dim: #6f7a92;
+  --text-inverse: #0a0e18;
+
+  --accent: #8fb6ff;
+  --accent-ink: #a6c5ff;
+  --accent-strong: #b8d0ff;
+  --accent-soft: rgba(143, 182, 255, 0.14);
+  --accent-contrast: #0a1226;
+  --focus: #a6c5ff;
+  --focus-ring: 0 0 0 2px var(--panel-solid), 0 0 0 4px var(--focus);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 10px 28px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.32);
+  --shadow-3: 0 28px 70px rgba(0, 0, 0, 0.6), 0 6px 18px rgba(0, 0, 0, 0.38);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+
+  --knob-face-1: #263049;
+  --knob-face-2: #121828;
+  --knob-face-ring: rgba(255, 255, 255, 0.07);
+  --knob-shadow: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  --knob-track: rgba(150, 168, 214, 0.15);
+  --knob-pointer: #f4f7ff;
+  --knob-live: #ffffff;
+  --knob-fill-glow: drop-shadow(0 0 3px var(--part-glow));
+
+  --led-off: rgba(150, 168, 214, 0.2);
+  --success: #52d7a0;
+  --success-soft: rgba(82, 215, 160, 0.14);
+  --warn: #ffc95c;
+  --warn-soft: rgba(255, 201, 92, 0.14);
+  --error: #ff7474;
+  --error-soft: rgba(255, 116, 116, 0.14);
+  --rec: #ff4f61;
+  --midi-in: #6fe3ff;
+  --midi-out: #ffc95c;
+
+  --scope-grid: rgba(150, 168, 214, 0.14);
+  --scrim: rgba(3, 5, 10, 0.62);
+  --kbd-bg: #1a2236;
+
+  --key-white-1: #2a3348;
+  --key-white-2: #1d2436;
+  --key-white-edge: rgba(0, 0, 0, 0.55);
+  --key-black-1: #0d111b;
+  --key-black-2: #060810;
+  --key-label: #7f8aa3;
+
+  --stage-bg: radial-gradient(120% 90% at 50% 30%, #121a2e 0%, #070a12 70%);
+  --scrollbar: rgba(150, 168, 214, 0.2);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #efe7d8;
+  --bg-1: #f4eee2;
+  --bg-glow: radial-gradient(1200px 600px at 70% -10%, rgba(214, 150, 95, 0.12), transparent 60%),
+             radial-gradient(900px 500px at 0% 110%, rgba(170, 130, 80, 0.08), transparent 60%);
+  --panel: rgba(251, 248, 241, 0.94);
+  --panel-solid: #fbf8f1;
+  --panel-2: #f5efe3;
+  --panel-3: #ede4d4;
+  --panel-hover: #e5d9c5;
+  --panel-active: #dccdb5;
+  --glass: rgba(252, 249, 243, 0.72);
+  --glass-strong: rgba(252, 249, 243, 0.9);
+  --border: rgba(96, 66, 32, 0.13);
+  --border-2: rgba(96, 66, 32, 0.2);
+  --border-strong: rgba(96, 66, 32, 0.32);
+  --divider: rgba(96, 66, 32, 0.09);
+
+  --text: #2b2117;
+  --text-2: #5a4a39;
+  --text-3: #6f5d49;
+  --text-dim: #85725c;
+  --text-inverse: #fffaf2;
+
+  --accent: #b05a26;
+  --accent-ink: #994a1b;
+  --accent-strong: #8a4115;
+  --accent-soft: rgba(176, 90, 38, 0.11);
+  --accent-contrast: #fffaf2;
+  --focus: #b05a26;
+  --focus-ring: 0 0 0 2px var(--panel-solid), 0 0 0 4px var(--focus);
+
+  --shadow-1: 0 1px 2px rgba(80, 50, 20, 0.12);
+  --shadow-2: 0 10px 28px rgba(80, 50, 20, 0.14), 0 2px 8px rgba(80, 50, 20, 0.08);
+  --shadow-3: 0 28px 70px rgba(80, 50, 20, 0.22), 0 6px 18px rgba(80, 50, 20, 0.1);
+  --inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  --knob-face-1: #fffdf8;
+  --knob-face-2: #ebe1cf;
+  --knob-face-ring: rgba(96, 66, 32, 0.16);
+  --knob-shadow: drop-shadow(0 2px 2px rgba(90, 60, 25, 0.22));
+  --knob-track: rgba(96, 66, 32, 0.13);
+  --knob-pointer: #2b2117;
+  --knob-live: #2b2117;
+  --knob-fill-glow: none;
+
+  --led-off: rgba(96, 66, 32, 0.18);
+  --success: #24754b;
+  --success-soft: rgba(47, 138, 91, 0.12);
+  --warn: #8a5208;
+  --warn-soft: rgba(196, 128, 20, 0.13);
+  --error: #b3352a;
+  --error-soft: rgba(192, 58, 47, 0.1);
+  --rec: #d23a3a;
+  --midi-in: #1f7fa3;
+  --midi-out: #b06a10;
+
+  --scope-grid: rgba(96, 66, 32, 0.14);
+  --scrim: rgba(60, 40, 20, 0.28);
+  --kbd-bg: #ede4d4;
+
+  --key-white-1: #fffdf8;
+  --key-white-2: #efe6d6;
+  --key-white-edge: rgba(96, 66, 32, 0.28);
+  --key-black-1: #3a2e24;
+  --key-black-2: #22190f;
+  --key-label: #72604b;
+
+  --stage-bg: radial-gradient(120% 90% at 50% 30%, #fbf6ec 0%, #e8dcc6 75%);
+  --scrollbar: rgba(96, 66, 32, 0.22);
+}
+
+/* Colours glide between themes only while the theme is switching. */
+:root.theme-anim,
+:root.theme-anim *,
+:root.theme-anim *::before,
+:root.theme-anim *::after {
+  transition: background-color var(--dur-slow) var(--ease), color var(--dur-slow) var(--ease),
+              border-color var(--dur-slow) var(--ease), fill var(--dur-slow) var(--ease),
+              stroke var(--dur-slow) var(--ease), box-shadow var(--dur-slow) var(--ease) !important;
+}

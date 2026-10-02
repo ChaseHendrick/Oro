@@ -1,0 +1,238 @@
+// HUD elements laid over the 3D view: a top-down minimap (click or drag on it
+// to place the dot precisely), a small coordinate / height readout that
+// follows the pointer, and a keyboard focus ring. Class names are prefixed
+// 'og-hud-'; inline styles are minimal and lean on the UI's CSS variables so
+// the UI can restyle everything.
+
+import { sampleRamp, linearToSrgb } from './palettes.js';
+
+const IMG_RES = 112;
+
+function el(tag, cls, style) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (style) e.setAttribute('style', style);
+  return e;
+}
+
+export function createMinimap(container, { onPick, label = 'Minimap: click or drag to place the dot' } = {}) {
+  const wrap = el('div', 'og-hud-minimap',
+    'position:absolute;right:12px;top:58px;z-index:3;border-radius:10px;overflow:hidden;' +
+    'background:var(--glass, rgba(10,14,25,0.64));border:1px solid var(--border-2, rgba(148,166,214,0.18));' +
+    'box-shadow:var(--shadow-2, 0 6px 22px rgba(0,0,0,0.35));touch-action:none;cursor:crosshair;user-select:none;');
+  wrap.setAttribute('role', 'img');
+  wrap.setAttribute('aria-label', label);
+  const canvas = el('canvas', 'og-hud-minimap-canvas', 'display:block;width:100%;height:100%;');
+  wrap.appendChild(canvas);
+  container.appendChild(wrap);
+  const ctx = canvas.getContext('2d');
+
+  const img = document.createElement('canvas');
+  img.width = img.height = IMG_RES;
+  const ictx = img.getContext('2d');
+  const imageData = ictx.createImageData(IMG_RES, IMG_RES);
+  const col = [0, 0, 0];
+  let size = 120, dpr = 1;
+  let pressed = false;
+  let wedge = null, wedgeKey = -1;
+
+  function setSize(px) {
+    size = Math.round(px);
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    wrap.style.width = size + 'px';
+    wrap.style.height = size + 'px';
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+  }
+  setSize(120);
+
+  function uvFromEvent(e) {
+    const r = canvas.getBoundingClientRect();
+    return {
+      u: Math.min(0.9999, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width))),
+      v: Math.min(0.9999, Math.max(0, (e.clientY - r.top) / Math.max(1, r.height))),
+    };
+  }
+  const down = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    pressed = true;
+    try { wrap.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+    const p = uvFromEvent(e);
+    if (onPick) onPick(p.u, p.v, 'start');
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const move = (e) => {
+    if (!pressed) return;
+    const p = uvFromEvent(e);
+    if (onPick) onPick(p.u, p.v, 'move');
+    e.stopPropagation();
+  };
+  const up = (e) => {
+    if (!pressed) return;
+    pressed = false;
+    const p = uvFromEvent(e);
+    if (onPick) onPick(p.u, p.v, 'end');
+    e.stopPropagation();
+  };
+  wrap.addEventListener('pointerdown', down);
+  wrap.addEventListener('pointermove', move);
+  wrap.addEventListener('pointerup', up);
+  wrap.addEventListener('pointercancel', up);
+  wrap.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+
+  return {
+    el: wrap,
+    setSize,
+
+    /** Rebuild the terrain image (call when the land changes, a few times a second at most). */
+    renderTerrain(hf, ramp, tint, tintAmt, sun) {
+      const d = imageData.data;
+      const n = IMG_RES;
+      const e = 1 / n;
+      const pl = Math.max(0.04, 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2]);
+      const lx = sun[0], lz = sun[2];
+      const ll = Math.hypot(lx, lz) || 1;
+      for (let j = 0; j < n; j++) {
+        const v = (j + 0.5) / n;
+        for (let i = 0; i < n; i++) {
+          const u = (i + 0.5) / n;
+          const h = hf.ready ? hf.norm(u, v) : 0;
+          sampleRamp(ramp, h * 0.5 + 0.5, col);
+          const lum = 0.2126 * col[0] + 0.7152 * col[1] + 0.0722 * col[2];
+          const k = tintAmt * (0.35 + 0.65 * (h * 0.5 + 0.5));
+          let r = col[0] + (lum * tint[0] / pl - col[0]) * k;
+          let g = col[1] + (lum * tint[1] / pl - col[1]) * k;
+          let b = col[2] + (lum * tint[2] / pl - col[2]) * k;
+          // simple hill shade from the sun's horizontal direction
+          const gx = hf.ready ? (hf.norm(u + e, v) - h) / e : 0;
+          const gz = hf.ready ? (hf.norm(u, v + e) - h) / e : 0;
+          const shade = Math.max(0.55, Math.min(1.25, 1 - 0.035 * (gx * lx + gz * lz) / ll * hf.lift));
+          r *= shade; g *= shade; b *= shade;
+          const o = (j * n + i) * 4;
+          d[o] = Math.round(linearToSrgb(r) * 255);
+          d[o + 1] = Math.round(linearToSrgb(g) * 255);
+          d[o + 2] = Math.round(linearToSrgb(b) * 255);
+          d[o + 3] = 255;
+        }
+      }
+      ictx.putImageData(imageData, 0, 0);
+    },
+
+    /**
+     * Draw one frame. uvs: unwrapped path (u, v) pairs, count points; dot and
+     * ghost in [0, 1); camAz: camera azimuth in radians (0 = looking towards -z).
+     */
+    draw(uvs, count, closed, dotU, dotV, ghostU, ghostV, ghostA, css, camAz, themeT) {
+      const W_ = canvas.width, H_ = canvas.height;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(img, 0, 0, W_, H_);
+
+      // Orbit, drawn at each periodic copy that touches the map.
+      if (count > 1) {
+        let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+        for (let i = 0; i < count; i++) {
+          const u = uvs[2 * i], v = uvs[2 * i + 1];
+          if (u < minU) minU = u; if (u > maxU) maxU = u;
+          if (v < minV) minV = v; if (v > maxV) maxV = v;
+        }
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        const step = count > 256 ? 2 : 1;
+        for (let pass = 0; pass < 2; pass++) {
+          ctx.strokeStyle = pass === 0 ? (themeT > 0.5 ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.55)') : css;
+          ctx.lineWidth = (pass === 0 ? 3.2 : 1.6) * dpr;
+          for (let oy = -1; oy <= 1; oy++) {
+            if (maxV + oy < 0 || minV + oy > 1) continue;
+            for (let ox = -1; ox <= 1; ox++) {
+              if (maxU + ox < 0 || minU + ox > 1) continue;
+              ctx.beginPath();
+              for (let i = 0; i < count; i += step) {
+                const x = (uvs[2 * i] + ox) * W_, y = (uvs[2 * i + 1] + oy) * H_;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+              }
+              if (closed) ctx.closePath();
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      // Camera heading: a soft wedge from the map centre.
+      const cx = W_ / 2, cy = H_ / 2;
+      const dirx = -Math.sin(camAz), diry = -Math.cos(camAz);
+      const gkey = W_ * 2 + (themeT > 0.5 ? 1 : 0);
+      if (gkey !== wedgeKey) {
+        wedgeKey = gkey;
+        wedge = ctx.createRadialGradient(cx, cy, 0, cx, cy, W_ * 0.42);
+        wedge.addColorStop(0, themeT > 0.5 ? 'rgba(60,40,20,0.20)' : 'rgba(255,255,255,0.16)');
+        wedge.addColorStop(1, 'rgba(255,255,255,0)');
+      }
+      ctx.fillStyle = wedge;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      const a0 = Math.atan2(diry, dirx);
+      ctx.arc(cx, cy, W_ * 0.42, a0 - 0.45, a0 + 0.45);
+      ctx.closePath();
+      ctx.fill();
+
+      if (ghostA > 0.01) {
+        ctx.setLineDash([2 * dpr, 2 * dpr]);
+        ctx.strokeStyle = css;
+        ctx.globalAlpha = ghostA;
+        ctx.lineWidth = 1.2 * dpr;
+        ctx.beginPath();
+        ctx.arc(ghostU * W_, ghostV * H_, 3.5 * dpr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+      // Dot with a contrasting ring.
+      ctx.fillStyle = css;
+      ctx.strokeStyle = themeT > 0.5 ? '#ffffff' : 'rgba(10,14,25,0.9)';
+      ctx.lineWidth = 1.6 * dpr;
+      ctx.beginPath();
+      ctx.arc(dotU * W_, dotV * H_, 4.2 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    },
+
+    get pressed() { return pressed; },
+
+    dispose() { wrap.remove(); },
+  };
+}
+
+/** Pointer readout and keyboard focus ring. */
+export function createOverlay(container) {
+  const readout = el('div', 'og-hud-readout',
+    'position:absolute;left:0;top:0;z-index:4;pointer-events:none;padding:3px 7px;border-radius:6px;' +
+    'font:11px/1.3 var(--font-mono, ui-monospace, monospace);color:var(--text, #e8ecf6);' +
+    'background:var(--glass-strong, rgba(10,14,25,0.82));border:1px solid var(--border, rgba(148,166,214,0.11));' +
+    'white-space:nowrap;opacity:0;transition:opacity 120ms;will-change:transform;');
+  readout.setAttribute('aria-hidden', 'true');
+  const focus = el('div', 'og-hud-focus',
+    'position:absolute;inset:0;z-index:1;pointer-events:none;border-radius:inherit;opacity:0;' +
+    'box-shadow:inset 0 0 0 2px var(--focus, #a6c5ff);transition:opacity 120ms;');
+  container.append(focus, readout);
+  let shown = false;
+  let lastText = '';
+
+  return {
+    readout,
+    focus,
+    show(x, y, text) {
+      if (text !== lastText) { readout.textContent = text; lastText = text; }
+      const w = container.clientWidth;
+      const ox = x + 16 + 130 > w ? x - 140 : x + 16;
+      readout.style.transform = `translate(${Math.round(ox)}px, ${Math.round(y + 14)}px)`;
+      if (!shown) { readout.style.opacity = '1'; shown = true; }
+    },
+    hide() {
+      if (shown) { readout.style.opacity = '0'; shown = false; }
+    },
+    setFocus(on) { focus.style.opacity = on ? '1' : '0'; },
+    dispose() { readout.remove(); focus.remove(); },
+  };
+}
