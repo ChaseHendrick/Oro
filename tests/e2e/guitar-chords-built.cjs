@@ -42,9 +42,12 @@ const target = process.argv[2] || pathToFileURL(path.resolve('dist-single/index.
         const wall = performance.now();
         while (ctx.currentTime < end && performance.now() - wall < 10000) await new Promise(r => setTimeout(r, 20));
         const heard = [...new Set(events.filter(e => e.type === 'noteOn').map(e => e.note))].sort((a, b) => a - b);
+        const held = [...o.music.router.heldNotes('sel')].sort((a, b) => a - b);
         await o.engine.pedals.setReturn({ enabled: false });
-        const released = [...new Set(events.filter(e => e.type === 'noteOff').map(e => e.note))].sort((a, b) => a - b);
-        return { heard, released, sampleRate: ctx.sampleRate };
+        const remaining = [...o.music.router.heldNotes('sel')];
+        const driverRemaining = o.ui.ctx.pedals.status().guitar.notes.soundingNotes;
+        const stopped = events.some(e => e.type === 'stop');
+        return { heard, held, remaining, driverRemaining, stopped, sampleRate: ctx.sampleRate };
       } finally {
         off();
         try { source.stop(); } catch {}
@@ -53,7 +56,10 @@ const target = process.argv[2] || pathToFileURL(path.resolve('dist-single/index.
       }
     }, signal);
     assert.deepEqual(result.heard, [48, 52, 55], 'built app detects the generated triad');
-    assert.deepEqual(result.released, result.heard, 'closing the return releases all notes');
+    assert.deepEqual(result.held, result.heard, 'the real note router holds the full chord');
+    assert.equal(result.stopped, true, 'closing the return notifies the note driver');
+    assert.deepEqual(result.remaining, [], 'closing the return releases routed notes');
+    assert.deepEqual(result.driverRemaining, [], 'closing the return clears the driver');
     assert.deepEqual(errors, [], 'no browser errors');
     console.log('PASS built app chord input and return close', JSON.stringify(result));
   } finally { await browser.close(); }
