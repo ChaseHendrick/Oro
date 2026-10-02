@@ -30,7 +30,7 @@ const LOOKAHEAD_TAU = 0.8;           // seconds: time constant of the way back t
 export const INTERVAL_MS = 25;       // scheduler wake-up period
 export const START_DELAY = 0.06;     // headroom so the first notes are not late
 export const PPQ = 24;               // MIDI clock pulses per quarter note
-const EXT_AHEAD_BEATS = 6 / PPQ;     // follow mode: schedule at most a 16th past the last pulse received
+const EXT_AHEAD_BEATS = 6 / PPQ;     // follow mode: schedule a 16th past the last pulse received (more after a stall)
 const SLIDE_OVERLAP = 0.004;         // a slid note overlaps the next one by this much (legato)
 const HEARD_KEEP = 8;                // per part: recently scheduled steps kept to answer "which step is sounding"
 
@@ -271,7 +271,10 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     let horizon = now + lookahead;
     const live = playing && anchored;
     if (live) {
-      if (external) horizon = Math.min(horizon, timeAt(extLastBeat + EXT_AHEAD_BEATS));
+      // Following: stay close behind the master, but after a stall reach as far
+      // ahead as the grown lookahead so late pulses do not drop steps. Stop
+      // cancels whatever was queued past it (see stop()).
+      if (external) horizon = Math.min(horizon, timeAt(extLastBeat + Math.max(EXT_AHEAD_BEATS, lookahead / spb)));
       scheduleSeq(now, horizon);
       if (!external) scheduleClock(now, horizon);
       frontier = Math.max(frontier, horizon);
@@ -302,6 +305,8 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     if (!playing) { setUiPlaying(0); return; }
     const now = timebase.now();
     playing = false;
+    // Steps queued ahead of the stop must not play after it.
+    if (typeof router._cancelAfter === 'function') router._cancelAfter(now, 'seq');
     releaseTies(now);
     locks.cancelAll();
     if (anchored && !external) emitter.emit('clock', { type: 'stop', time: now });

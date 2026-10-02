@@ -857,3 +857,17 @@ describe('telemetry watch', () => {
     expect(tele.every(m => m.part === 2)).toBe(true);
   });
 });
+
+describe('cancelNotes', () => {
+  it('drops tagged note-ons after the given time with their own note-offs, keeps the rest', () => {
+    const dsp = makeDSP({ terrainA: T.swell });
+    const seq = (m) => ({ ...m, tag: 'seq' });
+    dsp.handleMessage(seq(on(60, 1, 0.10))); dsp.handleMessage(seq(off(60, 0.30)));   // starts before: kept
+    dsp.handleMessage(seq(on(62, 1, 0.40))); dsp.handleMessage(seq(off(62, 0.45)));   // after: dropped
+    dsp.handleMessage(seq(on(64, 1, 0.50))); dsp.handleMessage(seq(off(64, 0.55)));   // after: dropped
+    dsp.handleMessage(on(67, 1, 0.50)); dsp.handleMessage(off(67, 0.60));             // untagged (arp, preview): kept
+    dsp.handleMessage({ t: 'cancelNotes', after: 0.2, tag: 'seq' });
+    const left = dsp.events.filter(e => e.type !== 2).map(e => [e.type, e.note, e.time]);
+    expect(left).toEqual([[1, 60, 0.10], [0, 60, 0.30], [1, 67, 0.50], [0, 67, 0.60]]);
+  });
+});

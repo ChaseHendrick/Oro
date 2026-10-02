@@ -82,14 +82,14 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   function engineOn(part, note, vel, time, source) {
     if (note < 0 || note > 127) return;
-    try { if (engine) engine.noteOn(part, note, vel, time); } catch (err) { console.warn('[orograph] noteOn failed', err); }
+    try { if (engine) engine.noteOn(part, note, vel, time, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOn failed', err); }
     emitter.emit('sched', { part, note, vel, on: true, time, source });
     announce({ part, note, vel, on: true, source }, time);
   }
 
   function engineOff(part, note, time, source) {
     if (note < 0 || note > 127) return;
-    try { if (engine) engine.noteOff(part, note, time); } catch (err) { console.warn('[orograph] noteOff failed', err); }
+    try { if (engine) engine.noteOff(part, note, time, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOff failed', err); }
     emitter.emit('sched', { part, note, vel: 0, on: false, time, source });
     announce({ part, note, vel: 0, on: false, source }, time);
   }
@@ -428,6 +428,10 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     scheduleArps, arpActive,
     setKick(fn) { kick = typeof fn === 'function' ? fn : () => {}; },
     _emit: (type, detail) => emitter.emit(type, detail),
+    /** Drop queued `source` notes that would start after audio time `after` (engine side). */
+    _cancelAfter(after, source) {
+      try { if (engine && typeof engine.cancelNotes === 'function') engine.cancelNotes(after, source); } catch { /* engine not ready */ }
+    },
     _engineOn: engineOn,
     _engineOff: engineOff,
     dispose() { for (const u of unsubs) u(); },

@@ -297,6 +297,41 @@ describe('transport: stalls', () => {
     music.transport.stop();
   });
 
+  it('following external clock, a stall does not drop steps once the lookahead has grown', () => {
+    const { clock, engine, store, music } = setup({ tempo: 90 });
+    fillPattern(store, 0);
+    music.transport.setFollow(true);
+    music.transport.syncStart({ beat: 0 });
+    const spt = 0.5 / 24; // 120 bpm master
+    const t0 = clock.ctx.currentTime + 0.01;
+    let k = 0;
+    // Pulses arrive on time, except during a stall: then nothing runs and the
+    // backlog is handled at once when the main thread is free again.
+    const runTo = (end) => {
+      for (; t0 + k * spt <= end; k++) {
+        const at = t0 + k * spt;
+        if (at > clock.ctx.currentTime) clock.advance(at - clock.ctx.currentTime, 0.002);
+        music.transport.syncTick({ beat: k / 24, time: at, bpm: 120 });
+      }
+    };
+    const stall = (sec) => { clock.advance(sec, sec); runTo(clock.ctx.currentTime); };
+    runTo(t0 + 1);
+    stall(0.3);                       // first stall grows the lookahead
+    expect(music.transport.lookahead()).toBeGreaterThan(0.4);
+    runTo(clock.ctx.currentTime + 0.2);
+    const from = clock.ctx.currentTime;
+    stall(0.3);                       // the second one is already covered
+    runTo(clock.ctx.currentTime + 0.5);
+    const ons = engine.ons(0).filter(e => e.time >= from && e.time <= clock.ctx.currentTime);
+    for (let i = 1; i < ons.length; i++) expect(ons[i].time - ons[i - 1].time).toBeCloseTo(0.125, 6);
+    expect(ons.length).toBeGreaterThanOrEqual(Math.floor((clock.ctx.currentTime - from) / 0.125));
+    // Stop cancels the sequencer notes queued past it, so none play late.
+    const cancels = [];
+    engine.cancelNotes = (after, tag) => cancels.push({ after, tag });
+    music.transport.syncStop();
+    expect(cancels).toEqual([{ after: clock.ctx.currentTime, tag: 'seq' }]);
+  });
+
   it('does not treat the pause between two plays as a stall', () => {
     const { clock, store, music } = setup({ tempo: 120 });
     fillPattern(store, 0);

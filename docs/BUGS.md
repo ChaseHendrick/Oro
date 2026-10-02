@@ -13,7 +13,7 @@ Run used: `node tests/e2e/app-deep.cjs http://127.0.0.1:5292/` on base `e405c61`
 | 1 | High | Session autosave never runs while any dot moves | Fixed |
 | 2 | Medium | A change made just before closing or reloading the page is lost | Fixed |
 | 3 | Medium | EXT badge and read-only tempo stay on after an external MIDI clock stops arriving | Fixed |
-| 4 | Low | Following external clock drops sequencer steps after a main-thread stall | Open |
+| 4 | Low | Following external clock drops sequencer steps after a main-thread stall | Fixed |
 | 5 | (test) | Scene timing checks counted wall time, not audio time | Test fixed |
 
 ## 1. Session autosave never runs while any dot moves (high)
@@ -67,7 +67,7 @@ from `src/midi/clock.js`). `clock` events now also carry `active`. `createMidi` 
 **Regression tests:** `tests/midi/midi.test.js` ("announces when the clock stops arriving",
 "keeps the clock active while pulses keep coming, without an event per pulse").
 
-## 4. Following external clock drops steps after a main-thread stall (low, open)
+## 4. Following external clock drops steps after a main-thread stall (low, fixed)
 
 **Seen:** `midi`: "sequencer steps follow the clock" counted 13 step events in 3 s (expected
 more than 20) during a run where other test processes were loading the CPU. Run alone, the
@@ -80,10 +80,19 @@ scheduling horizon is capped at a 16th note past the last received pulse
 the stall are skipped as too late. In internal mode the lookahead grows after a stall
 (`adaptLookahead`, up to 0.5 s), so later stalls are covered; follow mode has no such margin.
 
-**Why open:** the cap is deliberate: scheduling further past the last pulse means notes keep
-playing after the master sends Stop, and tempo changes from the master are followed later.
-A possible change is to let the cap grow with the adaptive lookahead after a stall; that is
-a behaviour decision for the owner, not a clear-cut fix.
+**Fix:** the follow-mode horizon now reaches `max(a 16th, the adaptive lookahead)` past the
+last pulse, so after one stall the lookahead grows and later stalls are covered, as in
+internal mode. The cost of scheduling further ahead was notes playing after Stop, so Stop
+(internal or MIDI) now cancels the sequencer notes queued past the stop time: sequencer
+notes carry a `seq` tag to the worklet, and a new `{t:'cancelNotes', after, tag}` message
+drops tagged note-ons later than `after` together with their own note-offs. Notes already
+sounding keep their note-off; arp, preview and played notes are untouched. Regression tests:
+`tests/music/transport.test.js` (follow-mode stall; fails without the fix) and
+`tests/dsp/round-d.test.js` (cancelNotes).
+
+**Remaining limit:** notes already sent to an external MIDI output with a future timestamp
+cannot be recalled, so after a stall a device on MIDI out can still hear up to the grown
+lookahead (at most 0.5 s) past Stop. Normally that window is about 0.12 s, as before.
 
 ## 5. Scene timing checks used wall time (test problem, fixed in the test)
 

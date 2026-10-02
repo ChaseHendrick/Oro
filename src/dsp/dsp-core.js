@@ -881,6 +881,7 @@ export class OrographDSP {
       case 'noteOff': this.schedule(0, msg); break;
       case 'allOff': this.allOff(msg.part); break;
       case 'panic': this.panic(); break;
+      case 'cancelNotes': this.cancelNotes(msg.after, msg.tag); break;
       case 'bend': { const P = this.partAt(msg.part); if (P) P.bend = Math.max(-1, Math.min(1, finiteOr(msg.v, 0))); break; }
       case 'wheel': { const P = this.partAt(msg.part); if (P) P.wheel = clamp01(finiteOr(msg.v, 0)); break; }
       case 'pressure': this.setTouch(msg, 'press'); break;
@@ -1080,7 +1081,30 @@ export class OrographDSP {
       if (type === 1) this.noteOn(P, note, vel); else this.noteOff(P, note);
       return;
     }
-    this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0 });
+    this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0, tag: typeof msg.tag === 'string' ? msg.tag : null });
+  }
+
+  /**
+   * {t:'cancelNotes', after, tag?}: drop queued note-ons later than `after`
+   * (only those carrying `tag` when given) together with each one's own
+   * note-off, so a stopped sequence does not keep playing what it had
+   * scheduled ahead. Notes already sounding keep their scheduled note-off.
+   */
+  cancelNotes(after, tag) {
+    const t = finiteOr(after, 0);
+    const want = typeof tag === 'string' ? tag : null;
+    const E = this.events;
+    const drop = new Set();
+    for (let i = 0; i < E.length; i++) {
+      const e = E[i];
+      if (e.type !== 1 || e.time <= t || (want !== null && e.tag !== want) || drop.has(e)) continue;
+      drop.add(e);
+      for (let j = i + 1; j < E.length; j++) {
+        const o = E[j];
+        if (o.type === 0 && o.part === e.part && o.note === e.note && o.tag === e.tag && !drop.has(o)) { drop.add(o); break; }
+      }
+    }
+    if (drop.size) this.events = E.filter(e => !drop.has(e));
   }
 
   /** Sorted insert; at equal times parameter changes go before notes (a note sees its step's params). */

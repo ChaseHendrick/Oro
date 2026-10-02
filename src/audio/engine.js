@@ -362,13 +362,23 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       return ctx.state;
     },
 
-    noteOn(part, note, vel = 0.8, time = 0) {
+    noteOn(part, note, vel = 0.8, time = 0, tag) {
       if (!validPart(part) || !Number.isFinite(note)) return;
-      post({ t: 'noteOn', part, note, vel: Number.isFinite(vel) ? vel : 0.8, time: Number.isFinite(time) ? time : 0 });
+      const msg = { t: 'noteOn', part, note, vel: Number.isFinite(vel) ? vel : 0.8, time: Number.isFinite(time) ? time : 0 };
+      if (typeof tag === 'string') msg.tag = tag;
+      post(msg);
     },
-    noteOff(part, note, time = 0) {
+    noteOff(part, note, time = 0, tag) {
       if (!validPart(part) || !Number.isFinite(note)) return;
-      post({ t: 'noteOff', part, note, time: Number.isFinite(time) ? time : 0 });
+      const msg = { t: 'noteOff', part, note, time: Number.isFinite(time) ? time : 0 };
+      if (typeof tag === 'string') msg.tag = tag;
+      post(msg);
+    },
+    /** Drop queued notes (with `tag`, if given) that would start after audio time `after`. */
+    cancelNotes(after, tag) {
+      const msg = { t: 'cancelNotes', after: Number.isFinite(after) ? after : 0 };
+      if (typeof tag === 'string') msg.tag = tag;
+      post(msg);
     },
     allNotesOff(part) {
       if (part === undefined || part === null) post({ t: 'allOff' });
