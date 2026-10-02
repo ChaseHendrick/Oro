@@ -264,12 +264,25 @@
 .pedal-presets .field[aria-invalid="true"] { border-color: var(--warn); }
 .pedal-presets .popover-note { max-width: none; }
 .preset-pedals { color: var(--text-3); font-size: var(--fs-xs); }
+/* ================================================================== Settings > Voice (v1.4) */
+.settings-voice { display: flex; flex-direction: column; gap: 4px; }
+.settings-voice > .callout { margin-top: 12px; }
+.settings-voice .inline-controls { flex-wrap: wrap; align-items: center; }
+.settings-voice .inline-controls .select { min-width: 220px; flex: 1 1 220px; }
+.voice-gain .voice-meter { width: 140px; }
+.voice-clip { display: inline-grid; place-items: center; min-width: 38px; height: 18px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--border); color: var(--text-3); font-size: var(--fs-xs); font-weight: 650; }
+.voice-clip.is-on { background: var(--error-soft); border-color: var(--error); color: var(--error); }
+.voice-monitor { margin-top: 4px; }
+.voice-monitor.is-bad { color: var(--warn); }
 @media (max-width: 899px) {
   .pedal-slider, .pedal-meter { width: 100%; }
   .pedal-cards { grid-template-columns: minmax(0, 1fr); }
   /* Device pickers get their own line under the label. */
   .settings-pedals .setting-row:has(> .inline-controls) > .setting-text { flex-basis: 100%; }
   .settings-pedals .setting-row > .inline-controls { flex: 1 1 100%; }
+  .settings-voice .setting-row:has(> .inline-controls) > .setting-text { flex-basis: 100%; }
+  .settings-voice .setting-row > .inline-controls { flex: 1 1 100%; }
+  .voice-gain .voice-meter { flex: 1 1 120px; }
 }
 /* 44 px touch targets for every control in the pane on phones and touch screens. */
 @media (max-width: 899px), (pointer: coarse) {
@@ -278,4 +291,7 @@
   /* Switches keep their look; an invisible margin makes the hit area 46 px tall. */
   .settings-pedals .toggle--switch { height: 26px; }
   .settings-pedals .toggle--switch::before { content: ''; position: absolute; inset: -10px -6px; }
+  .settings-voice .btn, .settings-voice .seg-btn, .settings-voice .select-native, .settings-voice .mslider { min-height: 44px; }
+  .settings-voice .toggle--switch { height: 26px; }
+  .settings-voice .toggle--switch::before { content: ''; position: absolute; inset: -10px -6px; }
 }

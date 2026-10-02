@@ -28,6 +28,7 @@ import { createPiano } from './piano.js';
 import { openModPopover } from './mod-popover.js';
 import { openSettings } from './settings.js';
 import { createPedalRig } from './pedal-rig.js';
+import { createVoiceRig } from './voice-rig.js';
 import { createLooperControl } from './looper-control.js';
 import { openHelp } from './help.js';
 import { createStartOverlay } from './start-overlay.js';
@@ -211,6 +212,16 @@ export function createUI(root, modules = {}) {
   } catch (err) {
     console.warn('[ui] the pedal rig is unavailable', err);
     ctx.pedals = null;
+  }
+  // v1.4 voice input (Settings > Voice). Optional like the pedal rig.
+  ctx.voice = null;
+  try {
+    ctx.voice = createVoiceRig({ store, engine, router: music ? music.router : null });
+    scope.add(ctx.voice.dispose);
+    ctx.voice.restore().catch((err) => console.warn('[ui] could not restore voice input', err));
+  } catch (err) {
+    console.warn('[ui] voice input is unavailable', err);
+    ctx.voice = null;
   }
 
   // v1.2 looper: one control shared by the top bar, the Loop tab, shortcuts and MIDI.

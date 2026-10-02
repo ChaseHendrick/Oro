@@ -126,7 +126,14 @@ describe('guitar notes: note on / off', () => {
     expect(normalizeTarget(null)).toBe('sel');
     expect(normalizeTarget(2)).toBe(2);
     expect(normalizeTarget('3')).toBe(3);
-    expect(normalizeTarget(9)).toBe('sel');
+    expect(normalizeTarget(9)).toBe(9);
+    expect(normalizeTarget(16)).toBe('sel');
+  });
+
+  it('keeps a target on any of the 16 tracks by default (1.3.0 fell back to the selected track past 4)', () => {
+    const notes = createGuitarNotes({ store: null, router: { resolve: () => [], noteOn() {}, noteOff() {} } });
+    notes.configure({ target: 11 });
+    expect(notes.config.target).toBe(11);
   });
 });
 

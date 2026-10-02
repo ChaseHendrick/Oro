@@ -74,6 +74,9 @@ few lines.
 * **Looper and resampling.** A tempo-locked looper with overdub, undo and WAV export, and
   **Resample**, which turns the loop (or a few bars of the output) into a new wavetable
   terrain you can play, loop and resample again.
+* **Voice input (1.4).** Sing into any microphone, a laptop's own included:
+  hear it with the synth, loop and resample vocals, play a part by singing or humming,
+  capture a sung note as a terrain, and let your voice move the terrain through Links.
 * **MIDI and the Akai MPC XL.** Omni or one channel per part, MPC pad scale mode, a
   Q-Link learn wizard, MIDI Learn on any knob, clock in or out, MPE, and a step by step
   MPC guide inside the app.

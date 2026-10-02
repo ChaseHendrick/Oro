@@ -68,6 +68,8 @@ describe('policy', () => {
     const text = pkg.build.mac.extendInfo && pkg.build.mac.extendInfo.NSMicrophoneUsageDescription;
     expect(typeof text).toBe('string');
     expect(text).toMatch(/pedal/);
+    expect(text).toMatch(/Voice/);
+    expect(text).toMatch(/vocals/);
     expect(text).not.toMatch(/\u2014/);
   });
 

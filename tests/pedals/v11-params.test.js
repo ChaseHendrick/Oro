@@ -27,8 +27,8 @@ describe('pedal parameters', () => {
     expect(PART_PARAM_INDEX.terrainA).toBe(0);
   });
 
-  it('adds Guitar Level as the last Links source and keeps the older indices', () => {
-    expect(LINK_SOURCES[LINK_SOURCES.length - 1]).toBe('Guitar Level');
+  it('adds Guitar Level after Terrain Height and keeps the older indices', () => {
+    expect(LINK_SOURCES[15]).toBe('Guitar Level');   // v1.4 appends Voice Level after it
     expect(LINK_SOURCES.indexOf('Terrain Height')).toBe(14);
     expect(LINK_SOURCES.indexOf('Macro 1')).toBe(5);
     const links = sanitizeLinks([{ src: 15, dst: 'cutoff', amt: 0.5, curve: 0 }, { src: 99, dst: 'morph', amt: 1, curve: 0 }]);

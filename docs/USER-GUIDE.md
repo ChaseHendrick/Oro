@@ -2,9 +2,10 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.3.0, including the guitar pedal features
+going on under the hood. It describes version 1.4.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
-([section 12](#12-recording-and-bouncing)).
+([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
+[section 13](#voice-14).
 
 ![Orograph in the dark theme: the 3D map with the dot and its orbit, the Map panel on the right, the Sound tab below](screenshots/orograph-dark.webp)
 
@@ -516,6 +517,7 @@ controls, with an amount and a response curve. Each part can have up to 8.
 | **Random** | −1 to +1, a new value for each note |
 | **Terrain Height** | −1 to +1, the height of the land under the dot |
 | **Guitar Level** | 0 to 1, how loud the guitar on the pedal return's second channel is (see [Guitar pedals](#15-guitar-pedals)) |
+| **Voice Level** | 0 to 1, how loud you sing or speak into the microphone (see [Voice](#voice-14)) |
 
 **Curve** shapes the response: **Linear**, **Soft** (squared: gentle at first, strong at the
 end) or **Hard** (square root: strong at first). **Amount** runs from −100% to +100%. Links
@@ -894,6 +896,85 @@ computer, not part of a patch.
 | **Pristine** | Standard, plus a band-limited single cycle per voice, rebuilt about every 256 samples and crossfaded, whenever the loop is steady. Falls back to Standard for a voice whose loop is being moved at audio rate. | Extra work per voice. The cleanest tone. |
 | **Raw** | Two times oversampling with the terrain smoothing switched off. | Like Standard. Deliberately gritty and digital: aliasing on purpose. |
 
+### Voice (1.4)
+
+**Settings > Voice** brings a microphone into Orograph: a laptop's own microphone, a USB
+microphone, or a microphone on an audio interface. Your voice joins the master next to the
+tracks, so you hear it with the synth, the delay and reverb can colour it, the looper records
+and overdubs it, and Resample can turn a vocal loop into a terrain. Nothing is opened until
+you turn **Voice** on; the browser then asks for permission once. The sound stays on your
+computer and is only recorded when you record or loop it. Voice input has been tested with
+simulated signals in software, not yet with real microphones.
+
+**Microphone**
+
+* **Voice** switches the microphone on and off.
+* **Input** picks the microphone. Names appear once the browser may use the microphone;
+  press **Refresh** after plugging one in.
+* By default the browser's voice-call processing (echo cancellation, noise suppression,
+  auto gain) is switched off, so you hear exactly what the microphone picks up. Orograph asks
+  for the audio rate it runs at (48 kHz on most computers) and 24-bit where the device offers
+  it, so the browser does not resample. The facts under the controls show what the browser
+  actually gave.
+* **Mic Cleanup** turns the browser's noise suppression and echo cancellation on. It helps
+  when you sing into a laptop with its speakers playing, at the cost of a duller sound and
+  cut-off quiet notes. Leave it off with headphones or a good microphone. Auto gain stays off
+  either way, because it fights the input gain.
+* **Channels**: **Mono** uses input 1 (where an interface puts its first microphone),
+  **Stereo** keeps both sides.
+* **Input gain** (-12 to +36 dB) with a meter and a **Clip** light. Sing your loudest line:
+  the meter should stay out of the clip light. When the light says the microphone itself is
+  clipping, lower its level in the computer's sound settings or on the interface; otherwise
+  turn **Input gain** down.
+* **Monitor** decides whether you hear yourself. **Auto** turns it on only when the output
+  looks like headphones or an audio interface, and keeps it off with speakers, above all a
+  laptop's own microphone with its own speakers. **Use headphones to avoid feedback**: a
+  microphone near speakers hears itself and starts to howl. **On** and **Off** override Auto.
+  With Monitor off you do not hear the voice, but the looper still records it.
+* A **feedback guard** listens to the voice whenever the microphone is open and mutes it if
+  it starts to howl, runs away or clips. Press **Unmute** after fixing the cause (headphones,
+  Monitor off, less gain). A howl holds one exact pitch, so a sung note with normal vibrato or
+  drift passes, but a very loud note held almost perfectly straight (within a few cents) for
+  over half a second can occasionally trip it.
+
+**Processing** (all off by default)
+
+* **High-pass 80 Hz** removes rumble, handling noise and pops below the voice.
+* **Compressor** is gentle (2.5:1 from about -20 dB, with a little make-up gain) and evens
+  out loud and quiet words.
+* **De-esser** compresses only the band above about 5.5 kHz, taming sharp "s" and "t" sounds.
+
+**Voice strip**: **Level**, **Pan**, **Delay send** and **Reverb send** for the voice, like a
+mixer strip.
+
+**Sing to play**
+
+* **Voice plays notes**: sing or hum single notes and a track plays them, like a keyboard
+  (MIDI out, Layer mode, the arpeggiator and sustain all apply). It uses the same pitch
+  tracker as the guitar. **Track** chooses which track (Selected track follows the track you
+  are editing). **Gate** sets how loud you must sing to start a note; raise it if room noise or
+  breaths play notes. **Bends as pitch bend** turns slides and vibrato into the track's pitch
+  bend within its Bend range; off, a slide steps to the next note. This works best with
+  Monitor off or headphones, so the synth does not feed back into the tracker.
+* **Capture** records one sung or hummed note for three seconds and turns it into a
+  wavetable terrain, attack to release, in slot A or B of the voice's track (named, for
+  example, Voice A3). Hold one steady note with little vibrato.
+* **Voice level** shows the **Voice Level** Links source: how loud you sing, 0 to 1, in every
+  track. Try **Voice Level to Morph** or to the filter cutoff so singing moves the terrain.
+
+**Looping vocals.** Turn on Voice, start the looper (Loop tab) and sing: the loop records the
+voice with the synth. Overdub stacks harmonies. With laptop speakers, keep Monitor off; when
+the loop plays back through the speakers while you overdub, the microphone also hears it, so
+it is recorded again a little (use headphones to avoid that). **Resample** then turns a held
+vocal loop into a terrain. The master **Record** and bounces include the voice only while
+it is monitored (bounces never include live input).
+
+**What to expect from a laptop microphone.** It works, and it is fine for ideas, humming
+notes and modulation, but it is not a studio microphone: it picks up the room, the fan and
+the keyboard, and it has little low end. Headphones make the biggest difference, then a USB
+or interface microphone. Monitoring through the browser adds a few milliseconds of delay
+(more with Mic Cleanup and the compressor), which singers notice less with headphones.
+
 ### MIDI & MPC, Pedals, Shortcuts, About
 
 Covered in the next sections. **About** shows the version and licence.
@@ -1185,6 +1266,19 @@ waypoints still works with the flat map.
 **High notes sound harsh or metallic.** That is aliasing. Try **Key>Size** below 0, a smaller
 **Size**, a smoother terrain, or **High** / **Pristine** quality. Or enjoy it: **Raw** mode
 exists for that sound.
+
+**Voice: no microphone or no sound.**
+* Use the desktop app, or a secure page (https or localhost) in Chrome, Edge, Firefox or
+  Safari.
+* If you refused access once, allow the microphone in the site settings (the icon at the
+  left of the address bar), then press **Try again** in Settings > Voice. On macOS the
+  desktop app also needs **System Settings > Privacy & Security > Microphone**.
+* Check **Monitor**: with Auto and speakers it stays off on purpose. Use headphones, or set
+  it to On.
+* If the voice went silent, the feedback guard may have muted it: press **Unmute**.
+
+**Voice: it howls or echoes.** Use headphones, or set **Monitor** to Off. On a laptop with
+its speakers playing, **Mic Cleanup** removes much of the echo.
 
 **MIDI device not found.**
 * Use the desktop app, or Chrome / Edge on a secure page. Safari has no Web MIDI.

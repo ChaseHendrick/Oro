@@ -82,7 +82,7 @@ describe('round D contract', () => {
       dot: { mode: 4, waypoints: [{ x: 2, y: 0.3, beats: 99 }, null], tourMode: 9 },
     }] });
     const p = m.parts[0];
-    // An unknown source index is clamped to the last known source (Guitar Level since v1.1).
+    // An unknown source index is clamped to the last known source (Voice Level since v1.4).
     expect(p.links).toEqual([{ src: LINK_SOURCES.length - 1, dst: 'cutoff', amt: 1, curve: 1 }]);
     expect(p.mods.morph.lfoShape).toBe(6);
     expect(p.mods.morph.steps.length).toBe(16);

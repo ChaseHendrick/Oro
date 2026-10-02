@@ -18,6 +18,8 @@
 //
 // Pure: no Web Audio. Tests feed it synthetic tracker / level events.
 
+import { MAX_PARTS } from '../core/params.js';
+
 export const GUITAR_SOURCE = 'guitar';
 export const DEFAULT_BEND_RANGE = 2;
 /** Tracker bend range while bends are off: a bend past ~0.9 semitones becomes the next note. */
@@ -29,8 +31,8 @@ export const GATE_MAX_DB = -20;
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-/** 'sel' or a part index 0..numParts-1. */
-export function normalizeTarget(t, numParts = 4) {
+/** 'sel' or a track index 0..numParts-1 (tracks that do not exist yet resolve to none in the router). */
+export function normalizeTarget(t, numParts = MAX_PARTS) {
   if (t === 'sel' || t == null || t === '') return 'sel';
   const n = Math.round(Number(t));
   return Number.isInteger(n) && n >= 0 && n < numParts ? n : 'sel';
@@ -41,8 +43,9 @@ export function normalizeTarget(t, numParts = 4) {
  * @param {object} o.store   the app store (reads parts.N.params.bendRange)
  * @param {object} o.router  createRouter(): noteOn(target, note, vel, source), noteOff(target, note, source), resolve(target)
  * @param {object} [o.engine] engine.bend(part, -1..1)
+ * @param {string} [o.source] note source tag for the router (v1.4 Voice plays notes uses 'voice')
  */
-export function createGuitarNotes({ store, router, engine = null, numParts = 4 } = {}) {
+export function createGuitarNotes({ store, router, engine = null, numParts = MAX_PARTS, source = GUITAR_SOURCE } = {}) {
   const cfg = { enabled: false, target: 'sel', gateDb: DEFAULT_GATE_DB, bends: true };
   let current = null;   // { note, parts: number[], target }
   let bentParts = [];   // parts whose pitch bend this driver moved away from 0
@@ -87,7 +90,7 @@ export function createGuitarNotes({ store, router, engine = null, numParts = 4 }
     const c = current;
     current = null;
     unbend();
-    try { router.noteOff(c.target, c.note, GUITAR_SOURCE); } catch (err) { console.warn('[guitar notes] noteOff failed', err); }
+    try { router.noteOff(c.target, c.note, source); } catch (err) { console.warn('[guitar notes] noteOff failed', err); }
     emit({ type: 'noteOff', note: c.note, parts: c.parts, reason });
   }
 
@@ -101,7 +104,7 @@ export function createGuitarNotes({ store, router, engine = null, numParts = 4 }
     const vel = clamp(Number.isFinite(e.velocity) ? e.velocity : 0.8, 0.05, 1);
     current = { note, parts, target };
     stats.notes++; stats.lastNote = note; stats.lastVelocity = vel;
-    try { router.noteOn(target, note, vel, GUITAR_SOURCE); } catch (err) { console.warn('[guitar notes] noteOn failed', err); current = null; return; }
+    try { router.noteOn(target, note, vel, source); } catch (err) { console.warn('[guitar notes] noteOn failed', err); current = null; return; }
     emit({ type: 'noteOn', note, velocity: vel, parts, legato: !!e.legato, freq: e.freq });
   }
 
@@ -154,6 +157,7 @@ export function createGuitarNotes({ store, router, engine = null, numParts = 4 }
     /** Release the sounding note (return closed, notes switched off). */
     stop: () => release('stop'),
     get config() { return { ...cfg }; },
+    get source() { return source; },
     get sounding() { return current ? current.note : null; },
     stats: () => ({ ...stats, sounding: current ? current.note : null }),
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },

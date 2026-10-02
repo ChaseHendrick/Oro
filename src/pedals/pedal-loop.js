@@ -180,15 +180,21 @@ export function limiterGains(ceilingDb = -18, drive = 4) {
  *            and not dying away, for holdMs; or >= quietThresholdDb for quietHoldMs
  *            (a loop through the send limiter settles near -18 dBFS). A plucked
  *            note always decays. Deliberate feedback or an E-bow can trip it:
- *            raise the thresholds or switch the guard off for that.
+ *            raise the thresholds or switch the guard off for that. With
+ *            howlSpreadCents, the pitch must also stay within that many cents
+ *            over the whole hold: a howl sits on one frequency, while a held
+ *            sung vowel is just as periodic but wobbles (vibrato, drift).
  *   runaway  level climbing in every quarter of riseWindowMs and now loud:
- *            loop gain above 1.
+ *            loop gain above 1. With riseFloorDb, every quarter must already be
+ *            above it, so a note starting out of silence (a sung attack) is not
+ *            a climb; feedback grows out of sound that is already there.
  *   clipping the return pinned at full scale for clipMs.
  */
 export function createFeedbackDetector({
   sampleRate = 48000, thresholdDb = -9, holdMs = 400, clarityMin = 0.95, decayAllowDb = 0.5,
   quietThresholdDb = -24, quietHoldMs = 1500, quietClarityMin = 0.97,
-  riseWindowMs = 400, riseStepDb = 1.5, clipDb = -0.3, clipMs = 300,
+  riseWindowMs = 400, riseStepDb = 1.5, riseFloorDb = -Infinity, clipDb = -0.3, clipMs = 300,
+  howlSpreadCents = Infinity,
 } = {}) {
   const meter = createPeriodicityMeter({ sampleRate, size: 2048, minFreq: 50, maxFreq: 5000 });
   const keep = Math.max(holdMs, quietHoldMs, riseWindowMs, clipMs) + 200;
@@ -208,18 +214,28 @@ export function createFeedbackDetector({
     const levelDb = gainToDb(rms(block));
     const peakDb = gainToDb(peakAbs(block));
     // The periodicity check costs an FFT; only loud blocks can trip anything.
-    const clarity = levelDb >= Math.min(thresholdDb - 12, quietThresholdDb) ? meter.measure(block).clarity : 0;
+    const m = levelDb >= Math.min(thresholdDb - 12, quietThresholdDb) ? meter.measure(block) : null;
+    const clarity = m ? m.clarity : 0;
+    const freq = m && m.freq > 0 ? m.freq : 0;
     st.levelDb = levelDb; st.clarity = clarity;
-    hist.push({ t, levelDb, peakDb, clarity });
+    hist.push({ t, levelDb, peakDb, clarity, freq });
     while (hist.length && hist[0].t < t - keep) hist.shift();
     if (st.tripped) return st;
 
     const since = (ms) => hist.filter(h => h.t >= t - ms);
+    // Max minus min pitch over the window, in cents, within howlSpreadCents.
+    const steadyPitch = (w) => {
+      if (!(howlSpreadCents < Infinity)) return true;
+      let lo = Infinity, hi = 0;
+      for (const h of w) { if (!(h.freq > 0)) return false; if (h.freq < lo) lo = h.freq; if (h.freq > hi) hi = h.freq; }
+      return 1200 * Math.log2(hi / lo) <= howlSpreadCents;
+    };
     const howling = (ms, db, clar) => {
       const w = since(ms);
       return w.length >= 3 && t - w[0].t >= ms * 0.8 &&
         w.every(h => h.levelDb >= db && h.clarity >= clar) &&
-        w[w.length - 1].levelDb >= w[0].levelDb - decayAllowDb;
+        w[w.length - 1].levelDb >= w[0].levelDb - decayAllowDb &&
+        steadyPitch(w);
     };
     // Howl: loud and steady for holdMs, or (held down by the -18 dBFS send
     // limiter) quieter but just as steady for quietHoldMs.
@@ -235,7 +251,7 @@ export function createFeedbackDetector({
       for (const h of win) { const k = clamp(Math.floor((h.t - t0) / riseWindowMs * 4), 0, 3); q[k] += h.levelDb; n[k]++; }
       if (n.every(c => c > 0)) {
         const m = q.map((s, i) => s / n[i]);
-        if (m[1] >= m[0] + riseStepDb && m[2] >= m[1] + riseStepDb && m[3] >= m[2] + riseStepDb) { trip('runaway', t); return st; }
+        if (m[0] >= riseFloorDb && m[1] >= m[0] + riseStepDb && m[2] >= m[1] + riseStepDb && m[3] >= m[2] + riseStepDb) { trip('runaway', t); return st; }
       }
     }
     // Clipping
