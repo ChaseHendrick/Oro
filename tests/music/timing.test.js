@@ -40,8 +40,8 @@ describe('external clock guard', () => {
     const anchors = [];
     engine.setTransport = (a) => anchors.push({ ...a, now: clock.ctx.currentTime });
     const s = defaultState();
-    s.parts[0].seq.enabled = 1;
-    s.parts[0].seq.steps.forEach(st => { st.on = 1; });
+    s.parts[0].seqOn = 1;
+    s.parts[0].patterns[0].steps.forEach(st => { st.on = 1; });
     const store = createStore(s);
     const music = createMusic({ store, engine, timers: clock.timers, perfNow: clock.perfNow });
     const t = music.transport;

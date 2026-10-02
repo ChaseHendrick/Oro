@@ -125,7 +125,7 @@ export function openDotSettings(ctx, anchor) {
   }
   let pop = null;
   scope.add(binder.path('dot.mode', { id: 'dotMode', curve: 'enum', min: 0, max: DOT_MODES.length - 1, default: 0 }).subscribe(() => schedule(render)));
-  scope.add(store.subscribe('parts', (path) => { if (/\.dot\.waypoints/.test(path) || /^parts\.\d\.dot$/.test(path)) schedule(render); }));
+  scope.add(store.subscribe('parts', (path) => { if (/\.dot\.waypoints/.test(path) || /^parts\.\d+\.dot$/.test(path)) schedule(render); }));
   render();
   pop = openPopover(ctx.layers, anchor, body, {
     className: 'popover--dot', label: 'Dot settings', placement: 'bottom-end',

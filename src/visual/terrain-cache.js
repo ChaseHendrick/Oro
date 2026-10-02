@@ -4,7 +4,8 @@
 // built yet, or running without an engine), the same tables are generated
 // locally with the DSP module.
 
-import { NUM_PARTS } from '../core/params.js';
+import { MAX_PARTS } from '../core/params.js';
+import { partCount, permute } from '../core/tracks.js';
 import { TERRAIN_INDEX } from '../dsp/catalog.js';
 import { generateTerrain, decodeUserTerrain } from '../dsp/terrains.js';
 
@@ -13,8 +14,8 @@ const LOCAL_SIZE = 512;
 const ENGINE_WAIT_MS = 450;
 
 export function createTerrainCache({ store, engine, onChange }) {
-  const entries = Array.from({ length: NUM_PARTS }, () => ({ A: null, B: null }));
-  const timers = Array.from({ length: NUM_PARTS }, () => ({ A: 0, B: 0 }));
+  let entries = Array.from({ length: MAX_PARTS }, () => ({ A: null, B: null }));
+  let timers = Array.from({ length: MAX_PARTS }, () => ({ A: 0, B: 0 }));
   let disposed = false;
 
   function keyFor(part, slot) {
@@ -70,7 +71,7 @@ export function createTerrainCache({ store, engine, onChange }) {
 
   /** Engine 'terrain' event: {part, slot: 'A'|'B'|0|1, size, data}. */
   function onEngineTerrain(ev) {
-    if (!ev || !ev.data || !(ev.part >= 0 && ev.part < NUM_PARTS)) return;
+    if (!ev || !ev.data || !(ev.part >= 0 && ev.part < MAX_PARTS)) return;
     const slot = ev.slot === 1 || ev.slot === 'B' ? 'B' : 'A';
     const size = ev.size || Math.round(Math.sqrt(ev.data.length));
     clearTimeout(timers[ev.part][slot]);
@@ -103,7 +104,14 @@ export function createTerrainCache({ store, engine, onChange }) {
   }
 
   function invalidateAll() {
-    for (let p = 0; p < NUM_PARTS; p++) invalidate(p);
+    for (let p = 0; p < partCount(store); p++) invalidate(p);
+  }
+
+  /** The track list was reordered: tables move with their tracks, new tracks start empty. */
+  function remap(perm, fresh = []) {
+    for (const t of timers) { clearTimeout(t.A); clearTimeout(t.B); t.A = 0; t.B = 0; }
+    entries = permute(entries, perm, fresh, () => ({ A: null, B: null }));
+    timers = Array.from({ length: MAX_PARTS }, () => ({ A: 0, B: 0 }));
   }
 
   return {
@@ -111,6 +119,7 @@ export function createTerrainCache({ store, engine, onChange }) {
     onEngineTerrain,
     invalidate,
     invalidateAll,
+    remap,
     keyFor,
     dispose() {
       disposed = true;

@@ -6,7 +6,7 @@
 // computed the way the worklet does it (normalised values, LFOs in normalised
 // space, wrap for rotate and the dot), with a little arpeggio of voices.
 
-import { NUM_PARTS, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT, SYNC_DIVS, toNorm } from '../../src/core/params.js';
+import { MAX_PARTS, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT, SYNC_DIVS, toNorm } from '../../src/core/params.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { generateTerrain, decodeUserTerrain } from '../../src/dsp/terrains.js';
 
@@ -46,12 +46,12 @@ function lfoValue(shape, phase, seed) {
  */
 export function createFakeEngine({ store, tele = true, play = true } = {}) {
   const ev = emitter();
-  const tables = Array.from({ length: NUM_PARTS }, () => ({ A: null, B: null }));
-  const keys = Array.from({ length: NUM_PARTS }, () => ({ A: '', B: '' }));
-  const timers = new Array(NUM_PARTS).fill(0);
-  const env2 = new Array(NUM_PARTS).fill(0);
-  const spin = new Array(NUM_PARTS).fill(0);
-  const voices = Array.from({ length: NUM_PARTS }, () => []); // {id, note, amp, gate, t}
+  const tables = Array.from({ length: MAX_PARTS }, () => ({ A: null, B: null }));
+  const keys = Array.from({ length: MAX_PARTS }, () => ({ A: '', B: '' }));
+  const timers = new Array(MAX_PARTS).fill(0);
+  const env2 = new Array(MAX_PARTS).fill(0);
+  const spin = new Array(MAX_PARTS).fill(0);
+  const voices = Array.from({ length: MAX_PARTS }, () => []); // {id, note, amp, gate, t}
   let wheel = 0;
   let playing = play;
   let teleOn = tele;
@@ -133,7 +133,7 @@ export function createFakeEngine({ store, tele = true, play = true } = {}) {
       step++;
     }
     let sum = 0;
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < MAX_PARTS; p++) {
       const list = voices[p];
       for (const v of list) {
         if (v.gate) v.amp += (0.7 * v.vel - v.amp) * 0.25;
@@ -178,12 +178,12 @@ export function createFakeEngine({ store, tele = true, play = true } = {}) {
     getTerrain,
     level: () => lvl,
     noteOn, noteOff,
-    allNotesOff(part) { for (let p = 0; p < NUM_PARTS; p++) if (part == null || p === part) for (const v of voices[p]) v.gate = false; },
+    allNotesOff(part) { for (let p = 0; p < MAX_PARTS; p++) if (part == null || p === part) for (const v of voices[p]) v.gate = false; },
     panic() { for (const l of voices) l.length = 0; },
     bend() {},
     wheel(part, v) { wheel = v; },
     // Round D: the visuals report each marble about 30 times a second.
-    marbles: Array.from({ length: NUM_PARTS }, () => ({ n: 0, speed: 0, height: 0 })),
+    marbles: Array.from({ length: MAX_PARTS }, () => ({ n: 0, speed: 0, height: 0 })),
     marble(part, speed, height) {
       const m = this.marbles[part];
       if (!m) return;

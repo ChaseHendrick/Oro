@@ -108,7 +108,7 @@ async function main() {
       const tempo = h.store.get('global.tempo');
       const rates = [1, 0.5, 1 / 3, 0.25, 1 / 6, 0.125];
       const parts = [0, 1, 2, 3].map((p) => {
-        const seq = h.store.get(`parts.${p}.seq`);
+        const seq = h.store.get(`parts.${p}.patterns.0`);
         const ev = h.stats.steps.filter(e => e.part === p);
         let inOrder = true;
         for (let i = 1; i < ev.length; i++) if (ev[i].step !== (ev[i - 1].step + 1) % seq.length) inOrder = false;
@@ -202,10 +202,10 @@ async function main() {
           store.set('parts.0.params.decay', 0.05);
           store.set('parts.0.params.sustain', 0);
           store.set('parts.0.params.release', 0.02);
-          const seq = store.get('parts.0.seq');
-          seq.enabled = 1; seq.rate = 3; seq.length = 16;
+          const seq = store.get('parts.0.patterns.0');
+          store.set('parts.0.seqOn', 1); seq.rate = 3; seq.length = 16;
           seq.steps = seq.steps.map(st => ({ ...st, on: 1, degree: 0, octave: 0, gate: 0.4, slide: 0, accent: 0, vel: 0.9 }));
-          store.set('parts.0.seq', seq);
+          store.set('parts.0.patterns.0', seq);
         });
         await new Promise(r => setTimeout(r, 1500)); // terrains regenerate in the page
         h.reset();

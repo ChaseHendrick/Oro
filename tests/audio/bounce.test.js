@@ -6,7 +6,7 @@ import { sequencerEvents, swingBeat } from '../../src/audio/bounce-events.js';
 import { createStoreSync } from '../../src/audio/sync.js';
 import { jobFor, buildTerrainLevels } from '../../src/audio/terrain-jobs.js';
 import { createStore } from '../../src/core/store.js';
-import { defaultState, NUM_PARTS } from '../../src/core/params.js';
+import { defaultState } from '../../src/core/params.js';
 
 const ev = (time, msg) => ({ time, msg });
 
@@ -56,7 +56,8 @@ describe('event lists', () => {
     expect(mix.init.filter(m => m.t === 'terrain').map(m => m.part)).toEqual([0, 1]);   // only parts that play
     expect(mix.init.find(m => m.t === 'watch').part).toBe(-1);
     expect(mix.late.map(e => e.msg.t)).toEqual(['bend']);
-    const stem = passInit({ snapshot: [], terrains, events: evs, solo: 1 });
+    // the snapshot says how many tracks there are: each of them is muted but the soloed one
+    const stem = passInit({ snapshot: [{ t: 'tracks', count: 4 }], terrains, events: evs, solo: 1 });
     expect(stem.init.filter(m => m.t === 'terrain').map(m => m.part)).toEqual([1]);
     const mutes = stem.init.filter(m => m.t === 'params' && m.p.mute !== undefined);
     expect(mutes.map(m => [m.part, m.p.mute, m.p.solo])).toEqual([[0, 1, 0], [1, 0, 0], [2, 1, 0], [3, 1, 0]]);
@@ -69,8 +70,8 @@ describe('fallback sequencer events', () => {
   function session(edit) {
     const st = defaultState();
     st.global.tempo = 120;
-    const seq = st.parts[0].seq;
-    seq.enabled = 1; seq.rate = 3; seq.length = 4;                  // 16ths, 4-step loop
+    const seq = st.parts[0].patterns[0];
+    st.parts[0].seqOn = 1; seq.rate = 3; seq.length = 4;            // 16ths, 4-step loop
     seq.steps[0] = { ...seq.steps[0], on: 1, degree: 0, gate: 0.5 };
     seq.steps[2] = { ...seq.steps[2], on: 1, degree: 2, gate: 1, slide: 1 };
     seq.steps[3] = { ...seq.steps[3], on: 1, degree: 4, accent: 1, lock: 1, lx: 0.1, ly: 0.9 };
@@ -103,11 +104,11 @@ describe('fallback sequencer events', () => {
     expect(swingBeat(0.25, 0)).toBe(0.25);
     expect(swingBeat(0.25, 0.6)).toBeCloseTo(0.375, 9);
     expect(swingBeat(0.5, 0.6)).toBe(0.5);
-    const swung = sequencerEvents(session((st) => { st.global.swing = 0.6; st.parts[0].seq.steps[1].on = 1; }), 1);
+    const swung = sequencerEvents(session((st) => { st.global.swing = 0.6; st.parts[0].patterns[0].steps[1].on = 1; }), 1);
     const on1 = swung.filter(e => e.msg.t === 'noteOn')[1];
     expect(on1.time).toBeCloseTo(0.375 * 0.5, 9);
     expect(sequencerEvents(session(), 1, { parts: [1, 2] }).filter(e => e.msg.t === 'noteOn').length).toBe(0);
-    expect(sequencerEvents(session((st) => { st.parts[0].seq.enabled = 0; }), 2).length).toBe(1);
+    expect(sequencerEvents(session((st) => { st.parts[0].seqOn = 0; }), 2).length).toBe(1);
   });
 });
 
@@ -130,7 +131,7 @@ describe('offline render on the main thread (real DSP)', { timeout: 60000 }, () 
     store.set('parts.0.params.delaySend', 0.5);
     const sync = createStoreSync({ store, post: () => {}, defer: () => {} });
     const terrains = [];
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < store.get('parts').length; p++) {
       for (const [s, slot] of [[0, 'A'], [1, 'B']]) terrains.push({ t: 'terrain', part: p, slot: s, levels: buildTerrainLevels(jobFor(store.get(`parts.${p}.params`), null, slot, 64)) });
     }
     const evs = normaliseEvents([

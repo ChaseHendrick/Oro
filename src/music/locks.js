@@ -16,7 +16,8 @@
 // flight, and locks that come due while the user is still moving the dot are
 // skipped (see USER_HOLD_MS).
 
-import { NUM_PARTS, SEQ_STEPS, defaultStep, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_STEPS, defaultStep, activeSeq, patternPath, clamp } from '../core/params.js';
+import { isTrack, watchTracks } from '../core/tracks.js';
 
 export const LOCK_SOURCE = 'lock';
 export const FRAME_MS = 16;          // glide update period (about 60 Hz)
@@ -65,16 +66,18 @@ function tidy(v) {
 // 'sel' (or nothing) means the selected part, like the pattern tools.
 function partIndex(store, part) {
   const p = part === 'sel' || part == null ? store.get('ui.selectedPart') || 0 : Number(part);
-  return Number.isInteger(p) && p >= 0 && p < NUM_PARTS ? p : null;
+  return isTrack(store, p) ? p : null;
 }
 
 const validStep = (i) => Number.isInteger(i) && i >= 0 && i < SEQ_STEPS;
-const stepPath = (p, i) => `parts.${p}.seq.steps.${i}`;
+// Locks live in the steps of the pattern the track plays (its activePattern).
+const stepPath = (store, p, i) => `${patternPath(store, p)}.steps.${i}`;
 
 function writeStep(store, p, i, fields) {
-  const cur = store.get(stepPath(p, i)) || {};
+  const path = stepPath(store, p, i);
+  const cur = store.get(path) || {};
   const next = { ...defaultStep(), ...cur, ...fields };
-  store.set(stepPath(p, i), next, { source: 'music' });
+  store.set(path, next, { source: 'music' });
   return next;
 }
 
@@ -99,10 +102,11 @@ export function clearStepLock(store, part, step) {
 export function clearLocks(store, part) {
   const p = partIndex(store, part);
   if (p == null) return;
-  const steps = store.get(`parts.${p}.seq.steps`);
+  const path = `${patternPath(store, p)}.steps`;
+  const steps = store.get(path);
   if (!Array.isArray(steps)) return;
   const d = defaultStep();
-  store.set(`parts.${p}.seq.steps`, steps.map(s => ({ ...s, lock: d.lock, lx: d.lx, ly: d.ly })), { source: 'music' });
+  store.set(path, steps.map(s => ({ ...s, lock: d.lock, lx: d.lx, ly: d.ly })), { source: 'music' });
 }
 
 /** Lock `step` to wherever the part's dot is right now. */
@@ -129,9 +133,9 @@ export function keepLocks(steps, old) {
  * -1) and `isPlaying()` come from the transport.
  */
 export function createLockPlayer({ store, timebase, timers, currentStep = () => -1, isPlaying = () => false }) {
-  const glides = new Array(NUM_PARTS).fill(null);
-  const pending = Array.from({ length: NUM_PARTS }, () => new Set());
-  const lastUser = new Array(NUM_PARTS).fill(-Infinity);
+  const glides = new Array(MAX_PARTS).fill(null);
+  const pending = Array.from({ length: MAX_PARTS }, () => new Set());
+  let lastUser = new Array(MAX_PARTS).fill(-Infinity);
   const cx = (p) => `parts.${p}.params.centerX`;
   const cy = (p) => `parts.${p}.params.centerY`;
 
@@ -156,7 +160,7 @@ export function createLockPlayer({ store, timebase, timers, currentStep = () => 
 
   /** Stop part `p`'s glide and forget its queued locks (all parts when omitted). */
   function cancel(p) {
-    if (p == null) { for (let i = 0; i < NUM_PARTS; i++) cancel(i); return; }
+    if (p == null) { for (let i = 0; i < MAX_PARTS; i++) cancel(i); return; }
     stopGlide(p);
     cancelPending(p);
   }
@@ -196,7 +200,7 @@ export function createLockPlayer({ store, timebase, timers, currentStep = () => 
    * lock {x, y} over `seconds`, starting when that moment is heard.
    */
   function schedule(p, step, lock, time, seconds) {
-    if (!(p >= 0 && p < NUM_PARTS) || !lock) return;
+    if (!isTrack(store, p) || !lock) return;
     const t0 = timebase.audioToPerf(time);
     const delay = timebase.heardDelayMs(time);
     if (delay < 4) { start(p, lock, t0, seconds); return; }
@@ -238,16 +242,16 @@ export function createLockPlayer({ store, timebase, timers, currentStep = () => 
     if (!validStep(i)) return;
     const lx = tidy(num(store.get(cx(p)), 0.5));
     const ly = tidy(num(store.get(cy(p)), 0.5));
-    const st = store.get(stepPath(p, i)) || {};
+    const st = store.get(stepPath(store, p, i)) || {};
     if (st.lock && st.lx === lx && st.ly === ly) return;
-    const seq = store.get(`parts.${p}.seq`) || {};
+    const seq = activeSeq(store.get(`parts.${p}`)) || {};
     const len = clamp(Math.round(num(seq.length, SEQ_STEPS)), 1, SEQ_STEPS);
     const hasNotes = Array.isArray(seq.steps) && seq.steps.slice(0, len).some(s => s && s.on);
     store.batch(() => {
       writeStep(store, p, i, { lock: 1, lx, ly });
-      // An empty, switched-off pattern is switched on so the recorded motion
+      // An empty, switched-off sequencer is switched on so the recorded motion
       // plays back. A pattern with notes the user switched off stays off.
-      if (!seq.enabled && !hasNotes) store.set(`parts.${p}.seq.enabled`, 1, { source: 'music' });
+      if (!seq.enabled && !hasNotes) store.set(`parts.${p}.seqOn`, 1, { source: 'music' });
     });
   }
 
@@ -266,10 +270,21 @@ export function createLockPlayer({ store, timebase, timers, currentStep = () => 
   }
 
   const unsubs = [];
-  for (let p = 0; p < NUM_PARTS; p++) {
-    unsubs.push(store.subscribe(cx(p), (path, v, meta) => onDot(p, path, meta)));
-    unsubs.push(store.subscribe(cy(p), (path, v, meta) => onDot(p, path, meta)));
-  }
+  // Glides in flight belong to the old track order: a reorder (or a track
+  // added or removed) stops them; the next locked step starts a new one.
+  unsubs.push(watchTracks(store, () => {
+    cancel();
+    lastUser = new Array(MAX_PARTS).fill(-Infinity);
+  }));
+  // One listener for every track's dot (the same paths the old per-part
+  // listeners watched: the dot itself, its part, the parts list, a load).
+  unsubs.push(store.subscribe('parts', (path, v, meta) => {
+    if (path === '' || path === 'parts') { for (let p = 0; p < MAX_PARTS; p++) onDot(p, path, meta); return; }
+    const m = /^parts\.(\d+)(?:\.params(?:\.(centerX|centerY))?)?$/.exec(path);
+    if (!m) return;
+    const p = Number(m[1]);
+    if (p >= 0 && p < MAX_PARTS) onDot(p, path, meta);
+  }));
 
   return {
     schedule,

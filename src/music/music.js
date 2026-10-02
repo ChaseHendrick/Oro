@@ -86,6 +86,7 @@ export function createMusic({ store, engine = null, presets = null, timers = def
     off: (type, fn) => emitter.off(type, fn),
     dispose() {
       previewer.dispose();
+      explorer.dispose();
       transport.stop();
       router.allNotesOff();
       for (const u of unsubs) u();

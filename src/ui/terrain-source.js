@@ -5,6 +5,7 @@
 import { listen } from './dom.js';
 import { TERRAIN_INDEX } from '../dsp/catalog.js';
 import { generateTerrain, decodeUserTerrain } from './dsp-bridge.js';
+import { partCount } from '../core/tracks.js';
 
 const SLOTS = ['A', 'B'];
 const FALLBACK_SIZE = 128;
@@ -25,15 +26,22 @@ export function createTerrainSource({ store, engine }) {
   // Without engine events, regenerate when the generating parameters change.
   const timers = new Map();
   const offStore = store.subscribe('parts', (path) => {
-    const m = /^parts\.(\d)(?:\.(params\.(terrainA|terrainB|seed|detail)|userTerrain.*))?$/.exec(path);
+    const m = /^parts\.(\d+)(?:\.(params\.(terrainA|terrainB|seed|detail)|userTerrain.*))?$/.exec(path);
     if (!m && path !== 'parts') return;
-    const parts = m ? [Number(m[1])] : [0, 1, 2, 3];
+    // The list changed (tracks moved, added or removed): engine tables are
+    // looked up by index again, the event copies by index are stale.
+    if (!m) live.clear();
+    const parts = m ? [Number(m[1])] : Array.from({ length: partCount(store) }, (_, i) => i);
     for (const p of parts) {
       clearTimeout(timers.get(p));
       timers.set(p, setTimeout(() => { notify(p, 'A'); notify(p, 'B'); }, 60));
     }
   });
-  const offRoot = store.subscribe('', (path) => { if (path === '') for (let p = 0; p < 4; p++) { notify(p, 'A'); notify(p, 'B'); } });
+  const offRoot = store.subscribe('', (path) => {
+    if (path !== '') return;
+    live.clear();
+    for (let p = 0; p < partCount(store); p++) { notify(p, 'A'); notify(p, 'B'); }
+  });
 
   function fromEngine(part, slot) {
     if (engine && typeof engine.getTerrain === 'function') {

@@ -127,7 +127,7 @@ describe('music.preview', () => {
 
   it('starts on the next beat of the running sequencer', () => {
     const { clock, engine, store, music } = setup({ tempo: 120 });
-    store.set('parts.0.seq.enabled', 1);
+    store.set('parts.0.seqOn', 1);
     const t0 = clock.ctx.currentTime;
     music.transport.play();
     clock.advance(0.7);

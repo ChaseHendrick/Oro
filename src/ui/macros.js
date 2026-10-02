@@ -47,7 +47,7 @@ export function createMacroKnobs(ctx, { size = 'md', caption = 'both' } = {}) {
       uses[i].classList.toggle('is-idle', !n);
     });
   };
-  scope.add(store.subscribe('parts', (p) => { if (p === 'parts' || /^parts\.\d(\.links.*)?$/.test(p)) schedule(render); }));
+  scope.add(store.subscribe('parts', (p) => { if (p === 'parts' || /^parts\.\d+(\.links.*)?$/.test(p)) schedule(render); }));
   scope.add(store.subscribe('', (p) => { if (p === '') schedule(render); }));
   render();
   return { el: h('div', { class: 'macro-knobs' }, knobs), dispose: scope.dispose };

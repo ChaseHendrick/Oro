@@ -1,4 +1,4 @@
-// Factory scenes: complete four-part demo songs. Scene 0 loads on first
+// Factory scenes: complete demo songs (four tracks each). Scene 0 loads on first
 // launch, so it has to sound inviting the moment Play is pressed.
 //
 // Patterns are written in a compact step notation, one token per step:
@@ -12,11 +12,11 @@
 // Dot locks are given separately as { step: [x, y] }: when that step plays,
 // the part's dot glides to (x, y) on the map over `lockGlide` of a step.
 //
-// Every sequence, step and arp starts from the registry defaults
-// (defaultSeq / defaultStep / defaultArp), so fields added to the state later
+// Every pattern, step and arp starts from the registry defaults
+// (defaultPattern / defaultStep / defaultArp), so fields added to the state later
 // are filled in here too and the scenes keep passing migrateState unchanged.
 
-import { defaultState, defaultGlobalParams, defaultSeq, defaultStep, defaultArp, SEQ_STEPS, NUM_PARTS, clamp } from '../core/params.js';
+import { defaultState, defaultGlobalParams, defaultPattern, defaultStep, defaultArp, SEQ_STEPS, MAX_PARTS, clamp } from '../core/params.js';
 import { FACTORY_PATCHES } from './factory-patches.js';
 import { partWithPatch } from './apply.js';
 
@@ -70,7 +70,7 @@ export function applyLocks(steps, locks, length = SEQ_STEPS) {
 
 function seq(text, { rate = '1/16', baseOctave = 3, gate, vel, locks, lockGlide } = {}) {
   const { steps, length } = parsePattern(text, { gate, vel });
-  const out = { ...defaultSeq(), enabled: 1, rate: RATE[rate], length, baseOctave, steps: applyLocks(steps, locks, length) };
+  const out = { ...defaultPattern(1), rate: RATE[rate], length, baseOctave, steps: applyLocks(steps, locks, length) };
   if (lockGlide != null) out.lockGlide = lockGlide;
   return out;
 }
@@ -79,7 +79,8 @@ const PATCH_BY_NAME = Object.fromEntries(FACTORY_PATCHES.map(p => [p.name, p]));
 const round2 = (v) => Math.round(v * 100) / 100;
 
 function buildScene({ name, description, global, parts }) {
-  const state = defaultState();
+  if (!(parts.length >= 1 && parts.length <= MAX_PARTS)) throw new Error(`Scene "${name}" needs 1 to ${MAX_PARTS} tracks`);
+  const state = defaultState(parts.length);
   state.global = { ...defaultGlobalParams(), ...global };
   state.parts = state.parts.map((base, i) => {
     const spec = parts[i];
@@ -91,11 +92,13 @@ function buildScene({ name, description, global, parts }) {
     if (spec.pan != null) part.params.pan = spec.pan;
     if (spec.reverbSend != null) part.params.reverbSend = spec.reverbSend;
     if (spec.delaySend != null) part.params.delaySend = spec.delaySend;
-    part.seq = spec.seq;
+    // one pattern per track, playing (seqOn)
+    part.seqOn = 1;
+    part.patterns = [spec.seq];
+    part.activePattern = 0;
     part.arp = { ...defaultArp(), mode: ARP.off, rate: RATE['1/16'], ...(spec.arp || {}) };
     return part;
   });
-  if (state.parts.length !== NUM_PARTS) throw new Error('Scenes need four parts');
   return { ...state, name, description };
 }
 

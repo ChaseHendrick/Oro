@@ -73,29 +73,29 @@ describe('pattern generator', () => {
     const store = createStore(defaultState());
     randomizePattern(store, 1, { density: 0.8, rng: makeRng(3) });
     const state = store.serialize();
-    expect(migrateState(state).parts[1].seq).toEqual(state.parts[1].seq);
-    expect(state.parts[1].seq.enabled).toBe(1);
+    expect(migrateState(state).parts[1].patterns[0]).toEqual(state.parts[1].patterns[0]);
+    expect(state.parts[1].seqOn).toBe(1);
   });
 });
 
 describe('pattern edits', () => {
   it('shifts within the pattern length and clears', () => {
     const store = createStore(defaultState());
-    const seq = store.get('parts.0.seq');
+    const seq = store.get('parts.0.patterns.0');
     seq.length = 4;
     seq.steps[0].on = 1; seq.steps[0].degree = 5;
     seq.steps[6].on = 1;
-    store.set('parts.0.seq', seq);
+    store.set('parts.0.patterns.0', seq);
     shiftPattern(store, 0, 1);
-    let st = store.get('parts.0.seq.steps');
+    let st = store.get('parts.0.patterns.0.steps');
     expect(st[1]).toMatchObject({ on: 1, degree: 5 });
     expect(st[0].on).toBe(0);
     expect(st[6].on).toBe(1); // outside the length: untouched
     shiftPattern(store, 0, -1);
     shiftPattern(store, 0, -1);
-    st = store.get('parts.0.seq.steps');
+    st = store.get('parts.0.patterns.0.steps');
     expect(st[3]).toMatchObject({ on: 1, degree: 5 });
     clearPattern(store, 0);
-    expect(store.get('parts.0.seq.steps').every(s => !s.on)).toBe(true);
+    expect(store.get('parts.0.patterns.0.steps').every(s => !s.on)).toBe(true);
   });
 });

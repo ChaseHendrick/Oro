@@ -4,7 +4,8 @@
 
 import './styles/main.css';
 import { createStore, deepClone } from './core/store.js';
-import { defaultState, NUM_PARTS } from './core/params.js';
+import { defaultState, MAX_PARTS } from './core/params.js';
+import * as tracks from './core/tracks.js';
 import { loadSession, createAutosave } from './core/session.js';
 import { createEngine } from './audio/engine.js';
 import { createVisuals } from './visual/visuals.js';
@@ -67,7 +68,7 @@ async function boot() {
   createUI(root, { store, engine, visuals, music, presets, midi });
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
-  window.orograph = { store, engine, visuals, music, presets, midi, NUM_PARTS, deepClone };
+  window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };
 }
 
 boot().catch(err => {

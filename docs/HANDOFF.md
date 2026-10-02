@@ -4,14 +4,11 @@ For the next assistant (for example ChatGPT) or a person. Read this, then `docs/
 
 ## Where things are
 
-* **Synth repo** `ChaseHendrick/synth`, default branch `main`. Released and live: **1.2.1**
+* **Synth repo** `ChaseHendrick/synth`, default branch `main`. Released and live: **1.3.0** (tracks)
   (https://github.com/ChaseHendrick/synth/releases/latest). Merging to `main` rebuilds the
   desktop apps and republishes the release for the version in `package.json`.
-* **Open PR #7 (1.2.2)**: the whole 3 x 3 map is playable, the dot no longer jumps to the
-  opposite edge, walls at the outer edge. CI was running at handoff. If green: merge it, then
-  update the website (below). This file and `wip/` ride along in the same PR.
 * **Website** `ChaseHendrick/hendrickresearch.com`: serves the web app at `/music/orograph/`
-  (live at 1.2.1). To update after a synth release: in the website repo run
+  (live at 1.3.0 once ChaseHendrick/hendrickresearch.com#13 merges). To update after a synth release: in the website repo run
   `node scripts/sync-orograph.mjs ../synth`, set Orograph's `softwareVersion` in
   `src/music.ts`, `npm ci && npm run build`, open a PR, merge (Vercel deploys `main`).
 
@@ -21,13 +18,7 @@ Both were being built by agents when usage ran out. Their partial diffs are save
 is a `git diff` against the `main` commit named, so apply with
 `git checkout <commit> && git apply --3way <patch>` and then rebase onto current `main`.
 
-1. **1.3.0 Tracks** (`wip/tracks/tracks-draft.patch`, base commit `805a7ca`): an open-ended track
-   list. Add / remove / duplicate / rename / reorder tracks, `MAX_PARTS = 16`, parts become a
-   variable-length array with a stable `id` and `name`, per-track MIDI channel 1-16, mixer
-   strips and top-bar tabs follow the list, old 4-part sessions and scenes migrate, and each
-   track holds `patterns: [...]` with `activePattern` (pattern 1 = the old sequence) so a
-   timeline can be added. Status unknown: finish, test (full `npx vitest run`, build, a
-   browser check), CHANGELOG section "1.3.0".
+1. **1.3.0 Tracks**: done and released (open-ended track list, 1 to 16 tracks, patterns per track; `activeSeq(part)` and `patternPath(store, p)` in `src/core/params.js` and `watchTracks`/`permute` in `src/core/tracks.js` are the hooks for the timeline).
 2. **1.4.0 Voice input** (`wip/vocal/vocal-draft.patch`, base commit `f1494de`): microphone or laptop mic input.
    Device picker, gain with meter and clip light, monitor (off by default for built-in mic
    plus speakers, with a headphones hint; feedback guard always on), optional chain
@@ -44,7 +35,7 @@ is a `git diff` against the `main` commit named, so apply with
 
 ## Checks before any release
 
-`npm ci && npx vitest run` (about 950 tests) `&& npm run build && npm run build:single`, then
+`npm ci && npx vitest run` (about 1000 tests) `&& npm run build && npm run build:single`, then
 `npx vite --port 5190 --strictPort &` and `node tests/e2e/app-smoke.cjs http://127.0.0.1:5190/`
 on an idle machine (software GL is slow; browser tests time out under CPU load).
 `tests/audio/terrain-manager.test.js` has a timing budget that can fail under heavy load.

@@ -6,7 +6,8 @@
 // Access is only requested from connect() (a click in the UI) unless the
 // browser reports the permission was already granted.
 
-import { NUM_PARTS, PART_PARAM_MAP, GLOBAL_PARAM_MAP, fromNorm, clamp, stepToMidi } from '../core/params.js';
+import { MAX_PARTS, PART_PARAM_MAP, GLOBAL_PARAM_MAP, fromNorm, clamp, stepToMidi } from '../core/params.js';
+import { partCount, watchTracks } from '../core/tracks.js';
 import { createEmitter } from '../music/emitter.js';
 import { createTimebase } from '../music/timing.js';
 import { isMpcPort, detectMpcPort } from './mpc.js';
@@ -16,14 +17,16 @@ export const STORAGE_KEY = 'orograph.midi';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   channelMode: 'omni',        // 'omni' | 'multi'
-  omniTarget: 'sel',          // 'sel' | 0..3
-  multiChannels: [1, 2, 3, 4],// MIDI channel listened to by each part in multi mode
+  omniTarget: 'sel',          // 'sel' | a track index 0..MAX_PARTS-1
+  // Per track position (track 1, track 2, ...): the channel it listens to in
+  // multi mode and sends on. Track i uses channel i by default.
+  multiChannels: Array.from({ length: MAX_PARTS }, (_, i) => (i % 16) + 1),
   padMode: 'notes',           // 'notes' | 'scale'
   padBaseNote: 36,
   velocityCurve: 'linear',    // 'linear' | 'soft' | 'hard'
   outputId: null,
   sendNotes: false,
-  outChannels: [1, 2, 3, 4],
+  outChannels: Array.from({ length: MAX_PARTS }, (_, i) => (i % 16) + 1),
   sendClock: false,
   followClock: false,
   programChange: false,
@@ -73,8 +76,11 @@ const isChannel = (v) => Number.isInteger(v) && v >= 1 && v <= 16;
 export function sanitizeSettings(src = {}) {
   const d = DEFAULT_SETTINGS;
   const s = src && typeof src === 'object' ? src : {};
-  const chans = (v, def) => (Array.isArray(v) && v.length === NUM_PARTS && v.every(isChannel) ? v.slice() : def.slice());
-  const target = s.omniTarget === 'sel' || (Number.isInteger(s.omniTarget) && s.omniTarget >= 0 && s.omniTarget < NUM_PARTS) ? s.omniTarget : d.omniTarget;
+  // Settings saved with four parts keep their four channels; the tracks after
+  // them get their defaults (track i on channel i).
+  const chans = (v, def) => (Array.isArray(v) && v.length >= 1 && v.length <= MAX_PARTS && v.every(isChannel)
+    ? [...v, ...def.slice(v.length)] : def.slice());
+  const target = s.omniTarget === 'sel' || (Number.isInteger(s.omniTarget) && s.omniTarget >= 0 && s.omniTarget < MAX_PARTS) ? s.omniTarget : d.omniTarget;
   return {
     channelMode: s.channelMode === 'multi' ? 'multi' : 'omni',
     omniTarget: target,
@@ -110,7 +116,7 @@ function sanitizeTarget(t) {
   if (t.scope === 'part' || t.scope == null) {
     if (!PART_PARAM_MAP[t.id]) return null;
     const part = t.part === 'sel' || t.part == null ? 'sel' : Number(t.part);
-    if (part !== 'sel' && !(Number.isInteger(part) && part >= 0 && part < NUM_PARTS)) return null;
+    if (part !== 'sel' && !(Number.isInteger(part) && part >= 0 && part < MAX_PARTS)) return null;
     return { scope: 'part', part, id: t.id };
   }
   return null;
@@ -346,15 +352,19 @@ export async function createMidi({
 
   const isMember = (ch) => settings.mpe && ch !== MPE_MASTER;
 
+  // A numbered target past the end of the track list falls back to the selected track.
+  const omni = () => (settings.omniTarget === 'sel' || settings.omniTarget < partCount(store) ? settings.omniTarget : 'sel');
+
   function targetsFor(ch) {
     // In MPE mode every channel of the zone plays the same target (the selected part or Layer).
-    if (settings.mpe) return [settings.omniTarget];
+    if (settings.mpe) return [omni()];
     if (settings.channelMode === 'multi') {
       const out = [];
-      settings.multiChannels.forEach((c, p) => { if (c === ch) out.push(p); });
+      const n = partCount(store);
+      settings.multiChannels.forEach((c, p) => { if (c === ch && p < n) out.push(p); });
       return out;
     }
-    return [settings.omniTarget];
+    return [omni()];
   }
 
   function partsFor(targets) {
@@ -362,7 +372,7 @@ export async function createMidi({
     for (const t of targets) {
       const list = router && typeof router.resolve === 'function'
         ? router.resolve(t)
-        : [t === 'sel' ? clamp(store.get('ui.selectedPart') || 0, 0, NUM_PARTS - 1) : t];
+        : [t === 'sel' ? clamp(store.get('ui.selectedPart') || 0, 0, partCount(store) - 1) : t];
       for (const p of list) set.add(p);
     }
     return [...set];
@@ -450,7 +460,8 @@ export async function createMidi({
     }
     const def = PART_PARAM_MAP[target.id];
     if (!def) return;
-    const p = target.part === 'sel' ? clamp(Math.round(store.get('ui.selectedPart') || 0), 0, NUM_PARTS - 1) : target.part;
+    const p = target.part === 'sel' ? clamp(Math.round(store.get('ui.selectedPart') || 0), 0, partCount(store) - 1) : target.part;
+    if (!(p < partCount(store))) return;
     store.set(`parts.${p}.params.${target.id}`, fromNorm(def, n), { source: 'midi' });
   }
 
@@ -833,7 +844,8 @@ export async function createMidi({
     if (!output) return;
     try { if (typeof output.clear === 'function') output.clear(); } catch { /* not implemented everywhere */ }
     releaseOutputNotes();
-    const chans = new Set([...settings.outChannels, ...usedOutChannels]);
+    // the channels of the tracks in the list, plus any that sent notes
+    const chans = new Set([...settings.outChannels.slice(0, partCount(store)), ...usedOutChannels]);
     const sweep = () => {
       for (const chan of chans) {
         const ch = chan - 1;
@@ -853,6 +865,9 @@ export async function createMidi({
   }
 
   if (router && typeof router.on === 'function') { router.on('sched', noteOut); router.on('cancel', cancelOut); }
+  // Channels belong to track positions: when tracks move, are added or are
+  // removed, notes held on the old channels are released so none can hang.
+  watchTracks(store, () => { if (output && heldOut.size) releaseOutputNotes(); });
   if (transport && typeof transport.on === 'function') {
     transport.on('clock', clockOut);
     transport.on('state', (s) => {
@@ -868,7 +883,7 @@ export async function createMidi({
   function releaseStaleOut() {
     if (!router || !output) return;
     const held = new Set();
-    for (let p = 0; p < NUM_PARTS; p++) for (const n of router.heldNotes(p)) held.add(`${settings.outChannels[p]}:${n}`);
+    for (let p = 0; p < partCount(store); p++) for (const n of router.heldNotes(p)) held.add(`${settings.outChannels[p]}:${n}`);
     for (const key of [...heldOut.keys()]) {
       if (held.has(key)) continue;
       const [chan, note] = key.split(':').map(Number);

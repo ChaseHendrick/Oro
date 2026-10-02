@@ -9,13 +9,14 @@
 // Messages the protocol cannot time are posted at their moment by suspending
 // the render there. Progress also rides on suspend points.
 //
-// Stems render each part on its own (the others muted, solos cleared) with its
-// own sends into the effects, so a stem sounds like that part in the mix.
+// Stems render each track on its own (the others muted, solos cleared) with
+// its own sends into the effects, so a stem sounds like that track in the mix:
+// one file per track that plays.
 // When the context cannot load the worklet, the DSP runs here on the main
 // thread in short slices and its three stereo outputs are played through the
 // offline effect graph instead.
 
-import { NUM_PARTS } from '../core/params.js';
+import { MAX_PARTS } from '../core/params.js';
 import { createFx } from './fx.js';
 import { encodePCM24, wavBlobFromPieces } from './wav.js';
 import { loadWorkletModule } from './worklet-loader.js';
@@ -71,7 +72,7 @@ export function stemParts(state, events) {
   const anySolo = parts.some(p => p && p.params && p.params.solo);
   const playing = new Set(events.filter(e => e.msg.t === 'noteOn').map(e => e.msg.part));
   const out = [];
-  for (let i = 0; i < NUM_PARTS; i++) {
+  for (let i = 0; i < Math.min(parts.length, MAX_PARTS); i++) {
     const pr = (parts[i] && parts[i].params) || {};
     if (!playing.has(i) || pr.mute || (anySolo && !pr.solo)) continue;
     out.push(i);
@@ -86,10 +87,13 @@ export function stemParts(state, events) {
 export function passInit({ snapshot, terrains = [], events, solo = null, extra = [] }) {
   const init = [...snapshot, ...extra];
   if (solo !== null) {
-    for (let p = 0; p < NUM_PARTS; p++) init.push({ t: 'params', part: p, p: { mute: p === solo ? 0 : 1, solo: 0 } });
+    // every track in the snapshot's list (the DSP's other parts are silent anyway)
+    const tracks = snapshot.find(m => m && m.t === 'tracks');
+    const count = tracks && Number.isInteger(tracks.count) ? Math.min(tracks.count, MAX_PARTS) : MAX_PARTS;
+    for (let p = 0; p < count; p++) init.push({ t: 'params', part: p, p: { mute: p === solo ? 0 : 1, solo: 0 } });
   }
   // Only parts that play in this pass need their tables: processorOptions are
-  // copied on the main thread, and four parts' mip chains are ~11 MB.
+  // copied on the main thread, and each track's mip chains are ~2.8 MB.
   const playing = new Set(events.filter(e => e.msg.t === 'noteOn' && (solo === null || e.msg.part === solo)).map(e => e.msg.part));
   for (const m of terrains) if (playing.has(m.part)) init.push(m);
   // No telemetry from an offline render (nobody listens, and it would flood the port).

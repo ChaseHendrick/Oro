@@ -1,8 +1,9 @@
 // Bounce: render a number of bars of the sequencers offline (faster than real
-// time, sample-exact) to a 24-bit WAV, optionally with one stem per part.
-// Files are named orograph-bounce-YYYYMMDD-HHMMSS.wav, and stems add -partN.
+// time, sample-exact) to a 24-bit WAV, optionally with one stem per track.
+// Files are named orograph-bounce-YYYYMMDD-HHMMSS.wav, and stems add
+// -trackN plus the track's name (-track3-bass).
 
-import { NUM_PARTS } from '../core/params.js';
+import { partCount } from '../core/tracks.js';
 import { h, createScope, setText, listen, has, downloadBlob } from './dom.js';
 import { openPopover } from './layers.js';
 import { recordingName } from './record.js';
@@ -16,9 +17,9 @@ export function bounceName(date, suffix = '') {
   return recordingName(date).replace('orograph-', 'orograph-bounce-').replace('.wav', `${suffix}.wav`);
 }
 
-/** File name for part `index` (0-based) of a stems bounce. */
-export function stemName(date, index) {
-  return bounceName(date, `-part${index + 1}`);
+/** File name for track `index` (0-based, named `name` when given) of a stems bounce. */
+export function stemName(date, index, name) {
+  return bounceName(date, `-track${index + 1}${name ? '-' + slug(name) : ''}`);
 }
 
 export function slug(s) {
@@ -61,7 +62,7 @@ export function openBounce(ctx, anchor) {
   const fx = localBinding({ id: 'bounceFx', label: 'Effects', default: 1 }, 1);
   const outSeg = createSegmented(ctx, output, {
     label: 'Files to save', size: 'sm', className: 'seg--grow',
-    options: [{ value: 'mix', label: 'Mix', tip: 'One stereo file of everything' }, { value: 'stems', label: 'Mix + stems', tip: 'The mix plus one file per part' }],
+    options: [{ value: 'mix', label: 'Mix', tip: 'One stereo file of everything' }, { value: 'stems', label: 'Mix + stems', tip: 'The mix plus one file per track that plays' }],
   });
   const fxToggle = createToggle(ctx, fx, { label: 'Effects', className: 'toggle--switch', ariaLabel: 'Render with delay, reverb and master effects' });
   scope.add(outSeg.dispose);
@@ -122,7 +123,7 @@ export function openBounce(ctx, anchor) {
     const stems = output.get() === 'stems';
     try {
       await ctx.startAudio();
-      const parts = Array.from({ length: NUM_PARTS }, (_, i) => i);
+      const parts = Array.from({ length: partCount(store) }, (_, i) => i);
       const events = await music.renderEvents(bars, { parts });
       const res = await engine.bounce({ bars, stems, fx: !!fx.get(), tailSeconds: Number(tailSel.value), events });
       if (!res || !res.mix) throw new Error('The engine returned no audio');
@@ -130,7 +131,8 @@ export function openBounce(ctx, anchor) {
       let saved = 1;
       if (stems && Array.isArray(res.stems)) {
         // Browsers drop downloads fired in the same tick, so space them out a little.
-        res.stems.forEach((b, i) => { if (b) { saved++; setTimeout(() => downloadBlob(b, stemName(started, i)), 250 * (i + 1)); } });
+        const names = parts.map(i => store.get(`parts.${i}.name`));
+        res.stems.forEach((b, i) => { if (b) { saved++; setTimeout(() => downloadBlob(b, stemName(started, i, names[i])), 250 * (i + 1)); } });
       }
       setProgress(1);
       setText(status, saved > 1 ? `Done. ${saved} files are on their way to your downloads.` : 'Done. Check your downloads.');

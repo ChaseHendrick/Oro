@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { createStore } from '../../src/core/store.js';
 import {
-  NUM_PARTS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, LFO_SHAPES, toNorm, fromNorm, defaultState,
+  PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, LFO_SHAPES, toNorm, fromNorm, defaultState,
 } from '../../src/core/params.js';
 import { migrateState, sanitizePart } from '../../src/core/migrate.js';
 import { createPresets, STORAGE_KEY } from '../../src/presets/presets.js';
@@ -59,14 +59,14 @@ describe('session persistence (store x migrate x params)', () => {
       store.set('parts.2.mods.size', { ...store.get('parts.2.mods.size'), lfoShape: LFO_SHAPES.indexOf('Steps'), lfoDepth: 0.5, steps: Array.from({ length: 16 }, (_, i) => (i % 2 ? -0.5 : 0.25)) });
       store.set('parts.2.dot.waypoints', [{ x: 0.1, y: 0.2, beats: 2 }, { x: 0.8, y: 0.6, beats: 4 }]);
       store.set('parts.2.dot.mode', 4);
-      store.set('parts.2.seq.steps.3', { ...store.get('parts.2.seq.steps.3'), lock: 1, lx: 0.25, ly: 0.75 });
+      store.set('parts.2.patterns.0.steps.3', { ...store.get('parts.2.patterns.0.steps.3'), lock: 1, lx: 0.25, ly: 0.75 });
     });
     const back = autosaveRoundTrip(store);
     expect(back.get('parts.2.userTerrain.A')).toEqual(ut);
     expect(back.get('parts.2.links')).toEqual(store.get('parts.2.links'));
     expect(back.get('parts.2.mods.size')).toEqual(store.get('parts.2.mods.size'));
     expect(back.get('parts.2.dot')).toEqual(store.get('parts.2.dot'));
-    expect(back.get('parts.2.seq.steps.3')).toEqual(store.get('parts.2.seq.steps.3'));
+    expect(back.get('parts.2.patterns.0.steps.3')).toEqual(store.get('parts.2.patterns.0.steps.3'));
   });
 
   it('a stored value in range for every parameter survives the round trip exactly, and knob positions map back to it', () => {
@@ -118,14 +118,16 @@ describe('factory scenes x factory patches', () => {
       const store = createStore(defaultState());
       const presets = createPresets({ store, storage });
       expect(presets.loadScene(k)).toBe(true);
-      for (let p = 0; p < NUM_PARTS; p++) {
+      for (let p = 0; p < store.get('parts').length; p++) {
         const before = store.get(`parts.${p}`);
         presets.loadPatch(p, before.patchName);
         const after = store.get(`parts.${p}`);
         const a = sound(before), b = sound(after);
         for (const id of MIX_IDS) { delete a.params[id]; delete b.params[id]; }
         expect(b, `${FACTORY_SCENES[k].name} part ${p + 1}`).toEqual(a);
-        expect(after.seq).toEqual(before.seq);
+        expect(after.patterns).toEqual(before.patterns);
+        expect(after.seqOn).toBe(before.seqOn);
+        expect(after.id).toBe(before.id);
         expect(after.arp).toEqual(before.arp);
       }
     }
@@ -155,7 +157,9 @@ describe('patch library across parts, storage and files', () => {
     expect(sound(p3)).toEqual(sound(store.get('parts.0')));
     expect(p3.patchName).toBe('Integration Patch');
     expect(p3.params.mute).toBe(p3Before.params.mute);
-    expect(p3.seq).toEqual(p3Before.seq);
+    expect(p3.patterns).toEqual(p3Before.patterns);
+    expect(p3.seqOn).toBe(p3Before.seqOn);
+    expect(p3.id).toBe(p3Before.id);
     expect(p3.arp).toEqual(p3Before.arp);
     expect(p3.name).toBe(p3Before.name);
     expect(p3.color).toBe(p3Before.color);
@@ -208,7 +212,7 @@ describe('patch library across parts, storage and files', () => {
     const store = createStore(defaultState());
     const presets = createPresets({ store, storage: createMemoryStorage() });
     for (const patch of presets.patches()) {
-      for (let p = 0; p < NUM_PARTS; p++) {
+      for (let p = 0; p < store.get('parts').length; p++) {
         expect(presets.loadPatch(p, patch.id), patch.name).toBe(true);
         const part = store.get(`parts.${p}`);
         expect(sanitizePart(part, p), `${patch.name} on part ${p + 1}`).toEqual(part);

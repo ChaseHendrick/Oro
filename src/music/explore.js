@@ -11,7 +11,8 @@
 //
 // Only parts in Explore dot mode with exploreNotes on make sound.
 
-import { NUM_PARTS, SCALES, SCALE_NAMES, DOT_MODES, stepToMidi, clamp } from '../core/params.js';
+import { MAX_PARTS, activeSeq, SCALES, SCALE_NAMES, DOT_MODES, stepToMidi, clamp } from '../core/params.js';
+import { isTrack, watchTracks, permute } from '../core/tracks.js';
 
 const SOURCE = 'explore';
 export const EXPLORE_MODE = DOT_MODES.indexOf('Explore');
@@ -39,11 +40,13 @@ export function exploreNoteFor(height, { range = 2, baseOctave = 3, root = 0, sc
 }
 
 export function createExplorer({ store, router, timebase, transport = null, emit = () => {} }) {
-  const last = new Array(NUM_PARTS).fill(-Infinity);
+  let last = new Array(MAX_PARTS).fill(-Infinity);
+  // the rate limiter follows each track when the list is reordered
+  const offTracks = watchTracks(store, ({ perm, fresh }) => { last = permute(last, perm, fresh, () => -Infinity); });
 
   function partIndex(part) {
     const p = part === 'sel' || part == null ? Math.round(store.get('ui.selectedPart') || 0) : Number(part);
-    return Number.isInteger(p) && p >= 0 && p < NUM_PARTS ? p : null;
+    return isTrack(store, p) ? p : null;
   }
 
   function spb() {
@@ -74,7 +77,7 @@ export function createExplorer({ store, router, timebase, transport = null, emit
     // A little slack so notes that are exactly one gap apart (snapped to the grid) still pass.
     if (time - last[p] < gap - 0.002) return null;
     last[p] = time;
-    const seq = store.get(`parts.${p}.seq`) || {};
+    const seq = activeSeq(store.get(`parts.${p}`)) || {};
     const note = exploreNoteFor(height, {
       range: dot.exploreRange,
       baseOctave: seq.baseOctave,
@@ -94,6 +97,7 @@ export function createExplorer({ store, router, timebase, transport = null, emit
   return {
     exploreNote,
     /** Forget the rate limiter (e.g. after a mode change), so the next extremum plays at once. */
-    reset(part) { if (part == null) last.fill(-Infinity); else if (part >= 0 && part < NUM_PARTS) last[part] = -Infinity; },
+    reset(part) { if (part == null) last.fill(-Infinity); else if (part >= 0 && part < MAX_PARTS) last[part] = -Infinity; },
+    dispose() { offTracks(); },
   };
 }

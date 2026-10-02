@@ -365,7 +365,7 @@ async function roundD(browser) {
   // ---- orbits: base orbit under modulation, per-voice orbits with Key>Size
   const orbits = await ev(async () => {
     const s = window.__vis.store, v = window.__vis.visuals;
-    s.set('parts.0.seq.enabled', 0, { source: 'ui' });
+    s.set('parts.0.seqOn', 0, { source: 'ui' });
     window.__vis.engine.setPlaying(true);
     s.set('parts.0.mods.size', { ...s.get('parts.0.mods.size'), lfoDepth: 0.4, lfoRate: 0.3 });
     let base = 0;

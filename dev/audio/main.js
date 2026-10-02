@@ -3,7 +3,7 @@
 
 import { createEngine } from '../../src/audio/engine.js';
 import { createStore } from '../../src/core/store.js';
-import { defaultState, NUM_PARTS } from '../../src/core/params.js';
+import { defaultState, DEFAULT_PARTS } from '../../src/core/params.js';
 import { TERRAINS, TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { encodeWav24 } from '../../src/audio/wav.js';
 import { roundD } from './round-d.js';
@@ -66,7 +66,7 @@ function note(name, value) {
 
 // ---- terrain tiles ---------------------------------------------------------------
 const tiles = new Map();
-for (let p = 0; p < NUM_PARTS; p++) {
+for (let p = 0; p < DEFAULT_PARTS; p++) {
   for (const s of ['A', 'B']) {
     const d = document.createElement('div');
     d.className = 'tile';
@@ -231,7 +231,7 @@ async function boot() {
   store = createStore(defaultState());
   // A clear, sustained test voice: low sustain variance, quick release.
   store.batch(() => {
-    for (let p = 0; p < NUM_PARTS; p++) store.set(`parts.${p}.params.terrainA`, [TERRAIN_INDEX.swell, TERRAIN_INDEX.ridge, TERRAIN_INDEX.crater, TERRAIN_INDEX.spectra][p]);
+    for (let p = 0; p < DEFAULT_PARTS; p++) store.set(`parts.${p}.params.terrainA`, [TERRAIN_INDEX.swell, TERRAIN_INDEX.ridge, TERRAIN_INDEX.crater, TERRAIN_INDEX.spectra][p]);
     store.set('parts.0.params.release', 0.2);
     store.set('parts.0.params.sustain', 0.9);
     store.set('parts.0.params.size', 0.3);
@@ -260,7 +260,7 @@ async function boot() {
   engine.on('state', (e) => { state.lastState = e; });
 
   // Tiles for tables that arrived before we subscribed.
-  for (let p = 0; p < NUM_PARTS; p++) for (const s of ['A', 'B']) {
+  for (let p = 0; p < DEFAULT_PARTS; p++) for (const s of ['A', 'B']) {
     const t = engine.getTerrain(p, s);
     if (t) drawTile(p, s, t.size, t.data, '');
   }
@@ -326,7 +326,7 @@ async function boot() {
   state.metrics.terrainWaitMs = Math.round(performance.now() - tReady);
   const got = new Set(state.terrainEvents.map(e => `${e.part}${e.slot}`));
   let allTables = true;
-  for (let p = 0; p < NUM_PARTS; p++) for (const s of ['A', 'B']) if (!engine.getTerrain(p, s)) allTables = false;
+  for (let p = 0; p < DEFAULT_PARTS; p++) for (const s of ['A', 'B']) if (!engine.getTerrain(p, s)) allTables = false;
   check('terrain events for 4 parts x 2 slots', got.size === 8, [...got].sort().join(' '));
   check('getTerrain returns every table', allTables, engine.getTerrain(0, 'A') && engine.getTerrain(0, 'A').size);
 

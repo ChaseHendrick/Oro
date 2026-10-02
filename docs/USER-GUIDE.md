@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.2.2, including the guitar pedal features
+going on under the hood. It describes version 1.3.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)).
 
@@ -538,14 +538,31 @@ for an MPC Q-Link or a hardware fader.
 
 ![The Seq tab in the light theme: the 16-step grid with note, octave, velocity, gate, accent, slide and dot rows](screenshots/orograph-light-seq.webp)
 
-### Parts
+### Tracks (parts)
 
-Orograph has **four parts**, each a complete synth with its own terrains, path, dot, sound,
-modulation, pattern and arpeggiator. Select one with its tab or the keys **1** to **4**. The
-light on each tab flashes when that part plays a note.
+A session has **tracks** (called parts in some places), each a complete synth with its own
+terrains, path, dot, sound, modulation, patterns and arpeggiator. A new session has four;
+you can have from 1 to 16. Select one with its tab or the keys **1** to **9**. The light on
+each tab flashes when that track plays a note.
 
-**Keys play** (Seq tab) decides what the keyboard and MIDI play: **Selected** (the part you
-are looking at) or **Layer** (every part that is not muted, all at once).
+* **Add a track**: the **+** button after the tabs, or the **Add track** tile at the end of
+  the mixer strips. The new track starts with the Init sound and an empty pattern.
+* **Track menu**: the **...** button after the tabs (for the selected track), or right-click
+  a tab or a mixer strip's name. It has **Rename**, **Duplicate** (a copy right after it, with
+  its sound and patterns), **Move left**, **Move right**, **Add track** and **Remove track**.
+  After a remove, **Undo** in the notice brings the track back.
+* **Reorder**: drag a tab to a new place, or focus a tab and press **Alt+Left** or
+  **Alt+Right**. Sound that is playing carries on while you move tracks.
+* **Rename**: double-click a tab or press **F2** on it; in the mixer, double-click the
+  strip's name.
+
+When there are more tracks than fit, the tabs and the mixer strips scroll sideways (swipe,
+use the mouse wheel, or select a track and its tab scrolls into view). Tracks you are not
+using take no processing time; each sounding track costs about as much as the first four
+did, so 16 busy tracks need a fast computer.
+
+**Keys play** (Seq tab) decides what the keyboard and MIDI play: **Selected** (the track you
+are looking at) or **Layer** (every track that is not muted, all at once).
 
 ### Key, scale, tempo and swing
 
@@ -558,6 +575,12 @@ These are shared by all parts:
   Triplet rates are not swung.
 
 ### The step sequencer
+
+A track can hold up to 16 **patterns**. The picker at the top of the Pattern block shows the
+one the track plays: choose another to switch (the change is heard from the next step),
+**+** adds a new pattern as a copy of the current one, **-** removes the current one (a track
+always keeps one). **Seq on** switches the track's sequencer on or off whatever pattern is
+selected. The grid, Rate, Length, Octave and Dot glide belong to the selected pattern.
 
 Each part has a 16-step sequencer. Turn on **Seq on** for the parts you want to hear, then
 press Play.

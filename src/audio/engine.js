@@ -14,7 +14,8 @@ import workletCode from 'virtual:worklet:src/dsp/worklet.js';
 import recorderCode from 'virtual:worklet:src/audio/recorder-worklet.js';
 import looperCode from 'virtual:worklet:src/audio/looper-worklet.js';
 import terrainWorkerCode from 'virtual:worklet:src/audio/terrain-worker.js';
-import { NUM_PARTS } from '../core/params.js';
+import { MAX_PARTS } from '../core/params.js';
+import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 import { createFx } from './fx.js';
 import { createStoreSync } from './sync.js';
@@ -37,8 +38,10 @@ const RESUME_TIMEOUT_MS = 2500;
 const MAX_RECOVERIES = 3;
 export const QUALITY_MODES = Object.freeze(['eco', 'standard', 'high', 'pristine', 'raw']);
 
+// Any of the DSP's MAX_PARTS slots; note-ons are further limited to the
+// tracks that exist (see engine.noteOn), the DSP ignores the rest anyway.
 function validPart(part) {
-  return Number.isInteger(part) && part >= 0 && part < NUM_PARTS;
+  return Number.isInteger(part) && part >= 0 && part < MAX_PARTS;
 }
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 const validNote = (n) => n === undefined || n === null || Number.isFinite(n);
@@ -101,8 +104,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   // quality mode (device setting), the channel controllers and the transport
   // anchor. snapshot() replays it, so a rebuilt DSP keeps playing the same way.
   let quality = QUALITY_MODES.includes(store.get('ui.audioQuality')) ? store.get('ui.audioQuality') : 'standard';
-  const controllers = Array.from({ length: NUM_PARTS }, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0 }));
-  const marbles = Array.from({ length: NUM_PARTS }, () => null);
+  let controllers = Array.from({ length: MAX_PARTS }, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0 }));
+  let marbles = Array.from({ length: MAX_PARTS }, () => null);
   let transportMsg = null;
   // v1.1 pedal loop state the DSP needs back after a rebuild.
   let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
@@ -128,6 +131,15 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     post: (msgs) => send(msgs),
     onGlobal: (g, changed) => { if (fx) fx.set(g, changed); },
     extra: hostState,
+  });
+  // Channel controllers and marble readings follow their tracks when the
+  // track list is reordered; a new track starts at rest. (The sync above has
+  // already told the DSP, which moves its parts the same way.)
+  const offTracks = watchTracks(store, ({ perm, fresh }) => {
+    controllers = permute(controllers, perm, fresh, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0 }));
+    marbles = permute(marbles, perm, fresh, () => null);
+    for (let p = partCount(store); p < MAX_PARTS; p++) { controllers[p] = { bend: 0, wheel: 0, pressure: 0, slide: 0 }; marbles[p] = null; }
+    marbles.forEach((m, p) => { if (m) marbles[p] = { ...m, part: p }; });
   });
 
   function buildWorkletSource(init) {
@@ -435,7 +447,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     },
 
     noteOn(part, note, vel = 0.8, time = 0, tag) {
-      if (!validPart(part) || !Number.isFinite(note)) return;
+      if (!validPart(part) || part >= partCount(store) || !Number.isFinite(note)) return;
       const msg = { t: 'noteOn', part, note, vel: Number.isFinite(vel) ? vel : 0.8, time: Number.isFinite(time) ? time : 0 };
       if (typeof tag === 'string') msg.tag = tag;
       post(msg);
@@ -568,7 +580,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         };
         const progress = (stage, part, f) => events.emit('bounce', { done: Math.min(total, done + f), total, stage, part });
         progress('mix', null, 0);
-        const out = { mix: null, stems: o.stems ? new Array(NUM_PARTS).fill(null) : [] };
+        // one stem slot per track (null for tracks that play nothing)
+        const out = { mix: null, stems: o.stems ? new Array(partCount(store)).fill(null) : [] };
         const info = { passes: [] };
         for (const pass of passes) {
           const stage = pass.solo === null ? 'mix' : 'stem';
@@ -714,6 +727,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       }
       terrain.dispose();
       offQuality();
+      offTracks();
       sync.dispose();
       generator.dispose();
       if (recorder) recorder.dispose();

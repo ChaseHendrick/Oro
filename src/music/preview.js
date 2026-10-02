@@ -8,7 +8,8 @@
 // leaves anything hanging: every note that was started gets exactly one
 // note-off, and notes not yet sent are simply dropped.
 
-import { NUM_PARTS, clamp } from '../core/params.js';
+import { activeSeq, clamp } from '../core/params.js';
+import { isTrack } from '../core/tracks.js';
 import { PHRASES, phraseEvents, phraseLength, guessCategory } from './phrases.js';
 import { swingBeat, LOOKAHEAD, INTERVAL_MS } from './transport.js';
 
@@ -22,7 +23,7 @@ export function createPreview({ store, router, timebase, timers, transport = nul
 
   function partIndex(part) {
     const p = part === 'sel' || part == null ? Math.round(store.get('ui.selectedPart') || 0) : Number(part);
-    return Number.isInteger(p) && p >= 0 && p < NUM_PARTS ? p : null;
+    return isTrack(store, p) ? p : null;
   }
 
   /** Category of the part's patch: the preset library first, then a guess from the sound. */
@@ -35,7 +36,7 @@ export function createPreview({ store, router, timebase, timers, transport = nul
         if (patch && PHRASES[patch.category]) return patch.category;
       } catch { /* a broken preset store must not stop the preview */ }
     }
-    return guessCategory(store.get(`parts.${p}.params`) || {}, store.get(`parts.${p}.seq`) || {});
+    return guessCategory(store.get(`parts.${p}.params`) || {}, activeSeq(store.get(`parts.${p}`)) || {});
   }
 
   function ensureTimer() {

@@ -20,6 +20,7 @@ import {
 } from '../pedals/rig-settings.js';
 import { DEFAULT_GATE_DB } from '../pedals/guitar-notes.js';
 import { noteLabel } from './pedal-rig.js';
+import { partCount } from '../core/tracks.js';
 
 const CHANNELS = Array.from({ length: 16 }, (_, i) => ({ value: i + 1, label: `Ch ${i + 1}` }));
 
@@ -159,7 +160,16 @@ export function createPedalSettings(ctx) {
 
   // ================================================================ guitar
   const gNotes = own(createToggle(ctx, rigBinding(rig, 'guitarNotes', { label: 'Guitar plays notes', default: 0 }), { label: 'Guitar plays notes', className: 'toggle--switch' }));
-  const gTarget = own(createSelect(ctx, rigBinding(rig, 'guitarTarget', { label: 'Guitar part', default: 'sel' }), { label: 'Part the guitar plays', options: GUITAR_TARGETS }));
+  const gTarget = own(createSelect(ctx, rigBinding(rig, 'guitarTarget', { label: 'Guitar track', default: 'sel' }), { label: 'Track the guitar plays', options: GUITAR_TARGETS }));
+  // Only tracks that exist can be picked.
+  const renderGTargets = () => {
+    const n = partCount(ctx.store);
+    for (const o of gTarget.select.options) { const i = Number(o.value); if (Number.isInteger(i)) { o.hidden = i >= n; o.disabled = i >= n; } }
+  };
+  if (ctx.store) {
+    scope.add(ctx.store.subscribe('parts', (path) => { if (path === '' || path === 'parts') renderGTargets(); }));
+    renderGTargets();
+  }
   // The channel labels depend on the return layout, so this one is rebuilt when the layout changes.
   const gChanWrap = h('div', { class: 'guitar-channel' });
   let gChan = null, gChanLayout = null;

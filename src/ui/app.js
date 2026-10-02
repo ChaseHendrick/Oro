@@ -11,6 +11,7 @@ import { PART_COLORS } from '../core/params.js';
 import { h, createScope, listen, call, has, downloadBlob } from './dom.js';
 import { addLoop, schedule } from './frame.js';
 import { createBinder, clampPart } from './bind.js';
+import { partCount } from '../core/tracks.js';
 import { createTheme } from './theme.js';
 import { createPrefs } from './prefs.js';
 import { createLayers } from './layers.js';
@@ -261,13 +262,13 @@ export function createUI(root, modules = {}) {
   // ---------------------------------------------------------------- theme + colours
   function applyPartColours() {
     const p = binder.selected();
-    applyVars(docEl, partVars(store.get(`parts.${p}.color`) || PART_COLORS[p], docEl.dataset.theme, ctx.panelBg()));
+    applyVars(docEl, partVars(store.get(`parts.${p}.color`) || PART_COLORS[p % PART_COLORS.length], docEl.dataset.theme, ctx.panelBg()));
     bus.emit('part-colors');
   }
   ctx.theme = createTheme({ store, onResolved: () => { applyPartColours(); } });
   scope.add(ctx.theme.dispose);
   scope.add(store.subscribe('ui.selectedPart', () => schedule(applyPartColours)));
-  scope.add(store.subscribe('parts', (path) => { if (/^parts(\.\d(\.color)?)?$/.test(path)) schedule(applyPartColours); }));
+  scope.add(store.subscribe('parts', (path) => { if (/^parts(\.\d+(\.color)?)?$/.test(path)) schedule(applyPartColours); }));
   scope.add(store.subscribe('', (path) => { if (path === '') schedule(applyPartColours); }));
 
   function applyMotion() {
@@ -377,7 +378,8 @@ export function createUI(root, modules = {}) {
     layers,
     actions: {
       togglePlay: () => { if (topbar) topbar.togglePlay(); },
-      selectPart: (i) => store.set('ui.selectedPart', clampPart(i), { source: 'ui' }),
+      // keys 1-9 select tracks 1-9 when they exist
+      selectPart: (i) => { if (i >= 0 && i < partCount(store)) store.set('ui.selectedPart', clampPart(i, partCount(store)), { source: 'ui' }); },
       help: () => openHelpDialog(),
       settings: () => openSettingsDialog(),
       record: () => { if (topbar && topbar.recorder.supported) topbar.recorder.toggle(); },

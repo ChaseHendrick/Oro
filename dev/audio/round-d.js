@@ -4,7 +4,7 @@
 // (start/stop cycles, device switching, recording through patch changes, huge
 // reverbs, delay feedback at 0.95 under tempo changes, four busy parts).
 
-import { NUM_PARTS } from '../../src/core/params.js';
+import { DEFAULT_PARTS } from '../../src/core/params.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { makePng, oddWavs } from './files.js';
 
@@ -57,7 +57,7 @@ export async function roundD(h) {
   for (let i = 0; i <= 20; i++) {
     engine.pressure(0, i / 20); engine.pressure(0, 1 - i / 20, 57);
     engine.slide(0, i / 20); engine.slide(0, i / 20, 57);
-    for (let p = 0; p < NUM_PARTS; p++) engine.marble(p, (i % 7) / 7, Math.sin(i) * 0.9);
+    for (let p = 0; p < DEFAULT_PARTS; p++) engine.marble(p, (i % 7) / 7, Math.sin(i) * 0.9);
     await sleep(10);
   }
   engine.pressure(9, 1); engine.pressure(0, NaN); engine.slide(0, 'x'); engine.marble(0, NaN, 0); engine.pressure(0, 0.5, 'C4');
@@ -123,15 +123,15 @@ export async function roundD(h) {
   store.batch(() => {
     store.set('global.tempo', 120);
     for (const [p, deg] of [[0, [0, 2, 4, 7]], [1, [0, 0, 3, 5]], [2, [1, 1, 1, 1]]]) {
-      store.set(`parts.${p}.seq.enabled`, 1);
-      store.set(`parts.${p}.seq.rate`, 1);    // 1/8
-      store.set(`parts.${p}.seq.length`, 8);
-      deg.forEach((d, i) => { store.set(`parts.${p}.seq.steps.${2 * i}.on`, 1); store.set(`parts.${p}.seq.steps.${2 * i}.degree`, d); });
+      store.set(`parts.${p}.seqOn`, 1);
+      store.set(`parts.${p}.patterns.0.rate`, 1);    // 1/8
+      store.set(`parts.${p}.patterns.0.length`, 8);
+      deg.forEach((d, i) => { store.set(`parts.${p}.patterns.0.steps.${2 * i}.on`, 1); store.set(`parts.${p}.patterns.0.steps.${2 * i}.degree`, d); });
     }
     store.set('parts.2.params.mute', 1);
-    store.set('parts.0.seq.steps.4.lock', 1);
-    store.set('parts.0.seq.steps.4.lx', 0.2);
-    store.set('parts.0.seq.steps.4.ly', 0.8);
+    store.set('parts.0.patterns.0.steps.4.lock', 1);
+    store.set('parts.0.patterns.0.steps.4.lx', 0.2);
+    store.set('parts.0.patterns.0.steps.4.ly', 0.8);
   });
   const prog = [];
   const offB = engine.on('bounce', (e) => prog.push(e));
@@ -150,7 +150,7 @@ export async function roundD(h) {
   check('bounce: 24-bit stereo WAV of the right length with sound', mix.riff === 'RIFF' && mix.bits === 24 && mix.channels === 2
     && mix.sampleRate === engine.sampleRate && Math.abs(mix.frames - wantFrames) <= 128 && mix.peak > 0.02, metrics.bounce);
   check('bounce: stems for the sounding parts only (muted and silent parts are null)',
-    res.stems.length === NUM_PARTS && !!stemInfo[0] && !!stemInfo[1] && !stemInfo[2] && !stemInfo[3] && stemInfo[0].peak > 0.01 && stemInfo[1].peak > 0.01,
+    res.stems.length === DEFAULT_PARTS && !!stemInfo[0] && !!stemInfo[1] && !stemInfo[2] && !stemInfo[3] && stemInfo[0].peak > 0.01 && stemInfo[1].peak > 0.01,
     stemInfo.map(s => (s ? +s.peak.toFixed(3) : null)));
   const monotonic = prog.every((e, i) => i === 0 || e.done >= prog[i - 1].done);
   const last = prog[prog.length - 1] || {};
@@ -187,7 +187,7 @@ export async function roundD(h) {
   metrics.bounceTails = { dry: dryTail, wet: wetTail };
   check('bounce: effects off leaves no tail, effects on keeps the delay/reverb tail', dryTail < 1e-4 && wetTail > 1e-3, metrics.bounceTails);
   store.batch(() => {
-    for (let p = 0; p < 3; p++) store.set(`parts.${p}.seq.enabled`, 0);
+    for (let p = 0; p < 3; p++) store.set(`parts.${p}.seqOn`, 0);
     store.set('parts.2.params.mute', 0);
     store.set('parts.0.params.release', 0.2);
   });
@@ -358,14 +358,14 @@ export async function roundD(h) {
   // ---- four busy parts ------------------------------------------------------------------------------
   setPhase('cpu');
   store.batch(() => {
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < DEFAULT_PARTS; p++) {
       store.set(`parts.${p}.params.unison`, 2);
       store.set(`parts.${p}.params.polyMode`, 0);
       store.set(`parts.${p}.params.level`, 0.4);
     }
   });
   const busy = [];
-  for (let p = 0; p < NUM_PARTS; p++) for (let k = 0; k < 8; k++) busy.push({ time: 0, msg: { t: 'noteOn', part: p, note: 40 + p * 7 + k * 3, vel: 0.7 } });
+  for (let p = 0; p < DEFAULT_PARTS; p++) for (let k = 0; k < 8; k++) busy.push({ time: 0, msg: { t: 'noteOn', part: p, note: 40 + p * 7 + k * 3, vel: 0.7 } });
   const cpu = {};
   for (const q of ['standard', 'high']) {
     const t0 = performance.now();
@@ -382,7 +382,7 @@ export async function roundD(h) {
   metrics.cpu = cpu;
   note('four parts x 8 voices x unison 2: offline render time per second of audio (lower is better; < 1 = faster than real time)', cpu);
   check('four busy parts stay finite and bounded live', live.bad === 0 && live.peak <= 1, cpu.live);
-  store.batch(() => { for (let p = 0; p < NUM_PARTS; p++) { store.set(`parts.${p}.params.unison`, 1); store.set(`parts.${p}.params.level`, 0.75); } });
+  store.batch(() => { for (let p = 0; p < DEFAULT_PARTS; p++) { store.set(`parts.${p}.params.unison`, 1); store.set(`parts.${p}.params.level`, 0.75); } });
   await settle();
 }
 

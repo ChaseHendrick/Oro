@@ -5,7 +5,8 @@
 // finds the 3rd and 5th inside whatever scale is selected (pentatonic,
 // blues and chromatic scales have them at different indices).
 
-import { NUM_PARTS, SEQ_STEPS, SCALES, SCALE_NAMES, defaultStep, clamp } from '../core/params.js';
+import { SEQ_STEPS, SCALES, SCALE_NAMES, defaultStep, activeSeq, patternPath, clamp } from '../core/params.js';
+import { isTrack } from '../core/tracks.js';
 import { keepLocks } from './locks.js';
 
 /** Small deterministic PRNG (mulberry32) so tests and "same seed" are repeatable. */
@@ -111,19 +112,21 @@ export function generatePattern({ length = 16, density = 0.6, rng = Math.random,
 
 function partIndex(store, part) {
   const p = part === 'sel' || part == null ? store.get('ui.selectedPart') || 0 : Number(part);
-  return Number.isInteger(p) && p >= 0 && p < NUM_PARTS ? p : null;
+  return isTrack(store, p) ? p : null;
 }
 
+// The tools work on the pattern the track plays (its activePattern).
 export function randomizePattern(store, part, { density = 0.6, rng = Math.random } = {}) {
   const p = partIndex(store, part);
   if (p == null) return null;
-  const seq = store.get(`parts.${p}.seq`) || {};
+  const seq = activeSeq(store.get(`parts.${p}`)) || {};
+  const path = patternPath(store, p);
   const style = (seq.baseOctave ?? 3) <= 2 ? 'bass' : 'melody';
   // New notes, same dot locks: the dot choreography is a separate layer the user built on purpose.
   const steps = keepLocks(generatePattern({ length: seq.length || 16, density, rng, style, scaleType: store.get('global.scaleType') ?? 1 }), seq.steps);
   store.batch(() => {
-    store.set(`parts.${p}.seq.steps`, steps, { source: 'music' });
-    if (!seq.enabled) store.set(`parts.${p}.seq.enabled`, 1, { source: 'music' });
+    store.set(`${path}.steps`, steps, { source: 'music' });
+    if (!seq.enabled) store.set(`parts.${p}.seqOn`, 1, { source: 'music' });
   });
   return steps;
 }
@@ -132,19 +135,20 @@ export function randomizePattern(store, part, { density = 0.6, rng = Math.random
 export function clearPattern(store, part) {
   const p = partIndex(store, part);
   if (p == null) return;
-  store.set(`parts.${p}.seq.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'music' });
+  store.set(`${patternPath(store, p)}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'music' });
 }
 
 /** Rotate the active steps (within the pattern length) by one step, wrapping. Locks move with their steps. */
 export function shiftPattern(store, part, dir = 1) {
   const p = partIndex(store, part);
   if (p == null) return;
-  const seq = store.get(`parts.${p}.seq`);
+  const path = patternPath(store, p);
+  const seq = store.get(path);
   if (!seq || !Array.isArray(seq.steps)) return;
   const len = clamp(Math.round(seq.length || 16), 1, SEQ_STEPS);
   const d = dir < 0 ? -1 : 1;
   const steps = seq.steps.map(s => ({ ...s }));
   const head = steps.slice(0, len);
   const rotated = head.map((_, i) => head[((i - d) % len + len) % len]);
-  store.set(`parts.${p}.seq.steps`, [...rotated, ...steps.slice(len)], { source: 'music' });
+  store.set(`${path}.steps`, [...rotated, ...steps.slice(len)], { source: 'music' });
 }

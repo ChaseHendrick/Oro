@@ -62,6 +62,8 @@ const P = {
   mix: '<path d="M6 4.4v15.2M12 4.4v15.2M18 4.4v15.2"/><rect x="4" y="12.4" width="4" height="3" rx="1" fill="currentColor"/><rect x="10" y="7.2" width="4" height="3" rx="1" fill="currentColor"/><rect x="16" y="14.6" width="4" height="3" rx="1" fill="currentColor"/>',
   map: '<path d="M3.6 6.6l5.4-2.2 6 2.2 5.4-2.2v13l-5.4 2.2-6-2.2-5.4 2.2z"/><path d="M9 4.4v13M15 6.6v13"/>',
   plus: '<path d="M12 5.6v12.8M5.6 12h12.8"/>',
+  more: '<g fill="currentColor" stroke="none"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></g>',
+  copy: '<rect x="8.4" y="8.4" width="11.2" height="11.2" rx="2"/><path d="M15.6 8.4V5.6a1.2 1.2 0 0 0-1.2-1.2H5.6a1.2 1.2 0 0 0-1.2 1.2v8.8a1.2 1.2 0 0 0 1.2 1.2h2.8"/>',
   minus: '<path d="M5.6 12h12.8"/>',
   'arrow-left': '<path d="M19 12H5.4M10.6 6.6L5.2 12l5.4 5.4"/>',
   'arrow-right': '<path d="M5 12h13.6M13.4 6.6l5.4 5.4-5.4 5.4"/>',

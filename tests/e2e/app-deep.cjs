@@ -422,9 +422,9 @@ async function sectionScenes(browser, base) {
       const notes = [0, 0, 0, 0];
       const offStep = o.music.transport.on('step', (e) => { steps[e.part]++; });
       const offNote = o.music.router.on('sched', (e) => { if (e.on) notes[e.part]++; });
-      const seqOn = [0, 1, 2, 3].map(p => !!o.store.get(`parts.${p}.seq.enabled`));
+      const seqOn = [0, 1, 2, 3].map(p => !!o.store.get(`parts.${p}.seqOn`));
       const arpOn = [0, 1, 2, 3].map(p => o.store.get(`parts.${p}.arp.mode`) > 0);
-      const rates = [0, 1, 2, 3].map(p => o.store.get(`parts.${p}.seq.rate`));
+      const rates = [0, 1, 2, 3].map(p => o.store.get(`parts.${p}.patterns.0.rate`));
       const barsMs = 2 * 4 * 60000 / tempo;
       const lt0 = T.longTasks.length;
       o.music.transport.play();
@@ -527,7 +527,7 @@ async function sectionStress(browser, base) {
         o.store.set(`parts.${p}.params.unison`, 4, { source: 'test' });
         o.store.set(`parts.${p}.params.mute`, 0, { source: 'test' });
         o.store.set(`parts.${p}.params.solo`, 0, { source: 'test' });
-        o.store.set(`parts.${p}.seq.enabled`, 1, { source: 'test' });
+        o.store.set(`parts.${p}.seqOn`, 1, { source: 'test' });
       }
     });
     const ceiling = o.store.get('global.ceiling');
@@ -609,7 +609,7 @@ async function sectionExtremes(browser, base) {
     o.presets.loadScene(0);
     await Promise.race([o.engine.whenTerrainsReady(), T.sleep(4000)]);
     o.store.set('ui.selectedPart', 0, { source: 'test' });
-    o.store.batch(() => { for (let p = 0; p < 4; p++) o.store.set(`parts.${p}.seq.enabled`, 0, { source: 'test' }); });
+    o.store.batch(() => { for (let p = 0; p < 4; p++) o.store.set(`parts.${p}.seqOn`, 0, { source: 'test' }); });
     const chord = [36, 60, 79];
     const hold = () => { for (const n of chord) o.engine.noteOn(0, n, 0.9); };
     const release = () => { for (const n of chord) o.engine.noteOff(0, n); };
@@ -727,8 +727,8 @@ async function sectionPersistence(browser, base) {
     o.store.set('parts.1.params.cutoff', 1234, { source: 'test' });
     o.store.set('global.tempo', 97, { source: 'test' });
     o.store.set('global.scaleRoot', 2, { source: 'test' });
-    o.store.set('parts.3.seq.steps.5.on', 1, { source: 'test' });
-    o.store.set('parts.3.seq.steps.5.degree', 4, { source: 'test' });
+    o.store.set('parts.3.patterns.0.steps.5.on', 1, { source: 'test' });
+    o.store.set('parts.3.patterns.0.steps.5.degree', 4, { source: 'test' });
     o.store.set('parts.0.params.centerX', 0.137, { source: 'test' });
     o.store.set('ui.selectedPart', 2, { source: 'test' });
     await new Promise(r => setTimeout(r, 1200));
@@ -749,7 +749,7 @@ async function sectionPersistence(browser, base) {
       theme: document.documentElement.dataset.theme, pref: s.get('ui.theme'),
       quality: s.get('ui.quality'), renderStyle: s.get('ui.renderStyle'), audioQuality: s.get('ui.audioQuality'), motion: document.documentElement.dataset.motion,
       patch: s.get('parts.2.patchName'), cutoff: s.get('parts.1.params.cutoff'), tempo: s.get('global.tempo'), root: s.get('global.scaleRoot'),
-      step: s.get('parts.3.seq.steps.5'), cx: s.get('parts.0.params.centerX'), sel: s.get('ui.selectedPart'),
+      step: s.get('parts.3.patterns.0.steps.5'), cx: s.get('parts.0.params.centerX'), sel: s.get('ui.selectedPart'),
     };
   });
   back.shownPatch = await page.waitForFunction((name) => {

@@ -12,7 +12,6 @@ import { createEmitter } from '../audio/emitter.js';
 import { resampleToWavetable, nextResampleName, noteName, SLICE_MODES } from '../audio/resample.js';
 import { addUserTerrain } from '../audio/importers.js';
 import { LOOP_BARS, DEFAULT_BARS } from '../audio/looper-core.js';
-import { NUM_PARTS } from '../core/params.js';
 import { recordingName } from './record.js';
 
 export const LOOPER_PREFS_KEY = 'orograph.looper';
@@ -153,7 +152,8 @@ export function createLooperControl({ store, engine = null, music = null, toast 
   async function resampleNow() {
     if (!guard() || busy) return { ok: false, reason: busy ? 'busy' : reason };
     await startAudio();
-    const part = Math.max(0, Math.min(NUM_PARTS - 1, Math.round(Number(store.get('ui.selectedPart')) || 0)));
+    const count = Math.max(1, (store.get('parts') || []).length);
+    const part = Math.max(0, Math.min(count - 1, Math.round(Number(store.get('ui.selectedPart')) || 0)));
     const slot = prefs.slot;
     let audio = null;
     try {

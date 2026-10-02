@@ -92,7 +92,7 @@ describe('music.exploreNote', () => {
 
   it('snaps to 16ths while the transport plays', () => {
     const { clock, engine, store, music } = setup({ tempo: 120, rate: 1 });
-    store.set('parts.0.seq.enabled', 1);
+    store.set('parts.0.seqOn', 1);
     const t0 = clock.ctx.currentTime;
     music.transport.play();
     clock.advance(0.33);

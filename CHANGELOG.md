@@ -3,6 +3,31 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.3.0 (October 2026): Tracks
+
+* New: an open track list. Sessions start with four tracks as before; add up to 16 with the
+  **+** button next to the track tabs (or the **Add track** tile at the end of the mixer).
+  The track menu (the **...** button, or right-click a tab or a mixer strip) renames,
+  duplicates, moves and removes tracks, and a removed track comes back with **Undo** in the
+  notice. Drag a tab to reorder it, or press **Alt+Left** / **Alt+Right** on a tab; **F2**
+  renames. A session always keeps at least one track.
+* Tracks scroll sideways in the top bar when they do not fit (a compact strip with 44 px
+  targets on phones), and the mixer strips scroll too. Keys **1** to **9** select tracks 1
+  to 9.
+* Each track can hold several patterns (up to 16). The new picker in the Seq tab's Pattern
+  block adds a pattern (a copy of the current one), chooses which one plays and removes one.
+  Patterns and tracks have stable ids, ready for an arrangement timeline.
+* Removing a track releases its notes and fades it out over 80 ms; reordering never
+  interrupts a sound; tracks you are not using cost no audio processing. Loading a scene
+  replaces the track list with a short crossfade.
+* MIDI: per-track channels for all 16 tracks (track N listens and sends on channel N by
+  default). Settings saved with four parts keep their channels. Notes held on an external
+  synth are released when tracks move.
+* Bounce: one stem per track that plays, named after the track (for example
+  `-track3-bass.wav`).
+* Sessions and scenes saved by earlier versions load as four tracks, each part's pattern
+  becoming its pattern 1. The saved format is now version 4.
+
 ## 1.2.2 (October 2026)
 
 * A bigger map to play on. The whole 3 x 3 field of terrain copies is now playable: drag the

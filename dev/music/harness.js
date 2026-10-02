@@ -5,7 +5,7 @@
 
 import workletCode from 'virtual:worklet:src/dsp/worklet.js';
 import { createStore } from '/src/core/store.js';
-import { defaultState, NUM_PARTS, GLOBAL_PARAMS } from '/src/core/params.js';
+import { defaultState, DEFAULT_PARTS, GLOBAL_PARAMS, activeSeq } from '/src/core/params.js';
 import { generateTerrain, buildMipChain } from '/src/dsp/terrains.js';
 import { createMusic } from '/src/music/music.js';
 import { createPresets } from '/src/presets/presets.js';
@@ -89,7 +89,7 @@ async function withTap(engine, store) {
   function startRecording() {
     savedSends = [];
     store.batch(() => {
-      for (let p = 0; p < NUM_PARTS; p++) {
+      for (let p = 0; p < DEFAULT_PARTS; p++) {
         for (const id of ['delaySend', 'reverbSend']) {
           savedSends.push([sendPath(p, id), store.get(sendPath(p, id))]);
           store.set(sendPath(p, id), 0, { source: 'harness' });
@@ -142,7 +142,7 @@ async function makeDspEngine(store) {
   node.connect(tap, 0);
   const post = (m) => node.port.postMessage(m);
 
-  const terrainKeys = Array.from({ length: NUM_PARTS }, () => ['', '']);
+  const terrainKeys = Array.from({ length: DEFAULT_PARTS }, () => ['', '']);
   function syncPart(p) {
     const part = store.get(`parts.${p}`);
     post({ t: 'params', part: p, p: part.params });
@@ -158,7 +158,7 @@ async function makeDspEngine(store) {
     });
   }
   function syncAll() {
-    for (let p = 0; p < NUM_PARTS; p++) syncPart(p);
+    for (let p = 0; p < DEFAULT_PARTS; p++) syncPart(p);
     post({ t: 'global', p: Object.fromEntries(GLOBAL_PARAMS.map(d => [d.id, store.get(`global.${d.id}`)])) });
   }
   let pending = 0;
@@ -208,7 +208,7 @@ async function boot() {
   // ---- part rows
   const rows = [];
   const partsEl = $('parts');
-  for (let p = 0; p < NUM_PARTS; p++) {
+  for (let p = 0; p < DEFAULT_PARTS; p++) {
     const row = document.createElement('div');
     row.className = 'part';
     row.style.setProperty('--c', COLORS[p]);
@@ -219,12 +219,13 @@ async function boot() {
     rows.push({ row, steps, led: row.querySelector('.led'), name: row.querySelector('.name'), head: -1, ledTimer: 0 });
   }
   function drawPatterns() {
-    for (let p = 0; p < NUM_PARTS; p++) {
+    for (let p = 0; p < DEFAULT_PARTS; p++) {
       const part = store.get(`parts.${p}`);
       rows[p].name.innerHTML = `${part.name}<small>${part.patchName}</small>`;
-      part.seq.steps.forEach((st, i) => {
+      const seq = activeSeq(part);
+      seq.steps.forEach((st, i) => {
         rows[p].steps[i].classList.toggle('on', !!st.on);
-        rows[p].steps[i].classList.toggle('off-len', i >= part.seq.length);
+        rows[p].steps[i].classList.toggle('off-len', i >= seq.length);
       });
     }
     $('tempo').textContent = store.get('global.tempo') + ' bpm';

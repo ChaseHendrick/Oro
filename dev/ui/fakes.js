@@ -3,9 +3,10 @@
 // the real modules (docs/ARCHITECTURE.md plus the shared UI contract).
 
 import {
-  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT, SYNC_DIVS, SEQ_STEPS,
-  toNorm, clamp, mtof, stepToMidi, defaultPart, defaultState, defaultStep, SCALES, SCALE_NAMES, NOTE_NAMES,
+  MAX_PARTS, PART_PARAMS, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT, SYNC_DIVS, SEQ_STEPS,
+  toNorm, clamp, mtof, stepToMidi, defaultPart, defaultState, defaultStep, activeSeq, patternPath, SCALES, SCALE_NAMES, NOTE_NAMES,
 } from '../../src/core/params.js';
+import { partCount } from '../../src/core/tracks.js';
 import { migrateState } from '../../src/core/migrate.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { createFlatMap } from '../../src/ui/flat-map.js';
@@ -44,8 +45,8 @@ export function createFakeEngine({ store }) {
   master.connect(analyser);
   analyser.connect(context.destination);
   const voices = new Map(); // `${part}:${note}` -> {osc, gain}
-  const active = new Array(NUM_PARTS).fill(0);
-  const env2 = new Array(NUM_PARTS).fill(0);
+  const active = new Array(MAX_PARTS).fill(0);
+  const env2 = new Array(MAX_PARTS).fill(0);
   let wheel = 0;
 
   function noteOn(part, note, vel = 0.8, time = 0) {
@@ -211,15 +212,15 @@ export function createFakeVisuals(container, { store, engine }) {
 export function createFakeMusic({ store, engine }) {
   const rEv = emitter();
   const tEv = emitter();
-  const held = Array.from({ length: NUM_PARTS }, () => new Set());
-  const sustained = Array.from({ length: NUM_PARTS }, () => new Set());
-  const sustainOn = new Array(NUM_PARTS).fill(false);
+  const held = Array.from({ length: MAX_PARTS }, () => new Set());
+  const sustained = Array.from({ length: MAX_PARTS }, () => new Set());
+  const sustainOn = new Array(MAX_PARTS).fill(false);
   const sel = () => Math.round(store.get('ui.selectedPart') || 0);
   const resolve = (part) => {
     if (part !== 'sel') return [part];
     if (store.get('global.keyMode') === 1) {
       const list = [];
-      for (let p = 0; p < NUM_PARTS; p++) if (!store.get(`parts.${p}.params.mute`)) list.push(p);
+      for (let p = 0; p < partCount(store); p++) if (!store.get(`parts.${p}.params.mute`)) list.push(p);
       return list.length ? list : [sel()];
     }
     return [sel()];
@@ -248,7 +249,7 @@ export function createFakeMusic({ store, engine }) {
       }
     },
     allNotesOff(part) {
-      for (let p = 0; p < NUM_PARTS; p++) {
+      for (let p = 0; p < MAX_PARTS; p++) {
         if (part != null && p !== part) continue;
         for (const n of [...held[p]]) { engine?.noteOff(p, n); rEv.emit('note', { part: p, note: n, vel: 0, on: false }); }
         held[p].clear();
@@ -262,8 +263,8 @@ export function createFakeMusic({ store, engine }) {
   let playing = false, timer = 0, step = 0;
   function tick() {
     const tempo = store.get('global.tempo') || 120;
-    for (let p = 0; p < NUM_PARTS; p++) {
-      const seq = store.get(`parts.${p}.seq`);
+    for (let p = 0; p < partCount(store); p++) {
+      const seq = activeSeq(store.get(`parts.${p}`));
       if (!seq || !seq.enabled) continue;
       const i = step % seq.length;
       tEv.emit('step', { part: p, step: i, time: engine ? engine.context.currentTime : 0 });
@@ -320,13 +321,13 @@ export function createFakeMusic({ store, engine }) {
     renderEvents(bars) { return Array.from({ length: bars * 4 }, (_, i) => ({ time: i * 0.5, msg: { t: 'noteOn', part: 0, note: 57, vel: 0.8 } })); },
     randomizePattern(part, { density = 0.6 } = {}) {
       const len = (SCALES[SCALE_NAMES[store.get('global.scaleType')]] || SCALES.Minor).length;
-      store.set(`parts.${part}.seq.steps`, Array.from({ length: SEQ_STEPS }, (_, i) => ({ ...defaultStep(), on: Math.random() < (i % 4 ? density : 0.9) ? 1 : 0, degree: Math.floor(Math.random() * (len + 2)) - 1, vel: 0.5 + Math.random() * 0.5, gate: 0.3 + Math.random() * 0.6, accent: Math.random() < 0.15 ? 1 : 0, slide: Math.random() < 0.1 ? 1 : 0 })));
+      store.set(`${patternPath(store, part)}.steps`, Array.from({ length: SEQ_STEPS }, (_, i) => ({ ...defaultStep(), on: Math.random() < (i % 4 ? density : 0.9) ? 1 : 0, degree: Math.floor(Math.random() * (len + 2)) - 1, vel: 0.5 + Math.random() * 0.5, gate: 0.3 + Math.random() * 0.6, accent: Math.random() < 0.15 ? 1 : 0, slide: Math.random() < 0.1 ? 1 : 0 })));
     },
-    clearPattern(part) { store.set(`parts.${part}.seq.steps`, Array.from({ length: SEQ_STEPS }, defaultStep)); },
+    clearPattern(part) { store.set(`${patternPath(store, part)}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep)); },
     shiftPattern(part, dir) {
-      const s = store.get(`parts.${part}.seq.steps`);
+      const s = store.get(`${patternPath(store, part)}.steps`);
       const out = dir > 0 ? [s[SEQ_STEPS - 1], ...s.slice(0, -1)] : [...s.slice(1), s[0]];
-      store.set(`parts.${part}.seq.steps`, out.map(x => ({ ...x })));
+      store.set(`${patternPath(store, part)}.steps`, out.map(x => ({ ...x })));
     },
   };
 }
@@ -406,12 +407,12 @@ export function createFakePresets({ store }) {
       const st = defaultState();
       st.global.tempo = sc.tempo;
       const picks = [[1, 0], [0, 3], [5, 7], [2, 8]];
-      for (let p = 0; p < NUM_PARTS; p++) {
+      for (let p = 0; p < st.parts.length; p++) {
         const pat = factory[picks[p][0] + (sc.id === 's1' ? 1 : 0)] || factory[p];
         const base = defaultPart(p);
         st.parts[p] = { ...base, params: { ...base.params, ...pat.params }, patchName: pat.name };
-        st.parts[p].seq.enabled = p < 2 ? 1 : 0;
-        st.parts[p].seq.steps = st.parts[p].seq.steps.map((s, i) => ({ ...s, on: (i * (p + 3)) % 5 === 0 ? 1 : 0, degree: (i * 3 + p) % 7 }));
+        st.parts[p].seqOn = p < 2 ? 1 : 0;
+        st.parts[p].patterns[0].steps = st.parts[p].patterns[0].steps.map((s, i) => ({ ...s, on: (i * (p + 3)) % 5 === 0 ? 1 : 0, degree: (i * 3 + p) % 7 }));
       }
       store.load(migrateState(st));
       ev.emit('change');

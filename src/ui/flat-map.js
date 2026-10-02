@@ -11,6 +11,7 @@ import { h, createScope, watchSize, watchVisibility } from './dom.js';
 import { addLoop } from './frame.js';
 import { drawTerrain } from './terrain-art.js';
 import { pathPoint, makeTransform, applyTransform, terrainHeight } from './dsp-bridge.js';
+import { partCount } from '../core/tracks.js';
 
 const RES = 112;
 const REBUILD_MS = 120;
@@ -25,7 +26,7 @@ export function createFlatMap(container, { store, terrains, tele = null, source 
   let terrainKey = '';
   let lastBuild = 0;
   let dirty = true;
-  const sel = () => clamp(Math.round(store.get('ui.selectedPart') || 0), 0, 3);
+  const sel = () => clamp(Math.round(store.get('ui.selectedPart') || 0), 0, partCount(store) - 1);
   const size = watchSize(canvas, () => { dirty = true; });
   const vis = watchVisibility(el);
   scope.add(size.dispose);

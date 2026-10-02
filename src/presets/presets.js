@@ -1,9 +1,10 @@
 // Patch and scene library: factory content plus the user's own presets, kept
-// in localStorage. Patches change one part's sound; scenes replace the whole
-// session (all four parts, sequences, mix, effects, tempo and key).
+// in localStorage. Patches change one track's sound; scenes replace the whole
+// session (the track list with its patterns, the mix, effects, tempo and key).
 
+import { isTrack, REPLACE_TRACKS } from '../core/tracks.js';
 import {
-  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, defaultPart,
+  PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, defaultPart,
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
@@ -137,7 +138,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
 
   function partIndex(part) {
     const p = part === 'sel' || part == null ? store.get('ui.selectedPart') || 0 : Number(part);
-    return Number.isInteger(p) && p >= 0 && p < NUM_PARTS ? p : null;
+    return isTrack(store, p) ? p : null;
   }
 
   function applyToPart(p, patch, action) {
@@ -254,7 +255,14 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
   function loadScene(idOrIndex) {
     const scene = findScene(idOrIndex);
     if (!scene) return false;
-    store.load(migrateState(scene), { source: 'scene' });
+    const state = migrateState(scene);
+    // The scene's tracks replace the current ones: the engine fades the old
+    // tracks out while the new ones start (see REPLACE_TRACKS in tracks.js).
+    store.batch(() => {
+      store.load(state, { source: 'scene', [REPLACE_TRACKS]: true });
+      const sel = Math.round(Number(store.get('ui.selectedPart')) || 0);
+      if (sel >= state.parts.length) store.set('ui.selectedPart', state.parts.length - 1, { source: 'scene' });
+    });
     // Pedal presets go to the pedal rig, which sends them to the pedals that are switched on.
     changed({ kind: 'scene', action: 'load', id: scene.id || null, pedalPresets: sanitizePedalPresets(scene.pedalPresets) });
     return true;

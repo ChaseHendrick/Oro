@@ -13,13 +13,27 @@
 .topbar-spacer { flex: 1; min-width: 0; }
 
 .part-tabs {
-  display: flex; gap: 4px; padding: 3px;
+  display: flex; align-items: center; gap: 4px; padding: 3px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   min-width: 0;
   flex: 0 1 auto;
 }
+/* Track tabs scroll sideways when they do not fit (no visible scrollbar: the
+   wheel, a swipe, the arrow keys and selecting a track all bring tabs into view). */
+.part-tabs-scroll {
+  display: flex; gap: 4px; min-width: 0; flex: 0 1 auto;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+  scrollbar-width: none; scroll-snap-type: x proximity; scroll-padding-inline: 4px;
+}
+.part-tabs-scroll::-webkit-scrollbar { display: none; }
+.part-tabs.is-scrolling .part-tabs-scroll {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+.part-tab-btn { flex: none; width: 32px; height: 42px; border-radius: var(--r); }
+.part-tab-add:disabled { opacity: .4; }
 .part-tab {
   position: relative;
   display: flex; align-items: center; gap: 8px;
@@ -29,8 +43,12 @@
   color: var(--text-2);
   text-align: left;
   transition: background var(--dur-fast), color var(--dur-fast);
-  flex: 1 1 132px;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
 }
+.part-tab.is-dragging { opacity: .45; }
+.part-tab.is-drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.part-tab.is-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .part-tab:hover { background: var(--panel-hover); color: var(--text); }
 .part-tab[aria-checked="true"] { background: var(--panel-active); color: var(--text); box-shadow: var(--shadow-1), var(--inset-hi); }
 .part-tab::after {
@@ -604,6 +622,7 @@
 .seq-block .section-head { margin: 0; min-height: 16px; }
 .seq-line { display: flex; align-items: center; gap: 6px; }
 .seq-line > .select { flex: 1; min-width: 0; }
+.seq-patterns .icon-btn:disabled { opacity: .4; }
 .seq-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .field-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field-col .stepper { width: 100%; justify-content: space-between; }
@@ -706,9 +725,14 @@
 
 /* MIX */
 .dock-pane--mix { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 10px 12px 12px; min-height: 100%; }
-.mix-strips { display: grid; grid-template-columns: repeat(4, minmax(118px, 1fr)); gap: 8px; min-width: 0; }
+.mix-strips {
+  display: flex; gap: 8px; min-width: 0;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
 .strip {
   display: grid; grid-template-rows: auto 1fr auto; gap: 6px;
+  flex: 1 0 118px; scroll-snap-align: start;
   padding: 8px; min-width: 0;
   background: var(--panel-2);
   border: 1px solid var(--border);
@@ -717,6 +741,17 @@
   transition: border-color var(--dur), box-shadow var(--dur);
 }
 .strip.is-selected { border-color: var(--part-line); box-shadow: var(--inset-hi), 0 0 0 1px var(--part-line); }
+/* The tile after the last strip that adds a track. */
+.strip-add {
+  flex: 0 0 64px; min-height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  border: 1px dashed var(--border); border-radius: var(--r-lg);
+  color: var(--text-2); font-size: var(--fs-xs); font-weight: 650; text-align: center;
+  transition: color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast);
+}
+.strip-add:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); background: var(--panel-hover); }
+.strip-add:disabled { opacity: .45; }
+.strip-add-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--panel-3); }
 .strip.is-muted .strip-body { opacity: .5; }
 .strip-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .strip-swatch { width: 14px; height: 14px; border-radius: 50%; background: var(--part); box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 3px var(--part-line); flex: none; }
@@ -771,7 +806,8 @@
    Volume and Ceiling never sit below the fold. */
 @container dock (max-width: 1060px) and (min-width: 900px) {
   .dock-pane--mix { gap: 8px; padding: 8px 8px 10px; }
-  .mix-strips { grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 6px; }
+  .mix-strips { gap: 6px; }
+  .strip { flex-basis: 100px; }
   .strip { padding: 7px 6px; }
   .strip-knobs .knob--sm { width: 48px; }
   .mix-master { padding: 8px; }
@@ -855,7 +891,9 @@
   .transport-btn { height: 40px; min-width: 40px; }
   .tempo { height: 40px; }
   .part-tabs { grid-area: parts; }
-  .part-tab { flex: 1 1 0; width: auto; height: 44px; padding: 0 8px; gap: 6px; }
+  .part-tabs-scroll { flex: 1 1 auto; }
+  .part-tab { flex: 1 0 64px; width: auto; min-width: 64px; height: 44px; padding: 0 8px; gap: 6px; }
+  .part-tab-btn { width: 44px; height: 44px; }
   .part-patch { display: none; }
   .patch-browser { grid-area: patch; flex: none; }
   .patch-main { height: 44px; }
@@ -905,8 +943,10 @@
   .seq-main { overflow-x: auto; }
   .seq-labels, .seq-col { grid-template-rows: 12px 40px 28px 22px 28px 14px 22px 22px 26px; gap: 3px; }
   .dock-pane--mix { padding: 8px; }
-  .mix-strips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .strip { min-height: 220px; }
+  /* two strips across, the rest a swipe away */
+  .mix-strips { padding-bottom: 4px; }
+  .strip { min-height: 220px; flex: 0 0 calc(50% - 4px); }
+  .strip-add { flex: 0 0 72px; }
   .master-body { flex-direction: column; }
   .master-out { flex-direction: row; border-left: 0; padding-left: 0; height: 140px; }
   .mod-row { grid-template-columns: minmax(60px, 1.2fr) 32px 108px minmax(40px, 1fr) minmax(40px, 1fr) 32px; height: 42px; gap: 6px; }

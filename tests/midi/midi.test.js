@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createStore } from '../../src/core/store.js';
-import { defaultState, PART_PARAM_MAP, GLOBAL_PARAM_MAP, fromNorm, stepToMidi } from '../../src/core/params.js';
+import { defaultState, MAX_PARTS, PART_PARAM_MAP, GLOBAL_PARAM_MAP, fromNorm, stepToMidi } from '../../src/core/params.js';
 import { createMusic } from '../../src/music/music.js';
 import { createMidi, STORAGE_KEY, applyVelocityCurve } from '../../src/midi/midi.js';
 import { detectMpcPort, portStem, MPC_GUIDE } from '../../src/midi/mpc.js';
 import { createClockFollower } from '../../src/midi/clock.js';
 import { makeRng } from '../../src/music/patterns.js';
+import { addTrack, moveTrack } from '../../src/core/tracks.js';
 import { createFakeClock, createFakeEngine, createMemoryStorage } from '../music/fakes.js';
 import { fakeInput, fakeOutput, fakeAccess, fakeNavigator } from './fake-midi.js';
 
@@ -324,10 +325,10 @@ describe('clock in', () => {
 
   it('drives the transport from an MPC in follow mode', async () => {
     const { midi, mpcIn, music, clock, store, engine } = await setup({ tempo: 90 });
-    const seq = store.get('parts.0.seq');
-    seq.enabled = 1;
+    const seq = store.get('parts.0.patterns.0');
+    store.set('parts.0.seqOn', 1);
     seq.steps.forEach(s => { s.on = 1; });
-    store.set('parts.0.seq', seq);
+    store.set('parts.0.patterns.0', seq);
     midi.setSetting('followClock', true);
     expect(music.transport.isFollowing()).toBe(true);
     const clocks = [];
@@ -404,9 +405,9 @@ describe('MIDI out', () => {
     const { midi, mpcOut, music, clock, store } = await setup({ tempo: 120 });
     midi.setSetting('sendNotes', true);
     midi.setSetting('outChannels', [5, 2, 3, 4]);
-    const seq = store.get('parts.0.seq');
-    seq.enabled = 1; seq.steps[0].on = 1; seq.steps[0].degree = 0;
-    store.set('parts.0.seq', seq);
+    const seq = store.get('parts.0.patterns.0');
+    store.set('parts.0.seqOn', 1); seq.steps[0].on = 1; seq.steps[0].degree = 0;
+    store.set('parts.0.patterns.0', seq);
     const t0 = clock.perfNow();
     music.transport.play();
     clock.advance(0.3);
@@ -513,8 +514,13 @@ describe('settings', () => {
   beforeEach(() => { storage = createMemoryStorage(); });
   it('validates and persists settings', async () => {
     const { midi } = await setup({ storage });
+    // one channel per track position, track i on channel i by default
+    const defaults = Array.from({ length: MAX_PARTS }, (_, i) => i + 1);
     midi.setSetting('multiChannels', [1, 2, 99, 4]);
-    expect(midi.getSettings().multiChannels).toEqual([1, 2, 3, 4]);
+    expect(midi.getSettings().multiChannels).toEqual(defaults);
+    // a list saved with four parts keeps its channels; the tracks after them get the defaults
+    midi.setSetting('multiChannels', [3, 3, 2, 1]);
+    expect(midi.getSettings().multiChannels).toEqual([3, 3, 2, 1, ...defaults.slice(4)]);
     midi.setSetting('padBaseNote', 48);
     midi.setSetting('channelMode', 'multi');
     const saved = JSON.parse(storage.getItem(STORAGE_KEY));
@@ -523,5 +529,40 @@ describe('settings', () => {
     storage.setItem(STORAGE_KEY, '{not json');
     const fresh = await setup({ storage });
     expect(fresh.midi.getSettings().channelMode).toBe('omni');
+  });
+});
+
+describe('tracks (v1.3): one channel per track position, up to 16', () => {
+  it('routes channels 5 to 8 to tracks 5 to 8 in multi mode once those tracks exist', async () => {
+    const { midi, mpcIn, engine, store } = await setup();
+    midi.setSetting('channelMode', 'multi');
+    mpcIn.fire([0x96, 40, 100]);                 // channel 7, no track 7 yet
+    expect(engine.ons()).toEqual([]);
+    for (let i = 0; i < 4; i++) addTrack(store);
+    for (let ch = 1; ch <= 9; ch++) mpcIn.fire([0x90 | (ch - 1), 50 + ch, 100]);
+    expect(engine.ons().map(e => e.part)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);  // channel 9: no track 9
+  });
+
+  it('plays a numbered omni target only while that track exists', async () => {
+    const { midi, mpcIn, engine, store } = await setup();
+    store.set('ui.selectedPart', 1);
+    midi.setSetting('omniTarget', 6);
+    expect(midi.getSettings().omniTarget).toBe(6);
+    mpcIn.fire([0x90, 60, 100]);
+    mpcIn.fire([0x80, 60, 0]);
+    expect(engine.ons().map(e => e.part)).toEqual([1]);   // falls back to the selected track
+    for (let i = 0; i < 3; i++) addTrack(store);
+    mpcIn.fire([0x90, 61, 100]);
+    expect(engine.ons().map(e => e.part)).toEqual([1, 6]);
+  });
+
+  it('sends track 6 on channel 6 and releases held notes when the tracks move', async () => {
+    const { midi, mpcOut, music, store } = await setup();
+    midi.setSetting('sendNotes', true);
+    addTrack(store); addTrack(store);
+    music.router.noteOn(5, 62, 1, 'ui');
+    expect(mpcOut.bytes()).toEqual([[0x95, 62, 127]]);
+    moveTrack(store, 5, 0);
+    expect(mpcOut.bytes()).toEqual([[0x95, 62, 127], [0x85, 62, 0]]);
   });
 });

@@ -254,7 +254,7 @@ describe('importTerrainFile (Node, WAV path)', () => {
     const big = { name: 'huge.png', size: MAX_IMPORT_BYTES + 1, type: 'image/png', slice: () => new Blob([]) };
     await expect(importTerrainFile(store, 0, 'A', big)).rejects.toThrow(/25 MB/);
     await expect(importTerrainFile(store, 0, 'A', new File(['ID3abc'], 'song.mp3', { type: 'audio/mpeg' }))).rejects.toThrow(/not an image or a WAV/);
-    await expect(importTerrainFile(store, 7, 'A', new File(['x'], 'a.png'))).rejects.toThrow(/no part/);
+    await expect(importTerrainFile(store, 7, 'A', new File(['x'], 'a.png'))).rejects.toThrow(/no track/);
     await expect(importTerrainFile(store, 0, 'C', new File(['x'], 'a.png'))).rejects.toThrow(/A or B/);
     expect(store.get('parts.0.params.terrainA')).toBe(TERRAIN_INDEX.swell);
   });

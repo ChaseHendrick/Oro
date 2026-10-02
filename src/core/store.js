@@ -10,6 +10,11 @@
 //
 // The root holds the persisted song/patch state (`global`, `parts`) plus a
 // non-persisted `ui` branch (selected part, theme, transport, etc.).
+//
+// `parts` is the track list (src/core/tracks.js): it only changes length
+// through a write of the whole list. A write below `parts.N` for a track that
+// does not exist (N >= parts.length) is ignored, so it can never grow the
+// list with holes.
 
 import { defaultState } from './params.js';
 
@@ -79,6 +84,8 @@ export function createStore(initial = defaultState()) {
       emit('', root, meta);
       return;
     }
+    if (keys[0] === 'parts' && keys.length > 1 && /^\d+$/.test(keys[1])
+      && !(Array.isArray(root.parts) && Number(keys[1]) < root.parts.length)) return;
     let node = root;
     for (let i = 0; i < keys.length - 1; i++) {
       const k = keys[i];

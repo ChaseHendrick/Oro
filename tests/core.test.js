@@ -56,9 +56,9 @@ describe('migrate', () => {
     expect(m.global.tempo).toBe(240);
     expect(m.parts[0].params.cutoff).toBe(9000);
     expect(m.parts[0].params.size).toBe(0);
-    expect(m.parts[0].seq.steps[0]).toMatchObject({ on: 1, degree: 3, lock: 0, lx: 0.5, ly: 0.5 });
-    expect(m.parts[0].seq.lockGlide).toBe(0.5);
-    expect(migrateState({ parts: [{ seq: { steps: [{ lock: 1, lx: 7, ly: -1 }] } }] }).parts[0].seq.steps[0]).toMatchObject({ lock: 1, lx: 1, ly: 0 });
+    expect(m.parts[0].patterns[0].steps[0]).toMatchObject({ on: 1, degree: 3, lock: 0, lx: 0.5, ly: 0.5 });
+    expect(m.parts[0].patterns[0].lockGlide).toBe(0.5);
+    expect(migrateState({ parts: [{ seq: { steps: [{ lock: 1, lx: 7, ly: -1 }] } }] }).parts[0].patterns[0].steps[0]).toMatchObject({ lock: 1, lx: 1, ly: 0 });
     expect(m.parts.length).toBe(4);
     expect(migrateState(null).parts.length).toBe(4);
   });

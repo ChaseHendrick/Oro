@@ -1,4 +1,4 @@
-// Everything that moves the dots on its own, for all four parts at once:
+// Everything that moves the dots on its own, for every track at once:
 // Roll and Explore marbles, Drift, Tour, plus the store writes and the
 // engine's marble telemetry that go with them. No three.js here, so the whole
 // behaviour runs (and is tested) in Node with a real store.
@@ -20,7 +20,7 @@
 // drifter is put where the store says, and a tour steps aside while they keep
 // coming, then glides back onto its route.
 
-import { NUM_PARTS } from '../core/params.js';
+import { MAX_PARTS } from '../core/params.js';
 import { createPhysics, MODE_PIN, MODE_EXPLORE, MODE_TOUR, BALL_RADIUS } from './physics.js';
 import { Explorer, PEAK, exploreDelta, exploreRefractory } from './explore.js';
 import { makePlan, buildPlan, tourPoint, planKey } from './tour.js';
@@ -40,7 +40,7 @@ function smooth(t) { const x = t <= 0 ? 0 : t >= 1 ? 1 : t; return x * x * (3 - 
 
 export function createDotSim({
   store, engine = null, fieldFor, ensureField = () => {}, rapier = true, importer = null,
-  parts = NUM_PARTS, getMusic = () => null, emit = () => {}, clock = () => performance.now(),
+  parts = MAX_PARTS, getMusic = () => null, emit = () => {}, clock = () => performance.now(),
 } = {}) {
   const physics = createPhysics({ fieldFor, rapier, importer, parts });
   const CX = [], CY = [];
