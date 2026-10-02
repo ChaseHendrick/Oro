@@ -120,6 +120,7 @@ export const GLOBAL_PARAMS = [
   P('reverbLevel',  'Return',   'reverb', 'lin', 0, 1, 0.75),
   P('chorus',       'Chorus',   'master', 'lin', 0, 1, 0.15),
   P('saturation',   'Warmth',   'master', 'lin', 0, 1, 0.15),
+  P('keyMode',      'Keys',     'master', 'enum', 0, 1, 0, { options: ['Selected', 'Layer'], hint: 'Keyboard/MIDI plays the selected part, or every unmuted part at once' }),
 ];
 
 export const PART_PARAM_MAP = Object.fromEntries(PART_PARAMS.map(p => [p.id, p]));

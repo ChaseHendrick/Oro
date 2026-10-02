@@ -23,6 +23,11 @@ export const DEFAULT_UI = Object.freeze({
   panel: 'sound',         // lower panel tab
   keyboardOctave: 4,
   quality: 'high',        // 'high' | 'medium' | 'low'
+  renderStyle: 'relief',  // 'relief' | 'wire' | 'contour' | 'heat'  (3D map look)
+  palette: 0,             // index into the visuals' palette list for the current theme
+  autoRotate: 1,
+  settingsOpen: 0,
+  helpOpen: 0,
 });
 
 function splitPath(path) {
