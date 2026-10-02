@@ -426,6 +426,23 @@ describe('MIDI out', () => {
     expect(mpcOut.sent.map(s => s.data)).toEqual([[0x90, 64, 64]]);
   });
 
+  it('holds far-ahead sequencer notes until shortly before they are due, so Stop can drop them', async () => {
+    const { midi, mpcOut, music, clock } = await setup();
+    midi.setSetting('sendNotes', true);
+    const t = clock.ctx.currentTime;
+    music.router._engineOn(0, 60, 1, t + 0.05, 'seq');   // near: sent at once, timestamped
+    music.router._engineOn(0, 62, 1, t + 0.40, 'seq');   // far: held
+    music.router._engineOff(0, 62, t + 0.45, 'seq');
+    music.router._engineOn(0, 64, 1, t + 0.40, 'seq');   // far: held, then dropped too
+    expect(mpcOut.bytes()).toEqual([[0x90, 60, 127]]);
+    clock.advance(0.1);
+    music.router._cancelAfter(t + 0.3, 'seq');           // notes after 0.3 s are dropped, with their note-offs
+    expect(mpcOut.bytes()).toEqual([[0x90, 60, 127]]);
+    music.router._engineOn(0, 65, 1, t + 0.5, 'seq');    // queued after the cancel: plays
+    clock.advance(0.6);
+    expect(mpcOut.bytes()).toEqual([[0x90, 60, 127], [0x90, 65, 127]]);
+  });
+
   it('panic sends note-offs then CC64, CC123, CC120 on the used channels', async () => {
     const { midi, mpcOut, music } = await setup();
     midi.setSetting('sendNotes', true);

@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export const MPE_MASTER = 1;
 export const MPE_BEND_RANGE = 48;
 const CC_SLIDE = 74;
+/** Scheduled notes go to the MIDI port this long before they are due (ms); see noteOut. */
+export const OUT_HOLD_MS = 150;
 const RPN_CCS = new Set([101, 100, 6, 38]);
 
 export const QLINK_PARAMS = [
@@ -730,14 +732,46 @@ export async function createMidi({
     }
   }
 
+  // Messages handed to the browser with a future timestamp cannot be recalled,
+  // so scheduled notes are held here until shortly before they are due. Stop
+  // can then drop the ones queued past it (router 'cancel'), as the engine does.
+  const pendingOut = [];
+  function dropPending(entry) {
+    timers.clearTimeout(entry.id);
+    const i = pendingOut.indexOf(entry);
+    if (i >= 0) pendingOut.splice(i, 1);
+  }
+  function clearPendingOut() { for (const entry of [...pendingOut]) dropPending(entry); }
+  function cancelOut({ after, source } = {}) {
+    for (const entry of [...pendingOut]) {
+      const e = entry.e;
+      if (!e.on || !(e.time > after) || (source != null && e.source !== source) || !pendingOut.includes(entry)) continue;
+      dropPending(entry);
+      // its own note-off, if that is still waiting too
+      const off = pendingOut.find(o => !o.e.on && o.e.part === e.part && o.e.note === e.note && o.e.source === e.source && o.e.time >= e.time);
+      if (off) dropPending(off);
+    }
+  }
+
   function noteOut(e) {
     if (!settings.sendNotes || !output) return;
     if (String(e.source || '').startsWith('midi')) return; // never echo a controller back to itself
+    const ms = e.time > 0 ? timebase.audioToPerf(e.time) : null;
+    if (ms != null && ms - now() > OUT_HOLD_MS) {
+      const entry = { e, id: 0 };
+      entry.id = timers.setTimeout(() => { dropPending(entry); sendNote(e, ms); }, ms - now() - OUT_HOLD_MS);
+      pendingOut.push(entry);
+      return;
+    }
+    sendNote(e, ms);
+  }
+
+  function sendNote(e, ms) {
+    if (!settings.sendNotes || !output) return;
     const chan = settings.outChannels[e.part];
     if (!isChannel(chan)) return;
     const ch = chan - 1;
     const note = clamp(Math.round(e.note), 0, 127);
-    const ms = e.time > 0 ? timebase.audioToPerf(e.time) : null;
     const key = `${chan}:${note}`;
     if (e.on) {
       const vel = clamp(Math.round(e.vel * 127), 1, 127);
@@ -774,6 +808,7 @@ export async function createMidi({
   function panic() {
     if (router) router.allNotesOff();
     if (engine && typeof engine.panic === 'function') { try { engine.panic(); } catch { /* not started */ } }
+    clearPendingOut();
     if (!output) return;
     try { if (typeof output.clear === 'function') output.clear(); } catch { /* not implemented everywhere */ }
     releaseOutputNotes();
@@ -796,7 +831,7 @@ export async function createMidi({
     activity('out', 'other', output);
   }
 
-  if (router && typeof router.on === 'function') router.on('sched', noteOut);
+  if (router && typeof router.on === 'function') { router.on('sched', noteOut); router.on('cancel', cancelOut); }
   if (transport && typeof transport.on === 'function') {
     transport.on('clock', clockOut);
     transport.on('state', (s) => {

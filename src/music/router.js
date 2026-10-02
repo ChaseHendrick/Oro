@@ -431,6 +431,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     /** Drop queued `source` notes that would start after audio time `after` (engine side). */
     _cancelAfter(after, source) {
       try { if (engine && typeof engine.cancelNotes === 'function') engine.cancelNotes(after, source); } catch { /* engine not ready */ }
+      emitter.emit('cancel', { after, source });
     },
     _engineOn: engineOn,
     _engineOff: engineOff,

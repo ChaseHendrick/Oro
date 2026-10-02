@@ -90,9 +90,11 @@ sounding keep their note-off; arp, preview and played notes are untouched. Regre
 `tests/music/transport.test.js` (follow-mode stall; fails without the fix) and
 `tests/dsp/round-d.test.js` (cancelNotes).
 
-**Remaining limit:** notes already sent to an external MIDI output with a future timestamp
-cannot be recalled, so after a stall a device on MIDI out can still hear up to the grown
-lookahead (at most 0.5 s) past Stop. Normally that window is about 0.12 s, as before.
+**MIDI out:** messages handed to the browser with a future timestamp cannot be recalled, so
+scheduled notes for an external device are now held in `src/midi/midi.js` until 150 ms
+before they are due (`OUT_HOLD_MS`); Stop drops the held sequencer notes along with the
+engine's (router `cancel` event). Normal playback is unchanged, since the usual lookahead
+(0.12 s) is inside that window. Test: `tests/midi/midi.test.js`.
 
 ## 5. Scene timing checks used wall time (test problem, fixed in the test)
 
