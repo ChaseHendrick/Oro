@@ -10,7 +10,7 @@ across a 3D height map and reading the heights as the waveform. You place the do
 map and the sound follows. It runs in the browser and as an Electron desktop app.
 
 * Repo: `ChaseHendrick/synth` (MIT). Default branch `main`.
-* Released: **v1.1.0**, https://github.com/ChaseHendrick/synth/releases/tag/v1.1.0
+* Released: **v1.1.1**, https://github.com/ChaseHendrick/synth/releases/latest
   (Mac arm64/x64 dmg+zip, Windows setup and portable exe, Linux AppImage and tar.gz, web zip,
   single-file `Orograph.html`). Pushing to `main` rebuilds and republishes the release for the
   version in `package.json` (`.github/workflows/desktop.yml`).

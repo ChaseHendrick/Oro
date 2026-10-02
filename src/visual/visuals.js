@@ -33,6 +33,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 import { NUM_PARTS, MAX_WAYPOINTS, PART_PARAM_MAP, toNorm, fromNorm, formatValue } from '../core/params.js';
 import { wrapDelta, wrap01 } from '../dsp/terrain-math.js';
@@ -51,6 +52,25 @@ import { createEnvironment } from './env.js';
 import { createCameraRig, FOV, VIEW_NAMES } from './camera-rig.js';
 import { createTerrainCache } from './terrain-cache.js';
 import { createMinimap, createOverlay } from './hud.js';
+
+/** Replaces NaN / Inf with black and clamps HDR colour before bloom (see buildComposer). */
+export const SANITIZE_SHADER = {
+  name: 'OrographSanitize',
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec3 v = texture2D(tDiffuse, vUv).rgb;
+      // NaN fails both comparisons (this also works where isnan() is optimised away): it becomes 0.
+      v = vec3(v.r >= 0.0 || v.r < 0.0 ? v.r : 0.0, v.g >= 0.0 || v.g < 0.0 ? v.g : 0.0, v.b >= 0.0 || v.b < 0.0 ? v.b : 0.0);
+      // +Inf (an overflowed highlight) stays a bright highlight; negatives are dropped.
+      gl_FragColor = vec4(clamp(v, 0.0, 64.0), 1.0);
+    }`,
+};
 
 export const QUALITY = {
   high: { pixelRatio: 2, bloom: true, samples: 4 },
@@ -135,7 +155,18 @@ export async function createVisuals(container, { store, engine = null, quality, 
   scene.add(keyLight, hemi);
 
   // ------------------------------------------------------------------ post
-  let composer = null, bloom = null, renderPass = null, outputPass = null;
+  let composer = null, bloom = null, renderPass = null, outputPass = null, sanitizePass = null;
+  // Chrome on Apple GPUs (ANGLE on Metal) has shown flat gray blocks over the
+  // map with a multisampled half-float target; Retina screens already render
+  // at 2x, so those GPUs skip MSAA.
+  const appleGpu = (() => {
+    try {
+      const gl = renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      return /apple/i.test(name);
+    } catch { return false; }
+  })();
   let width = 1, height = 1, pixelRatio = 1;
 
   function buildComposer() {
@@ -144,14 +175,20 @@ export async function createVisuals(container, { store, engine = null, quality, 
       composer.renderTarget2.dispose();
       if (bloom) bloom.dispose();
       if (outputPass) outputPass.dispose();
+      if (sanitizePass) sanitizePass.dispose();
     }
     const q = QUALITY[qualityName];
     const rt = new THREE.WebGLRenderTarget(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio), {
-      type: THREE.HalfFloatType, samples: q.samples,
+      type: THREE.HalfFloatType, samples: appleGpu ? 0 : q.samples,
     });
     composer = new EffectComposer(renderer, rt);
     renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
+    // Additive glows can overflow half floats to Inf on some GPUs; bloom's
+    // downsampled blurs then spread Inf / NaN into gray rectangles. Clamp to
+    // a finite HDR range and drop invalid pixels before bloom sees them.
+    sanitizePass = new ShaderPass(SANITIZE_SHADER);
+    composer.addPass(sanitizePass);
     bloom = new UnrealBloomPass(new THREE.Vector2(Math.max(1, width), Math.max(1, height)), 0.5, 0.5, 0.7);
     bloom.enabled = q.bloom;
     composer.addPass(bloom);
@@ -1514,6 +1551,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       if (composer) { composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); }
       if (bloom) bloom.dispose();
       if (outputPass) outputPass.dispose();
+      if (sanitizePass) sanitizePass.dispose();
       minimap.dispose();
       overlay.dispose();
       renderer.dispose();

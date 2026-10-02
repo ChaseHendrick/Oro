@@ -3,6 +3,14 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.1.1 (October 2026)
+
+* Fixed: on Macs in Chrome, a gray rectangle could cover the 3D map while dragging the dot or
+  zooming at Visual quality High or Medium. Bright glows could overflow the high-range image
+  the glow effect works on; invalid pixels are now cleaned up before the glow, and Apple
+  graphics chips skip the multisampling step that showed the same symptom (Retina screens
+  already render at 2x).
+
 ## 1.1.0 (October 2026): guitar pedals
 
 The first public release. It includes everything in 0.1.0 below.
