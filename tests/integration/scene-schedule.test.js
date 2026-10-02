@@ -197,7 +197,7 @@ describe('MPC clock -> transport -> engine', () => {
     const input = fakeInput('in1', 'MPC MIDI 1', 'Akai');
     const output = fakeOutput('out1', 'MPC MIDI 1', 'Akai');
     const access = fakeAccess({ inputs: [input], outputs: [output] });
-    const midi = await createMidi({ store, router: music.router, engine, transport: music.transport, navigator: fakeNavigator(access, { permission: 'granted' }), storage: createMemoryStorage(), secure: true, perfNow: clock.perfNow });
+    const midi = await createMidi({ store, router: music.router, engine, transport: music.transport, navigator: fakeNavigator(access, { permission: 'granted' }), storage: createMemoryStorage(), secure: true, perfNow: clock.perfNow, timers: clock.timers });
     return { clock, engine, store, music, midi, input, output };
   }
 
