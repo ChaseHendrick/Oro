@@ -567,8 +567,14 @@ export function decodeUserTerrain(userTerrain, size = 512) {
   const w = Math.max(2, Math.round(ut.w || 0)), h = Math.max(2, Math.round(ut.h || 0));
   const bytes = typeof ut.data === 'string' ? base64ToBytes(ut.data)
     : ut.data instanceof Uint8Array ? ut.data : new Uint8Array(0);
+  // Optional low byte plane (16-bit height maps): sample = (hi << 8 | lo) / 65535.
+  const lo = typeof ut.lo === 'string' && ut.lo.length ? base64ToBytes(ut.lo)
+    : ut.lo instanceof Uint8Array ? ut.lo : null;
   let src = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) src[i] = i < bytes.length ? bytes[i] / 127.5 - 1 : 0;
+  for (let i = 0; i < w * h; i++) {
+    if (i >= bytes.length) { src[i] = 0; continue; }
+    src[i] = lo && i < lo.length ? ((bytes[i] << 8) | lo[i]) / 32767.5 - 1 : bytes[i] / 127.5 - 1;
+  }
   const wavetable = ut.kind === 'wavetable';
   const mirror = !!ut.mirror;
   const mirrorX = mirror && !wavetable;

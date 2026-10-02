@@ -139,7 +139,7 @@ export function createSeqPanel(ctx) {
     const slide = h('button', { type: 'button', class: 'seq-flag seq-flag--slide', tabindex: i === 0 ? '0' : '-1', 'aria-pressed': 'false', 'aria-label': `Step ${i + 1} slide` });
     const lock = h('button', {
       type: 'button', class: 'seq-lock', tabindex: i === 0 ? '0' : '-1', 'aria-pressed': 'false', 'aria-label': `Step ${i + 1} dot lock`,
-      dataset: { tip: 'Dot lock: the dot glides here when this step plays. Click to lock it to where the dot is now, Shift-click to move the lock, click again to clear.' },
+      dataset: { tip: 'Dot lock: the dot glides here when this step plays. Click to lock it to where the dot is now, Shift-click, right-click or long-press to move the lock there, click again to clear.' },
     }, h('span', { class: 'seq-lock-dot' }));
     cells.on.push(pad); cells.degree.push(note); cells.octave.push(oct); cells.vel.push(vel); cells.gate.push(gate); cells.accent.push(acc); cells.slide.push(slide); cells.lock.push(lock);
     const col = h('div', { class: ['seq-col', i % 4 === 0 && 'is-beat'], dataset: { step: String(i) } }, num, pad, note, oct, vel, gate, acc, slide, lock);
@@ -338,7 +338,11 @@ export function createSeqPanel(ctx) {
       store.set(`parts.${p}.seq.steps.${i}.lock`, 1, { source: 'ui' });
     });
   }
-  cells.lock.forEach((b, i) => scope.on(b, 'click', (e) => toggleLock(i, e.shiftKey)));
+  cells.lock.forEach((b, i) => {
+    scope.on(b, 'click', (e) => toggleLock(i, e.shiftKey));
+    // Right-click, or a long-press on touch screens (no Shift there), moves the lock to the dot.
+    scope.on(b, 'contextmenu', (e) => { e.preventDefault(); toggleLock(i, true); });
+  });
 
   // Keyboard: roving focus within each row.
   for (const row of ROWS) {

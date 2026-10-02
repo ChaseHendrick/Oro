@@ -65,6 +65,16 @@ describe('migrate', () => {
 });
 
 describe('round D contract', () => {
+  it('keeps the optional low byte plane of an imported 16-bit terrain', () => {
+    const ut = { name: 'dem', kind: 'image', w: 4, h: 4, mirror: 1, data: 'AAAA', lo: 'BBBB' };
+    const kept = migrateState({ parts: [{ userTerrain: { A: ut, B: { ...ut, lo: 42 } } }] }).parts[0].userTerrain;
+    expect(kept.A).toEqual(ut);
+    expect(kept.B).not.toHaveProperty('lo');
+    expect(kept.B.data).toBe('AAAA');
+    const empty = migrateState({ parts: [{ userTerrain: { A: { ...ut, lo: '' } } }] }).parts[0].userTerrain.A;
+    expect(empty).not.toHaveProperty('lo');
+  });
+
   it('migrates links, lfo steps, dot extras', () => {
     const m = migrateState({ parts: [{
       links: [{ src: 99, dst: 'cutoff', amt: 3, curve: 1 }, { src: 0, dst: 'nope', amt: 1 }, { src: 2, dst: 'tune', amt: 1 }],

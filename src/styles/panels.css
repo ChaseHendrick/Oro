@@ -1029,3 +1029,18 @@
   .links-row .select--xs .select-native { height: 40px; font-size: var(--fs-sm); }
   .palette-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Touch screens: Round D controls get finger-sized targets (44px). */
+@media (pointer: coarse) {
+  .links-row .icon-btn--xs, .waypoint .icon-btn--xs { width: 44px; height: 44px; }
+  .links-row .select--xs .select-native, .waypoint .select--xs .select-native { height: 44px; font-size: var(--fs-sm); }
+  .links-row { height: auto; min-height: 44px; }
+  .links-row .mod-depth .mslider { height: 44px; }
+  .waypoint .select { width: 108px; }
+  .steps-edit { height: 96px; }
+  .seq-dotline .mslider { height: 44px; }
+}
+@media (pointer: coarse) and (max-width: 899px) {
+  .links-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
+  .links-row > :nth-child(6) { width: 44px; height: 44px; }
+}

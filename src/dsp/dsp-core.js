@@ -894,7 +894,12 @@ export class OrographDSP {
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
       case 'quality': this.setQuality(msg.mode); break;
-      case 'watch': { const i = Math.round(finiteOr(msg.part, 0)); if (i >= 0 && i < NUM_PARTS) this.watch = i; break; }
+      case 'watch': {
+        // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
+        const i = Math.round(finiteOr(msg.part, 0));
+        if (i < 0) { this.watch = -1; this.teleCount = 0; } else if (i < NUM_PARTS) this.watch = i;
+        break;
+      }
       case 'transport':
         this.transport.playing = !!msg.playing;
         if (Number.isFinite(+msg.beatTime)) this.transport.beatTime = +msg.beatTime;
@@ -3595,7 +3600,7 @@ export class OrographDSP {
     if (revL) this.sanitize(revL, revR, n);
     this.peakL = pl; this.peakR = pr;
 
-    this.teleCount += n;
+    if (this.watch >= 0) this.teleCount += n;
     if (this.teleCount >= this.teleInterval) {
       this.teleCount %= this.teleInterval;
       this.sendTelemetry();
@@ -3614,6 +3619,7 @@ export class OrographDSP {
 
   sendTelemetry() {
     const P = this.parts[this.watch];
+    if (!P) return; // watch = -1: telemetry off
     let best = null;
     for (const v of P.voices) if (v.active && (!best || v.order > best.order)) best = v;
     const src = best ? best.modNorm : P.partNorm;

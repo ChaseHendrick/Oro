@@ -107,7 +107,11 @@ function sanitizeUserTerrain(t) {
   if (!t || typeof t !== 'object' || typeof t.data !== 'string') return null;
   const w = Math.round(num(t.w, 0)), h = Math.round(num(t.h, 0));
   if (w < 2 || h < 2 || w > 1024 || h > 1024) return null;
-  return { name: String(t.name || 'Imported').slice(0, 80), kind: t.kind === 'wavetable' ? 'wavetable' : 'image', w, h, mirror: t.mirror ? 1 : 0, data: t.data };
+  const out = { name: String(t.name || 'Imported').slice(0, 80), kind: t.kind === 'wavetable' ? 'wavetable' : 'image', w, h, mirror: t.mirror ? 1 : 0, data: t.data };
+  // Optional low byte plane of a 16-bit height map (data holds the high bytes).
+  // Kept only when it is a non-empty string; anything else falls back to 8 bits.
+  if (typeof t.lo === 'string' && t.lo.length > 0) out.lo = t.lo;
+  return out;
 }
 
 export function sanitizePart(src, i) {

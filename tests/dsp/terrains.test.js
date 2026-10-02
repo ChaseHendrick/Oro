@@ -211,6 +211,28 @@ describe('imported terrains', () => {
     expect(d.every(Number.isFinite)).toBe(true);
   });
 
+  it('combines the low byte plane of a 16-bit height map', () => {
+    // The high bytes alone are flat; only the low bytes carry the slope.
+    const w = 32, h = 32;
+    const hi = new Uint8Array(w * h).fill(128);
+    const lo = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) lo[y * w + x] = Math.round(255 * Math.sin(Math.PI * x / w) ** 2);
+    const base = { kind: 'image', w, h, mirror: 1, data: toB64(hi) };
+    const flat = decodeUserTerrain(base, 32);
+    expect(flat.every(v => v === 0)).toBe(true);
+    const fine = decodeUserTerrain({ ...base, lo: toB64(lo) }, 32);
+    expect(fine.every(Number.isFinite)).toBe(true);
+    let peak = 0;
+    for (const v of fine) peak = Math.max(peak, Math.abs(v));
+    expect(peak).toBeCloseTo(1, 5);
+    // the slope follows the low bytes: with mirror the 32 output columns span the
+    // mirrored 64-sample period, so column 8 is source x = 16 (the crest) and column 0 is x = 0
+    expect(fine[16 * 32 + 8]).toBeGreaterThan(fine[16 * 32] + 0.5);
+    // a Uint8Array plane works too, and an empty plane means 8 bits
+    expect(Array.from(decodeUserTerrain({ ...base, lo }, 32))).toEqual(Array.from(fine));
+    expect(decodeUserTerrain({ ...base, lo: '' }, 32).every(v => v === 0)).toBe(true);
+  });
+
   it('normalise handles flat input', () => {
     const z = normalise(new Float32Array(16).fill(3));
     expect(Array.from(z)).toEqual(new Array(16).fill(0));

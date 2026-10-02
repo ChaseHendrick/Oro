@@ -831,3 +831,29 @@ describe('denormals', () => {
     expect(v.active).toBe(true);
   });
 });
+
+describe('telemetry watch', () => {
+  it('watch part -1 turns telemetry off and a part number turns it back on', () => {
+    const dsp = makeDSP({ terrainA: T.swell });
+    const tele = [];
+    dsp.postMessage = (m) => tele.push(m);
+    render(dsp, 0.1);
+    expect(tele.length).toBeGreaterThan(0);
+    expect(tele.every(m => m.part === 0)).toBe(true);
+    dsp.handleMessage({ t: 'watch', part: -1 });
+    tele.length = 0;
+    dsp.handleMessage(on(60));
+    render(dsp, 0.2);
+    expect(tele).toEqual([]);
+    expect(allFinite(render(dsp, 0.05).L)).toBe(true);
+    dsp.handleMessage({ t: 'watch', part: 2 });
+    render(dsp, 0.1);
+    expect(tele.length).toBeGreaterThan(0);
+    expect(tele.every(m => m.part === 2)).toBe(true);
+    // out-of-range parts are ignored
+    dsp.handleMessage({ t: 'watch', part: 9 });
+    tele.length = 0;
+    render(dsp, 0.05);
+    expect(tele.every(m => m.part === 2)).toBe(true);
+  });
+});

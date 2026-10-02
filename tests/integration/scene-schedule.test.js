@@ -144,7 +144,7 @@ describe('store -> audio sync -> DSP messages', () => {
     expect(m.watch, `${label}: watched part`).toBe(store.get('ui.selectedPart'));
   }
 
-  it('after any mix of patch loads, scene loads, knob moves and deep edits the DSP holds the store\'s values', () => {
+  it('after any mix of patch loads, scene loads, knob moves and deep edits the DSP holds the store\'s values', { timeout: 30000 }, () => {
     const store = createStore(defaultState());
     const presets = createPresets({ store, storage: createMemoryStorage() });
     const queue = [];

@@ -151,7 +151,8 @@ describe('16-bit storage', { timeout: 60000 }, () => {
     const ut = { name: 't', kind: 'image', w: n, h: n, mirror: 1, data: bytesToBase64(p.hi), lo: bytesToBase64(p.lo) };
     expect(hasLowPlane(ut)).toBe(true);
     const precise = decodeUserTerrainPrecise(ut, 128);
-    const coarse = decodeUserTerrain(ut, 128);   // ignores lo
+    const { lo: _lo, ...hiOnly } = ut;
+    const coarse = decodeUserTerrain(hiOnly, 128);   // high bytes only, as an older reader sees it
     expect(precise.length).toBe(128 * 128);
     expect(precise.every(Number.isFinite)).toBe(true);
     expect(Math.max(...precise.map(Math.abs))).toBeCloseTo(1, 5);
@@ -162,6 +163,8 @@ describe('16-bit storage', { timeout: 60000 }, () => {
     expect(corr(row(precise), ramp)).toBeGreaterThan(0.99);
     const c8 = corr(row(coarse), ramp);   // NaN when the 8-bit row is completely flat
     expect(c8 >= 0.95).toBe(false);
+    // The shared decoder (map previews, 3D view) combines the low plane too.
+    expect(corr(row(decodeUserTerrain(ut, 128)), ramp)).toBeGreaterThan(0.99);
   });
 
   it('terrain jobs use the low plane, and it changes the cache key', () => {
