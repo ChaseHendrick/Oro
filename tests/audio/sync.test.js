@@ -82,7 +82,7 @@ describe('store sync', () => {
 
     store.set('parts.2', { ...store.get('parts.2'), params: { ...store.get('parts.2.params'), fold: 0.9 } });
     run();
-    expect(batches[1].length).toBe(2);
+    expect(batches[1].map(m => m.t)).toEqual(['params', 'mods', 'links']);
     expect(batches[1][0].p.fold).toBe(0.9);
     expect(Object.keys(batches[1][0].p).length).toBe(PART_PARAMS.length);
   });
@@ -158,5 +158,51 @@ describe('emitter', () => {
     console.error = errs;
     expect(got).toEqual([1]);
     expect(e.count('x')).toBe(1);
+  });
+});
+
+describe('store sync: Round D state', () => {
+  it('forwards links on change, in the snapshot and on load', () => {
+    const { store, sync, batches, run } = setup();
+    const snap = sync.snapshot();
+    const links = snap.filter(m => m.t === 'links');
+    expect(links.length).toBe(NUM_PARTS);
+    expect(links[0]).toEqual({ t: 'links', part: 0, links: [{ src: 1, dst: 'morph', amt: 1, curve: 0 }] });
+    store.set('parts.2.links', [{ src: 5, dst: 'cutoff', amt: -0.5, curve: 2 }, { src: 99, dst: 'notAParam', amt: 1, curve: 0 }]);
+    run();
+    expect(batches[0]).toEqual([{ t: 'links', part: 2, links: [{ src: 5, dst: 'cutoff', amt: -0.5, curve: 2 }] }]);
+    store.set('parts.2.links.0.amt', 0.25);
+    run();
+    expect(batches[1][0].links[0].amt).toBe(0.25);
+    store.load(store.serialize());
+    run();
+    expect(batches[2].filter(m => m.t === 'links').length).toBe(NUM_PARTS);
+  });
+
+  it('forwards macros, the ceiling and every other global', () => {
+    const { store, batches, run } = setup();
+    store.set('global.macro3', 0.7);
+    store.set('global.ceiling', -3);
+    run();
+    expect(batches[0]).toEqual([{ t: 'global', p: { macro3: 0.7, ceiling: -3 } }]);
+  });
+
+  it('sends the Steps LFO values as a clean 16-value array', () => {
+    const { store, batches, run } = setup();
+    const steps = Array.from({ length: 16 }, (_, i) => (i % 2 ? 2 : -0.5));
+    store.set('parts.1.mods.morph.steps', steps);
+    store.set('parts.1.mods.morph.lfoShape', 6);
+    run();
+    const m = batches[0].find(x => x.t === 'mods').m.morph;
+    expect(m.lfoShape).toBe(6);
+    expect(m.steps.length).toBe(16);
+    expect(m.steps[1]).toBe(1);          // clamped
+    expect(m.steps).not.toBe(steps);     // copied
+  });
+
+  it('appends host state (quality, controllers) to the snapshot', () => {
+    const store = createStore(defaultState());
+    const sync = createStoreSync({ store, post: () => {}, defer: () => {}, extra: () => [{ t: 'quality', mode: 'high' }] });
+    expect(sync.snapshot().slice(-1)).toEqual([{ t: 'quality', mode: 'high' }]);
   });
 });

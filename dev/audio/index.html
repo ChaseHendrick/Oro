@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Orograph audio host harness</title>
   <style>
-    :root { color-scheme: dark; --bg: #11141a; --panel: #181c24; --line: #2a303b; --fg: #e9e6e1; --mut: #8d94a0; --acc: #3fd0c9; --bad: #ff6b5e; --ok: #7bd88f; }
+    :root { color-scheme: dark; --bg: #11141a; --panel: #181c24; --line: #2a303b; --fg: #e9e6e1; --mut: #8d94a0; --acc: #3fd0c9; --bad: #ff6b5e; --ok: #7bd88f; --well: #0a0c10; }
+    @media (prefers-color-scheme: light) {
+      :root { color-scheme: light; --bg: #f6f2ea; --panel: #fffdf8; --line: #ddd5c6; --fg: #23201b; --mut: #6d665b; --acc: #127f7a; --bad: #b3261e; --ok: #1d7a3a; --well: #ece6da; }
+    }
     * { box-sizing: border-box; }
     body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
     h1 { font-size: 18px; margin: 0 0 2px; }
@@ -18,13 +21,13 @@
     .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
     .tile canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 4px; image-rendering: pixelated; }
     .tile span { font-size: 12px; color: var(--mut); }
-    canvas#scope { width: 100%; max-width: 980px; height: 120px; background: #0a0c10; border-radius: 8px; display: block; margin: 10px 0; }
-    #meter { height: 8px; width: 240px; background: #0a0c10; border-radius: 4px; overflow: hidden; }
+    canvas#scope { width: 100%; max-width: 980px; height: 120px; background: var(--well); border-radius: 8px; display: block; margin: 10px 0; }
+    #meter { height: 8px; width: 240px; background: var(--well); border-radius: 4px; overflow: hidden; }
     #meter > i { display: block; height: 100%; width: 0; background: var(--acc); }
     table { border-collapse: collapse; font-size: 13px; max-width: 980px; width: 100%; margin-top: 10px; }
     td { border-top: 1px solid var(--line); padding: 3px 8px; vertical-align: top; }
     td.ok { color: var(--ok); } td.bad { color: var(--bad); }
-    pre { background: #0a0c10; padding: 10px; border-radius: 8px; max-width: 980px; overflow: auto; font-size: 12px; }
+    pre { background: var(--well); padding: 10px; border-radius: 8px; max-width: 980px; overflow: auto; font-size: 12px; }
   </style>
 </head>
 <body>

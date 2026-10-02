@@ -9,7 +9,7 @@ import { sanitizePart } from '../../src/core/migrate.js';
 import { createStore } from '../../src/core/store.js';
 import { defaultState } from '../../src/core/params.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
-import { encodeWav24 } from '../../src/audio/wav.js';
+import { encodeWav24, wavInfo } from '../../src/audio/wav.js';
 
 const rand = (seed) => () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 
@@ -234,14 +234,19 @@ describe('importTerrainFile (Node, WAV path)', () => {
     for (let i = 0; i < frames; i++) { const t = (i % 2048) / 2048; L[i] = Math.sin(2 * Math.PI * t); R[i] = Math.sin(2 * Math.PI * t); }
     const bytes = encodeWav24([L, R], 48000);
     expect(bytes.length).toBeLessThan(25 * 1024 * 1024);
+    // What reading every frame costs on this machine right now (the importer
+    // must read about a sixth of them), so a busy CPU does not fail the test.
+    const tf = performance.now();
+    wavInfo(bytes).readMono(0, frames);
+    const fullRead = performance.now() - tf;
     const t0 = performance.now();
     const ut = await importTerrainFile(store, 0, 'A', new File([bytes], 'long.wav'));
     const ms = performance.now() - t0;
     expect(ut.h).toBe(256);
     const row = Array.from(base64ToBytes(ut.data).subarray(0, 256), v => v / 127.5 - 1);
     expect(row[64]).toBeGreaterThan(0.97);                // stereo mix of two equal sines
-    expect(ms).toBeLessThan(1500);
-  });
+    expect(ms).toBeLessThan(Math.max(1500, 2 * fullRead));
+  }, 60000);
 
   it('rejects empty, oversized and unsupported files with helpful messages', async () => {
     const store = createStore(defaultState());

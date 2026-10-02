@@ -6,6 +6,7 @@ import { createStore } from '../../src/core/store.js';
 import { defaultState, NUM_PARTS } from '../../src/core/params.js';
 import { TERRAINS, TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { encodeWav24 } from '../../src/audio/wav.js';
+import { roundD } from './round-d.js';
 
 const params = new URLSearchParams(location.search);
 const AUTO = params.has('auto');
@@ -14,7 +15,7 @@ const INLINE = params.has('inline');
 const ONLY = params.get('only');
 
 const state = window.__audio = {
-  status: 'init', errors: [], checks: [], metrics: {}, longTasks: [], terrainEvents: [], recording: [], stats: null,
+  status: 'init', errors: [], checks: [], notes: [], metrics: {}, longTasks: [], terrainEvents: [], recording: [], stats: null,
 };
 const $ = (id) => document.getElementById(id);
 const log = (s) => { $('log').textContent = s; };
@@ -42,11 +43,25 @@ try {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+function row(cls, label, name, value) {
+  const tr = document.createElement('tr');
+  const cells = [label, name, typeof value === 'number' ? value.toPrecision(4) : JSON.stringify(value)].map((t, i) => {
+    const td = document.createElement('td');
+    if (i === 0) td.className = cls;
+    td.textContent = t;
+    return td;
+  });
+  tr.append(...cells);
+  $('checks').appendChild(tr);
+}
 function check(name, pass, value) {
   state.checks.push({ name, pass: !!pass, value });
-  const tr = document.createElement('tr');
-  tr.innerHTML = `<td class="${pass ? 'ok' : 'bad'}">${pass ? 'PASS' : 'FAIL'}</td><td>${name}</td><td>${typeof value === 'number' ? value.toPrecision(4) : JSON.stringify(value)}</td>`;
-  $('checks').appendChild(tr);
+  row(pass ? 'ok' : 'bad', pass ? 'PASS' : 'FAIL', name, value);
+}
+/** Informational row: measured, reported, never fails the run. */
+function note(name, value) {
+  state.notes.push({ name, value });
+  row('', 'INFO', name, value);
 }
 
 // ---- terrain tiles ---------------------------------------------------------------
@@ -102,10 +117,11 @@ async function meanRms(ms) {
 function drawScope() {
   const c = $('scope'), g = c.getContext('2d');
   const W = c.width, H = c.height;
-  g.fillStyle = '#0a0c10'; g.fillRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  g.fillStyle = css.getPropertyValue('--well').trim() || '#0a0c10'; g.fillRect(0, 0, W, H);
   if (engine && engine.analyser) {
     engine.analyser.getFloatTimeDomainData(buf);
-    g.strokeStyle = '#3fd0c9'; g.lineWidth = 1.5; g.beginPath();
+    g.strokeStyle = css.getPropertyValue('--acc').trim() || '#3fd0c9'; g.lineWidth = 1.5; g.beginPath();
     for (let i = 0; i < buf.length; i++) {
       const x = i / (buf.length - 1) * W, y = H / 2 - buf[i] * H * 0.45;
       if (i) g.lineTo(x, y); else g.moveTo(x, y);
@@ -237,7 +253,9 @@ async function boot() {
     drawTile(e.part, e.slot, e.size, e.data, idx === TERRAIN_INDEX.user ? (ut ? ut.name : 'empty') : TERRAINS[idx].name);
   });
   let teleCount = 0;
-  engine.on('tele', () => { teleCount++; });
+  const teleTimes = [];
+  engine.on('tele', () => { teleCount++; teleTimes.push(performance.now()); if (teleTimes.length > 120) teleTimes.shift(); });
+  const teleRate = () => (teleTimes.length > 1 ? Math.round((teleTimes.length - 1) / ((teleTimes[teleTimes.length - 1] - teleTimes[0]) / 1000)) : 0);
   engine.on('recording', (e) => state.recording.push({ state: e.state, duration: e.duration, reason: e.reason }));
   engine.on('state', (e) => { state.lastState = e; });
 
@@ -287,6 +305,17 @@ async function boot() {
   }
   const st0 = engine.stats();
   state.metrics.workletVia = st0.workletVia;
+  const roundDHelpers = { engine, store, check, note, sleep, meanRms, setPhase, parseWavBlob, metrics: state.metrics, harnessOnly, noteAndTail, teleRate };
+  if (ONLY === 'roundD') {
+    await engine.whenTerrainsReady();
+    await engine.start();
+    await roundD(roundDHelpers);
+    state.stats = engine.stats();
+    check('no page errors', state.errors.length === 0, state.errors);
+    for (const t of state.longTasks) t.phase = isHarness(t.at) ? 'harness' : phaseAt(t.at);
+    state.status = 'done';
+    return;
+  }
   state.metrics.generator = st0.generator.mode + ':' + st0.generator.via;
   check('engine mode', MODE === 'script' ? engine.mode === 'script' : engine.mode === 'worklet', engine.mode);
 
@@ -487,6 +516,8 @@ async function boot() {
   engine.noteOn(9, 60); engine.noteOn(0, NaN); engine.noteOff(0, 'x');
   engine.allNotesOff(0); engine.allNotesOff();
   await sleep(100);
+
+  await roundD(roundDHelpers);
 
   setPhase('done');
   state.stats = engine.stats();

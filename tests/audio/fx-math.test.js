@@ -90,3 +90,15 @@ describe('master mappings', () => {
     expect(c[2048 + 512]).toBeCloseTo(0.5, 6);
   });
 });
+
+describe('ceiling', () => {
+  it('maps dB to a linear peak level and clamps to the -6..0 dB range', async () => {
+    const { ceilingGain } = await import('../../src/audio/fx.js');
+    expect(ceilingGain(0)).toBe(1);
+    expect(ceilingGain(-6)).toBeCloseTo(0.501, 3);
+    expect(ceilingGain(-0.3)).toBeCloseTo(0.966, 3);
+    expect(ceilingGain(-20)).toBeCloseTo(0.501, 3);
+    expect(ceilingGain(3)).toBe(1);
+    expect(ceilingGain(NaN)).toBeCloseTo(0.966, 3);
+  });
+});

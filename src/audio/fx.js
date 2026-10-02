@@ -2,10 +2,14 @@
 //
 //   dry (worklet out 0) ─────────────────────────────┐
 //   delay send (out 1) ─> ping-pong delay ─> return ─┼─> bus ─> chorus ─> warmth ─> volume
-//   reverb send (out 2) ─> HP ─> convolver(s) ─> ret ┘      ─> limiter ─> soft clip ─> out ─> analyser ─> destination
+//   reverb send (out 2) ─> HP ─> convolver(s) ─> ret ┘      ─> 1/ceiling ─> limiter ─> soft clip ─> ceiling ─> out
+//                                                                                            ─> analyser ─> destination
 //
-// Every parameter change is a setTargetAtTime glide, so knobs never zipper.
-// The pure mapping functions are exported for the unit tests.
+// The ceiling (global.ceiling, dB) scales the limiter and soft clip stage as a
+// whole: 1/c in, c out. Quiet material therefore passes at the same level
+// whatever the ceiling, and peaks can never exceed it (the clip curve stays
+// below 1). Every parameter change is a setTargetAtTime glide, so knobs never
+// zipper. The pure mapping functions are exported for the unit tests.
 
 import { DELAY_DIVS } from '../core/params.js';
 import { generateImpulse } from './reverb-ir.js';
@@ -47,6 +51,14 @@ export function delayGlideTau(from, to) {
 export function volumeGain(v) {
   const x = clamp(num(v, 0.8), 0, 1);
   return 2 * x * x;
+}
+
+export const CEILING_MIN_DB = -6;
+export const CEILING_MAX_DB = 0;
+
+/** Ceiling in dB (-6..0) -> linear peak level. */
+export function ceilingGain(db) {
+  return Math.pow(10, clamp(num(db, -0.3), CEILING_MIN_DB, CEILING_MAX_DB) / 20);
 }
 
 /** Chorus amount 0..1 -> dry/wet gains and modulation depth (s). */
@@ -115,9 +127,11 @@ function equalPowerCurve(rising, n = 33) {
  * Build the effect graph on `ctx`.
  * `computeIR(opts)` may return (a promise of) generateImpulse(opts), e.g. from
  * a worker; without it the impulse response is generated on this thread.
+ * `effects: false` (dry bounces) keeps only volume and the ceiling limiter:
+ * delay, reverb and chorus are silent and warmth is at its transparent end.
  * @returns {{dryIn, delayIn, reverbIn, output, analyser, set(global), panic(), stats(), dispose()}}
  */
-export function createFx(ctx, { global = {}, destination = ctx.destination, computeIR = null } = {}) {
+export function createFx(ctx, { global = {}, destination = ctx.destination, computeIR = null, effects = true } = {}) {
   const gain = (v = 1) => { const g = ctx.createGain(); g.gain.value = v; return g; };
   const stereoGain = (v = 1) => {
     const g = gain(v);
@@ -132,9 +146,12 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
 
   const g = {
     tempo: 112, delayDiv: 3, delayFeedback: 0.42, delayTone: 0.55, delayLevel: 0.7,
-    reverbSize: 0.62, reverbDamp: 0.45, reverbLevel: 0.75, chorus: 0.15, saturation: 0.15, masterVolume: 0.8,
+    reverbSize: 0.62, reverbDamp: 0.45, reverbLevel: 0.75, chorus: 0.15, saturation: 0.15, masterVolume: 0.8, ceiling: -0.3,
   };
   for (const k in g) g[k] = num(global[k], g[k]);
+  const withFx = effects !== false;
+  const DRY_ONLY = { delayLevel: 0, reverbLevel: 0, chorus: 0, saturation: 0 };
+  if (!withFx) Object.assign(g, DRY_ONLY);
 
   const dryIn = stereoGain(1);
   const delayIn = stereoGain(1);
@@ -219,6 +236,9 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
     const opts = { sampleRate: ctx.sampleRate, size: g.reverbSize, damp: g.reverbDamp, seed: 11 };
     Promise.resolve()
       .then(() => (computeIR ? computeIR(opts) : generateImpulse(opts)))
+      // A worker that died takes the job with it: build this one here instead
+      // (slower, but the reverb, and a bounce waiting for it, carries on).
+      .catch((err) => { console.warn('[audio] reverb worker failed, building the impulse here', err); return generateImpulse(opts); })
       .then((ir) => {
         if (disposed || serial !== irSerial) return null;   // a newer request superseded this one
         const buffer = timeStep('createBuffer', () => {
@@ -241,7 +261,11 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
         const waiters = irWaiters; irWaiters = [];
         for (const fn of waiters) fn();
       })
-      .catch((err) => { console.error('[audio] reverb impulse failed', err); });
+      .catch((err) => {
+        console.error('[audio] reverb impulse failed', err);
+        // Never leave whenReverbReady() hanging: the reverb stays as it was.
+        if (serial === irSerial) { installedSerial = serial; const w = irWaiters; irWaiters = []; for (const fn of w) fn(); }
+      });
   }
   let irWaiters = [];
   let installedSerial = 0;
@@ -286,7 +310,7 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
     requestIR(true);
   }
   irKey = irKeyOf();
-  requestIR(false);
+  if (withFx) requestIR(false);
 
   // ---- chorus ---------------------------------------------------------------------
   // Two short delays swept by slow sines in opposite directions: L and R drift
@@ -323,18 +347,21 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
   // ---- volume, limiter, soft clip, analyser ----------------------------------------
   const volume = stereoGain(volumeGain(g.masterVolume));
   warmPost.connect(volume);
+  const ceil0 = ceilingGain(g.ceiling);
+  const ceilIn = stereoGain(1 / ceil0);
+  volume.connect(ceilIn);
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -2;
   limiter.knee.value = 0;
   limiter.ratio.value = 20;
   limiter.attack.value = 0.001;
   limiter.release.value = 0.12;
-  volume.connect(limiter);
+  ceilIn.connect(limiter);
   const clipPre = stereoGain(1 / CLIP_RANGE);
   const clipShaper = ctx.createWaveShaper();
   clipShaper.curve = makeSoftClipCurve();
   clipShaper.oversample = '2x';
-  const output = stereoGain(1);
+  const output = stereoGain(ceil0);
   limiter.connect(clipPre); clipPre.connect(clipShaper); clipShaper.connect(output);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
@@ -344,7 +371,8 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
 
   // ---- parameters -------------------------------------------------------------------
   function set(global, changed = null) {
-    const has = (k) => (!changed || changed.includes(k)) && Number.isFinite(global[k]);
+    // A dry render ignores the effect settings it was built without.
+    const has = (k) => (!changed || changed.includes(k)) && Number.isFinite(global[k]) && (withFx || !(k in DRY_ONLY));
     let timeDirty = false, irDirty = false;
     if (has('tempo') && global.tempo !== g.tempo) { g.tempo = global.tempo; timeDirty = true; }
     if (has('delayDiv') && global.delayDiv !== g.delayDiv) { g.delayDiv = global.delayDiv; timeDirty = true; }
@@ -379,6 +407,12 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
       glide(ctx, warmPre.gain, w.pre, 0.03); glide(ctx, warmPost.gain, w.post, 0.03);
     }
     if (has('masterVolume')) { g.masterVolume = global.masterVolume; glide(ctx, volume.gain, volumeGain(g.masterVolume), 0.03); }
+    if (has('ceiling') && global.ceiling !== g.ceiling) {
+      g.ceiling = clamp(global.ceiling, CEILING_MIN_DB, CEILING_MAX_DB);
+      const c = ceilingGain(g.ceiling);
+      // Same time constant on both sides, so the level of quiet material holds still while it moves.
+      glide(ctx, ceilIn.gain, 1 / c, 0.03); glide(ctx, output.gain, c, 0.03);
+    }
   }
 
   /**
@@ -400,7 +434,7 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
   }
 
   const allNodes = () => [dryIn, delayIn, reverbIn, bus, delayReturn, reverbPre, reverbReturn, chorusOut, chorusDry, chorusWet,
-    chSplit, chMerge, chDL, chDR, lfoA, lfoB, depthL, depthR, warmPre, warmShaper, warmPost, volume, limiter, clipPre, clipShaper, output, analyser];
+    chSplit, chMerge, chDL, chDR, lfoA, lfoB, depthL, depthR, warmPre, warmShaper, warmPost, volume, ceilIn, limiter, clipPre, clipShaper, output, analyser];
 
   return {
     dryIn, delayIn, reverbIn, output, analyser, limiter,
@@ -410,8 +444,9 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
     stats: () => ({ ...st, delayTime: delayTarget, reduction: limiter.reduction, settings: { ...g } }),
     /** Resolves once the current reverb settings are loaded in a convolver (tests). */
     whenReverbReady() {
+      if (!withFx) return Promise.resolve();
       if (irTimer) { clearTimeout(irTimer); regenIR(); }
-      return new Promise((resolve) => { if (conv && st.irBuilds && irSerialDone()) resolve(); else irWaiters.push(resolve); });
+      return new Promise((resolve) => { if ((conv && st.irBuilds && irSerialDone()) || (installedSerial && irSerialDone())) resolve(); else irWaiters.push(resolve); });
     },
     dispose() {
       disposed = true;

@@ -1,15 +1,26 @@
 // Turning the user's files into terrains.
 //
-//   image (PNG, JPEG, WebP, GIF, BMP, SVG): centre-cropped to a square, reduced
-//     to 256 x 256 by area-averaging in linear light, converted to luminance
-//     with the sRGB/Rec.709 weights and re-encoded to sRGB 8-bit, so a grey
-//     image keeps its grey levels and colour images get perceptually right
-//     brightness. Stored as UserTerrain {kind: 'image', mirror: 1}.
+//   PNG: decoded by our own reader (png.js) at the file's full bit depth, so a
+//     16-bit height map (DEM) keeps all of its levels; grey values are heights
+//     as they are (data, not light). Centre-cropped and area-averaged to at
+//     most 256 x 256 (never upsampled). If our reader cannot open the file the
+//     browser's decoder below gets a try.
+//   other images (JPEG, WebP, GIF, BMP, SVG, and PNG as a fallback): drawn by
+//     the browser, centre-cropped, reduced to 256 x 256 by area-averaging in
+//     linear light, converted to luminance with the sRGB/Rec.709 weights and
+//     re-encoded to sRGB, so a grey image keeps its grey levels and colour
+//     images get perceptually right brightness.
+//   Options for images: channel 'luma' | 'r' | 'g' | 'b' (one channel is used
+//     as data), smooth 0..1 (Gaussian, in float), tile 'mirror' (reflect so any
+//     image tiles) | 'wrap' (the image already tiles). Heights are kept as
+//     16-bit values: UserTerrain.data is the high byte plane, UserTerrain.lo
+//     the low one (see heightmap.js); readers that ignore `lo` still work.
 //   WAV: read sample-exact (decodeAudioData only as a fallback, because it
 //     resamples), split into single-cycle frames (a 'clm ' chunk's frame size,
 //     else multiples of 2048, else 1024/512/256, else one cycle), each frame
 //     band-limited and resampled to 256 samples through its spectrum, at most
-//     256 frames. Stored as UserTerrain {kind: 'wavetable', w: 256, h: frames}.
+//     256 frames, stored at 16 bits the same way.
+//     UserTerrain {kind: 'wavetable', w: 256, h: frames, mirror: 1}.
 //
 // The pure helpers are exported for the Node unit tests; importTerrainFile is
 // the browser entry used by the engine.
@@ -17,6 +28,12 @@
 import { NUM_PARTS } from '../core/params.js';
 import { TERRAIN_INDEX } from '../dsp/catalog.js';
 import { wavInfo } from './wav.js';
+import { isPng } from './png.js';
+import {
+  centreCrop, heightFromPng, smoothHeights, heightsToPlanes, srgbEncode, CHANNELS,
+} from './heightmap.js';
+
+export { centreCrop };
 
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
 export const TABLE_SIZE = 256;
@@ -25,14 +42,15 @@ const SINGLE_CYCLE_MAX = 4096;
 const YIELD_MS = 8;
 
 /** Longest synchronous main-thread step of the imports so far (ms), for diagnostics. */
-export const importStats = { imports: 0, maxBlockMs: 0, lastBlockMs: 0 };
+export const importStats = { imports: 0, maxBlockMs: 0, lastBlockMs: 0, last: null, steps: {} };
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
-function timedBlock(fn) {
+function timedBlock(fn, step = 'other') {
   const t0 = nowMs();
   try { return fn(); } finally {
     const ms = nowMs() - t0;
     importStats.lastBlockMs = Math.max(importStats.lastBlockMs, ms);
     importStats.maxBlockMs = Math.max(importStats.maxBlockMs, ms);
+    importStats.steps[step] = Math.max(importStats.steps[step] || 0, Math.round(ms * 10) / 10);
   }
 }
 
@@ -82,12 +100,6 @@ export function luminance(r, g, b) {
   return 0.2126 * SRGB_TO_LIN[r] + 0.7152 * SRGB_TO_LIN[g] + 0.0722 * SRGB_TO_LIN[b];
 }
 
-/** Largest centred square inside w x h. */
-export function centreCrop(w, h) {
-  const size = Math.max(1, Math.min(w, h));
-  return { sx: Math.floor((w - size) / 2), sy: Math.floor((h - size) / 2), size };
-}
-
 // Separable area resampling: output cell j covers source [j·s, (j+1)·s) with
 // fractional weights at both ends, so any ratio averages exactly what it covers.
 function areaAxis(srcLen, outLen) {
@@ -107,15 +119,50 @@ function areaAxis(srcLen, outLen) {
 }
 
 /**
- * RGBA (unpremultiplied, sRGB) -> out x out luminance bytes, area-averaged in
- * linear light. Transparent pixels count as black (lowest ground).
+ * RGBA (unpremultiplied, sRGB) -> out x out heights 0..1 (float).
+ * channel 'luma': perceived brightness, area-averaged in linear light and
+ * re-encoded to sRGB (a grey image keeps its grey levels). 'r' | 'g' | 'b':
+ * that channel's code value, averaged as data. Transparent pixels count as
+ * black (lowest ground).
  */
-export function rgbaToHeight(rgba, w, h, out = TABLE_SIZE) {
-  if (w % out === 0 && h % out === 0) return rgbaToHeightBlocks(rgba, w, h, out);
-  const lin = new Float64Array(w * h);
-  for (let p = 0, q = 0; p < w * h; p++, q += 4) {
-    lin[p] = luminance(rgba[q], rgba[q + 1], rgba[q + 2]) * (rgba[q + 3] / 255);
+export function rgbaToHeightF(rgba, w, h, out = TABLE_SIZE, channel = 'luma') {
+  const ci = channel === 'r' ? 0 : channel === 'g' ? 1 : channel === 'b' ? 2 : -1;
+  const val = ci < 0
+    ? (q) => (0.2126 * SRGB_TO_LIN[rgba[q]] + 0.7152 * SRGB_TO_LIN[rgba[q + 1]] + 0.0722 * SRGB_TO_LIN[rgba[q + 2]]) * (rgba[q + 3] / 255)
+    : (q) => (rgba[q + ci] / 255) * (rgba[q + 3] / 255);
+  const finish = (s) => (ci < 0 ? srgbEncode(s) : s);
+  const res = new Float32Array(out * out);
+  if (w % out === 0 && h % out === 0) {
+    // Integer ratios (the browser path always reads back 1x or 2x the table
+    // size): one pass, each source pixel added straight into its output cell.
+    // The two loops are written out so the hot path has no per-pixel call.
+    const kx = w / out, ky = h / out;
+    const acc = new Float64Array(out * out);
+    const L = SRGB_TO_LIN;
+    for (let y = 0; y < h; y++) {
+      const orow = Math.floor(y / ky) * out;
+      let q = y * w * 4;
+      if (ci < 0) {
+        for (let x = 0; x < w; x++, q += 4) {
+          const a = rgba[q + 3];
+          if (a === 0) continue;
+          const lum = 0.2126 * L[rgba[q]] + 0.7152 * L[rgba[q + 1]] + 0.0722 * L[rgba[q + 2]];
+          acc[orow + ((x / kx) | 0)] += a === 255 ? lum : lum * (a / 255);
+        }
+      } else {
+        for (let x = 0; x < w; x++, q += 4) {
+          const a = rgba[q + 3];
+          if (a === 0) continue;
+          acc[orow + ((x / kx) | 0)] += (rgba[q + ci] / 255) * (a / 255);
+        }
+      }
+    }
+    const inv = 1 / (kx * ky);
+    for (let i = 0; i < res.length; i++) res[i] = finish(acc[i] * inv);
+    return res;
   }
+  const lin = new Float64Array(w * h);
+  for (let p = 0, q = 0; p < w * h; p++, q += 4) lin[p] = val(q);
   const ax = areaAxis(w, out), ay = areaAxis(h, out);
   const rows = new Float64Array(h * out);
   for (let y = 0; y < h; y++) {
@@ -127,36 +174,25 @@ export function rgbaToHeight(rgba, w, h, out = TABLE_SIZE) {
       rows[y * out + j] = s;
     }
   }
-  const bytes = new Uint8Array(out * out);
   for (let i = 0; i < out; i++) {
     const ii = ay.idx[i], ww = ay.wts[i];
     for (let j = 0; j < out; j++) {
       let s = 0;
       for (let k = 0; k < ii.length; k++) s += rows[ii[k] * out + j] * ww[k];
-      bytes[i * out + j] = linearToSrgb8(s);
+      res[i * out + j] = finish(s);
     }
   }
-  return bytes;
+  return res;
 }
 
-// Integer ratios (the browser path always reads back 1x or 2x the table size):
-// one pass, each source pixel added straight into its output cell.
-function rgbaToHeightBlocks(rgba, w, h, out) {
-  const kx = w / out, ky = h / out;
-  const acc = new Float64Array(out * out);
-  for (let y = 0; y < h; y++) {
-    const orow = Math.floor(y / ky) * out;
-    let q = y * w * 4;
-    for (let x = 0; x < w; x++, q += 4) {
-      const a = rgba[q + 3];
-      if (a === 0) continue;
-      const lum = 0.2126 * SRGB_TO_LIN[rgba[q]] + 0.7152 * SRGB_TO_LIN[rgba[q + 1]] + 0.0722 * SRGB_TO_LIN[rgba[q + 2]];
-      acc[orow + ((x / kx) | 0)] += a === 255 ? lum : lum * (a / 255);
-    }
-  }
-  const inv = 1 / (kx * ky);
-  const bytes = new Uint8Array(out * out);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = linearToSrgb8(acc[i] * inv);
+/**
+ * RGBA (unpremultiplied, sRGB) -> out x out luminance bytes, area-averaged in
+ * linear light. Transparent pixels count as black (lowest ground).
+ */
+export function rgbaToHeight(rgba, w, h, out = TABLE_SIZE) {
+  const f = rgbaToHeightF(rgba, w, h, out, 'luma');
+  const bytes = new Uint8Array(f.length);
+  for (let i = 0; i < f.length; i++) bytes[i] = Math.round(f[i] * 255);
   return bytes;
 }
 
@@ -321,6 +357,29 @@ export function framesToBytes(frames) {
   return bytes;
 }
 
+/**
+ * Frames -> 16-bit samples (one shared scale, centred on 32767.5 like the
+ * 8-bit form) as high and low byte planes. The high plane alone is a valid
+ * 8-bit table for readers that ignore the low one.
+ */
+export function framesToPlanes(frames) {
+  let peak = 0;
+  for (const f of frames) for (let i = 0; i < f.length; i++) { const a = Math.abs(f[i]); if (a > peak) peak = a; }
+  const w = frames[0] ? frames[0].length : 0;
+  const hi = new Uint8Array(w * frames.length), lo = new Uint8Array(w * frames.length);
+  const g = peak > 1e-12 ? 32767.5 / peak : 0;
+  let o = 0;
+  for (const f of frames) {
+    for (let i = 0; i < w; i++, o++) {
+      const v = Math.round(32767.5 + f[i] * g);
+      const c = v < 0 ? 0 : v > 65535 ? 65535 : v;
+      hi[o] = c >> 8;
+      lo[o] = c & 255;
+    }
+  }
+  return { hi, lo };
+}
+
 const yieldTask = () => new Promise(r => setTimeout(r, 0));
 
 /**
@@ -349,7 +408,7 @@ export async function wavetableFromSource(source, { name = 'Wavetable', yieldToU
   importStats.maxBlockMs = Math.max(importStats.maxBlockMs, nowMs() - blockStart);
   // The store needs h >= 2; a single cycle simply becomes two identical rows.
   if (frames.length === 1) frames.push(frames[0]);
-  const data = timedBlock(() => bytesToBase64(framesToBytes(frames)));
+  const [data, lo] = timedBlock(() => { const pl = framesToPlanes(frames); return [bytesToBase64(pl.hi), bytesToBase64(pl.lo)]; }, 'wavetable');
   return {
     name: cleanName(name),
     kind: 'wavetable',
@@ -357,6 +416,7 @@ export async function wavetableFromSource(source, { name = 'Wavetable', yieldToU
     h: frames.length,
     mirror: 1,
     data,
+    lo,
     frameSize: det.frameSize,
     frameMode: det.mode,
     frameCount: det.count,
@@ -468,8 +528,16 @@ async function sizedSvgBlob(file) {
   return new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' });
 }
 
-/** Browser: image file -> 256 x 256 luminance bytes. */
+/** Browser: image file -> 256 x 256 luminance bytes (8-bit form of imageFileToHeightF). */
 export async function imageFileToHeight(file, kind = 'image') {
+  const { heights } = await imageFileToHeightF(file, kind, 'luma');
+  const bytes = new Uint8Array(heights.length);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.round(heights[i] * 255);
+  return bytes;
+}
+
+/** Browser: image file drawn by the browser -> {heights: Float32Array 0..1, n: 256}. */
+export async function imageFileToHeightF(file, kind = 'image', channel = 'luma') {
   let src = null, w = 0, h = 0;
   const owned = [];
   if (kind !== 'svg' && typeof createImageBitmap === 'function') {
@@ -506,9 +574,9 @@ export async function imageFileToHeight(file, kind = 'image') {
     const rgba = timedBlock(() => {
       g.drawImage(drawSrc, sx, sy, sw, sw, 0, 0, T, T);
       return g.getImageData(0, 0, T, T).data;
-    });
+    }, 'canvas');
     await yieldTask();
-    return timedBlock(() => rgbaToHeight(rgba, T, T, TABLE_SIZE));
+    return { heights: timedBlock(() => rgbaToHeightF(rgba, T, T, TABLE_SIZE, channel), 'reduce'), n: TABLE_SIZE };
   } finally {
     for (const b of owned) { try { b.close(); } catch { /* ignore */ } }
   }
@@ -520,12 +588,48 @@ function slotName(slot) {
   return null;
 }
 
+export const DEFAULT_SMOOTH = 0.3;
+
+/** Normalised image import options (see the header comment). */
+export function importOptions(o) {
+  const src = o && typeof o === 'object' ? o : {};
+  const smooth = typeof src.smooth === 'number' && Number.isFinite(src.smooth) ? Math.max(0, Math.min(1, src.smooth)) : DEFAULT_SMOOTH;
+  return {
+    channel: CHANNELS.includes(src.channel) ? src.channel : 'luma',
+    smooth,
+    tile: src.tile === 'wrap' ? 'wrap' : 'mirror',
+  };
+}
+
+/**
+ * Height field of an image file: our own PNG reader for PNG (full bit depth,
+ * samples as data), the browser's decoder for everything else, and for PNG
+ * only when this browser cannot inflate (no DecompressionStream). A PNG our
+ * reader finds damaged is refused with its reason rather than handed to the
+ * browser, which would happily return the readable top part of a cut-off
+ * file and leave the rest of the terrain flat.
+ * @returns {Promise<{heights: Float32Array, n: number, via: string, bits: number}>}
+ */
+async function imageHeights(file, kind, head, channel) {
+  if (kind === 'image' && isPng(head) && typeof DecompressionStream === 'function') {
+    const r = await heightFromPng(new Uint8Array(await file.arrayBuffer()), { channel, size: TABLE_SIZE, stats: importStats });
+    return { heights: r.heights, n: r.n, via: 'png', bits: r.bitDepth };
+  }
+  const r = await imageFileToHeightF(file, kind, channel);
+  return { ...r, via: 'canvas', bits: 8 };
+}
+
+// Imports into the same slot commit in the order they were started, so a slow
+// big file chosen first can never overwrite a small one chosen after it.
+const slotQueues = new WeakMap();   // store -> Map(slot key -> promise of the latest import)
+
 /**
  * Import a File/Blob into a part's terrain slot: sets parts.N.userTerrain[slot]
  * and parts.N.params.terrain[slot] = Imported in one store.batch.
+ * @param {object} [options] images only: { channel: 'luma'|'r'|'g'|'b', smooth: 0..1 (default 0.3), tile: 'mirror'|'wrap' }
  * @returns {Promise<object>} the stored UserTerrain
  */
-export async function importTerrainFile(store, part, slot, file) {
+export async function importTerrainFile(store, part, slot, file, options) {
   const p = Math.round(Number(part));
   if (!(p >= 0 && p < NUM_PARTS)) throw new Error(`There is no part ${part}`);
   const S = slotName(slot);
@@ -536,23 +640,47 @@ export async function importTerrainFile(store, part, slot, file) {
   if (file.size > MAX_IMPORT_BYTES) {
     throw new Error(`${label} is ${(file.size / 1048576).toFixed(1)} MB; files up to 25 MB can be imported`);
   }
+  let slotQueue = slotQueues.get(store);
+  if (!slotQueue) { slotQueue = new Map(); slotQueues.set(store, slotQueue); }
+  const key = `${p}${S}`;
+  const prev = slotQueue.get(key) || Promise.resolve();
+  let release;
+  const mine = new Promise((r) => { release = r; });
+  const chain = prev.then(() => mine);
+  slotQueue.set(key, chain);
+  try {
+    const ut = await readTerrainFile(file, label, options);
+    await prev;
+    importStats.imports++;
+    timedBlock(() => store.batch(() => {
+      store.set(`parts.${p}.userTerrain.${S}`, ut, { source: 'import' });
+      store.set(`parts.${p}.params.terrain${S}`, TERRAIN_INDEX.user, { source: 'import' });
+    }), 'store');
+    return ut;
+  } finally {
+    release();
+    if (slotQueue.get(key) === chain) slotQueue.delete(key);
+  }
+}
+
+/** File -> UserTerrain (no store involved). */
+export async function readTerrainFile(file, label = 'That file', options) {
   const head = new Uint8Array(await file.slice(0, 512).arrayBuffer());
   const kind = sniffType(head, file.name, file.type);
   if (!kind) throw new Error(`${label} is not an image or a WAV file. Use PNG, JPEG, WebP, GIF, BMP or SVG, or a WAV wavetable`);
-
-  let ut;
   if (kind === 'wav') {
     const source = await audioSource(await file.arrayBuffer());
     const { frameSize, frameMode, frameCount, ...rest } = await wavetableFromSource(source, { name: file.name || 'Wavetable' });
-    ut = rest;
-  } else {
-    const bytes = await imageFileToHeight(file, kind);
-    ut = { name: cleanName(file.name || 'Image'), kind: 'image', w: TABLE_SIZE, h: TABLE_SIZE, mirror: 1, data: timedBlock(() => bytesToBase64(bytes)) };
+    importStats.last = { via: 'wav', frameSize, frameMode, frameCount, h: rest.h };
+    return rest;
   }
-  importStats.imports++;
-  timedBlock(() => store.batch(() => {
-    store.set(`parts.${p}.userTerrain.${S}`, ut, { source: 'import' });
-    store.set(`parts.${p}.params.terrain${S}`, TERRAIN_INDEX.user, { source: 'import' });
-  }));
-  return ut;
+  const opts = importOptions(options);
+  let { heights, n, via, bits } = await imageHeights(file, kind, head, opts.channel);
+  if (n < 2) { heights = new Float32Array(4).fill(heights[0] || 0); n = 2; }
+  const smoothed = timedBlock(() => smoothHeights(heights, n, opts.smooth, opts.tile), 'smooth');
+  const planes = timedBlock(() => heightsToPlanes(smoothed), 'planes');
+  const data = timedBlock(() => bytesToBase64(planes.hi), 'base64');
+  const lo = timedBlock(() => bytesToBase64(planes.lo), 'base64');
+  importStats.last = { via, bits, n, ...opts };
+  return { name: cleanName(file.name || 'Image'), kind: 'image', w: n, h: n, mirror: opts.tile === 'wrap' ? 0 : 1, data, lo };
 }

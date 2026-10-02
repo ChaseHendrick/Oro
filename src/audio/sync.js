@@ -7,8 +7,9 @@
 // postMessage, and the DSP always receives the latest state.
 
 import {
-  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, GLOBAL_PARAMS, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, MOD_FIELDS,
+  NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, GLOBAL_PARAMS, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, MOD_FIELDS, LFO_STEP_COUNT,
 } from '../core/params.js';
+import { sanitizeLinks } from '../core/migrate.js';
 
 const MOD_SET = new Set(MOD_PARAM_IDS);
 
@@ -18,7 +19,17 @@ function cleanMod(o) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   let any = false;
-  for (const f of MOD_FIELDS) if (isNum(o[f])) { out[f] = o[f]; any = true; }
+  for (const f of MOD_FIELDS) {
+    if (f === 'steps') {
+      // The Steps LFO's 16 values travel as a plain array (copied, so the DSP
+      // never shares an array the UI keeps editing).
+      const st = o.steps;
+      if (Array.isArray(st) && st.length >= LFO_STEP_COUNT) {
+        out.steps = Array.from({ length: LFO_STEP_COUNT }, (_, i) => (isNum(st[i]) ? Math.max(-1, Math.min(1, st[i])) : 0));
+        any = true;
+      }
+    } else if (isNum(o[f])) { out[f] = o[f]; any = true; }
+  }
   return any ? out : null;
 }
 
@@ -28,15 +39,19 @@ function cleanMod(o) {
  * @param {(messages: object[]) => void} o.post receives one array of messages per flush
  * @param {(global: object, changed: string[]|null) => void} [o.onGlobal] host-side consumers (effects); changed null = everything
  * @param {(fn: () => void) => void} [o.defer] scheduling primitive (tests may pass a manual one)
+ * @param {() => object[]} [o.extra] host state that is not in the store (quality, controllers),
+ *   appended to snapshot() so a rebuilt DSP gets it back too
  */
-export function createStoreSync({ store, post, onGlobal = () => {}, defer = queueMicrotask }) {
+export function createStoreSync({ store, post, onGlobal = () => {}, defer = queueMicrotask, extra = () => [] }) {
   let scheduled = false;
   let full = false;
+  let fullExtra = false;     // a full resend that must include the host state too (resendAll)
   const partAll = new Set();
   const paramsAll = new Set();
   const modsAll = new Set();
   const params = Array.from({ length: NUM_PARTS }, () => new Set());
   const mods = Array.from({ length: NUM_PARTS }, () => new Set());
+  const links = new Set();
   let globalAll = false;
   const globals = new Set();
   let watchDirty = false;
@@ -68,6 +83,15 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     return any ? { t: 'mods', part: i, m } : null;
   }
 
+  // Links are replaced as a whole list ({t:'links'}), so any change inside
+  // parts.N.links resends that part's list. A state without the field (saved
+  // before links existed, not migrated) leaves the DSP's default link alone.
+  function linksMsg(i) {
+    const src = store.get(`parts.${i}.links`);
+    if (!Array.isArray(src)) return null;
+    return { t: 'links', part: i, links: sanitizeLinks(src) };
+  }
+
   function globalMsg(ids) {
     const src = store.get('global') || {};
     const p = {};
@@ -87,8 +111,12 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   const ALL_PARAM_IDS = PART_PARAMS.map(p => p.id);
   const ALL_GLOBAL_IDS = GLOBAL_PARAMS.map(p => p.id);
 
-  /** Every message needed to bring a fresh DSP up to the store's state. */
-  function snapshot() {
+  /**
+   * Every message needed to bring a fresh DSP up to the store's state (plus
+   * the host's own state from `extra`, unless withExtra is false: a store
+   * load changes the patch, not the quality setting or the controllers).
+   */
+  function snapshot(withExtra = true) {
     const out = [];
     const g = globalMsg(ALL_GLOBAL_IDS);
     if (g) out.push(g);
@@ -97,14 +125,19 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       if (p) out.push(p);
       const m = partMods(i, MOD_PARAM_IDS);
       if (m) out.push(m);
+      const l = linksMsg(i);
+      if (l) out.push(l);
     }
     out.push(watchMsg());
+    if (withExtra) {
+      try { for (const m of extra() || []) if (m) out.push(m); } catch (err) { console.error('[audio] snapshot extra failed', err); }
+    }
     return out;
   }
 
   function reset() {
-    full = false; globalAll = false; watchDirty = false; playingDirty = false;
-    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear();
+    full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false;
+    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear();
     for (const s of params) s.clear();
     for (const s of mods) s.clear();
   }
@@ -115,7 +148,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const out = [];
     let globalChanged = null;
     if (full) {
-      out.push(...snapshot());
+      out.push(...snapshot(fullExtra));
       globalChanged = ALL_GLOBAL_IDS;
     } else {
       if (globalAll || globals.size) {
@@ -134,6 +167,10 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         if (allM || mods[i].size) {
           const m = partMods(i, allM ? MOD_PARAM_IDS : mods[i]);
           if (m) out.push(m);
+        }
+        if (partAll.has(i) || links.has(i)) {
+          const l = linksMsg(i);
+          if (l) out.push(l);
         }
       }
       if (watchDirty) out.push(watchMsg());
@@ -173,6 +210,9 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       } else if (k[2] === 'mods') {
         if (k.length === 3) modsAll.add(i); else mods[i].add(k[3]);
         mark();
+      } else if (k[2] === 'links') {
+        links.add(i);
+        mark();
       }
       return;
     }
@@ -194,7 +234,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     /** Post anything pending right now (call before a note so it sees the latest patch). */
     flush() { if (scheduled) flush(); },
     /** Mark everything dirty, e.g. after the DSP node was rebuilt. */
-    resendAll() { full = true; playingDirty = false; mark(); },
+    resendAll() { full = true; fullExtra = true; playingDirty = false; mark(); },
     stats: () => ({ flushes, posts }),
     dispose() { scheduled = false; off(); },
   };

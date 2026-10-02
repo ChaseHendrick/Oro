@@ -185,6 +185,20 @@ export function createTerrainManager({ store, post, emit, generator, debounceMs 
     whenIdle() {
       return new Promise((resolve) => { waiters.push(resolve); settle(); });
     },
+    /**
+     * Terrain messages for every table in place (not copied, not transferred):
+     * for processorOptions.init of an offline render, which clones them.
+     */
+    messages() {
+      const out = [];
+      for (let p = 0; p < NUM_PARTS; p++) {
+        for (let s = 0; s < 2; s++) {
+          const lv = slots[p][s].levels;
+          if (lv) out.push({ t: 'terrain', part: p, slot: s, levels: lv.map(l => ({ size: l.size, data: l.data })) });
+        }
+      }
+      return out;
+    },
     /** Re-post every current table (after the DSP node was rebuilt). */
     resendAll() {
       for (let p = 0; p < NUM_PARTS; p++) for (let s = 0; s < 2; s++) if (slots[p][s].levels) sendLevels(p, s, slots[p][s].levels);
