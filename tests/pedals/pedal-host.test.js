@@ -13,7 +13,7 @@ function setup({ maxChannelCount = 4, capture = true, openReturn, ...over } = {}
   const sendBus = stereo(), mainOut = stereo(), masterIn = stereo(), delayIn = stereo(), reverbIn = stereo();
   mainOut.connect(ctx.destination);   // what the engine does
   const posted = [];
-  const fx = { guard: null, guitar: null, opened: [] };
+  const fx = { guard: null, guitar: null, guitars: [], opened: [] };
   const deps = {
     hasGetUserMedia: () => capture,
     loadPedalWorklets: async () => ({ ok: true }),
@@ -28,10 +28,16 @@ function setup({ maxChannelCount = 4, capture = true, openReturn, ...over } = {}
       fx.guard = { o, reset: vi.fn(), dispose: vi.fn(), status: () => ({ muted: false, outside: false }) };
       return fx.guard;
     },
-    createGuitarInput: (c, node) => {
+    createGuitarInput: (c, node, opts) => {
       const ls = {};
-      fx.guitar = { node, via: 'worklet', on: (t, fn) => { ls[t] = fn; return () => {}; }, emit: (t, e) => ls[t] && ls[t](e), dispose: vi.fn() };
-      return fx.guitar;
+      const g = {
+        node, opts, via: 'worklet', configure: vi.fn(), dispose: vi.fn(),
+        on: (t, fn) => { (ls[t] ||= new Set()).add(fn); return () => ls[t].delete(fn); },
+        emit: (t, e) => { for (const fn of ls[t] || []) fn(e); },
+      };
+      fx.guitars.push(g);
+      if (!fx.guitar) fx.guitar = g;
+      return g;
     },
     measureRoundTrip: vi.fn(async (c, o) => {
       const undo = o.mute();
@@ -227,5 +233,105 @@ describe('pedal host: dispose', () => {
     expect(ctx.out(mainOut, ctx.destination)).toHaveLength(1);
     expect(posted[posted.length - 1]).toEqual({ t: 'pedal', active: false });
     expect(ctx.destination.channelCount).toBe(2);
+  });
+});
+
+describe('pedal host: guitar notes', () => {
+  const withSource = async (c, deviceId, opts) => {
+    const output = c.createGain();
+    const guitar = opts.layout === 'mono+guitar' ? c.createGain() : null;
+    return { ok: true, output, guitar, source: c.createMediaStreamSource({}), warnings: [], settings: null, close: vi.fn() };
+  };
+
+  it('tracks the clean DI (channel 2) with the Guitar Level input in "Mono return + guitar"', async () => {
+    const { host, fx } = setup({ openReturn: withSource });
+    const seen = [];
+    host.on('guitarNote', e => seen.push(e));
+    await host.setGuitar({ notes: true, gateDb: -44, bendRange: 5 });
+    expect(host.status().guitar).toMatchObject({ notes: true, tracking: false, channel: 1 });   // waits for the return
+    await host.setReturn({ enabled: true, layout: 'mono+guitar' });
+    expect(fx.guitars).toHaveLength(1);                     // shared, no second tracker
+    expect(host.status().guitar).toMatchObject({ tracking: true, gateDb: -44, bendRange: 5 });
+    expect(fx.guitar.configure).toHaveBeenLastCalledWith({ tracker: { gateDb: -44, bendRange: 5 } });
+    fx.guitar.emit('noteOn', { note: 45, velocity: 0.7, time: 1 });
+    fx.guitar.emit('bend', { semitones: 0.5, time: 1.1 });
+    fx.guitar.emit('noteOff', { note: 45, time: 1.2 });
+    expect(seen.map(e => e.type)).toEqual(['noteOn', 'bend', 'noteOff']);
+    expect(seen[0]).toMatchObject({ note: 45, velocity: 0.7 });
+    // Closing the return releases whatever the guitar was holding.
+    await host.setReturn({ enabled: false });
+    expect(seen[seen.length - 1]).toEqual({ type: 'stop' });
+    expect(host.status().guitar.tracking).toBe(false);
+  });
+
+  it('taps one channel of a stereo return through a splitter, and rebuilds on a channel change', async () => {
+    const { ctx, host, fx } = setup({ openReturn: withSource });
+    await host.setReturn({ enabled: true });
+    await host.setGuitar({ notes: true, channel: 0 });
+    expect(fx.guitars).toHaveLength(1);
+    const g1 = fx.guitars[0];
+    const split = ctx.edges.find(e => e.to === g1.node).from;   // tap gain <- splitter output 0
+    expect(ctx.edges.find(e => e.from === split && e.to === g1.node).out).toBe(0);
+    expect(g1.node.channelCount).toBe(1);
+    await host.setGuitar({ channel: 1 });
+    expect(g1.dispose).toHaveBeenCalled();
+    const g2 = fx.guitars[1];
+    const split2 = ctx.edges.find(e => e.to === g2.node).from;
+    expect(ctx.edges.find(e => e.from === split2 && e.to === g2.node).out).toBe(1);
+    await host.setGuitar({ notes: false });
+    expect(g2.dispose).toHaveBeenCalled();
+    expect(host.status().guitar.tracking).toBe(false);
+  });
+
+  it('is off by default and never tracks without an open return', async () => {
+    const { host, fx } = setup({ openReturn: withSource });
+    await host.setReturn({ enabled: true });
+    expect(host.status().guitar).toMatchObject({ notes: false, tracking: false });
+    expect(fx.guitars).toHaveLength(0);
+    await host.setReturn({ enabled: false });
+    await host.setGuitar({ notes: true });
+    expect(fx.guitars).toHaveLength(0);
+  });
+});
+
+describe('pedal host: capture', () => {
+  function fakeCapture(samples) {
+    return vi.fn((c, o) => {
+      const cap = { o, input: c.createGain(), dropouts: 0, stop: vi.fn(async () => [samples]), dispose: vi.fn() };
+      cap.start = vi.fn(async () => { cap.heard = c.edges.filter(e => e.to === cap.input).map(e => e.from); });
+      fakeCapture.last = cap;
+      return cap;
+    });
+  }
+
+  it('needs an open return', async () => {
+    const { host } = setup({ createCapture: fakeCapture(new Float32Array(10)), sleep: async () => {} });
+    expect((await host.captureGuitar()).reason).toMatch(/pedal return/);
+  });
+
+  it('records the guitar channel with progress and hands back the samples', async () => {
+    const x = new Float32Array(4800).fill(0.25);
+    const createCapture = fakeCapture(x);
+    const { ctx, host, fx } = setup({ createCapture, sleep: async () => {} });
+    await host.setReturn({ enabled: true, layout: 'mono+guitar' });
+    const progress = [];
+    const r = await host.captureGuitar({ seconds: 1, onProgress: p => progress.push(p) });
+    expect(r).toMatchObject({ ok: true, sampleRate: 48000 });
+    expect(r.samples).toBe(x);
+    expect(createCapture.mock.calls[0][1]).toMatchObject({ channels: 1 });
+    expect(progress).toHaveLength(10);
+    expect(progress[9]).toBe(1);
+    // It listened to the guitar channel and let go afterwards.
+    const cap = fakeCapture.last;
+    expect(cap.heard).toEqual([fx.opened[0].r.guitar]);
+    expect(ctx.out(fx.opened[0].r.guitar, cap.input)).toHaveLength(0);
+    expect(cap.dispose).toHaveBeenCalled();
+    expect(host.status().guitar.capturing).toBe(false);
+  });
+
+  it('reports an empty or busy recording', async () => {
+    const { host } = setup({ createCapture: fakeCapture(new Float32Array(0)), sleep: async () => {} });
+    await host.setReturn({ enabled: true, layout: 'mono+guitar' });
+    expect((await host.captureGuitar({ seconds: 0.5 })).reason).toMatch(/Nothing was recorded/);
   });
 });

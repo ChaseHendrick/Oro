@@ -37,6 +37,23 @@ MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet*
 * **Guitar Level**, a new Links source: with the "Mono return + guitar" input layout, the
   guitar on input channel 2 can move any modulatable control.
 
+### Guitar
+
+* **Guitar plays notes** (Settings > Pedals > Guitar, off by default): single guitar notes
+  play the selected part or a chosen part through the normal note path (source "guitar"),
+  so the arpeggiator, sustain, Layer mode and MIDI out work as with any keyboard. Choose
+  the input channel (the clean DI on channel 2 by default in "Mono return + guitar") and a
+  gate. Notes start at the pick with pitch hysteresis and end when the level falls below
+  the gate or the pitch moves to another note. **Bends as pitch bend** sends bends and
+  vibrato to the part's pitch bend within its Bend range (a part without a range uses
+  +/-2 semitones). Only runs while the pedal return is open.
+* **Capture**: records a held guitar note, finds its pitch and turns it into a wavetable
+  terrain (attack to decay along one axis), stored and selected in slot A or B of the
+  guitar's part the same way an imported WAV is. Shows progress, the note it found, or why
+  it could not find a steady pitch.
+* Neither has been tested with a real guitar, interface or MPC; only unit tests on
+  synthetic signals have run.
+
 ### Pedal MIDI
 
 * Profiles for the OBNE Purr-ting, Chase Bliss Lost + Found, Cornerstone Nucleo and Walrus
@@ -54,8 +71,9 @@ MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet*
 
 ### Not in this version yet
 
-* Guitar pitch tracking to notes, Capture (a held guitar note as a wavetable terrain),
-  scenes recalling pedal presets, and compensating the patch preview and Explore notes.
+* Polyphonic (chord) guitar tracking, scenes recalling pedal presets, and compensating the
+  patch preview and Explore notes. Live guitar notes are played as they arrive and are not
+  latency compensated.
 
 ## 0.1.0 (first release, October 2026)
 

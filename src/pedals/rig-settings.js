@@ -6,6 +6,7 @@
 
 import { PEDAL_PROFILES, PEDAL_IDS, findControl } from './profiles.js';
 import { PEDAL_SOURCES } from './pedal-midi.js';
+import { DEFAULT_GATE_DB, GATE_MIN_DB, GATE_MAX_DB } from './guitar-notes.js';
 
 export const RIG_KEY = 'orograph.pedals';
 
@@ -30,6 +31,23 @@ export const SAMPLE_RATE_OPTIONS = Object.freeze([
 ]);
 /** Manual latency offset range (ms), added to the measured round trip. */
 export const COMP_OFFSET_RANGE = Object.freeze({ min: -200, max: 200 });
+/** Guitar plays notes: which part. 'sel' follows the selected part (and Layer key mode). */
+export const GUITAR_TARGETS = Object.freeze([
+  Object.freeze({ value: 'sel', label: 'Selected part' }),
+  ...[0, 1, 2, 3].map(p => Object.freeze({ value: p, label: `Part ${p + 1}` })),
+]);
+/** Guitar input channel, 1-based as on the interface. */
+export const GUITAR_CHANNELS = Object.freeze([1, 2]);
+export const CAPTURE_SLOTS = Object.freeze([Object.freeze({ value: 'A', label: 'Slot A' }), Object.freeze({ value: 'B', label: 'Slot B' })]);
+export { GATE_MIN_DB as GUITAR_GATE_MIN_DB, GATE_MAX_DB as GUITAR_GATE_MAX_DB };
+
+/** What each input channel carries in a return layout (for Settings). */
+export function guitarChannelOptions(layout) {
+  return layout === 'mono+guitar'
+    ? [{ value: 1, label: 'Ch 1 (pedals)' }, { value: 2, label: 'Ch 2 (guitar DI)' }]
+    : [{ value: 1, label: 'Ch 1 (left)' }, { value: 2, label: 'Ch 2 (right)' }];
+}
+
 /** Sources a pedal can follow from Settings (a subset of PEDAL_SOURCES). */
 export const FOLLOW_SOURCES = Object.freeze(PEDAL_SOURCES.filter(s => /^macro\d$/.test(s.id) || s.id === 'guitar'));
 
@@ -62,6 +80,12 @@ export function defaultRig() {
     compensate: 0,
     compOffsetMs: 0,
     sampleRate: 'auto',
+    guitarNotes: 0,
+    guitarTarget: 'sel',
+    guitarChannel: 2,
+    guitarGateDb: DEFAULT_GATE_DB,
+    guitarBends: 1,
+    captureSlot: 'A',
     pedals: Object.fromEntries(PEDAL_IDS.map(id => [id, defaultPedalEntry(id)])),
   };
 }
@@ -104,6 +128,12 @@ export function sanitizeRig(src) {
     compensate: flag(src.compensate, d.compensate),
     compOffsetMs: Math.round(clamp(num(src.compOffsetMs, d.compOffsetMs), COMP_OFFSET_RANGE.min, COMP_OFFSET_RANGE.max) * 10) / 10,
     sampleRate: SAMPLE_RATE_OPTIONS.some(o => o.value === src.sampleRate) ? src.sampleRate : d.sampleRate,
+    guitarNotes: flag(src.guitarNotes, d.guitarNotes),
+    guitarTarget: GUITAR_TARGETS.some(t => t.value === src.guitarTarget) ? src.guitarTarget : d.guitarTarget,
+    guitarChannel: GUITAR_CHANNELS.includes(src.guitarChannel) ? src.guitarChannel : d.guitarChannel,
+    guitarGateDb: Math.round(clamp(num(src.guitarGateDb, d.guitarGateDb), GATE_MIN_DB, GATE_MAX_DB)),
+    guitarBends: flag(src.guitarBends, d.guitarBends),
+    captureSlot: CAPTURE_SLOTS.some(t => t.value === src.captureSlot) ? src.captureSlot : d.captureSlot,
     pedals: Object.fromEntries(PEDAL_IDS.map(id => [id, sanitizePedal(id, src.pedals && src.pedals[id])])),
   };
 }

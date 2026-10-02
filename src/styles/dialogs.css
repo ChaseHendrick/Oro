@@ -228,6 +228,9 @@
 .pedal-offset { width: 88px; flex: none; }
 .pedal-meter { display: block; width: 180px; height: 8px; border-radius: 4px; background: var(--knob-track); overflow: hidden; }
 .pedal-meter-fill { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+.guitar-pitch, .guitar-capture { margin-top: 4px; font-variant-numeric: tabular-nums; }
+.guitar-capture.is-bad { color: var(--warn); }
+.settings-pedals .pedal-meter[role="progressbar"] { margin-top: 6px; }
 .pedal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 10px 0; }
 .pedal-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--inset-hi); min-width: 0; }
 .pedal-card.is-off .pedal-body { opacity: .55; }

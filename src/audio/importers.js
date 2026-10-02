@@ -624,6 +624,40 @@ async function imageHeights(file, kind, head, channel) {
 const slotQueues = new WeakMap();   // store -> Map(slot key -> promise of the latest import)
 
 /**
+ * Runs `produce()` (which resolves to a UserTerrain) and commits the result to
+ * parts.N.userTerrain[slot] with parts.N.params.terrain[slot] = Imported in one
+ * store.batch. Commits to one slot happen in the order the calls started, so a
+ * slow import chosen first never overwrites a quicker one chosen after it.
+ */
+async function commitInOrder(store, part, slot, produce, source) {
+  const p = Math.round(Number(part));
+  if (!(p >= 0 && p < NUM_PARTS)) throw new Error(`There is no part ${part}`);
+  const S = slotName(slot);
+  if (!S) throw new Error(`Terrain slot must be A or B, not ${slot}`);
+  let slotQueue = slotQueues.get(store);
+  if (!slotQueue) { slotQueue = new Map(); slotQueues.set(store, slotQueue); }
+  const key = `${p}${S}`;
+  const prev = slotQueue.get(key) || Promise.resolve();
+  let release;
+  const mine = new Promise((r) => { release = r; });
+  const chain = prev.then(() => mine);
+  slotQueue.set(key, chain);
+  try {
+    const ut = await produce();
+    await prev;
+    importStats.imports++;
+    timedBlock(() => store.batch(() => {
+      store.set(`parts.${p}.userTerrain.${S}`, ut, { source });
+      store.set(`parts.${p}.params.terrain${S}`, TERRAIN_INDEX.user, { source });
+    }), 'store');
+    return ut;
+  } finally {
+    release();
+    if (slotQueue.get(key) === chain) slotQueue.delete(key);
+  }
+}
+
+/**
  * Import a File/Blob into a part's terrain slot: sets parts.N.userTerrain[slot]
  * and parts.N.params.terrain[slot] = Imported in one store.batch.
  * @param {object} [options] images only: { channel: 'luma'|'r'|'g'|'b', smooth: 0..1 (default 0.3), tile: 'mirror'|'wrap' }
@@ -640,27 +674,24 @@ export async function importTerrainFile(store, part, slot, file, options) {
   if (file.size > MAX_IMPORT_BYTES) {
     throw new Error(`${label} is ${(file.size / 1048576).toFixed(1)} MB; files up to 25 MB can be imported`);
   }
-  let slotQueue = slotQueues.get(store);
-  if (!slotQueue) { slotQueue = new Map(); slotQueues.set(store, slotQueue); }
-  const key = `${p}${S}`;
-  const prev = slotQueue.get(key) || Promise.resolve();
-  let release;
-  const mine = new Promise((r) => { release = r; });
-  const chain = prev.then(() => mine);
-  slotQueue.set(key, chain);
-  try {
-    const ut = await readTerrainFile(file, label, options);
-    await prev;
-    importStats.imports++;
-    timedBlock(() => store.batch(() => {
-      store.set(`parts.${p}.userTerrain.${S}`, ut, { source: 'import' });
-      store.set(`parts.${p}.params.terrain${S}`, TERRAIN_INDEX.user, { source: 'import' });
-    }), 'store');
-    return ut;
-  } finally {
-    release();
-    if (slotQueue.get(key) === chain) slotQueue.delete(key);
+  return commitInOrder(store, p, S, () => readTerrainFile(file, label, options), 'import');
+}
+
+/**
+ * Store a ready-made UserTerrain (a guitar Capture, see src/pedals/guitar.js
+ * captureToWavetable) in a part's terrain slot and select it, exactly as an
+ * imported file is stored. Only the fields a saved session keeps are stored.
+ * @returns {Promise<object>} the stored UserTerrain
+ */
+export function addUserTerrain(store, part, slot, userTerrain, { source = 'import' } = {}) {
+  const t = userTerrain || {};
+  const w = Math.round(Number(t.w)), h = Math.round(Number(t.h));
+  if (typeof t.data !== 'string' || !(w >= 2 && h >= 2 && w <= 1024 && h <= 1024)) {
+    return Promise.reject(new Error('That terrain is empty or damaged'));
   }
+  const ut = { name: cleanName(t.name || 'Imported'), kind: t.kind === 'wavetable' ? 'wavetable' : 'image', w, h, mirror: t.mirror ? 1 : 0, data: t.data };
+  if (typeof t.lo === 'string' && t.lo.length > 0) ut.lo = t.lo;
+  return commitInOrder(store, part, slot, async () => ut, source);
 }
 
 /** File -> UserTerrain (no store involved). */

@@ -1,7 +1,9 @@
 // The pedal rig (v1.1, docs/PEDALS.md): ties the saved rig settings
 // (src/pedals/rig-settings.js) to the engine's pedal host (output map, send
 // limiter, return, feedback guard, ping) and to MIDI for the pedal profiles
-// (src/pedals/pedal-midi.js over Web MIDI). Settings > Pedals and the mixer
+// (src/pedals/pedal-midi.js over Web MIDI), plus the guitar on the return:
+// Guitar plays notes (src/pedals/guitar-notes.js into the note router) and
+// Capture (a held note -> a wavetable terrain on a part). Settings > Pedals and the mixer
 // strips read and change it through this object; nothing here is needed for
 // the synth to work, and every part copes with a missing engine, host or MIDI.
 
@@ -10,22 +12,33 @@ import { PEDAL_IDS, PEDAL_PROFILES, channelConflicts, withChannel } from '../ped
 import { createPedalMidi } from '../pedals/pedal-midi.js';
 import { loadRig, saveRig, sanitizeRig, pairChannels, contextSampleRate } from '../pedals/rig-settings.js';
 import { compensationMs, partLeadSeconds } from '../pedals/latency-comp.js';
+import { createGuitarNotes } from '../pedals/guitar-notes.js';
+import { captureToWavetable } from '../pedals/guitar.js';
+import { addUserTerrain } from '../audio/importers.js';
+import { CAPTURE_SECONDS } from '../audio/pedal-host.js';
 
 const AUDIO_KEYS = ['enabled', 'outputDeviceId', 'mainPair', 'sendPair', 'ceilingDb'];
 const RETURN_KEYS = ['returnEnabled', 'returnDeviceId', 'returnLayout', 'returnLevel', 'returnDelay', 'returnReverb'];
 const COMP_KEYS = ['compensate', 'compOffsetMs', 'lastLatencyMs'];
+const GUITAR_KEYS = ['guitarNotes', 'guitarTarget', 'guitarChannel', 'guitarGateDb', 'guitarBends'];
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+/** MIDI note -> 'A2' (C4 = 60, as on the keyboard). */
+export function noteLabel(m) {
+  const n = Math.round(m);
+  return Number.isFinite(n) ? `${NOTE_NAMES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}` : '?';
+}
 
 /**
  * @param {object} o
  * @param {object} o.store
  * @param {object|null} o.engine  needs engine.pedals for audio; setOutputDevice for the device picker
  * @param {object|null} o.midi    needs midi.sendRaw for pedal MIDI
- * @param {object|null} [o.router] the note router (src/music/router.js): its setLead takes the latency compensation
+ * @param {object|null} [o.router] the note router (src/music/router.js): its setLead takes the latency compensation, and receives Guitar plays notes
  * @param {Storage} [o.storage]
  * @param {() => Promise<boolean>} [o.micGranted] whether the return may reopen without a prompt
  * @param {() => void} [o.reload] restarts the app (a sample-rate change applies on the next start)
  */
-export function createPedalRig({ store, engine = null, midi = null, router = null, storage = globalThis.localStorage, micGranted = defaultMicGranted, reload = defaultReload } = {}) {
+export function createPedalRig({ store, engine = null, midi = null, router = null, storage = globalThis.localStorage, micGranted = defaultMicGranted, reload = defaultReload, analyse = captureToWavetable } = {}) {
   const events = createEmitter();
   const host = engine && engine.pedals ? engine.pedals : null;
   let prefs = loadRig(storage);
@@ -77,6 +90,33 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     }
   }));
   if (host) offs.push(host.on('guitar', (e) => pmidi.input('guitar', e.level)));
+
+  // ---------------------------------------------------------------- guitar
+  const notes = createGuitarNotes({ store, router, engine });
+  let lastPitch = null;      // { freq, midi, clarity } from the tracker, for the display
+  let capture = null;        // { stage, progress, ... } of the running or last Capture
+  if (host) {
+    offs.push(host.on('guitarNote', (e) => {
+      if (e && e.type === 'pitch') { lastPitch = e.voiced ? { freq: e.freq, midi: e.midi, clarity: e.clarity } : null; events.emit('pitch', lastPitch); return; }
+      notes.handle(e);
+    }));
+  }
+  offs.push(notes.on((e) => events.emit('guitarNote', e)));
+  let trackerSent = '';
+  function applyGuitar() {
+    notes.configure({ enabled: !!prefs.guitarNotes, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
+    if (!host || typeof host.setGuitar !== 'function') return Promise.resolve(null);
+    const tc = notes.trackerConfig();
+    trackerSent = JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, tc]);
+    return host.setGuitar({ channel: prefs.guitarChannel - 1, notes: !!prefs.guitarNotes, gateDb: tc.gateDb, bendRange: tc.bendRange });
+  }
+  // The tracker's bend range follows the played part's Bend (and which part that is).
+  offs.push(store.subscribe('', (path) => {
+    if (!prefs.guitarNotes) return;
+    if (path !== '' && !/bendRange|selectedPart|keyMode|^parts$|^parts\.\d$|^ui$/.test(path)) return;
+    const tc = notes.trackerConfig();
+    if (JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, tc]) !== trackerSent) applyGuitar();
+  }));
 
   // ---------------------------------------------------------------- audio
   async function applyOutputDevice() {
@@ -131,6 +171,7 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     changed();
     if (diff(AUDIO_KEYS)) await applyAudio();
     if (diff(RETURN_KEYS)) await applyReturn();
+    if (diff(GUITAR_KEYS)) await applyGuitar();
     changed();
     return status();
   }
@@ -175,6 +216,56 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     return r;
   }
 
+  /** The part Capture writes to: the guitar's part, or the selected part. */
+  function capturePart() {
+    const t = prefs.guitarTarget;
+    if (t === 'sel') return Math.max(0, Math.min(3, Math.round(Number(store.get('ui.selectedPart')) || 0)));
+    return t;
+  }
+
+  function setCapture(c) { capture = c; events.emit('capture', { ...c }); changed(); }
+
+  /**
+   * Capture: record a held note from the guitar channel, turn it into a
+   * wavetable terrain (attack to decay along one axis), store it in the
+   * part's terrain slot (prefs.captureSlot) the way the importer does and
+   * select it. Progress, the detected pitch and failures come out as 'capture'
+   * events {stage: 'recording'|'analysing'|'done'|'error', progress, ...}.
+   */
+  async function captureNote({ seconds = CAPTURE_SECONDS } = {}) {
+    const fail = (reason) => { setCapture({ stage: 'error', progress: 0, reason }); return { ok: false, reason }; };
+    if (!host || typeof host.captureGuitar !== 'function') return fail('Capture needs Web Audio, which is not running here.');
+    if (capture && (capture.stage === 'recording' || capture.stage === 'analysing')) return { ok: false, reason: 'A capture is already running.' };
+    const part = capturePart();
+    const slot = prefs.captureSlot;
+    setCapture({ stage: 'recording', progress: 0, part, slot });
+    // The held note is for the wavetable, not the synth: pause Guitar plays notes while recording.
+    const muteNotes = !!prefs.guitarNotes;
+    if (muteNotes) notes.configure({ enabled: false, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
+    let rec;
+    try {
+      rec = await host.captureGuitar({ seconds, onProgress: (p) => setCapture({ stage: 'recording', progress: p, part, slot }) });
+    } finally {
+      if (muteNotes) notes.configure({ enabled: !!prefs.guitarNotes, target: prefs.guitarTarget, gateDb: prefs.guitarGateDb, bends: !!prefs.guitarBends });
+    }
+    if (!rec || !rec.ok) return fail((rec && rec.reason) || 'Nothing was recorded.');
+    setCapture({ stage: 'analysing', progress: 1, part, slot });
+    // Let the progress paint before the analysis takes the main thread.
+    await new Promise(r => setTimeout(r, 0));
+    let res;
+    try { res = analyse(rec.samples, rec.sampleRate, { name: 'Guitar capture' }); } catch (err) { res = { ok: false, reason: `The analysis failed (${(err && err.message) || err}).` }; }
+    if (!res || !res.ok) return fail((res && res.reason) || 'Orograph could not find a steady pitch.');
+    const name = `Guitar ${noteLabel(res.note)}`;
+    try {
+      await addUserTerrain(store, part, slot, { ...res.userTerrain, name });
+    } catch (err) {
+      return fail(`The terrain could not be stored (${(err && err.message) || err}).`);
+    }
+    const done = { stage: 'done', progress: 1, part, slot, name, freq: res.freq, note: res.note, frames: res.userTerrain.h, clarity: res.clarity };
+    setCapture(done);
+    return { ok: true, ...done };
+  }
+
   function conflicts() {
     const list = PEDAL_IDS.filter(id => prefs.pedals[id].enabled).map(id => withChannel(PEDAL_PROFILES[id], prefs.pedals[id].channel));
     return channelConflicts(list);
@@ -215,6 +306,7 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
       audio: host ? host.status() : null,
       midi: { available: midiOk(), status: midi ? midi.status : 'unsupported', stats: pmidi.stats(), lastError: pmidi.lastError },
       conflicts: conflicts(),
+      guitar: { notes: notes.stats(), pitch: lastPitch, capture: capture ? { ...capture } : null, bendRange: notes.bendRange() },
       lastError,
     };
   }
@@ -225,6 +317,7 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     applyCompensation();
     if (!host) return status();
     if (prefs.enabled) await applyAudio();
+    await applyGuitar();
     if (prefs.returnEnabled) {
       let ok = false;
       try { ok = await micGranted(); } catch { ok = false; }
@@ -239,6 +332,7 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     if (router && typeof router.setLead === 'function') router.setLead(null);
     for (const off of offs) { try { off(); } catch { /* ignore */ } }
     pmidi.dispose();
+    notes.dispose();
     events.clear();
   }
 
@@ -247,7 +341,8 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     get host() { return host; },
     get pedalMidi() { return pmidi; },
     get supported() { return !!host; },
-    set, setPedal, reconnectReturn, ping, pedalAction, conflicts, status, restore, dispose,
+    get guitarNotes() { return notes; },
+    set, setPedal, reconnectReturn, ping, pedalAction, captureNote, conflicts, status, restore, dispose,
     compensation, sampleRate,
     /** Restart the app so a new sample rate takes effect (the session autosaves on the way out). */
     reload: () => reload(),

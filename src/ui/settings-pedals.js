@@ -1,6 +1,7 @@
 // Settings > Pedals ("Audio and pedals", v1.1, docs/PEDALS.md): the output
 // device and channel map for the pedal send, the send ceiling, the pedal
-// return (input, layout, levels, feedback guard), the latency ping, and the
+// return (input, layout, levels, feedback guard), the guitar on the return
+// (Guitar plays notes, Capture to a wavetable terrain), the latency ping, and the
 // MIDI pedal profiles (Purr-ting, Lost + Found, Nucleo, Xero). Everything goes
 // through ctx.pedals (src/ui/pedal-rig.js); without it the pane explains why.
 
@@ -9,7 +10,12 @@ import { createSegmented, createToggle, createSelect, createMiniSlider } from '.
 import { schedule } from './frame.js';
 import { icon } from './icons.js';
 import { PEDAL_IDS, PEDAL_PROFILES, AUDIO_ONLY_PEDALS, MIDI_ROUTES, engageControl, tapControl } from '../pedals/profiles.js';
-import { OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, FOLLOW_SOURCES, SAMPLE_RATE_OPTIONS, COMP_OFFSET_RANGE } from '../pedals/rig-settings.js';
+import {
+  OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, FOLLOW_SOURCES, SAMPLE_RATE_OPTIONS, COMP_OFFSET_RANGE,
+  GUITAR_TARGETS, CAPTURE_SLOTS, GUITAR_GATE_MIN_DB, GUITAR_GATE_MAX_DB, guitarChannelOptions,
+} from '../pedals/rig-settings.js';
+import { DEFAULT_GATE_DB } from '../pedals/guitar-notes.js';
+import { noteLabel } from './pedal-rig.js';
 
 const CHANNELS = Array.from({ length: 16 }, (_, i) => ({ value: i + 1, label: `Ch ${i + 1}` }));
 
@@ -136,6 +142,75 @@ export function createPedalSettings(ctx) {
     guitarRow,
     retWarn, retFacts, h('div', { class: 'btn-row' }, unmuteBtn, reconnectBtn));
 
+  // ================================================================ guitar
+  const gNotes = own(createToggle(ctx, rigBinding(rig, 'guitarNotes', { label: 'Guitar plays notes', default: 0 }), { label: 'Guitar plays notes', className: 'toggle--switch' }));
+  const gTarget = own(createSelect(ctx, rigBinding(rig, 'guitarTarget', { label: 'Guitar part', default: 'sel' }), { label: 'Part the guitar plays', options: GUITAR_TARGETS }));
+  // The channel labels depend on the return layout, so this one is rebuilt when the layout changes.
+  const gChanWrap = h('div', { class: 'guitar-channel' });
+  let gChan = null, gChanLayout = null;
+  function buildChannel() {
+    const lay = rig.prefs.returnLayout;
+    if (gChan && gChanLayout === lay) return;
+    if (gChan) gChan.dispose();
+    gChanLayout = lay;
+    gChan = createSegmented(ctx, rigBinding(rig, 'guitarChannel', { label: 'Guitar input channel', default: 2 }), { label: 'Guitar input channel', size: 'sm', options: guitarChannelOptions(lay) });
+    gChanWrap.textContent = '';
+    gChanWrap.appendChild(gChan.el);
+  }
+  buildChannel();
+  scope.add(() => { if (gChan) gChan.dispose(); });
+  const gGate = own(createMiniSlider(ctx, rigBinding(rig, 'guitarGateDb', { label: 'Gate', default: DEFAULT_GATE_DB, min: GUITAR_GATE_MIN_DB, max: GUITAR_GATE_MAX_DB }), {
+    ariaLabel: 'Guitar gate', className: 'pedal-slider', format: (v) => `${Math.round(v)} dB`,
+  }));
+  const gBends = own(createToggle(ctx, rigBinding(rig, 'guitarBends', { label: 'Bends as pitch bend', default: 1 }), { label: 'Bends as pitch bend', className: 'toggle--switch' }));
+  const gPitch = h('p', { class: 'setting-hint guitar-pitch', 'aria-live': 'off' });
+  const capSlot = own(createSegmented(ctx, rigBinding(rig, 'captureSlot', { label: 'Capture into', default: 'A' }), { label: 'Capture into terrain slot', size: 'sm', options: CAPTURE_SLOTS }));
+  const capBtn = h('button', { type: 'button', class: 'btn btn--primary btn--sm', html: icon('wave') + '<span>Capture</span>' });
+  const capFill = h('span', { class: 'pedal-meter-fill' });
+  const capMeter = h('span', { class: 'pedal-meter', role: 'progressbar', 'aria-label': 'Capture progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0', hidden: true }, capFill);
+  const capOut = h('p', { class: 'setting-hint guitar-capture', 'aria-live': 'polite' });
+  scope.on(capBtn, 'click', async () => {
+    capBtn.disabled = true;
+    try {
+      await ctx.startAudio();
+      const r = await rig.captureNote();
+      if (r && r.ok) ctx.toast(`Captured ${r.name} into part ${r.part + 1}, slot ${r.slot}`, { kind: 'info' });
+    } finally {
+      renderCapture();
+      invalidate();
+    }
+  });
+  function renderCapture() {
+    const g = rig.status().guitar;
+    const c = g ? g.capture : null;
+    const busy = !!c && (c.stage === 'recording' || c.stage === 'analysing');
+    capMeter.hidden = !busy;
+    const pct = c ? Math.round((c.progress || 0) * 100) : 0;
+    capFill.style.transform = `scaleX(${busy ? (c.progress || 0).toFixed(3) : 0})`;
+    capMeter.setAttribute('aria-valuenow', String(pct));
+    if (!c) setText(capOut, 'Press Capture, then pick one note and let it ring for about three seconds.');
+    else if (c.stage === 'recording') setText(capOut, `Recording: play and hold one note (${pct}%)...`);
+    else if (c.stage === 'analysing') setText(capOut, 'Finding the pitch and building the terrain...');
+    else if (c.stage === 'done') setText(capOut, `Captured ${noteLabel(c.note)} (${c.freq.toFixed(1)} Hz), ${c.frames} frames, now on part ${c.part + 1}, slot ${c.slot}.`);
+    else setText(capOut, c.reason || 'The capture did not work.');
+    capOut.classList.toggle('is-bad', !!c && c.stage === 'error');
+  }
+  scope.add(rig.on('capture', () => schedule(renderCapture)));
+  scope.add(rig.on('pitch', (p) => schedule(() => setText(gPitch, p ? `Hearing ${noteLabel(p.midi)} (${p.freq.toFixed(1)} Hz)` : 'Hearing no clear pitch'))));
+  renderCapture();
+
+  const guitarGroup = h('section', { class: 'settings-group', 'aria-labelledby': 'pedals-guitar' },
+    h('h3', { class: 'group-title', id: 'pedals-guitar' }, 'Guitar'),
+    h('p', { class: 'setting-hint' }, 'Uses one channel of the pedal return, so it only runs while the return is open. Track the clean DI (before any drive) for steady notes. Not tested with a real guitar yet.'),
+    row('Input channel', 'Mono return + guitar: channel 2 is the clean DI. Stereo return: pick the side the guitar is on.', gChanWrap),
+    row('Guitar plays notes', 'Single notes from the guitar play a part, like a keyboard (MIDI out too)', gNotes.el),
+    row('Part', 'The part the guitar plays and Capture fills. Selected part follows the part you are editing (and Layer key mode).', gTarget.el),
+    row('Gate', 'Notes start above this level and stop below it. Lower is more sensitive; raise it if hum or string noise plays notes.', gGate.el),
+    row('Bends as pitch bend', 'Bends and vibrato move the part\'s pitch bend within its Bend range (Sound panel). Off, or with Bend at 0: a bend steps to the next note.', gBends.el),
+    gPitch,
+    row('Capture', 'Records one held note and turns it into a wavetable terrain, attack to decay, on the guitar\'s part', h('div', { class: 'inline-controls' }, capSlot.el, capBtn), 'setting-row--stack'),
+    capMeter, capOut);
+
   // ================================================================ ping
   const pingBtn = h('button', { type: 'button', class: 'btn btn--primary btn--sm', html: icon('wave') + '<span>Ping</span>' });
   const pingOut = h('p', { class: 'setting-hint pedal-ping', 'aria-live': 'polite' });
@@ -190,7 +265,7 @@ export function createPedalSettings(ctx) {
     row('Sample rate', 'Match the audio device. The MPC XL runs at 44.1 kHz. Auto lets the browser choose. Applies after a restart.', rateSeg.el),
     rateOut, h('div', { class: 'btn-row' }, reloadBtn));
 
-  root.append(sendGroup, retGroup, pingGroup);
+  root.append(sendGroup, retGroup, guitarGroup, pingGroup);
   appendMidi();
 
   // ================================================================ render
@@ -227,6 +302,17 @@ export function createPedalSettings(ctx) {
       deviceSel.disabled = !a.supported.chooseOutput;
       for (const c of [layout, retLevel, retDelay, retReverb]) c.setDisabled(!p.returnEnabled, 'Turn on the pedal return first');
       if (!a.supported.capture) retOn.setDisabled(!p.returnEnabled, 'This browser cannot capture audio here');
+      buildChannel();
+      const g = a.guitar || {};
+      const open = !!(r.open && p.returnEnabled);
+      for (const c of [gGate, gBends]) c.setDisabled(!p.guitarNotes, 'Turn on Guitar plays notes first');
+      const capBusy = !!g.capturing;
+      capBtn.disabled = !open || capBusy;
+      capBtn.dataset.tip = open ? 'Record one held note' : 'Turn on the pedal return first';
+      if (!p.guitarNotes) setText(gPitch, '');
+      else if (!open) setText(gPitch, 'Waiting for the pedal return to open.');
+      else if (!g.tracking) setText(gPitch, 'Starting the pitch tracker...');
+      else if (!gPitch.textContent || /Waiting|Starting/.test(gPitch.textContent)) setText(gPitch, 'Listening to the guitar.');
     }
     renderComp(st);
   }

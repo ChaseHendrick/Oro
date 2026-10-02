@@ -878,6 +878,32 @@ goes back into the pedal send. If it starts to feed back, Orograph mutes it and 
 **Unmute return** button. With **Mono return + guitar**, input channel 1 is the pedals and
 channel 2 is your guitar, which drives the **Guitar Level** Links source.
 
+**Guitar.** The Guitar group listens to one channel of the pedal return, so it only works
+while the return is open. **Input channel** picks it: with **Mono return + guitar** use
+channel 2, the clean DI (track the guitar before any drive or fuzz; distortion makes the
+pitch harder to find). Nothing here has been tried with a real guitar yet.
+
+* **Guitar plays notes** (off by default) turns single notes into notes on a part, like
+  playing the keyboard: **Part** is the selected part (which also follows Layer key mode)
+  or Part 1 to 4. A note starts when you pick it and the pitch is steady (expect a few
+  tens of milliseconds), a hammer-on, pull-off or slide changes to the new note, and the
+  note ends when you mute the string or it decays below the **Gate**. Lower the gate to
+  catch quieter playing; raise it if hum or string noise starts notes. Guitar notes go
+  through the same path as other notes, so the arpeggiator, sustain and MIDI out (Send
+  notes in MIDI & MPC) all apply. Play one note at a time; chords are not tracked.
+* **Bends as pitch bend**: bends and vibrato move the part's pitch bend, scaled to the
+  part's **Bend** range in the Sound panel (2 semitones by default). A bend wider than the
+  range becomes a new note. With this off, or with Bend at 0, a bend steps from note to
+  note instead.
+* **Capture** records one held note (about three seconds) and turns it into a wavetable
+  terrain: Orograph finds the note's pitch, cuts one cycle at a time from the pick attack
+  to the decay and lays them out along one axis of the map. Choose **Slot A** or **Slot
+  B**, press **Capture**, then pick one note and let it ring. The bar shows the progress,
+  then the pane shows the note and frequency it found, and the terrain is stored and
+  selected in that slot of the guitar's part (the selected part when Part is "Selected
+  part"), just like an imported WAV. If there is no steady pitch (a chord, a muted string,
+  silence) Orograph says so and changes nothing.
+
 **Latency.** **Ping** plays a short chirp on the send with the music muted and times how long
 it takes to come back (expect tens of milliseconds). Bypass delay, reverb and looper pedals
 first. The result is kept for this computer. Switch on **Compensate** to make up for it:

@@ -8,6 +8,9 @@
 //   effects master -> mainOut -> outputs 1/2 (or the plain stereo destination)
 //   pedal return (getUserMedia, voice processing off)
 //     -> level -> guard mute -> master bus, delay send, reverb send
+//   one input channel of the return (the guitar tap; channel 2 = the clean DI
+//   in "Mono return + guitar") -> pitch tracker (Guitar plays notes, events
+//   'guitarNote') and Capture (captureGuitar records it for a wavetable)
 //
 // The return is never connected to anything that leads back into the send, so
 // Orograph cannot feed its own return into the pedals; a loop can only close
@@ -21,7 +24,7 @@
 // glue, written against injectable `deps` so tests can run it on a fake context.
 
 import {
-  buildOutputRouting, createSendLimiter, openReturn, attachFeedbackGuard, measureRoundTrip, listAudioInputs,
+  buildOutputRouting, createSendLimiter, openReturn, attachFeedbackGuard, measureRoundTrip, listAudioInputs, createCapture,
 } from '../pedals/pedal-loop.js';
 import { createGuitarInput } from '../pedals/guitar.js';
 import { createEmitter } from './emitter.js';
@@ -30,6 +33,9 @@ export const DEFAULT_SEND_CHANNELS = Object.freeze([2, 3]);   // outputs 3 and 4
 export const DEFAULT_MAIN_CHANNELS = Object.freeze([0, 1]);
 export const DEFAULT_SEND_CEILING_DB = -18;
 export const RETURN_LAYOUTS = Object.freeze(['stereo', 'mono+guitar']);
+/** Guitar tap default: input channel 2 (0-based 1), the clean DI in "Mono return + guitar". */
+export const DEFAULT_GUITAR_CHANNEL = 1;
+export const CAPTURE_SECONDS = 3;
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -41,7 +47,8 @@ function validPair(p, fallback) {
 }
 
 const defaultDeps = {
-  buildOutputRouting, createSendLimiter, openReturn, attachFeedbackGuard, measureRoundTrip, listAudioInputs, createGuitarInput,
+  buildOutputRouting, createSendLimiter, openReturn, attachFeedbackGuard, measureRoundTrip, listAudioInputs, createGuitarInput, createCapture,
+  sleep: (ms) => new Promise(r => setTimeout(r, ms)),
   loadPedalWorklets: (ctx) => import('../pedals/worklet-loader.js').then(m => m.loadPedalWorklets(ctx)).catch(() => ({ ok: false })),
   hasGetUserMedia: () => typeof navigator !== 'undefined' && !!navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function',
 };
@@ -101,6 +108,13 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
   let guardTrip = null;
   let guitar = null;
   let guitarLevel = 0, guitarSent = 0;   // the DSP starts at 0
+  // Guitar plays notes / Capture: one channel of the return, tracked on demand.
+  const guitarCfg = { channel: DEFAULT_GUITAR_CHANNEL, notes: false, tracker: { gateDb: -50, bendRange: 2 } };
+  let tap = null;            // { node, owned: AudioNode[] } carrying only guitarCfg.channel
+  let noteInput = null;      // the createGuitarInput whose note events become 'guitarNote'
+  let noteShared = false;    // noteInput is the Guitar Level input (not ours to dispose)
+  let noteOffs = [];
+  let capturing = null;      // { progress } while captureGuitar runs
   let lastPing = null;
   let pinging = false;
   let queue = Promise.resolve();
@@ -191,6 +205,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
   }
 
   function closeReturn() {
+    closeGuitarTap();
     if (guitar) { try { guitar.dispose(); } catch { /* ignore */ } guitar = null; }
     guitarLevel = 0;
     postGuitar(0);
@@ -240,6 +255,145 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
         guitar = null;
         retInfo.warnings = [...retInfo.warnings, `Guitar tracking could not start (${(err && err.message) || err}).`];
       }
+    }
+    await syncGuitarNotes();
+  }
+
+  // ---------------------------------------------------------------- guitar notes / capture
+
+  /** The node carrying only input channel guitarCfg.channel of the open return (built on demand). */
+  function guitarTap() {
+    if (!ret) return null;
+    if (tap) return tap.node;
+    const ch = guitarCfg.channel;
+    if (retCfg.layout === 'mono+guitar' && ch === 1 && ret.guitar) {
+      tap = { node: ret.guitar, owned: [] };
+    } else if (ret.source && typeof ctx.createChannelSplitter === 'function') {
+      const split = ctx.createChannelSplitter(2);
+      const g = ctx.createGain();
+      g.channelCount = 1; g.channelCountMode = 'explicit'; g.channelInterpretation = 'discrete';
+      ret.source.connect(split);
+      split.connect(g, ch);
+      tap = { node: g, owned: [g, split], from: ret.source, split };
+    } else {
+      // No raw source (a stand-in return): its output is the best we have.
+      tap = { node: ret.output, owned: [] };
+    }
+    return tap.node;
+  }
+
+  function closeNoteInput() {
+    const had = !!noteInput;
+    for (const off of noteOffs) { try { off(); } catch { /* ignore */ } }
+    noteOffs = [];
+    if (noteInput && !noteShared) { try { noteInput.dispose(); } catch { /* ignore */ } }
+    noteInput = null;
+    noteShared = false;
+    // Whatever the guitar was holding must not hang.
+    if (had) events.emit('guitarNote', { type: 'stop' });
+  }
+
+  function closeGuitarTap() {
+    closeNoteInput();
+    if (tap) {
+      if (tap.from && tap.split) { try { tap.from.disconnect(tap.split); } catch { /* ignore */ } }
+      for (const n of tap.owned) { try { n.disconnect(); } catch { /* ignore */ } }
+      tap = null;
+    }
+  }
+
+  async function syncGuitarNotes() {
+    if (disposed) return;
+    if (!guitarCfg.notes || !ret) { closeNoteInput(); return; }
+    if (!noteInput) {
+      const node = guitarTap();
+      if (!node) return;
+      if (guitar && node === ret.guitar) {
+        noteInput = guitar;           // the Guitar Level input already tracks this channel
+        noteShared = true;
+      } else {
+        try {
+          await deps.loadPedalWorklets(ctx);
+          if (!ret || disposed || noteInput || !guitarCfg.notes) return;
+          noteInput = deps.createGuitarInput(ctx, node, { tracker: { ...guitarCfg.tracker } });
+          noteShared = false;
+        } catch (err) {
+          noteInput = null;
+          retInfo.warnings = [...retInfo.warnings, `Guitar notes could not start (${(err && err.message) || err}).`];
+          return;
+        }
+      }
+      const fwd = (type) => noteInput.on(type, (e) => events.emit('guitarNote', { ...e, type }));
+      noteOffs = ['noteOn', 'noteOff', 'bend', 'level', 'pitch'].map(fwd).filter(f => typeof f === 'function');
+    }
+    try { noteInput.configure({ tracker: { ...guitarCfg.tracker } }); } catch { /* old input */ }
+  }
+
+  /**
+   * Guitar plays notes and Capture: which input channel (0-based; 1 = channel
+   * 2, the clean DI in "Mono return + guitar"), whether to track notes, and the
+   * tracker's gate (dB) and bend range (semitones). Tracking only runs while
+   * the return is open; note events come out as host.on('guitarNote').
+   */
+  function setGuitar(o = {}) {
+    const run = queue.then(async () => {
+      if (disposed) return status();
+      const ch = o.channel != null ? clamp(Math.round(Number(o.channel)) || 0, 0, 1) : guitarCfg.channel;
+      if (ch !== guitarCfg.channel) { guitarCfg.channel = ch; closeGuitarTap(); }
+      if (o.notes != null) guitarCfg.notes = !!o.notes;
+      if (o.gateDb != null && Number.isFinite(Number(o.gateDb))) guitarCfg.tracker.gateDb = clamp(Number(o.gateDb), -90, 0);
+      if (o.bendRange != null && Number.isFinite(Number(o.bendRange))) guitarCfg.tracker.bendRange = clamp(Number(o.bendRange), 0.1, 24);
+      await syncGuitarNotes();
+      changed();
+      return status();
+    });
+    queue = run.catch(() => {});
+    return run;
+  }
+
+  /**
+   * Record the guitar channel for `seconds` (Capture). Resolves to
+   * {ok: true, samples: Float32Array, sampleRate} or {ok: false, reason}.
+   * onProgress(0..1) is called while recording.
+   */
+  async function captureGuitar({ seconds = CAPTURE_SECONDS, onProgress = null } = {}) {
+    const fail = (reason) => ({ ok: false, reason });
+    if (disposed) return fail('The audio engine was shut down.');
+    if (!ret) return fail('Turn on the pedal return first, so Orograph can hear the guitar.');
+    if (capturing) return fail('A capture is already running.');
+    if (ctx.state && ctx.state !== 'running') return fail('Start the audio first, then try Capture again.');
+    const secs = clamp(num(Number(seconds), CAPTURE_SECONDS), 0.5, 10);
+    capturing = { progress: 0 };
+    changed();
+    let cap = null, node = null;
+    try {
+      await deps.loadPedalWorklets(ctx);
+      node = guitarTap();
+      if (!node || !ret) return fail('The pedal return closed before the capture started.');
+      cap = deps.createCapture(ctx, { channels: 1, maxSeconds: secs + 0.5 });
+      node.connect(cap.input);
+      await cap.start();
+      const steps = Math.max(1, Math.round(secs * 10));
+      for (let i = 1; i <= steps; i++) {
+        await deps.sleep(secs * 1000 / steps);
+        if (disposed || !ret) return fail('The pedal return closed during the capture.');
+        capturing.progress = i / steps;
+        if (onProgress) { try { onProgress(capturing.progress); } catch { /* listener bug */ } }
+      }
+      const out = await cap.stop();
+      const samples = out && out[0];
+      if (!samples || !samples.length) return fail('Nothing was recorded. Check the input and try again.');
+      if (cap.dropouts) return fail('The browser was too busy to record cleanly. Close other tabs and try again.');
+      return { ok: true, samples, sampleRate: ctx.sampleRate };
+    } catch (err) {
+      return fail(`The capture failed (${(err && err.message) || err}).`);
+    } finally {
+      if (cap) {
+        try { if (node) node.disconnect(cap.input); } catch { /* ignore */ }
+        try { cap.dispose(); } catch { /* ignore */ }
+      }
+      capturing = null;
+      changed();
     }
   }
 
@@ -346,7 +500,12 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
         muteReason: guardTrip ? guardTrip.reason : null,
         outsideReason: g && g.outside ? g.outsideReason : null,
       },
-      guitar: { on: !!guitar, level: guitarLevel, via: guitar ? guitar.via : null },
+      guitar: {
+        on: !!guitar, level: guitarLevel, via: guitar ? guitar.via : null,
+        channel: guitarCfg.channel, notes: guitarCfg.notes, tracking: !!noteInput,
+        gateDb: guitarCfg.tracker.gateDb, bendRange: guitarCfg.tracker.bendRange,
+        capturing: !!capturing, captureProgress: capturing ? capturing.progress : 0,
+      },
       ping: lastPing ? { ...lastPing } : null,
       pinging,
     };
@@ -366,7 +525,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
   }
 
   return {
-    configure, refresh, setReturn, resetGuard, ping, status, dispose,
+    configure, refresh, setReturn, setGuitar, captureGuitar, resetGuard, ping, status, dispose,
     listInputs: () => deps.listAudioInputs(),
     get active() { return active; },
     get enabled() { return enabled; },
