@@ -12,6 +12,7 @@ import { createMusic } from './music/music.js';
 import { createPresets } from './presets/presets.js';
 import { createMidi } from './midi/midi.js';
 import { createUI } from './ui/app.js';
+import { savedContextSampleRate } from './pedals/rig-settings.js';
 
 async function boot() {
   const root = document.getElementById('app');
@@ -27,7 +28,10 @@ async function boot() {
   store.subscribe('parts', persist);
   store.subscribe('', (path) => { if (path === '') persist(); });
 
-  const engine = await createEngine({ store });
+  // Settings > Pedals > Sample rate (per computer): Auto, 44.1 kHz (the MPC XL)
+  // or 48 kHz. The context cannot change rate while running, so the choice
+  // applies here, at start-up.
+  const engine = await createEngine({ store, sampleRate: savedContextSampleRate() });
   const presets = createPresets({ store });
   // The preview picks its phrase from the patch category, which the preset library knows.
   const music = createMusic({ store, engine, presets });

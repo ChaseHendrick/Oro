@@ -26,6 +26,7 @@ import { loadWorkletModule, withTimeout } from './worklet-loader.js';
 import { bounceOptions, normaliseEvents, stemParts, passInit, renderPass, encodeBuffer } from './bounce.js';
 import { sequencerEvents } from './bounce-events.js';
 import { createPedalHost } from './pedal-host.js';
+import { dryDelaySamples, MAX_COMP_MS } from '../pedals/latency-comp.js';
 
 export { loadWorkletModule };
 
@@ -49,7 +50,9 @@ const QUANTUM_FRAMES = 128;
  * @param {object} o.store
  * @param {'auto'|'worklet'|'script'} [o.mode] force the DSP host (tests); 'auto' prefers the worklet
  * @param {boolean} [o.inlineTerrain] generate terrains on the main thread (tests)
- * @param {number} [o.sampleRate] request a context rate (default: the device's)
+ * @param {number} [o.sampleRate] request a context rate (default: the device's). The
+ *   context cannot be swapped later: Settings > Pedals stores the choice and main.js
+ *   passes it here on the next start (src/pedals/rig-settings.js).
  * @param {number} [o.maxRecordSeconds]
  */
 export async function createEngine({ store, mode: wantMode = 'auto', inlineTerrain = false, sampleRate, maxRecordSeconds = MAX_RECORD_SECONDS, terrainWorkers = 2 } = {}) {
@@ -98,10 +101,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   const marbles = Array.from({ length: NUM_PARTS }, () => null);
   let transportMsg = null;
   // v1.1 pedal loop state the DSP needs back after a rebuild.
-  let pedalMsg = null, guitarMsg = null;
+  let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
+  let pedalCompMs = 0;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
     if (pedalMsg && pedalMsg.active) out.push({ ...pedalMsg });
+    if (dryDelayMsg && dryDelayMsg.samples) out.push({ ...dryDelayMsg });
     if (guitarMsg && guitarMsg.v) out.push({ ...guitarMsg });
     controllers.forEach((c, part) => {
       if (c.bend) out.push({ t: 'bend', part, v: c.bend });
@@ -389,6 +394,21 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
      * ping(), resetGuard(), status(), on('change' | 'guitar' | 'ping', fn).
      */
     get pedals() { return pedals; },
+    /**
+     * Pedal latency compensation (src/pedals/latency-comp.js): delay the dry
+     * sound of Send mode parts (pedal send above 0, Insert off) by `ms` while
+     * the pedal send runs, so it lines up with the pedal return. 0 = off.
+     * Returns the delay in samples.
+     */
+    setPedalCompensation(ms) {
+      pedalCompMs = Number.isFinite(ms) && ms > 0 ? Math.min(ms, MAX_COMP_MS) : 0;
+      const samples = ctx ? dryDelaySamples(pedalCompMs, ctx.sampleRate) : 0;
+      if (dryDelayMsg && dryDelayMsg.samples === samples) return samples;
+      dryDelayMsg = { t: 'dryDelay', samples };
+      post(dryDelayMsg);
+      return samples;
+    },
+    get pedalCompensationMs() { return pedalCompMs; },
 
     async start() {
       wantRunning = true;
@@ -513,7 +533,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         // render starts its bar at 0 (events from music.renderEvents say so too).
         // The pedals are hardware and cannot take part in an offline render:
         // the bounce plays every part dry (Insert ignored, no pedal send).
-        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar');
+        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'dryDelay');
         snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
         if (opts.quality && QUALITY_MODES.includes(opts.quality)) snapshot.push({ t: 'quality', mode: opts.quality });
         const terrains = terrain.messages();
@@ -659,6 +679,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         generator: generator.stats(),
         fx: fx ? fx.stats() : null,
         pedals: pedals ? pedals.status() : null,
+        pedalCompensation: { ms: pedalCompMs, samples: dryDelayMsg ? dryDelayMsg.samples : 0 },
         import: { ...importStats },
         sync: sync.stats(),
         quality,

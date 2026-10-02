@@ -17,6 +17,19 @@ export const RETURN_LAYOUT_OPTIONS = Object.freeze([
   Object.freeze({ value: 'stereo', label: 'Stereo return' }),
   Object.freeze({ value: 'mono+guitar', label: 'Mono return + guitar' }),
 ]);
+/**
+ * Audio context sample rate (Settings > Pedals). 'auto' leaves it to the
+ * browser (usually the device's rate); the MPC XL runs at 44.1 kHz. The engine
+ * cannot swap its AudioContext while running, so a change applies on the next
+ * start (Settings offers a Reload button).
+ */
+export const SAMPLE_RATE_OPTIONS = Object.freeze([
+  Object.freeze({ value: 'auto', label: 'Auto' }),
+  Object.freeze({ value: 44100, label: '44.1 kHz' }),
+  Object.freeze({ value: 48000, label: '48 kHz' }),
+]);
+/** Manual latency offset range (ms), added to the measured round trip. */
+export const COMP_OFFSET_RANGE = Object.freeze({ min: -200, max: 200 });
 /** Sources a pedal can follow from Settings (a subset of PEDAL_SOURCES). */
 export const FOLLOW_SOURCES = Object.freeze(PEDAL_SOURCES.filter(s => /^macro\d$/.test(s.id) || s.id === 'guitar'));
 
@@ -45,6 +58,10 @@ export function defaultRig() {
     returnReverb: 0,
     midiOutputId: '',
     lastLatencyMs: null,
+    // Latency compensation (src/pedals/latency-comp.js): off by default.
+    compensate: 0,
+    compOffsetMs: 0,
+    sampleRate: 'auto',
     pedals: Object.fromEntries(PEDAL_IDS.map(id => [id, defaultPedalEntry(id)])),
   };
 }
@@ -84,6 +101,9 @@ export function sanitizeRig(src) {
     returnReverb: clamp(num(src.returnReverb, d.returnReverb), 0, 1),
     midiOutputId: str(src.midiOutputId, d.midiOutputId),
     lastLatencyMs: Number.isFinite(src.lastLatencyMs) && src.lastLatencyMs >= 0 && src.lastLatencyMs < 2000 ? src.lastLatencyMs : null,
+    compensate: flag(src.compensate, d.compensate),
+    compOffsetMs: Math.round(clamp(num(src.compOffsetMs, d.compOffsetMs), COMP_OFFSET_RANGE.min, COMP_OFFSET_RANGE.max) * 10) / 10,
+    sampleRate: SAMPLE_RATE_OPTIONS.some(o => o.value === src.sampleRate) ? src.sampleRate : d.sampleRate,
     pedals: Object.fromEntries(PEDAL_IDS.map(id => [id, sanitizePedal(id, src.pedals && src.pedals[id])])),
   };
 }
@@ -99,6 +119,20 @@ export function loadRig(storage = globalThis.localStorage) {
 
 export function saveRig(rig, storage = globalThis.localStorage) {
   try { if (storage) storage.setItem(RIG_KEY, JSON.stringify(sanitizeRig(rig))); } catch { /* storage full or blocked */ }
+}
+
+/** The sampleRate to ask createEngine for: undefined for 'auto' (the browser's choice). */
+export function contextSampleRate(rig) {
+  const v = rig && rig.sampleRate;
+  return v === 44100 || v === 48000 ? v : undefined;
+}
+
+/**
+ * Read the saved sample-rate choice before the engine starts (main.js). Never
+ * throws; anything unreadable means 'auto'.
+ */
+export function savedContextSampleRate(storage = globalThis.localStorage) {
+  return contextSampleRate(loadRig(storage));
 }
 
 /** 0-based channels of an output pair. */

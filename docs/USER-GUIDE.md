@@ -880,7 +880,27 @@ channel 2 is your guitar, which drives the **Guitar Level** Links source.
 
 **Latency.** **Ping** plays a short chirp on the send with the music muted and times how long
 it takes to come back (expect tens of milliseconds). Bypass delay, reverb and looper pedals
-first. Orograph does not yet shift anything by the measured time.
+first. The result is kept for this computer. Switch on **Compensate** to make up for it:
+
+* Parts in **Insert** mode: sequencer notes, and the arpeggiator while the transport plays,
+  are sent out early by the round trip, so what comes back from the pedals lands on the
+  beat. The step lights, dot locks and MIDI out stay on the beat.
+* Parts with a **Pedal** send (not Insert): the same notes go out early, and the part's
+  own dry sound (with its delay and reverb sends) is held back by the round trip, so the dry
+  sound and the pedals line up, on the beat.
+* **Offset** (in ms) is added to the measured round trip. Use it to fine tune by ear, or on
+  its own if Ping cannot hear the return.
+* Notes you play live (keys, MIDI in, or the arpeggiator with the transport stopped) cannot
+  be sent early. An Insert part played live is heard a round trip late, and a Send part
+  played live has its dry sound delayed to match the pedals.
+* Nothing moves while the pedal send is off. Parts without a Pedal send are never moved.
+* The transport waits the round trip before the first beat after you press Play.
+
+**Sample rate.** The MPC XL runs at 44.1 kHz. **Sample rate** offers **Auto** (the browser
+decides, usually the device's rate), **44.1 kHz** and **48 kHz**. The audio engine cannot
+change rate while running, so a new choice applies after a restart: press **Reload now**
+(the session is saved first). If the browser refuses the rate, the pane says so and keeps
+running at its own rate.
 
 **Pedal MIDI.** Switch on the pedals you have (OBNE Purr-ting, Chase Bliss Lost + Found,
 Cornerstone Nucleo, Walrus Xero) and set each one's MIDI channel; Orograph warns when two
@@ -891,7 +911,7 @@ the output chosen in MIDI & MPC unless you pick another one here. Values marked 
 confirmed come from the manuals but have not been checked on the pedal.
 
 These settings belong to this computer, not to a song. Patches never change a part's pedal
-routing, and bounces render every part dry. Routing details for the MPC XL are in
+routing, and bounces render every part dry, with no compensation. Routing details for the MPC XL are in
 [PEDALS.md](PEDALS.md).
 
 ---

@@ -16,6 +16,9 @@ export const LATE_WINDOW = 0.04;   // a grid step missed by less than this still
 // Notes of a chord arrive a few ms apart over MIDI; wait this long before the
 // first arp step so Down/Chord modes see the whole chord.
 export const GATHER_MS = 8;
+// Pedal latency compensation (src/pedals/latency-comp.js): the most a part's
+// sequenced notes may be sent ahead of the time they should be heard.
+export const MAX_LEAD = 0.5;
 
 const SOURCES_WITHOUT_ROUTE = new Set(['seq', 'arp']);
 
@@ -23,6 +26,9 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   const emitter = createEmitter();
   let kick = () => {};
   let order = 0;
+  // part -> seconds its sequenced notes are sent early (pedal latency
+  // compensation); null = none. Set by the pedal rig.
+  let leadFn = null;
   // `${source}:${note}` -> parts the note was sent to, so a note-off reaches the
   // same parts even if the key mode or selected part changed in between.
   const routes = new Map();
@@ -80,16 +86,36 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     else timers.setTimeout(() => emitter.emit('note', detail), delay);
   }
 
-  function engineOn(part, note, vel, time, source) {
+  /** Seconds part `p`'s sequenced notes go out early (0..MAX_LEAD). */
+  function leadFor(p) {
+    if (!leadFn || !validPart(p)) return 0;
+    let v = 0;
+    try { v = Number(leadFn(p)); } catch { v = 0; }
+    return Number.isFinite(v) && v > 0 ? Math.min(v, MAX_LEAD) : 0;
+  }
+
+  /**
+   * Engine time for a note heard at `time` sent `lead` seconds early, never in
+   * the past. Only the engine call moves: 'sched' (MIDI out) and 'note'
+   * (visuals) keep the heard time.
+   */
+  function engineTime(time, lead) {
+    if (!(lead > 0) || !(time > 0)) return time;
+    return Math.max(time - lead, timebase.now());
+  }
+
+  function engineOn(part, note, vel, time, source, lead = 0) {
     if (note < 0 || note > 127) return;
-    try { if (engine) engine.noteOn(part, note, vel, time, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOn failed', err); }
+    const et = engineTime(time, lead);
+    try { if (engine) engine.noteOn(part, note, vel, et, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOn failed', err); }
     emitter.emit('sched', { part, note, vel, on: true, time, source });
     announce({ part, note, vel, on: true, source }, time);
   }
 
-  function engineOff(part, note, time, source) {
+  function engineOff(part, note, time, source, lead = 0) {
     if (note < 0 || note > 127) return;
-    try { if (engine) engine.noteOff(part, note, time, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOff failed', err); }
+    const et = engineTime(time, lead);
+    try { if (engine) engine.noteOff(part, note, et, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOff failed', err); }
     emitter.emit('sched', { part, note, vel: 0, on: false, time, source });
     announce({ part, note, vel: 0, on: false, source }, time);
   }
@@ -346,10 +372,10 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     return [run[i]];
   }
 
-  function playArpStep(p, cfg, pool, t, off) {
+  function playArpStep(p, cfg, pool, t, off, lead = 0) {
     for (const n of nextArpNotes(p, cfg, pool)) {
-      engineOn(p, n.note, n.vel, t, 'arp');
-      engineOff(p, n.note, off, 'arp');
+      engineOn(p, n.note, n.vel, t, 'arp', lead);
+      engineOff(p, n.note, off, 'arp', lead);
     }
   }
 
@@ -368,6 +394,10 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       if (!pool.length) { stopArp(p); continue; }
       if (arp.fresh && now < arp.gatherUntil && timebase.running()) continue;
       if (grid) {
+        // On the grid the arp is sequenced: a part through the pedals is
+        // scheduled early (and further ahead) by its latency compensation.
+        const lead = leadFor(p);
+        const reach = horizon + lead;
         if (arp.nextBeat == null || arp.rateIdx !== cfg.rateIdx) {
           const from = arp.nextBeat != null && arp.rateIdx != null
             ? grid.timeAt(arp.nextBeat, arp.rateIdx)
@@ -381,7 +411,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
         }
         for (let guard = 0; guard < 64; guard++) {
           let t = grid.timeAt(arp.nextBeat, cfg.rateIdx);
-          if (t >= horizon) break;
+          if (t >= reach) break;
           const step = Math.round(arp.nextBeat / cfg.rate);
           arp.nextBeat = (step + 1) * cfg.rate;
           if (t < now) {
@@ -390,7 +420,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
           }
           const tNext = grid.timeAt(arp.nextBeat, cfg.rateIdx);
           const off = Math.max(t + 0.01, Math.min(t + cfg.gate * cfg.rate * grid.spb, tNext - MIN_GAP));
-          playArpStep(p, cfg, pool, t, off);
+          playArpStep(p, cfg, pool, t, off, lead);
           arp.fresh = false;
         }
         arp.pendingTime = grid.timeAt(arp.nextBeat, cfg.rateIdx);
@@ -427,6 +457,18 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     // Internal hooks used by the transport.
     scheduleArps, arpActive,
     setKick(fn) { kick = typeof fn === 'function' ? fn : () => {}; },
+    /**
+     * Pedal latency compensation: fn(part) -> seconds that part's sequenced
+     * notes (step sequencer, arp on the grid) are sent early; null turns it off.
+     */
+    setLead(fn) { leadFn = typeof fn === 'function' ? fn : null; },
+    leadFor,
+    /** The largest lead of any part (the transport starts this much later). */
+    maxLead() {
+      let m = 0;
+      if (leadFn) for (let p = 0; p < NUM_PARTS; p++) m = Math.max(m, leadFor(p));
+      return m;
+    },
     _emit: (type, detail) => emitter.emit(type, detail),
     /** Drop queued `source` notes that would start after audio time `after` (engine side). */
     _cancelAfter(after, source) {

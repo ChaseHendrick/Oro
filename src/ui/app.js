@@ -198,7 +198,7 @@ export function createUI(root, modules = {}) {
   // without Web Audio or MIDI it reports why and the rest of the UI is unchanged.
   ctx.pedals = null;
   try {
-    ctx.pedals = createPedalRig({ store, engine, midi });
+    ctx.pedals = createPedalRig({ store, engine, midi, router: music ? music.router : null });
     scope.add(ctx.pedals.dispose);
     ctx.pedals.restore().catch((err) => console.warn('[ui] could not restore the pedal rig', err));
   } catch (err) {

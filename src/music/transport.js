@@ -14,6 +14,12 @@
 // Dot locks (see locks.js) ride on the same scheduler: a locked step hands its
 // spot to the lock player with the step's audio time, and the player starts
 // the glide when that moment is heard.
+//
+// Pedal latency compensation (src/pedals/latency-comp.js): the router may give
+// a part a lead (router.leadFor). That part's steps are scheduled up to the
+// lead further ahead and sent to the engine that much earlier (never in the
+// past); everything else here (step announcements, locks, currentStep, MIDI
+// out) stays on the heard time.
 
 import { NUM_PARTS, SEQ_RATES, stepToMidi, clamp } from '../core/params.js';
 import { createEmitter } from './emitter.js';
@@ -153,11 +159,13 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     return -1;
   }
 
+  const leadOf = (p) => (typeof router.leadFor === 'function' ? router.leadFor(p) : 0);
+
   function releaseTies(now) {
     for (let p = 0; p < NUM_PARTS; p++) {
       const tie = ps[p].tie;
       if (!tie) continue;
-      router._engineOff(p, tie.note, Math.max(now, tie.onTime + 0.01), 'seq');
+      router._engineOff(p, tie.note, Math.max(now, tie.onTime + 0.01), 'seq', tie.lead);
       ps[p].tie = null;
     }
   }
@@ -170,7 +178,9 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     else timers.setTimeout(() => emitter.emit('step', detail), delay);
   }
 
-  function playStep(p, seq, idx, t, tNext, rate) {
+  // A tied note ends with the lead it started with, so a lead that changes
+  // mid-tie can never put its note-off before its note-on.
+  function playStep(p, seq, idx, t, tNext, rate, lead = 0) {
     const st = ps[p];
     const step = seq.steps && seq.steps[idx];
     st.heard.push({ time: t, step: idx });
@@ -181,7 +191,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     if (lock) locks.schedule(p, idx, lock, t, clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t));
     const active = seq.enabled && step && step.on;
     if (!active) {
-      if (st.tie) { router._engineOff(p, st.tie.note, t, 'seq'); st.tie = null; }
+      if (st.tie) { router._engineOff(p, st.tie.note, t, 'seq', st.tie.lead); st.tie = null; }
       return;
     }
     const note = clamp(stepToMidi(step, seq.baseOctave ?? 3, store.get('global.scaleRoot') || 0, store.get('global.scaleType') || 0), 0, 127);
@@ -189,16 +199,16 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     const gateEnd = Math.max(t + 0.01, Math.min(t + clamp(step.gate ?? 0.5, 0.05, 1) * rate * spb, tNext - MIN_GAP));
     if (st.tie && st.tie.note === note) {
       // Same pitch tied over: the note simply keeps sounding.
-      if (!step.slide) { router._engineOff(p, note, gateEnd, 'seq'); st.tie = null; }
+      if (!step.slide) { router._engineOff(p, note, gateEnd, 'seq', st.tie.lead); st.tie = null; }
       return;
     }
-    router._engineOn(p, note, vel, t, 'seq');
+    router._engineOn(p, note, vel, t, 'seq', lead);
     if (st.tie) {
-      router._engineOff(p, st.tie.note, t + SLIDE_OVERLAP, 'seq');
+      router._engineOff(p, st.tie.note, t + SLIDE_OVERLAP, 'seq', st.tie.lead);
       st.tie = null;
     }
-    if (step.slide) st.tie = { note, onTime: t };
-    else router._engineOff(p, note, gateEnd, 'seq');
+    if (step.slide) st.tie = { note, onTime: t, lead };
+    else router._engineOff(p, note, gateEnd, 'seq', lead);
   }
 
   function scheduleSeq(now, horizon) {
@@ -215,19 +225,22 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         st.rateIdx = rateIdx;
       }
       const len = clamp(Math.round(seq.length || 16), 1, 16);
+      // A part through the pedals with compensation on looks further ahead.
+      const lead = leadOf(p);
+      const reach = horizon + lead;
       for (let guard = 0; guard < 64; guard++) {
         let t = swungTime(st.absStep * rate, rateIdx);
-        if (t >= horizon) break;
+        if (t >= reach) break;
         const idx = ((st.absStep % len) + len) % len;
         st.absStep++;
         if (t < now - LATE_WINDOW) {
           // Too late to be heard in time (tab was frozen): skip rather than pile up.
-          if (st.tie) { router._engineOff(p, st.tie.note, now, 'seq'); st.tie = null; }
+          if (st.tie) { router._engineOff(p, st.tie.note, now, 'seq', st.tie.lead); st.tie = null; }
           continue;
         }
         if (t < now) t = now;
         const tNext = swungTime(st.absStep * rate, rateIdx);
-        playStep(p, seq, idx, t, tNext, rate);
+        playStep(p, seq, idx, t, tNext, rate, lead);
       }
     }
   }
@@ -243,7 +256,10 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
 
   function anchorInternal(now) {
     spb = 60 / tempoNow();
-    anchorTime = now + START_DELAY;
+    // Leave room for the largest compensation lead, so the first notes of a
+    // part through the pedals can go out early too.
+    const maxLead = typeof router.maxLead === 'function' ? router.maxLead() : 0;
+    anchorTime = now + START_DELAY + maxLead;
     anchorBeat = 0;
     frontier = now;
     clockIdx = 0;
@@ -277,7 +293,10 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       if (external) horizon = Math.min(horizon, timeAt(extLastBeat + Math.max(EXT_AHEAD_BEATS, lookahead / spb)));
       scheduleSeq(now, horizon);
       if (!external) scheduleClock(now, horizon);
-      frontier = Math.max(frontier, horizon);
+      // Compensated parts are scheduled up to their lead past the horizon;
+      // a tempo change must re-anchor beyond what they already queued.
+      const maxLead = typeof router.maxLead === 'function' ? router.maxLead() : 0;
+      frontier = Math.max(frontier, horizon + maxLead);
     }
     router.scheduleArps(now, horizon, live ? grid : null, tempoNow());
     if (!playing && !router.arpActive()) stopTimer();

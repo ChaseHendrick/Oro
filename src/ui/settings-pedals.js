@@ -9,7 +9,7 @@ import { createSegmented, createToggle, createSelect, createMiniSlider } from '.
 import { schedule } from './frame.js';
 import { icon } from './icons.js';
 import { PEDAL_IDS, PEDAL_PROFILES, AUDIO_ONLY_PEDALS, MIDI_ROUTES, engageControl, tapControl } from '../pedals/profiles.js';
-import { OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, FOLLOW_SOURCES } from '../pedals/rig-settings.js';
+import { OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, FOLLOW_SOURCES, SAMPLE_RATE_OPTIONS, COMP_OFFSET_RANGE } from '../pedals/rig-settings.js';
 
 const CHANNELS = Array.from({ length: 16 }, (_, i) => ({ value: i + 1, label: `Ch ${i + 1}` }));
 
@@ -157,10 +157,38 @@ export function createPedalSettings(ctx) {
     else setText(pingOut, r.reason || 'No clear ping came back.');
   }
   renderPing(null);
+
+  // Latency compensation: the round trip (plus a manual offset) moves
+  // sequenced notes of parts through the pedals earlier, and delays the dry
+  // sound of Send mode parts (src/pedals/latency-comp.js).
+  const compOn = own(createToggle(ctx, rigBinding(rig, 'compensate', { label: 'Compensate', default: 0 }), { label: 'Compensate', className: 'toggle--switch' }));
+  const offsetIn = h('input', {
+    type: 'number', class: 'field pedal-offset', min: String(COMP_OFFSET_RANGE.min), max: String(COMP_OFFSET_RANGE.max), step: '0.5',
+    value: String(rig.prefs.compOffsetMs), 'aria-label': 'Latency offset in milliseconds',
+  });
+  scope.on(offsetIn, 'change', () => {
+    const v = Number(offsetIn.value);
+    rig.set({ compOffsetMs: Number.isFinite(v) ? v : 0 });
+  });
+  const compOut = h('p', { class: 'setting-hint pedal-comp', 'aria-live': 'polite' });
+
+  // Sample rate: applies on the next start (the audio context cannot change rate).
+  const rateSeg = own(createSegmented(ctx, rigBinding(rig, 'sampleRate', { label: 'Sample rate', default: 'auto' }), {
+    label: 'Sample rate', size: 'sm', options: SAMPLE_RATE_OPTIONS,
+  }));
+  const rateOut = h('p', { class: 'setting-hint pedal-rate', 'aria-live': 'polite' });
+  const reloadBtn = h('button', { type: 'button', class: 'btn btn--sm', hidden: true, html: icon('rotate') + '<span>Reload now</span>', dataset: { tip: 'Restart Orograph with the new sample rate. The session is saved first.' } });
+  scope.on(reloadBtn, 'click', () => rig.reload());
+
   const pingGroup = h('section', { class: 'settings-group', 'aria-labelledby': 'pedals-ping' },
     h('h3', { class: 'group-title', id: 'pedals-ping' }, 'Latency'),
     row('Ping', 'Plays a short chirp on the send with the music muted and times how long it takes to come back. Bypass delay, reverb and looper pedals first.', pingBtn),
-    pingOut);
+    pingOut,
+    row('Compensate', 'Sequencer and arp notes of parts through the pedals go out early by the round trip, so the pedal return lands on the grid. Send parts also delay their dry sound to match. Notes you play live cannot go out early.', compOn.el),
+    row('Offset', 'Added to the measured round trip, in ms (use it alone if you cannot ping)', offsetIn),
+    compOut,
+    row('Sample rate', 'Match the audio device. The MPC XL runs at 44.1 kHz. Auto lets the browser choose. Applies after a restart.', rateSeg.el),
+    rateOut, h('div', { class: 'btn-row' }, reloadBtn));
 
   root.append(sendGroup, retGroup, pingGroup);
   appendMidi();
@@ -199,6 +227,27 @@ export function createPedalSettings(ctx) {
       deviceSel.disabled = !a.supported.chooseOutput;
       for (const c of [layout, retLevel, retDelay, retReverb]) c.setDisabled(!p.returnEnabled, 'Turn on the pedal return first');
       if (!a.supported.capture) retOn.setDisabled(!p.returnEnabled, 'This browser cannot capture audio here');
+    }
+    renderComp(st);
+  }
+  function renderComp(st) {
+    const p = st.prefs;
+    const c = st.compensation;
+    const sr = st.sampleRate;
+    if (document.activeElement !== offsetIn) offsetIn.value = String(p.compOffsetMs);
+    offsetIn.disabled = !p.compensate;
+    if (!c || !c.on) setText(compOut, 'Compensation is off: parts through the pedals are heard a round trip late.');
+    else if (!(c.ms > 0)) setText(compOut, 'Compensating 0 ms. Press Ping, or type an offset.');
+    else if (!c.applied) setText(compOut, `Compensating ${fmtMs(c.ms)} once the pedal send is running.`);
+    else setText(compOut, `Compensating ${fmtMs(c.ms)}: Insert and Send parts' sequenced notes go out ${fmtMs(c.ms)} early, and Send parts' dry sound waits ${fmtMs(c.ms)}.`);
+    if (sr) {
+      const khz = (hz) => `${Math.round(hz / 100) / 10} kHz`;
+      const now = sr.running ? `Running at ${khz(sr.running)}.` : 'Audio is not running.';
+      let msg = now;
+      if (sr.pending) msg = `${now} The new setting (${sr.want ? khz(sr.want) : 'Auto'}) applies after a restart.`;
+      else if (sr.refused) msg = `${now} The browser did not accept ${khz(sr.want)}.`;
+      setText(rateOut, msg);
+      reloadBtn.hidden = !sr.pending;
     }
   }
   const invalidate = () => schedule(render);

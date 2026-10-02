@@ -70,6 +70,9 @@ const MARBLE_TIME = 0.03;               // smoothing of the ~30 Hz marble physic
 const AIR_RMS = 0.3;                    // Air at 1: noise RMS in the audible band
 const AIR_PIVOT = 1200;                 // Air Tone tilt pivot (Hz)
 const COMB_FMIN = 30;                   // lowest comb frequency (Hz): sizes the delay lines
+// Pedal latency compensation (v1.1): the longest dry delay a Send mode part
+// can get, in seconds (src/pedals/latency-comp.js MAX_COMP_MS).
+export const MAX_DRY_DELAY_SEC = 0.5;
 const ECO_DELAY = 15;                   // Eco: host samples of delay = the half-band's latency
 
 const IDLE = 0, ATTACK = 1, DECAY = 2, RELEASE = 3;
@@ -587,6 +590,9 @@ class Part {
     // mixer
     this.gain = 0; this.dGain = 0; this.dly = 0; this.dDly = 0; this.rev = 0; this.dRev = 0;
     this.ped = 0; this.dPed = 0;   // pedal send (v1.1), the fourth bus
+    // Dry delay of a Send mode part (pedal latency compensation): a ring
+    // buffer at the host rate, allocated the first time it is needed.
+    this.ddL = null; this.ddR = null; this.ddW = 0; this.ddN = 0;
     this.tail = 0;
 
     // voice bus at the oversampled rate with the decimator history in front
@@ -682,6 +688,23 @@ class Part {
       g.outL = new Float64Array(n); g.outR = new Float64Array(n);
       g.rc.busL = g.busL; g.rc.busR = g.busR;
     }
+  }
+
+  /**
+   * Delay the part's dry output (and its delay/reverb sends) by `n` host
+   * samples, 0 = off. A change starts from silence rather than replaying
+   * whatever an earlier setting left in the buffer.
+   */
+  setDryDelay(n) {
+    if (n === this.ddN) return;
+    if (n > 0) {
+      let size = 64;
+      while (size <= n) size <<= 1;
+      if (!this.ddL || this.ddL.length < size) { this.ddL = new Float64Array(size); this.ddR = new Float64Array(size); }
+      else { this.ddL.fill(0); this.ddR.fill(0); }
+      this.ddW = 0;
+    }
+    this.ddN = n;
   }
 
   /** Recompute the summed contribution of the part-wide Link sources. */
@@ -801,6 +824,9 @@ export class OrographDSP {
     // computer (outputs 3/4); until then the send bus stays silent and Insert
     // is ignored, so a part can never go quiet with nowhere to go.
     this.pedalOn = false;
+    // Pedal latency compensation: dry delay (host samples) for parts in Send
+    // mode (pedal send above 0, Insert off) while the pedal loop runs.
+    this.dryDelayN = 0;
     this.guitar = 0; this.sGuitar = 0;  // Guitar Level link source (0..1), smoothed like the marble
     this.transport = { playing: false, beatTime: 0, beat: 0 };
     this.watch = 0;
@@ -902,6 +928,7 @@ export class OrographDSP {
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
       case 'pedal': this.pedalOn = !!msg.active; break;
+      case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
       case 'watch': {
@@ -2163,6 +2190,8 @@ export class OrographDSP {
       P.dRev = (P.revS - P.rev) / CTRL;
       if (P.pedS === 0 && Math.abs(P.ped) < 1e-9) P.ped = 0;  // exact zero, so the send loop is skipped
       P.dPed = (P.pedS - P.ped) / CTRL;
+      // Send mode with compensation: the dry sound waits for the pedal return.
+      P.setDryDelay(pedalOn && this.dryDelayN > 0 && P.params[PI.pedalInsert] < 0.5 && P.params[PI.pedalSend] > 0 ? this.dryDelayN : 0);
 
       // terrain crossfades
       if (P.oldA) {
@@ -3495,7 +3524,7 @@ export class OrographDSP {
         P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg;
         continue;
       }
-      if (active > 0 || ghostOn) P.tail = HB_N;
+      if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
       const rc = P.rc, os = rc.os;
       const n2 = os * seg, off2 = os * pos;
       for (const v of P.voices) {
@@ -3538,6 +3567,28 @@ export class OrographDSP {
       }
       if (P.oldA) { P.fadeACur += P.dFadeA * n2; if (P.fadeACur < 0) P.fadeACur = 0; }
       if (P.oldB) { P.fadeBCur += P.dFadeB * n2; if (P.fadeBCur < 0) P.fadeBCur = 0; }
+      // pedal send (skipped while it is and stays silent, the usual case),
+      // taken before the dry delay: the pedals get the part on time
+      if (P.ped !== 0 || P.dPed !== 0) {
+        let pd = P.ped;
+        const dpd = P.dPed;
+        if (pedL) for (let n = pos; n < pos + seg; n++) { pd += dpd; pedL[n] += oL[n] * pd; pedR[n] += oR[n] * pd; }
+        else pd += dpd * seg;
+        P.ped = pd;
+      }
+      if (P.ddN > 0) {
+        // Send mode compensation: the dry sound and its delay/reverb sends
+        // come out ddN samples late, in step with the pedal return.
+        const bl = P.ddL, br = P.ddR, mask = bl.length - 1, N = P.ddN;
+        let w = P.ddW;
+        for (let n = pos; n < pos + seg; n++) {
+          bl[w] = oL[n]; br[w] = oR[n];
+          const r = (w - N) & mask;
+          oL[n] = bl[r]; oR[n] = br[r];
+          w = (w + 1) & mask;
+        }
+        P.ddW = w;
+      }
       let gn = P.gain, dl = P.dly, rv = P.rev;
       const dgn = P.dGain, ddl = P.dDly, drv = P.dRev;
       for (let n = pos; n < pos + seg; n++) {
@@ -3548,14 +3599,6 @@ export class OrographDSP {
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }
       P.gain = gn; P.dly = dl; P.rev = rv;
-      // pedal send (skipped while it is and stays silent, the usual case)
-      if (P.ped !== 0 || P.dPed !== 0) {
-        let pd = P.ped;
-        const dpd = P.dPed;
-        if (pedL) for (let n = pos; n < pos + seg; n++) { pd += dpd; pedL[n] += oL[n] * pd; pedR[n] += oR[n] * pd; }
-        else pd += dpd * seg;
-        P.ped = pd;
-      }
       if (active === 0 && !ghostOn) {
         P.tail -= seg;
         if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0); }

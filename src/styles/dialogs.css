@@ -224,7 +224,8 @@
 .settings-pedals .inline-controls { flex-wrap: wrap; }
 .settings-pedals .inline-controls .select { min-width: 220px; flex: 1 1 220px; }
 .pedal-slider { width: 180px; flex: none; }
-.pedal-ping { margin-top: 4px; font-variant-numeric: tabular-nums; }
+.pedal-ping, .pedal-comp, .pedal-rate { margin-top: 4px; font-variant-numeric: tabular-nums; }
+.pedal-offset { width: 88px; flex: none; }
 .pedal-meter { display: block; width: 180px; height: 8px; border-radius: 4px; background: var(--knob-track); overflow: hidden; }
 .pedal-meter-fill { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); }
 .pedal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 10px 0; }

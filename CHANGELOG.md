@@ -24,7 +24,16 @@ MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet*
   automatic gain switched off. It joins the master and can feed the delay and reverb, but
   never goes back into the send. A feedback guard mutes it if it starts to howl or run
   away.
-* **Ping** measures the round trip through the pedals.
+* **Ping** measures the round trip through the pedals and keeps the result for this
+  computer.
+* **Latency compensation** (Settings > Pedals > Compensate, plus a manual Offset in ms):
+  sequencer notes and the arpeggiator on the transport go out early by the round trip for
+  parts through the pedals, so the pedal return lands on the beat; parts in Send mode also
+  delay their dry sound by the same amount so dry and pedals line up. Notes played live
+  cannot be sent early. Not tested with real pedals.
+* **Sample rate** choice (Auto, 44.1 kHz, 48 kHz) in Settings > Pedals to match the device;
+  the MPC XL runs at 44.1 kHz. Applies after a restart, with a Reload now button. Not tested
+  with a real MPC XL.
 * **Guitar Level**, a new Links source: with the "Mono return + guitar" input layout, the
   guitar on input channel 2 can move any modulatable control.
 
@@ -45,8 +54,8 @@ MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet*
 
 ### Not in this version yet
 
-* Latency compensation from the Ping result, guitar pitch tracking to notes, Capture
-  (a held guitar note as a wavetable terrain), and scenes recalling pedal presets.
+* Guitar pitch tracking to notes, Capture (a held guitar note as a wavetable terrain),
+  scenes recalling pedal presets, and compensating the patch preview and Explore notes.
 
 ## 0.1.0 (first release, October 2026)
 

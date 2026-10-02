@@ -8,23 +8,29 @@
 import { createEmitter } from '../audio/emitter.js';
 import { PEDAL_IDS, PEDAL_PROFILES, channelConflicts, withChannel } from '../pedals/profiles.js';
 import { createPedalMidi } from '../pedals/pedal-midi.js';
-import { loadRig, saveRig, sanitizeRig, pairChannels } from '../pedals/rig-settings.js';
+import { loadRig, saveRig, sanitizeRig, pairChannels, contextSampleRate } from '../pedals/rig-settings.js';
+import { compensationMs, partLeadSeconds } from '../pedals/latency-comp.js';
 
 const AUDIO_KEYS = ['enabled', 'outputDeviceId', 'mainPair', 'sendPair', 'ceilingDb'];
 const RETURN_KEYS = ['returnEnabled', 'returnDeviceId', 'returnLayout', 'returnLevel', 'returnDelay', 'returnReverb'];
+const COMP_KEYS = ['compensate', 'compOffsetMs', 'lastLatencyMs'];
 
 /**
  * @param {object} o
  * @param {object} o.store
  * @param {object|null} o.engine  needs engine.pedals for audio; setOutputDevice for the device picker
  * @param {object|null} o.midi    needs midi.sendRaw for pedal MIDI
+ * @param {object|null} [o.router] the note router (src/music/router.js): its setLead takes the latency compensation
  * @param {Storage} [o.storage]
  * @param {() => Promise<boolean>} [o.micGranted] whether the return may reopen without a prompt
+ * @param {() => void} [o.reload] restarts the app (a sample-rate change applies on the next start)
  */
-export function createPedalRig({ store, engine = null, midi = null, storage = globalThis.localStorage, micGranted = defaultMicGranted } = {}) {
+export function createPedalRig({ store, engine = null, midi = null, router = null, storage = globalThis.localStorage, micGranted = defaultMicGranted, reload = defaultReload } = {}) {
   const events = createEmitter();
   const host = engine && engine.pedals ? engine.pedals : null;
   let prefs = loadRig(storage);
+  // The rate main.js asked the engine for when it started (same storage).
+  const bootRate = contextSampleRate(prefs);
   let lastError = null;
   let disposed = false;
   const offs = [];
@@ -99,6 +105,20 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
     });
   }
 
+  // ------------------------------------------------------- latency compensation
+  // Sequenced notes of parts through the pedals go out early (router), and the
+  // dry sound of Send mode parts waits for the return (engine / DSP). Both only
+  // act while the pedal send really runs; see src/pedals/latency-comp.js.
+  const sendActive = () => !!(host && host.active);
+  const leadFn = (p) => partLeadSeconds(store.get(`parts.${p}.params`), compensationMs(prefs), sendActive());
+  function applyCompensation() {
+    const ms = compensationMs(prefs);
+    if (engine && typeof engine.setPedalCompensation === 'function') {
+      try { engine.setPedalCompensation(ms); } catch (err) { lastError = `Latency compensation could not be applied: ${(err && err.message) || err}`; }
+    }
+    if (router && typeof router.setLead === 'function') router.setLead(ms > 0 ? leadFn : null);
+  }
+
   /** Change rig settings (any subset). Saves, then applies what changed. */
   async function set(patch = {}) {
     const before = prefs;
@@ -107,6 +127,7 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
     lastError = null;
     const diff = (keys) => keys.some(k => before[k] !== prefs[k]);
     if (JSON.stringify(before.pedals) !== JSON.stringify(prefs.pedals)) applyMidi();
+    if (diff(COMP_KEYS)) applyCompensation();
     changed();
     if (diff(AUDIO_KEYS)) await applyAudio();
     if (diff(RETURN_KEYS)) await applyReturn();
@@ -129,7 +150,11 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
   async function ping() {
     if (!host) return { ok: false, reason: 'The pedal loop needs Web Audio, which is not running here.' };
     const res = await host.ping();
-    if (res && res.ok) { prefs = sanitizeRig({ ...prefs, lastLatencyMs: Math.round(res.latencyMs * 10) / 10 }); saveRig(prefs, storage); }
+    if (res && res.ok) {
+      prefs = sanitizeRig({ ...prefs, lastLatencyMs: Math.round(res.latencyMs * 10) / 10 });
+      saveRig(prefs, storage);
+      applyCompensation();
+    }
     changed();
     return res;
   }
@@ -155,9 +180,38 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
     return channelConflicts(list);
   }
 
+  /** What the latency compensation does right now. */
+  function compensation() {
+    const ms = compensationMs(prefs);
+    return {
+      on: !!prefs.compensate,
+      ms,
+      measuredMs: prefs.lastLatencyMs,
+      offsetMs: prefs.compOffsetMs,
+      // Nothing moves while the send is off (no part goes through the pedals).
+      applied: ms > 0 && sendActive(),
+    };
+  }
+
+  /** The sample rate asked for, the one running, and whether a restart is needed. */
+  function sampleRate() {
+    const want = contextSampleRate(prefs);
+    const running = engine && Number.isFinite(engine.sampleRate) ? engine.sampleRate : 0;
+    return {
+      choice: prefs.sampleRate,
+      want: want || null,
+      running,
+      pending: want !== bootRate,
+      // Asked for at start-up but the browser gave something else.
+      refused: !!(bootRate && want === bootRate && running && running !== bootRate),
+    };
+  }
+
   function status() {
     return {
       prefs: sanitizeRig(prefs),
+      compensation: compensation(),
+      sampleRate: sampleRate(),
       audio: host ? host.status() : null,
       midi: { available: midiOk(), status: midi ? midi.status : 'unsupported', stats: pmidi.stats(), lastError: pmidi.lastError },
       conflicts: conflicts(),
@@ -168,6 +222,7 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
   /** At start-up: bring the saved rig back. The return only reopens without a prompt. */
   async function restore() {
     applyMidi();
+    applyCompensation();
     if (!host) return status();
     if (prefs.enabled) await applyAudio();
     if (prefs.returnEnabled) {
@@ -181,6 +236,7 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
 
   function dispose() {
     disposed = true;
+    if (router && typeof router.setLead === 'function') router.setLead(null);
     for (const off of offs) { try { off(); } catch { /* ignore */ } }
     pmidi.dispose();
     events.clear();
@@ -192,10 +248,17 @@ export function createPedalRig({ store, engine = null, midi = null, storage = gl
     get pedalMidi() { return pmidi; },
     get supported() { return !!host; },
     set, setPedal, reconnectReturn, ping, pedalAction, conflicts, status, restore, dispose,
+    compensation, sampleRate,
+    /** Restart the app so a new sample rate takes effect (the session autosaves on the way out). */
+    reload: () => reload(),
     listInputs: () => (host ? host.listInputs() : Promise.resolve([])),
     listOutputs: () => (engine && typeof engine.listOutputDevices === 'function' ? engine.listOutputDevices() : Promise.resolve([])),
     on: (name, fn) => events.on(name, fn),
   };
+}
+
+function defaultReload() {
+  if (typeof location !== 'undefined' && typeof location.reload === 'function') location.reload();
 }
 
 async function defaultMicGranted() {
