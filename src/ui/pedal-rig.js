@@ -6,10 +6,13 @@
 // Capture (a held note -> a wavetable terrain on a part). Settings > Pedals and the mixer
 // strips read and change it through this object; nothing here is needed for
 // the synth to work, and every part copes with a missing engine, host or MIDI.
+// It also drives the pedals' modulated controls (Macros, Guitar level, pedal
+// LFOs) and sends the pedal presets stored with scenes and patches when they
+// load (patches only with "Patches recall pedal presets" on).
 
 import { createEmitter } from '../audio/emitter.js';
 import { PEDAL_IDS, PEDAL_PROFILES, channelConflicts, withChannel } from '../pedals/profiles.js';
-import { createPedalMidi } from '../pedals/pedal-midi.js';
+import { createPedalMidi, createLfoSource } from '../pedals/pedal-midi.js';
 import { loadRig, saveRig, sanitizeRig, pairChannels, contextSampleRate } from '../pedals/rig-settings.js';
 import { compensationMs, partLeadSeconds } from '../pedals/latency-comp.js';
 import { createGuitarNotes } from '../pedals/guitar-notes.js';
@@ -34,11 +37,17 @@ export function noteLabel(m) {
  * @param {object|null} o.engine  needs engine.pedals for audio; setOutputDevice for the device picker
  * @param {object|null} o.midi    needs midi.sendRaw for pedal MIDI
  * @param {object|null} [o.router] the note router (src/music/router.js): its setLead takes the latency compensation, and receives Guitar plays notes
+ * @param {object|null} [o.presets] preset library; its scene / patch 'load' events carry pedal presets
+ * @param {object|null} [o.transport] for the tempo of synced LFOs (follows external clock); else global.tempo
  * @param {Storage} [o.storage]
  * @param {() => Promise<boolean>} [o.micGranted] whether the return may reopen without a prompt
  * @param {() => void} [o.reload] restarts the app (a sample-rate change applies on the next start)
+ * @param {object} [o.clock] { now, setTimer, clearTimer } for the pedal MIDI scheduler (tests)
  */
-export function createPedalRig({ store, engine = null, midi = null, router = null, storage = globalThis.localStorage, micGranted = defaultMicGranted, reload = defaultReload, analyse = captureToWavetable } = {}) {
+export function createPedalRig({
+  store, engine = null, midi = null, router = null, presets = null, transport = null,
+  storage = globalThis.localStorage, micGranted = defaultMicGranted, reload = defaultReload, analyse = captureToWavetable, clock = {},
+} = {}) {
   const events = createEmitter();
   const host = engine && engine.pedals ? engine.pedals : null;
   let prefs = loadRig(storage);
@@ -59,8 +68,30 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
       if (!midiOk()) throw new Error('MIDI is not connected');
       if (!midi.sendRaw(bytes, ts, prefs.midiOutputId || null)) throw new Error('No MIDI output is selected, or it was unplugged');
     },
+    ...(clock.now ? { now: clock.now } : {}),
+    ...(clock.setTimer ? { setTimer: clock.setTimer } : {}),
+    ...(clock.clearTimer ? { clearTimer: clock.clearTimer } : {}),
   });
-  offs.push(pmidi.on((e) => { if (e.type === 'error') { lastError = e.message; changed(); } }));
+  const nowMs = () => (clock.now ? clock.now() : (typeof performance !== 'undefined' ? performance.now() : Date.now()));
+  // An LFO can fail 100 times a second (output unplugged): report each new problem once.
+  offs.push(pmidi.on((e) => { if (e.type === 'error' && e.message !== lastError) { lastError = e.message; changed(); } }));
+
+  // Tempo for synced pedal LFOs: the transport's (it follows external clock), else the tempo knob.
+  const tempo = () => {
+    let b = NaN;
+    if (transport && typeof transport.tempo === 'function') { try { b = Number(transport.tempo()); } catch { b = NaN; } }
+    if (!(b > 0)) b = Number(store.get('global.tempo'));
+    return b > 0 ? b : 120;
+  };
+  // One LFO per modulation slot that uses one, kept across edits so its phase carries on.
+  const lfos = new Map();
+
+  function pushMacros() {
+    for (let i = 1; i <= 4; i++) {
+      const v = Number(store.get(`global.macro${i}`));
+      if (Number.isFinite(v)) pmidi.input(`macro${i}`, v);
+    }
+  }
 
   function applyMidi() {
     const present = new Set(pmidi.pedals().map(p => p.id));
@@ -72,15 +103,36 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
       } else if (present.has(id)) pmidi.removePedal(id);
     }
     pmidi.clearMappings();
+    const wanted = new Set();
     for (const id of PEDAL_IDS) {
       const p = prefs.pedals[id];
-      if (p.enabled && p.followSource && p.followControl) pmidi.map({ source: p.followSource, pedal: id, control: p.followControl });
+      if (!p.enabled) continue;
+      const used = new Set();
+      p.mods.forEach((m, slot) => {
+        // Two slots on one control would fight: the first one wins (the card says so).
+        if (!m.source || !m.control || used.has(m.control)) return;
+        used.add(m.control);
+        let source = m.source;
+        if (source === 'lfo') {
+          source = lfoId(id, slot);
+          wanted.add(source);
+          const opts = { shape: m.lfoShape, rateHz: m.lfoRate, beats: m.lfoSync ? m.lfoBeats : 0, depth: m.lfoDepth };
+          const have = lfos.get(source);
+          if (have) Object.assign(have, opts);
+          else {
+            const lfo = createLfoSource(opts);
+            lfos.set(source, lfo);
+            pmidi.addLfo(source, lfo, { bpm: tempo });
+          }
+        }
+        pmidi.map({ id: `${id}:${slot}`, source, pedal: id, control: m.control, min: m.min, max: m.max, curve: m.curve });
+      });
     }
+    for (const key of [...lfos.keys()]) if (!wanted.has(key)) { pmidi.removeLfo(key); lfos.delete(key); }
+    // The LFO clock runs only while some pedal control follows an LFO.
+    if (lfos.size && midiOk()) pmidi.start(); else pmidi.stop();
     // Push the current macro values through the new mappings.
-    for (let i = 1; i <= 4; i++) {
-      const v = Number(store.get(`global.macro${i}`));
-      if (Number.isFinite(v)) pmidi.input(`macro${i}`, v);
-    }
+    pushMacros();
   }
   const lastMacro = {};
   offs.push(store.subscribe('global', () => {
@@ -117,6 +169,50 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     const tc = notes.trackerConfig();
     if (JSON.stringify([prefs.guitarChannel, prefs.guitarNotes, tc]) !== trackerSent) applyGuitar();
   }));
+
+  // ---------------------------------------------------------------- pedal presets
+  const recent = new Map(); // `${id}:${program}` -> ms, so a patch loaded into several parts sends once
+  /**
+   * Send stored pedal presets ({ pedalId: program }) as Program Change on each
+   * switched-on pedal's channel. Pedals that are off, or have no such preset,
+   * are skipped. Controls that follow a Macro are sent again after the change,
+   * so the mapping stays in charge of them. Returns one result per pedal.
+   */
+  function recallPresets(map, { from = 'scene' } = {}) {
+    const out = [];
+    if (!map || typeof map !== 'object') return out;
+    const t = nowMs();
+    for (const [id, program] of Object.entries(map)) {
+      const want = prefs.pedals[id];
+      if (!want) { out.push({ pedal: id, program, ok: false, reason: 'Unknown pedal.' }); continue; }
+      if (!want.enabled) { out.push({ pedal: id, program, ok: false, skipped: true, reason: 'This pedal is switched off in Settings > Pedals.' }); continue; }
+      if (!midiOk()) { out.push({ pedal: id, program, ok: false, reason: 'MIDI is not available here.' }); continue; }
+      const key = `${id}:${program}`;
+      if (recent.has(key) && t - recent.get(key) < 50) { out.push({ pedal: id, program, ok: true, repeat: true }); continue; }
+      recent.set(key, t);
+      out.push({ pedal: id, program, ...pmidi.programChange(id, program, { time: t }) });
+    }
+    if (out.some(r => r.ok && !r.repeat)) pushMacros();
+    events.emit('recall', { from, results: out });
+    return out;
+  }
+  if (presets && typeof presets.on === 'function') {
+    const onPreset = (e) => {
+      if (!e || e.action !== 'load' || !e.pedalPresets) return;
+      if (e.kind === 'scene') recallPresets(e.pedalPresets, { from: 'scene' });
+      else if (e.kind === 'patch' && prefs.patchesRecallPedals) recallPresets(e.pedalPresets, { from: 'patch' });
+    };
+    const off = presets.on('change', onPreset);
+    offs.push(typeof off === 'function' ? off : () => { if (typeof presets.off === 'function') presets.off('change', onPreset); });
+  }
+
+  /** The preset each pedal was last sent from here (null when unknown), to fill in a scene or patch. */
+  function lastPrograms() {
+    const st = pmidi.getState();
+    const out = {};
+    for (const id of PEDAL_IDS) if (st[id] && st[id].program != null) out[id] = st[id].program;
+    return out;
+  }
 
   // ---------------------------------------------------------------- audio
   async function applyOutputDevice() {
@@ -179,6 +275,13 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
   function setPedal(id, patch = {}) {
     if (!PEDAL_PROFILES[id]) return Promise.resolve(status());
     return set({ pedals: { [id]: { ...prefs.pedals[id], ...patch } } });
+  }
+
+  /** Change one modulation slot of a pedal (source, control, min, max, curve, lfo*). */
+  function setPedalMod(id, slot, patch = {}) {
+    if (!PEDAL_PROFILES[id] || !prefs.pedals[id].mods[slot]) return Promise.resolve(status());
+    const mods = prefs.pedals[id].mods.map((m, i) => (i === slot ? { ...m, ...patch } : m));
+    return setPedal(id, { mods });
   }
 
   /** Reopen the return with the saved settings (after a refused permission or an unplugged input). */
@@ -336,14 +439,22 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
     events.clear();
   }
 
+  // Read-only view of the settings, rebuilt only when they change (the Settings
+  // pane reads it once per control on every change).
+  let view = null, viewOf = null;
+  function prefsView() {
+    if (viewOf !== prefs) { view = deepFreeze(sanitizeRig(prefs)); viewOf = prefs; }
+    return view;
+  }
+
   return {
-    get prefs() { return sanitizeRig(prefs); },
+    get prefs() { return prefsView(); },
     get host() { return host; },
     get pedalMidi() { return pmidi; },
     get supported() { return !!host; },
     get guitarNotes() { return notes; },
-    set, setPedal, reconnectReturn, ping, pedalAction, captureNote, conflicts, status, restore, dispose,
-    compensation, sampleRate,
+    set, setPedal, setPedalMod, reconnectReturn, ping, pedalAction, captureNote, conflicts, status, restore, dispose,
+    compensation, sampleRate, recallPresets, lastPrograms,
     /** Restart the app so a new sample rate takes effect (the session autosaves on the way out). */
     reload: () => reload(),
     listInputs: () => (host ? host.listInputs() : Promise.resolve([])),
@@ -354,6 +465,16 @@ export function createPedalRig({ store, engine = null, midi = null, router = nul
 
 function defaultReload() {
   if (typeof location !== 'undefined' && typeof location.reload === 'function') location.reload();
+}
+
+const lfoId = (pedal, slot) => `lfo:${pedal}:${slot}`;
+
+function deepFreeze(o) {
+  if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const v of Object.values(o)) deepFreeze(v);
+  }
+  return o;
 }
 
 async function defaultMicGranted() {

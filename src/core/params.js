@@ -293,7 +293,10 @@ export function defaultPart(i) {
 
 // Saved state format. 2 = v1.1 (pedal send params, Guitar Level link source);
 // migrateState() loads version 1 sessions with the new values at their defaults (off).
-export const STATE_VERSION = 2;
+// 3 = v1.1 pedal presets: a scene may carry `pedalPresets` (one Program Change
+// per pedal, see src/pedals/pedal-presets.js) next to its state. Sessions are
+// unchanged; migrateScene() loads version 1 and 2 scenes with none.
+export const STATE_VERSION = 3;
 
 export function defaultState() {
   return {

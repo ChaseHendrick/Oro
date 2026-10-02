@@ -185,8 +185,10 @@
 .preset-name { font-weight: 560; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preset-desc { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preset-meta { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--font-mono); white-space: nowrap; }
-.preset-del { opacity: 0; }
-.preset-item:hover .preset-del, .preset-item.is-active .preset-del, .preset-del.is-confirm { opacity: 1; }
+.preset-del, .preset-pedals-btn { opacity: 0; }
+.preset-item:hover .preset-del, .preset-item.is-active .preset-del, .preset-del.is-confirm,
+.preset-item:hover .preset-pedals-btn, .preset-item.is-active .preset-pedals-btn, .preset-pedals-btn:focus-visible { opacity: 1; }
+@media (pointer: coarse) { .preset-pedals-btn { opacity: 1; } }
 .preset-del.is-confirm { width: auto; padding: 0 6px; font-size: var(--fs-xs); font-weight: 650; }
 .preset-empty { padding: 26px 12px; text-align: center; color: var(--text-3); }
 .browser-foot { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-top: 1px solid var(--divider); }
@@ -246,6 +248,22 @@
 .pedal-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pedal-program { width: 76px; }
 .pedal-notes { margin: 0; padding-left: 18px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.45; }
+.pedal-mod { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: var(--r-sm); min-width: 0; }
+.pedal-mod .pedal-line .select { flex: 1 1 96px; }
+.pedal-mod .pedal-line .pedal-mod-curve { flex: 0 1 90px; }
+.pedal-mod-slider { flex: 1 1 64px; min-width: 56px; }
+.pedal-mod .pedal-line .mini-label { width: auto; min-width: 40px; }
+.pedal-mod-value { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.pedal-mod-warn { margin: 0; color: var(--warn); font-size: var(--fs-xs); }
+/* Pedal presets in the scene and patch save forms. */
+.pedal-presets { margin-top: 10px; }
+.pedal-presets > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-2); }
+.pedal-presets-rows { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 6px 8px; align-items: center; margin-top: 8px; }
+.pedal-presets-name { font-size: var(--fs-sm); color: var(--text); min-width: 0; }
+.pedal-presets-name small { display: block; color: var(--text-3); font-size: var(--fs-xs); }
+.pedal-presets .field[aria-invalid="true"] { border-color: var(--warn); }
+.pedal-presets .popover-note { max-width: none; }
+.preset-pedals { color: var(--text-3); font-size: var(--fs-xs); }
 @media (max-width: 899px) {
   .pedal-slider, .pedal-meter { width: 100%; }
   .pedal-cards { grid-template-columns: minmax(0, 1fr); }

@@ -1,10 +1,14 @@
 // Patch browser in the top bar: previous / next, a searchable categorised
 // list of patches and scenes, Save, Dice (randomise) and Init, plus scene
-// saving and JSON export / import in the list footer.
+// saving and JSON export / import in the list footer. With the pedal rig, the
+// save forms have a "Pedal presets" section and your own scenes and patches a
+// button to edit theirs.
 
 import { h, createScope, setText, listen, call, has, uniqueId, downloadBlob, softDisable } from './dom.js';
 import { openPopover } from './layers.js';
 import { icon } from './icons.js';
+import { createPedalPresetFields, openPedalPresetEditor } from './pedal-presets-form.js';
+import { describePedalPresets } from '../pedals/pedal-presets.js';
 
 export function matchesQuery(item, q) {
   if (!q) return true;
@@ -106,6 +110,12 @@ export function createPatchBrowser(ctx) {
   return { el, step, openBrowser: () => { if (ok) pop = openBrowser(ctx, open); }, dispose: scope.dispose };
 }
 
+/** Your own scene or patch called `name`, as listed (with its pedal presets), or null. */
+function userItem(presets, kind, name) {
+  const list = (kind === 'patch' ? call(presets, 'patches') : call(presets, 'scenes')) || [];
+  return list.find(x => !x.factory && x.name === name) || null;
+}
+
 /** Small popover asking for a name, then saving a patch or a scene. */
 export function openSaveForm(ctx, anchor, kind) {
   const { store, binder, presets } = ctx;
@@ -117,21 +127,36 @@ export function openSaveForm(ctx, anchor, kind) {
     value: current && current !== 'Init' ? current : '', placeholder: kind === 'patch' ? 'My patch' : 'My scene',
   });
   const go = h('button', { type: 'submit', class: 'btn btn--primary btn--sm' }, 'Save');
+  // Pedal presets (v1.1): only with the pedal rig and a pedal that takes presets.
+  const existing = () => userItem(presets, kind, input.value.trim());
+  const fields = createPedalPresetFields(ctx, { kind, initial: (existing() || {}).pedalPresets || null });
+  if (fields) {
+    // Typing the name of one of your own scenes or patches shows its pedal presets (until you change them).
+    input.addEventListener('input', () => { if (!fields.touched()) fields.fill((existing() || {}).pedalPresets || null); });
+  }
   const form = h('form', { class: 'save-form' },
     h('div', { class: 'popover-title' }, kind === 'patch' ? 'Save patch' : 'Save scene'),
     h('p', { class: 'popover-note' }, kind === 'patch' ? 'Saves the sound of this part (not its pattern) to your patches.' : 'Saves all four parts, patterns, tempo and key as a scene.'),
-    h('div', { class: 'save-row' }, input, go));
+    h('div', { class: 'save-row' }, input, go),
+    fields ? fields.el : null);
   let pop;
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = input.value.trim() || (kind === 'patch' ? 'My patch' : 'My scene');
+    // Left out (no section), an existing scene or patch keeps the pedal presets it had.
+    let pedalPresets;
+    if (fields) {
+      const r = fields.read();
+      if (!r.ok) { ctx.toast(r.reason, { kind: 'error' }); if (r.input) r.input.focus(); return; }
+      pedalPresets = r.value;
+    }
     try {
       let saved = name;
       if (kind === 'patch') {
-        const id = presets.savePatch(part, name);
+        const id = presets.savePatch(part, name, { pedalPresets });
         saved = (typeof presets.getPatch === 'function' && id != null && presets.getPatch(id)?.name) || store.get(`parts.${part}.patchName`) || name;
       } else {
-        const id = presets.saveScene(name);
+        const id = presets.saveScene(name, { pedalPresets });
         saved = (typeof presets.getScene === 'function' && id != null && presets.getScene(id)?.name) || name;
       }
       ctx.toast(kind === 'patch' ? `Saved patch "${saved}"` : `Saved scene "${saved}"`, { kind: 'success' });
@@ -200,15 +225,31 @@ function openBrowser(ctx, anchor) {
         const id = uniqueId('opt');
         const isCurrent = tab === 'patches' && it.name === current;
         const del = it.factory ? null : h('button', { type: 'button', class: 'icon-btn icon-btn--xs preset-del', tabindex: '-1', 'aria-label': `Delete ${it.name}`, html: icon('trash') });
+        // Your own scenes and patches: edit the pedal presets they recall (v1.1).
+        const pedalBtn = it.factory || !ctx.pedals ? null : h('button', {
+          type: 'button', class: 'icon-btn icon-btn--xs preset-pedals-btn', tabindex: '-1', 'aria-label': `Pedal presets of ${it.name}`,
+          dataset: { tip: 'Pedal presets' }, html: icon('pedal'),
+        });
         const meta = tab === 'scenes' ? h('span', { class: 'preset-meta' }, [it.tempo ? `${Math.round(it.tempo)} BPM` : '', it.key || ''].filter(Boolean).join(' · ')) : (it.factory ? null : h('span', { class: 'badge' }, 'User'));
+        const pedalText = describePedalPresets(it.pedalPresets);
         const opt = h('div', {
           class: ['preset-item', isCurrent && 'is-current'], role: 'option', id, 'aria-selected': String(isCurrent), dataset: { id: String(it.id) },
-        }, h('span', { class: 'preset-texts' }, h('span', { class: 'preset-name' }, it.name), tab === 'scenes' && it.description ? h('span', { class: 'preset-desc' }, it.description) : null), meta, del);
-        opt.addEventListener('pointerdown', (e) => { if (!e.target.closest('.preset-del')) e.preventDefault(); });
+        }, h('span', { class: 'preset-texts' }, h('span', { class: 'preset-name' }, it.name),
+          tab === 'scenes' && it.description ? h('span', { class: 'preset-desc' }, it.description) : null,
+          pedalText ? h('span', { class: 'preset-desc preset-pedals' }, `Pedals: ${pedalText}`) : null), meta, pedalBtn, del);
+        opt.addEventListener('pointerdown', (e) => { if (!e.target.closest('.preset-del, .preset-pedals-btn')) e.preventDefault(); });
         opt.addEventListener('click', (e) => {
-          if (e.target.closest('.preset-del')) return;
+          if (e.target.closest('.preset-del, .preset-pedals-btn')) return;
           choose(it);
         });
+        if (pedalBtn) {
+          pedalBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const kind = tab === 'patches' ? 'patch' : 'scene';
+            pop.close('pedals');
+            openPedalPresetEditor(ctx, anchor, kind, it);
+          });
+        }
         if (del) {
           del.addEventListener('click', (e) => {
             e.stopPropagation();

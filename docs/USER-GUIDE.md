@@ -931,14 +931,36 @@ running at its own rate.
 **Pedal MIDI.** Switch on the pedals you have (OBNE Purr-ting, Chase Bliss Lost + Found,
 Cornerstone Nucleo, Walrus Xero) and set each one's MIDI channel; Orograph warns when two
 pedals on the same cable share a channel. Each card has **Effect on**, **Bypass**, **Tap
-tempo** (four taps at the song tempo) and **Send preset** where the pedal supports them,
-plus **Follow**: one pedal control that follows a Macro or the guitar level. Messages go to
-the output chosen in MIDI & MPC unless you pick another one here. Values marked as not
-confirmed come from the manuals but have not been checked on the pedal.
+tempo** (four taps at the song tempo) and **Send preset** where the pedal supports them.
+Messages go to the output chosen in MIDI & MPC unless you pick another one here. Values
+marked as not confirmed come from the manuals but have not been checked on the pedal.
 
-These settings belong to this computer, not to a song. Patches never change a part's pedal
-routing, and bounces render every part dry, with no compensation. Routing details for the MPC XL are in
-[PEDALS.md](PEDALS.md).
+**Moving pedal controls.** Each pedal card has two **Mod** slots. In each, pick a
+**Source** (Off, Macro 1-4, Guitar level or LFO) and the pedal **Control** it moves. **Min**
+and **Max** set the range sent to the pedal (set Min above Max to turn it upside down) and
+**Curve** shapes it (Linear, Soft, Hard). With **LFO** you also get the **Shape** (sine,
+triangle, saw, square, random), the rate in **Hz** or synced to the **Tempo** (from 1/16
+note to 8 bars per cycle, following the song tempo or external clock), and **Depth**, how
+much of the range it sweeps around the middle. Orograph only sends a value when it changes,
+and never more than about 100 messages a second per pedal, so a fast LFO cannot crowd out a
+tap or a preset change. If both slots pick the same control, the first one wins.
+
+**Pedal presets in scenes and patches.** When you save a scene or a patch with pedals
+switched on, the save form has a **Pedal presets** section: type a preset number for each
+pedal, or leave a box empty to leave that pedal as it is. Numbers mean what they mean on the
+pedal: on the Lost + Found 0 is **Live**, the Purr-ting's presets start at 1. Your own
+scenes and patches also have a pedal button in the browser to change these later. Loading a
+scene sends its presets (Program Change) to the pedals switched on in Settings > Pedals.
+Patches only do so when **Patches recall pedal presets** is on in Settings > Pedals; it is
+off by default, so loading a patch someone shared with you never changes your pedals.
+After a preset change, controls that follow a Macro are sent again so the Macro stays in
+charge.
+
+These settings belong to this computer, not to a song: only the preset numbers travel with
+scenes and patches. Patches never change a part's pedal routing, and bounces render every
+part dry, with no compensation. Routing details for the MPC XL are in [PEDALS.md](PEDALS.md). As with the rest of
+this chapter, pedal LFOs and preset recall have only been tested with simulated MIDI, not
+with the real pedals.
 
 ---
 

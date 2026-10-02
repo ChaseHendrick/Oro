@@ -2,16 +2,20 @@
 // device and channel map for the pedal send, the send ceiling, the pedal
 // return (input, layout, levels, feedback guard), the guitar on the return
 // (Guitar plays notes, Capture to a wavetable terrain), the latency ping, and the
-// MIDI pedal profiles (Purr-ting, Lost + Found, Nucleo, Xero). Everything goes
-// through ctx.pedals (src/ui/pedal-rig.js); without it the pane explains why.
+// MIDI pedal profiles (Purr-ting, Lost + Found, Nucleo, Xero) with up to
+// MOD_SLOTS modulated controls per pedal (Macro, Guitar level or an LFO), and
+// whether patches may recall pedal presets. Everything goes through ctx.pedals
+// (src/ui/pedal-rig.js); without it the pane explains why.
 
 import { h, createScope, setText, call } from './dom.js';
 import { createSegmented, createToggle, createSelect, createMiniSlider } from './controls.js';
 import { schedule } from './frame.js';
 import { icon } from './icons.js';
 import { PEDAL_IDS, PEDAL_PROFILES, AUDIO_ONLY_PEDALS, MIDI_ROUTES, engageControl, tapControl } from '../pedals/profiles.js';
+import { programHint } from '../pedals/pedal-presets.js';
 import {
-  OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, FOLLOW_SOURCES, SAMPLE_RATE_OPTIONS, COMP_OFFSET_RANGE,
+  OUTPUT_PAIRS, SEND_CEILINGS, RETURN_LAYOUT_OPTIONS, MOD_SOURCES, MOD_SLOTS, LFO_SHAPES, MAP_CURVES,
+  LFO_RATE_MIN, LFO_RATE_MAX, LFO_BEAT_OPTIONS, SAMPLE_RATE_OPTIONS, COMP_OFFSET_RANGE,
   GUITAR_TARGETS, CAPTURE_SLOTS, GUITAR_GATE_MIN_DB, GUITAR_GATE_MAX_DB, guitarChannelOptions,
 } from '../pedals/rig-settings.js';
 import { DEFAULT_GATE_DB } from '../pedals/guitar-notes.js';
@@ -42,7 +46,18 @@ function pedalBinding(rig, id, key, def) {
   });
 }
 
+/** A binding over one field of one modulation slot of a pedal. */
+function modBinding(rig, id, slot, key, def) {
+  return rigBinding(rig, `${id}.mod${slot}.${key}`, def, {
+    get: () => rig.prefs.pedals[id].mods[slot][key],
+    set: (v) => { rig.setPedalMod(id, slot, { [key]: v }); },
+  });
+}
+
 const fmtMs = (ms) => `${ms.toFixed(ms < 10 ? 2 : 1)} ms`;
+const fmtPct = (v) => `${Math.round(v * 100)}%`;
+const fmtHz = (v) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)} Hz`;
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function createPedalSettings(ctx) {
   const scope = createScope();
@@ -359,12 +374,16 @@ export function createPedalSettings(ctx) {
       if (typeof off === 'function') scope.add(off);
     }
     scope.on(outSel, 'change', () => rig.set({ midiOutputId: outSel.value }));
+    const recallPatches = own(createToggle(ctx, rigBinding(rig, 'patchesRecallPedals', { label: 'Patches recall pedal presets', default: 0 }), {
+      label: 'Patches recall pedal presets', className: 'toggle--switch',
+    }));
     const midiWarn = h('p', { class: 'status-warn', hidden: true }, h('span', { html: icon('warn'), 'aria-hidden': 'true' }), h('span'));
     const cards = h('div', { class: 'pedal-cards' });
     const group = h('section', { class: 'settings-group', 'aria-labelledby': 'pedals-midi' },
       h('h3', { class: 'group-title', id: 'pedals-midi' }, 'Pedal MIDI'),
       h('p', { class: 'setting-hint' }, `Profiles for the pedals that take MIDI. Suggested route: ${MIDI_ROUTES.mpcA}; ${MIDI_ROUTES.mpcB}.`),
       row('MIDI output', 'Connect MIDI in MIDI & MPC first', outWrap),
+      row('Patches recall pedal presets', 'Off by default, so loading a patch someone shared never changes your pedals. Scenes always send their pedal presets to the pedals switched on here.', recallPatches.el),
       midiWarn, cards,
       h('p', { class: 'setting-hint' }, `Audio loop only (no MIDI): ${AUDIO_ONLY_PEDALS.map(p => p.name).join(', ')}.`));
     root.appendChild(group);
@@ -408,16 +427,10 @@ export function createPedalSettings(ctx) {
     let progInput = null;
     if (p.programs) {
       progInput = h('input', { type: 'number', class: 'field pedal-program', min: String(p.programs.min), max: String(p.programs.max), step: '1', value: String(p.programs.min), 'aria-label': `${p.name} preset number` });
-      actionBtns.push(progInput, btn('Send preset', 'scene', () => rig.pedalAction(id, 'program', Number(progInput.value)), `Program Change ${p.programs.min} to ${p.programs.max}`));
+      actionBtns.push(progInput, btn('Send preset', 'scene', () => rig.pedalAction(id, 'program', Number(progInput.value)), `Program Change: ${programHint(id)}`));
     }
     actions.append(...actionBtns);
-    const followSrc = own(createSelect(ctx, pedalBinding(rig, id, 'followSource', { label: 'Follow', default: '' }), {
-      label: `${p.name} follows`, className: 'select--sm', options: [{ value: '', label: 'Nothing' }, ...FOLLOW_SOURCES.map(s => ({ value: s.id, label: s.label }))],
-    }));
-    const ctrlOptions = p.controls.filter(c => c.kind !== 'trigger').map(c => ({ value: c.id, label: `${c.label} (CC ${c.cc})` }));
-    const followCtl = own(createSelect(ctx, pedalBinding(rig, id, 'followControl', { label: 'Control', default: '' }), {
-      label: `${p.name} control to move`, className: 'select--sm', options: [{ value: '', label: 'Choose a control' }, ...ctrlOptions],
-    }));
+    const mods = Array.from({ length: MOD_SLOTS }, (_, slot) => modSlot(id, slot, p));
     const notes = [...(p.notes || [])];
     if (p.defaultChannelNote) notes.push(p.defaultChannelNote);
     const unconfirmed = p.controls.filter(c => c.encodingVerified === false).map(c => c.label);
@@ -425,7 +438,7 @@ export function createPedalSettings(ctx) {
     if (p.cv) notes.push(p.cv.note);
     const body = h('div', { class: 'pedal-body' },
       h('div', { class: 'pedal-line' }, h('span', { class: 'mini-label' }, 'Channel'), chan.el),
-      h('div', { class: 'pedal-line' }, h('span', { class: 'mini-label' }, 'Follow'), followSrc.el, followCtl.el),
+      ...mods.map(m => m.el),
       actions,
       notes.length ? h('ul', { class: 'pedal-notes' }, notes.map(n => h('li', null, n))) : null);
     const card = h('article', { class: 'pedal-card', 'aria-label': p.name },
@@ -438,9 +451,76 @@ export function createPedalSettings(ctx) {
     return () => {
       const on = !!rig.prefs.pedals[id].enabled;
       card.classList.toggle('is-off', !on);
-      for (const c of [chan, followSrc, followCtl]) c.setDisabled(!on, `Turn on ${p.name} first`);
+      chan.setDisabled(!on, `Turn on ${p.name} first`);
+      for (const m of mods) m.render(on);
       for (const b of actionBtns) b.disabled = !on;
     };
+  }
+
+  /**
+   * One modulated control: Source (Off / Macro 1-4 / Guitar level / LFO) and
+   * the control it moves, its range and curve, and for LFO the shape, rate
+   * (Hz or tempo-synced) and depth. CCs go out only on change, at most about
+   * 100 a second per pedal.
+   */
+  function modSlot(id, slot, p) {
+    const b = (key, def) => modBinding(rig, id, slot, key, def);
+    const name = `${p.name} modulation ${slot + 1}`;
+    const src = own(createSelect(ctx, b('source', { label: 'Source', default: '' }), {
+      label: `${name} source`, className: 'select--sm', options: MOD_SOURCES.map(m => ({ value: m.id, label: m.label })),
+    }));
+    const ctrlOptions = p.controls.filter(c => c.kind !== 'trigger').map(c => ({ value: c.id, label: `${c.label} (CC ${c.cc})` }));
+    const ctl = own(createSelect(ctx, b('control', { label: 'Control', default: '' }), {
+      label: `${name} control to move`, className: 'select--sm', options: [{ value: '', label: 'Choose a control' }, ...ctrlOptions],
+    }));
+    const slider = (key, label, def, extra = {}) => own(createMiniSlider(ctx, b(key, { label, default: def, min: extra.min ?? 0, max: extra.max ?? 1, curve: extra.curve, hint: extra.hint }), {
+      ariaLabel: `${name} ${label.toLowerCase()}`, className: 'pedal-mod-slider', format: extra.format || fmtPct,
+    }));
+    const min = slider('min', 'Min', 0, { hint: 'Value sent when the source is at its lowest. Set it above Max to invert.' });
+    const max = slider('max', 'Max', 1, { hint: 'Value sent when the source is at its highest' });
+    const curve = own(createSelect(ctx, b('curve', { label: 'Curve', default: 0 }), {
+      label: `${name} curve`, className: 'select--sm pedal-mod-curve', options: MAP_CURVES.map((n, i) => ({ value: i, label: n })),
+    }));
+    const shape = own(createSelect(ctx, b('lfoShape', { label: 'Shape', default: 'sine' }), {
+      label: `${name} LFO shape`, className: 'select--sm', options: LFO_SHAPES.map(s => ({ value: s, label: cap(s) })),
+    }));
+    const sync = own(createSegmented(ctx, b('lfoSync', { label: 'Rate mode', default: 0 }), {
+      label: `${name} LFO rate in Hz or synced to the tempo`, size: 'sm', options: [{ value: 0, label: 'Hz' }, { value: 1, label: 'Tempo' }],
+    }));
+    const rate = slider('lfoRate', 'Rate', 0.5, { min: LFO_RATE_MIN, max: LFO_RATE_MAX, curve: 'exp', format: fmtHz, hint: 'LFO speed in cycles per second' });
+    const rateOut = h('span', { class: 'mini-label pedal-mod-value', 'aria-hidden': 'true' });
+    const beats = own(createSelect(ctx, b('lfoBeats', { label: 'Length', default: 4 }), {
+      label: `${name} LFO length`, className: 'select--sm', options: LFO_BEAT_OPTIONS,
+    }));
+    const depth = slider('lfoDepth', 'Depth', 1, { hint: 'How much of the range the LFO sweeps, around the middle' });
+    const label = (t) => h('span', { class: 'mini-label' }, t);
+    const rangeLine = h('div', { class: 'pedal-line' }, label('Range'), min.el, max.el, curve.el);
+    const lfoLine = h('div', { class: 'pedal-line' }, label('LFO'), shape.el, sync.el);
+    const rateLine = h('div', { class: 'pedal-line' }, label('Rate'), rate.el, rateOut, beats.el, label('Depth'), depth.el);
+    const warn = h('p', { class: 'pedal-mod-warn', hidden: true });
+    const el = h('div', { class: 'pedal-mod', role: 'group', 'aria-label': name },
+      h('div', { class: 'pedal-line' }, label(`Mod ${slot + 1}`), src.el, ctl.el),
+      rangeLine, lfoLine, rateLine, warn);
+    const all = [src, ctl, min, max, curve, shape, sync, rate, beats, depth];
+    function render(on) {
+      const m = rig.prefs.pedals[id].mods[slot];
+      const isLfo = m.source === 'lfo';
+      rangeLine.hidden = !m.source;
+      lfoLine.hidden = !isLfo;
+      rateLine.hidden = !isLfo;
+      rate.el.hidden = !!m.lfoSync;
+      rateOut.hidden = !!m.lfoSync;
+      setText(rateOut, fmtHz(m.lfoRate));
+      beats.el.hidden = !m.lfoSync;
+      for (const c of all) c.setDisabled(!on, `Turn on ${p.name} first`);
+      const earlier = rig.prefs.pedals[id].mods.slice(0, slot).some(o => o.source && o.control && o.control === m.control);
+      let msg = '';
+      if (m.source && !m.control) msg = 'Choose the control to move.';
+      else if (m.source && earlier) msg = 'An earlier Mod already moves this control, so this one is ignored.';
+      warn.hidden = !msg;
+      warn.textContent = msg;
+    }
+    return { el, render };
   }
 
   return { el: root, dispose };

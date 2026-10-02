@@ -58,22 +58,36 @@ MPC XL manuals but **have not been tested with real pedals or a real MPC XL yet*
 
 * Profiles for the OBNE Purr-ting, Chase Bliss Lost + Found, Cornerstone Nucleo and Walrus
   Xero: MIDI channel per pedal, a warning when two pedals on one cable share a channel,
-  Effect on and Bypass, Tap tempo at the song tempo, preset recall by Program Change, and
-  one control per pedal that can follow a Macro or the guitar level.
+  Effect on and Bypass, Tap tempo at the song tempo, and preset recall by Program Change.
+* Two **Mod** slots per pedal: each moves one pedal control from a Macro, the guitar level
+  or its own **pedal LFO** (sine, triangle, saw, square or random; rate in Hz or synced to
+  the tempo; depth, range and curve). Values go out only when they change, at most about
+  100 messages a second per pedal. Rigs saved with the earlier single "Follow" setting
+  load it into the first slot.
+* **Scenes recall pedal presets**: a scene can store one preset per pedal (or leave it as
+  it is) and sends them as Program Change on each switched-on pedal's channel when it
+  loads. Each pedal's own numbering is kept (the Lost + Found's 0 is Live). Set them in the
+  Save scene form or with the pedal button on your own scenes in the browser.
+* **Patches can recall pedal presets** too, but only with **Patches recall pedal presets**
+  switched on in Settings > Pedals. It is off by default, so a shared patch never changes
+  your pedals.
 
 ### Other changes
 
 * Sessions saved by 0.1.0 load with every pedal setting off. Patches do not store the
   pedal routing, and loading a patch keeps the part's routing.
+* The saved state format is now version 3 and the preset library and export files version
+  2. Both only add the optional pedal presets: older scenes, patches and export files load
+  unchanged, with no pedal presets.
 * Bounces render every part dry (the pedals are hardware).
 * Desktop app: audio-only capture is allowed for Orograph's own page, and macOS asks for
   the microphone with a short explanation.
 
 ### Not in this version yet
 
-* Polyphonic (chord) guitar tracking, scenes recalling pedal presets, and compensating the
-  patch preview and Explore notes. Live guitar notes are played as they arrive and are not
-  latency compensated.
+* Polyphonic (chord) guitar tracking, and compensating the patch preview and Explore
+  notes. Live guitar notes are played as they arrive and are not latency compensated.
+* Pedal LFOs synced to the tempo follow its speed but are not locked to the bar line.
 
 ## 0.1.0 (first release, October 2026)
 

@@ -79,31 +79,51 @@ export const LFO_SHAPES = Object.freeze(['sine', 'triangle', 'saw', 'square', 'r
 
 /**
  * A main-thread LFO for pedal CCs. Free (rateHz) or tempo-synced (`beats` per
- * cycle). valueAt() is a pure function of time, so values can be computed
- * slightly ahead and sent with a timestamp.
+ * cycle). While the rate stays the same, valueAt() is a pure function of time,
+ * so values can be computed slightly ahead and sent with a timestamp. When the
+ * rate, the tempo or `phase` changes, the cycle count is re-anchored at that
+ * moment so the wave carries on from where it was instead of jumping.
+ * `depth` (0..1) scales the output around the middle: 1 sweeps the whole
+ * min..max range of a mapping, 0.5 the middle half.
+ * Fields (shape, rateHz, beats, phase, depth) may be changed in place.
  */
-export function createLfoSource({ shape = 'sine', rateHz = 0.5, beats = 0, phase = 0, seed = 1 } = {}) {
-  const lfo = { shape, rateHz, beats, phase };
+export function createLfoSource({ shape = 'sine', rateHz = 0.5, beats = 0, phase = 0, depth = 1, seed = 1 } = {}) {
+  const lfo = { shape, rateHz, beats, phase, depth };
   const hash = (n) => {
     let x = (Math.floor(n) * 374761393 + seed * 668265263) | 0;
     x = Math.imul(x ^ (x >>> 13), 1274126177);
     return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
   };
-  lfo.cyclesAt = (sec, bpm = 120) => {
-    const hz = lfo.beats > 0 ? (bpm / 60) / lfo.beats : lfo.rateHz;
-    return sec * hz + lfo.phase;
+  // Cycles = anchor.cycles + (sec - anchor.sec) * hz. The first anchor is
+  // (0, phase), which is the plain formula sec * hz + phase.
+  let anchor = null;
+  const hzFor = (bpm) => {
+    const hz = lfo.beats > 0 ? (clamp(Number(bpm) || 120, 1, 1000) / 60) / lfo.beats : Number(lfo.rateHz) || 0;
+    return Number.isFinite(hz) ? hz : 0;
   };
-  /** -1..1 at `sec` seconds (any clock), `bpm` for synced LFOs. */
+  lfo.cyclesAt = (sec, bpm = 120) => {
+    const hz = hzFor(bpm);
+    if (!anchor) anchor = { sec: 0, cycles: lfo.phase, hz, phase: lfo.phase };
+    if (hz !== anchor.hz || lfo.phase !== anchor.phase) {
+      const at = anchor.cycles + (sec - anchor.sec) * anchor.hz;
+      anchor = { sec, cycles: at + (lfo.phase - anchor.phase), hz, phase: lfo.phase };
+    }
+    return anchor.cycles + (sec - anchor.sec) * hz;
+  };
+  /** -1..1 (times depth) at `sec` seconds (any clock), `bpm` for synced LFOs. */
   lfo.valueAt = (sec, bpm = 120) => {
     const c = lfo.cyclesAt(sec, bpm);
     const p = c - Math.floor(c);
+    const d = clamp(Number.isFinite(lfo.depth) ? lfo.depth : 1, 0, 1);
+    let v;
     switch (lfo.shape) {
-      case 'triangle': return p < 0.5 ? 4 * p - 1 : 3 - 4 * p;
-      case 'saw': return 2 * p - 1;
-      case 'square': return p < 0.5 ? 1 : -1;
-      case 'random': return hash(c) * 2 - 1;
-      default: return Math.sin(2 * Math.PI * p);
+      case 'triangle': v = p < 0.5 ? 4 * p - 1 : 3 - 4 * p; break;
+      case 'saw': v = 2 * p - 1; break;
+      case 'square': v = p < 0.5 ? 1 : -1; break;
+      case 'random': v = hash(c) * 2 - 1; break;
+      default: v = Math.sin(2 * Math.PI * p);
     }
+    return v * d;
   };
   return lfo;
 }

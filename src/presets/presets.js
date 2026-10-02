@@ -5,7 +5,8 @@
 import {
   NUM_PARTS, PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, defaultPart,
 } from '../core/params.js';
-import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState } from '../core/migrate.js';
+import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
+import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { createEmitter } from '../music/emitter.js';
 import { FACTORY_PATCHES, CATEGORIES } from './factory-patches.js';
 import { FACTORY_SCENES } from './factory-scenes.js';
@@ -14,6 +15,10 @@ import { randomPatch } from './random-patch.js';
 
 export const STORAGE_KEY = 'orograph.presets.v1';
 export const FORMAT = 'orograph-presets';
+// Library / export file version. 2 = v1.1: scenes and patches may carry
+// `pedalPresets` (one optional Program Change per pedal). Version 1 files load
+// unchanged: they simply have none. The storage key stays the same.
+export const PRESET_VERSION = 2;
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -59,13 +64,16 @@ export function sanitizePatch(src) {
   if (Array.isArray(src.links)) patch.links = sanitizeLinks(src.links);
   if (src.dot) patch.dot = clean.dot;
   if (clean.userTerrain.A || clean.userTerrain.B) patch.userTerrain = clean.userTerrain;
+  // Optional pedal presets (v1.1), sent on load only when the rig allows it.
+  const pedalPresets = sanitizePedalPresets(src.pedalPresets);
+  if (pedalPresets) patch.pedalPresets = pedalPresets;
   return patch;
 }
 
 export function sanitizeScene(src) {
   if (!src || typeof src !== 'object' || !Array.isArray(src.parts)) return null;
   return {
-    ...migrateState(src),
+    ...migrateScene(src),
     name: String(src.name || 'Imported scene').slice(0, 60),
     description: typeof src.description === 'string' ? src.description.slice(0, 400) : '',
   };
@@ -94,7 +102,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
   function persist() {
     if (!storage) return false;
     try {
-      storage.setItem(STORAGE_KEY, JSON.stringify({ format: FORMAT, version: 1, patches: user.patches, scenes: user.scenes }));
+      storage.setItem(STORAGE_KEY, JSON.stringify({ format: FORMAT, version: PRESET_VERSION, patches: user.patches, scenes: user.scenes }));
       return true;
     } catch { return false; }
   }
@@ -110,7 +118,10 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
   }
 
   function patches() {
-    return allPatches().map(p => ({ id: p.id, name: p.name, category: p.category, factory: !!p.factory, tags: (p.tags || []).slice() }));
+    return allPatches().map(p => ({
+      id: p.id, name: p.name, category: p.category, factory: !!p.factory, tags: (p.tags || []).slice(),
+      pedalPresets: p.pedalPresets ? { ...p.pedalPresets } : null,
+    }));
   }
 
   function categories() {
@@ -133,7 +144,9 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const current = store.get(`parts.${p}`) || defaultPart(p);
     const next = sanitizePart(partWithPatch(current, patch), p);
     store.set(`parts.${p}`, next, { source: 'preset' });
-    changed({ kind: 'patch', action, part: p, id: patch.id || null });
+    // The pedal rig decides whether a patch may recall pedal presets (off by default).
+    const pedalPresets = action === 'load' ? sanitizePedalPresets(patch.pedalPresets) : null;
+    changed({ kind: 'patch', action, part: p, id: patch.id || null, pedalPresets });
   }
 
   function loadPatch(part, idOrObj) {
@@ -164,7 +177,11 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     return base + ' ' + Date.now();
   }
 
-  function savePatch(part, name, { category } = {}) {
+  /**
+   * `pedalPresets`: { pedalId: program } to store with the patch, null for none;
+   * left out, an existing patch of that name keeps the ones it had.
+   */
+  function savePatch(part, name, { category, pedalPresets } = {}) {
     const p = partIndex(part);
     if (p == null) return null;
     const cur = store.get(`parts.${p}`);
@@ -188,6 +205,8 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       dot: JSON.parse(JSON.stringify(cur.dot || {})),
     };
     if (cur.userTerrain && (cur.userTerrain.A || cur.userTerrain.B)) patch.userTerrain = { ...cur.userTerrain };
+    const pp = pedalPresets === undefined ? sanitizePedalPresets(existing && existing.pedalPresets) : sanitizePedalPresets(pedalPresets);
+    if (pp) patch.pedalPresets = pp;
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;
     else user.patches.push(patch);
     persist();
@@ -219,6 +238,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
   function scenes() {
     return allScenes().map(s => ({
       id: s.id, name: s.name, factory: !!s.factory, description: s.description || '',
+      pedalPresets: s.pedalPresets ? { ...s.pedalPresets } : null,
       tempo: s.global.tempo,
       key: `${NOTE_NAMES[s.global.scaleRoot] || 'C'} ${SCALE_NAMES[s.global.scaleType] || 'Major'}`,
     }));
@@ -235,11 +255,16 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const scene = findScene(idOrIndex);
     if (!scene) return false;
     store.load(migrateState(scene), { source: 'scene' });
-    changed({ kind: 'scene', action: 'load', id: scene.id || null });
+    // Pedal presets go to the pedal rig, which sends them to the pedals that are switched on.
+    changed({ kind: 'scene', action: 'load', id: scene.id || null, pedalPresets: sanitizePedalPresets(scene.pedalPresets) });
     return true;
   }
 
-  function saveScene(name, { description = '' } = {}) {
+  /**
+   * `pedalPresets`: { pedalId: program } to store with the scene, null for none;
+   * left out, an existing scene of that name keeps the ones it had.
+   */
+  function saveScene(name, { description = '', pedalPresets } = {}) {
     const clean = String(name || 'My scene').trim().slice(0, 60) || 'My scene';
     const existing = user.scenes.find(s => s.name === clean);
     const scene = {
@@ -248,11 +273,26 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       name: existing ? clean : uniqueName(clean, FACTORY_SCENE_LIST),
       description: String(description || '').slice(0, 400),
     };
+    const pp = pedalPresets === undefined ? sanitizePedalPresets(existing && existing.pedalPresets) : sanitizePedalPresets(pedalPresets);
+    if (pp) scene.pedalPresets = pp;
     if (existing) user.scenes[user.scenes.indexOf(existing)] = scene;
     else user.scenes.push(scene);
     persist();
     changed({ kind: 'scene', action: 'save', id: scene.id });
     return scene.id;
+  }
+
+  /** Change only the pedal presets of one of your own scenes or patches (null clears them). */
+  function setPedalPresets(kind, id, pedalPresets) {
+    const list = kind === 'scene' ? user.scenes : user.patches;
+    const item = list.find(x => x.id === id) || list.find(x => x.name === id);
+    if (!item) return false;
+    const pp = sanitizePedalPresets(pedalPresets);
+    if (pp) item.pedalPresets = pp;
+    else delete item.pedalPresets;
+    persist();
+    changed({ kind: kind === 'scene' ? 'scene' : 'patch', action: 'edit', id: item.id });
+    return true;
   }
 
   function deleteUser(kind, id) {
@@ -280,14 +320,14 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     let data;
     if (kind === 'patch') {
       const p = id != null ? findPatch(id) : null;
-      data = { format: FORMAT, version: 1, patches: p ? [stripPatch(p)] : user.patches.map(stripPatch), scenes: [] };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: p ? [stripPatch(p)] : user.patches.map(stripPatch), scenes: [] };
     } else if (kind === 'scene') {
       const s = id != null ? findScene(id) : null;
-      data = { format: FORMAT, version: 1, patches: [], scenes: s ? [stripScene(s)] : user.scenes.map(stripScene) };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: s ? [stripScene(s)] : user.scenes.map(stripScene) };
     } else if (kind === 'current') {
-      data = { format: FORMAT, version: 1, patches: [], scenes: [{ ...migrateState(store.serialize()), name: 'Current session', description: '' }] };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...migrateState(store.serialize()), name: 'Current session', description: '' }] };
     } else {
-      data = { format: FORMAT, version: 1, patches: user.patches.map(stripPatch), scenes: user.scenes.map(stripScene) };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: user.patches.map(stripPatch), scenes: user.scenes.map(stripScene) };
     }
     return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   }
@@ -321,7 +361,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
 
   return {
     patches, categories, loadPatch, nextPatch, savePatch, initPatch, randomizePatch,
-    scenes, loadScene, saveScene, deleteUser, exportJSON, importJSON,
+    scenes, loadScene, saveScene, setPedalPresets, deleteUser, exportJSON, importJSON,
     getPatch: (id) => { const p = findPatch(id); return p ? JSON.parse(JSON.stringify(p)) : null; },
     getScene: (id) => { const s = findScene(id); return s ? JSON.parse(JSON.stringify(s)) : null; },
     on: (type, fn) => emitter.on(type, fn),

@@ -7,6 +7,7 @@ import {
   DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION,
   defaultState, defaultPart, defaultStep, defaultLinks, clamp,
 } from './params.js';
+import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -156,7 +157,8 @@ export function sanitizePart(src, i) {
  * (before v1.1) has no pedal params: sanitizeParams fills them with their
  * defaults, so an old session loads with the pedal send, Pre and Insert off.
  * Links already using a source index this build does not know are clamped by
- * sanitizeLinks.
+ * sanitizeLinks. Version 2 sessions are already in the version 3 shape (3 only
+ * adds optional pedal presets to scenes, see migrateScene).
  */
 export function migrateState(src) {
   const base = defaultState();
@@ -166,4 +168,17 @@ export function migrateState(src) {
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
     parts: Array.from({ length: NUM_PARTS }, (_, i) => sanitizePart(Array.isArray(src.parts) ? src.parts[i] : null, i)),
   };
+}
+
+/**
+ * A saved scene -> the current format: its state through migrateState, plus
+ * the optional per-pedal presets (version 3). Scenes saved before version 3
+ * have none and come back exactly as migrateState makes them, with no
+ * `pedalPresets` key. Name, description and id are the caller's business.
+ */
+export function migrateScene(src) {
+  const out = migrateState(src);
+  const pedalPresets = src && typeof src === 'object' ? sanitizePedalPresets(src.pedalPresets) : null;
+  if (pedalPresets) out.pedalPresets = pedalPresets;
+  return out;
 }

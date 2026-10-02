@@ -1,7 +1,7 @@
 // v1.1 pedal rig: the saved per-device settings and the controller that ties
 // them to the engine's pedal host and to MIDI for the pedal profiles.
 import { describe, it, expect, vi } from 'vitest';
-import { defaultRig, sanitizeRig, loadRig, saveRig, RIG_KEY, pairChannels, OUTPUT_PAIRS } from '../../src/pedals/rig-settings.js';
+import { defaultRig, sanitizeRig, loadRig, saveRig, RIG_KEY, pairChannels, OUTPUT_PAIRS, defaultModSlot } from '../../src/pedals/rig-settings.js';
 import { createPedalRig } from '../../src/ui/pedal-rig.js';
 import { createStore } from '../../src/core/store.js';
 import { defaultState } from '../../src/core/params.js';
@@ -17,7 +17,8 @@ describe('rig settings', () => {
     const d = defaultRig();
     expect(d).toMatchObject({ enabled: 0, mainPair: 0, sendPair: 2, ceilingDb: -18, returnEnabled: 0, returnLayout: 'stereo', outputDeviceId: 'default' });
     expect(Object.keys(d.pedals)).toEqual(PEDAL_IDS);
-    expect(d.pedals.purrting).toEqual({ enabled: 0, channel: 1, followSource: '', followControl: '' });
+    expect(d.pedals.purrting).toEqual({ enabled: 0, channel: 1, mods: [defaultModSlot(), defaultModSlot()] });
+    expect(d.patchesRecallPedals).toBe(0);
     expect(d.pedals.lostAndFound.channel).toBe(2);
     expect(pairChannels(2)).toEqual([2, 3]);
     expect(OUTPUT_PAIRS.map(p => p.label)).toEqual(['Outputs 1/2', 'Outputs 3/4', 'Outputs 5/6', 'Outputs 7/8']);
@@ -26,7 +27,7 @@ describe('rig settings', () => {
   it('drops unknown or invalid values', () => {
     const s = sanitizeRig({
       enabled: true, sendPair: 3, ceilingDb: 0, returnLayout: 'quad', returnLevel: 9, mystery: 1, lastLatencyMs: -4,
-      pedals: { purrting: { enabled: 1, channel: 40, followSource: 'macro2', followControl: 'tap' }, xero: { followControl: 'volume1', followSource: 'guitar' }, nope: {} },
+      pedals: { purrting: { enabled: 1, channel: 40, mods: [{ source: 'macro2', control: 'tap' }] }, xero: { mods: [{ control: 'volume1', source: 'guitar' }] }, nope: {} },
     });
     expect(s.enabled).toBe(1);
     expect(s.sendPair).toBe(2);
@@ -35,8 +36,8 @@ describe('rig settings', () => {
     expect(s.returnLevel).toBe(2);
     expect(s.lastLatencyMs).toBe(null);
     expect(s).not.toHaveProperty('mystery');
-    expect(s.pedals.purrting).toEqual({ enabled: 1, channel: 16, followSource: 'macro2', followControl: '' });  // a trigger cannot follow
-    expect(s.pedals.xero).toMatchObject({ followSource: 'guitar', followControl: 'volume1' });
+    expect(s.pedals.purrting).toEqual({ enabled: 1, channel: 16, mods: [{ ...defaultModSlot(), source: 'macro2' }, defaultModSlot()] });  // a trigger cannot follow
+    expect(s.pedals.xero.mods[0]).toMatchObject({ source: 'guitar', control: 'volume1' });
     expect(s.pedals).not.toHaveProperty('nope');
   });
 
@@ -135,11 +136,13 @@ describe('pedal rig', () => {
 
   it('lets a pedal control follow a macro or the guitar level', async () => {
     const { rig, sent, store, host } = setup();
-    await rig.setPedal('purrting', { enabled: 1, followSource: 'macro1', followControl: 'mix' });
+    await rig.setPedal('purrting', { enabled: 1 });
+    await rig.setPedalMod('purrting', 0, { source: 'macro1', control: 'mix' });
     sent.length = 0;
     store.set('global.macro1', 0.5);
     expect(sent.pop().bytes).toEqual([0xb0, 23, 64]);
-    await rig.setPedal('xero', { enabled: 1, followSource: 'guitar', followControl: 'volume1' });
+    await rig.setPedal('xero', { enabled: 1 });
+    await rig.setPedalMod('xero', 1, { source: 'guitar', control: 'volume1' });
     host.emit('guitar', { level: 1 });
     expect(sent.pop().bytes).toEqual([0xb2, 2, 127]);
   });

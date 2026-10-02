@@ -198,8 +198,13 @@ export function createUI(root, modules = {}) {
   // without Web Audio or MIDI it reports why and the rest of the UI is unchanged.
   ctx.pedals = null;
   try {
-    ctx.pedals = createPedalRig({ store, engine, midi, router: music ? music.router : null });
+    ctx.pedals = createPedalRig({ store, engine, midi, router: music ? music.router : null, presets, transport: (music && music.transport) || null });
     scope.add(ctx.pedals.dispose);
+    // Scene / patch pedal presets that could not be sent (pedals switched off are skipped quietly).
+    scope.add(ctx.pedals.on('recall', (e) => {
+      const bad = ((e && e.results) || []).filter(r => !r.ok && !r.skipped);
+      if (bad.length) toast('Pedal presets were not sent', { kind: 'error', detail: bad[0].reason || undefined });
+    }));
     ctx.pedals.restore().catch((err) => console.warn('[ui] could not restore the pedal rig', err));
   } catch (err) {
     console.warn('[ui] the pedal rig is unavailable', err);

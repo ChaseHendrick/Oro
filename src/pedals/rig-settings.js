@@ -1,11 +1,15 @@
 // Per-device settings of the pedal rig (v1.1): which outputs carry the main mix
 // and the pedal send, the send ceiling, the pedal return, and which MIDI pedal
-// profiles are switched on, on which channel. Like the audio quality these
+// profiles are switched on, on which channel, what drives each pedal's
+// modulated controls (Macro, Guitar level or an LFO, MOD_SLOTS per pedal), and
+// whether patches may recall pedal presets. Like the audio quality these
 // belong to the computer and the cables, not to a song, so they live in
-// localStorage['orograph.pedals'] and never in sessions, scenes or patches.
+// localStorage['orograph.pedals'] and never in sessions, scenes or patches
+// (scenes and patches only store which pedal preset to call up, see
+// pedal-presets.js).
 
 import { PEDAL_PROFILES, PEDAL_IDS, findControl } from './profiles.js';
-import { PEDAL_SOURCES } from './pedal-midi.js';
+import { PEDAL_SOURCES, LFO_SHAPES, MAP_CURVES } from './pedal-midi.js';
 import { DEFAULT_GATE_DB, GATE_MIN_DB, GATE_MAX_DB } from './guitar-notes.js';
 
 export const RIG_KEY = 'orograph.pedals';
@@ -50,15 +54,39 @@ export function guitarChannelOptions(layout) {
 
 /** Sources a pedal can follow from Settings (a subset of PEDAL_SOURCES). */
 export const FOLLOW_SOURCES = Object.freeze(PEDAL_SOURCES.filter(s => /^macro\d$/.test(s.id) || s.id === 'guitar'));
+/** What can drive a pedal's modulated control: Off, Macro 1-4, Guitar level, or the slot's own LFO. */
+export const MOD_SOURCES = Object.freeze([
+  Object.freeze({ id: '', label: 'Off' }),
+  ...FOLLOW_SOURCES.map(s => Object.freeze({ id: s.id, label: s.label })),
+  Object.freeze({ id: 'lfo', label: 'LFO' }),
+]);
+/** Modulated controls per pedal (each with its own source and, for LFO, its own LFO). */
+export const MOD_SLOTS = 2;
+/** Free-running LFO rates, Hz. CCs go out at most about 100 times a second per pedal anyway. */
+export const LFO_RATE_MIN = 0.02;
+export const LFO_RATE_MAX = 10;
+/** Tempo-synced LFO lengths, in beats per cycle. */
+export const LFO_BEAT_OPTIONS = Object.freeze([
+  { value: 0.25, label: '1/16' }, { value: 0.5, label: '1/8' }, { value: 1, label: '1/4' }, { value: 2, label: '1/2' },
+  { value: 4, label: '1 bar' }, { value: 8, label: '2 bars' }, { value: 16, label: '4 bars' }, { value: 32, label: '8 bars' },
+].map(Object.freeze));
+export { LFO_SHAPES, MAP_CURVES };
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const flag = (v, d) => (v === 0 || v === 1 ? v : typeof v === 'boolean' ? (v ? 1 : 0) : d);
 const str = (v, d, max = 200) => (typeof v === 'string' ? v.slice(0, max) : d);
 
+export function defaultModSlot() {
+  return {
+    source: '', control: '', min: 0, max: 1, curve: 0,
+    lfoShape: 'sine', lfoSync: 0, lfoRate: 0.5, lfoBeats: 4, lfoDepth: 1,
+  };
+}
+
 export function defaultPedalEntry(id) {
   const p = PEDAL_PROFILES[id];
-  return { enabled: 0, channel: p ? p.channel : 1, followSource: '', followControl: '' };
+  return { enabled: 0, channel: p ? p.channel : 1, mods: Array.from({ length: MOD_SLOTS }, defaultModSlot) };
 }
 
 export function defaultRig() {
@@ -75,6 +103,8 @@ export function defaultRig() {
     returnDelay: 0,
     returnReverb: 0,
     midiOutputId: '',
+    // Off by default: a shared patch must never change someone's pedals unasked. Scenes always recall theirs.
+    patchesRecallPedals: 0,
     lastLatencyMs: null,
     // Latency compensation (src/pedals/latency-comp.js): off by default.
     compensate: 0,
@@ -90,20 +120,38 @@ export function defaultRig() {
   };
 }
 
+export function sanitizeModSlot(id, src) {
+  const d = defaultModSlot();
+  const s = src && typeof src === 'object' ? src : {};
+  // Only a continuous or switch control of this pedal can be modulated.
+  const c = typeof s.control === 'string' ? findControl(PEDAL_PROFILES[id], s.control) : null;
+  const curve = typeof s.curve === 'string' ? MAP_CURVES.indexOf(s.curve) : num(s.curve, d.curve);
+  return {
+    source: MOD_SOURCES.some(m => m.id === s.source) ? s.source : '',
+    control: c && c.kind !== 'trigger' ? c.id : '',
+    min: clamp(num(s.min, d.min), 0, 1),
+    max: clamp(num(s.max, d.max), 0, 1),
+    curve: Math.round(clamp(curve < 0 ? 0 : curve, 0, MAP_CURVES.length - 1)),
+    lfoShape: LFO_SHAPES.includes(s.lfoShape) ? s.lfoShape : d.lfoShape,
+    lfoSync: flag(s.lfoSync, d.lfoSync),
+    lfoRate: clamp(num(s.lfoRate, d.lfoRate), LFO_RATE_MIN, LFO_RATE_MAX),
+    lfoBeats: LFO_BEAT_OPTIONS.some(o => o.value === s.lfoBeats) ? s.lfoBeats : d.lfoBeats,
+    lfoDepth: clamp(num(s.lfoDepth, d.lfoDepth), 0, 1),
+  };
+}
+
 function sanitizePedal(id, src) {
   const base = defaultPedalEntry(id);
   const s = src && typeof src === 'object' ? src : {};
-  const out = {
+  let mods = Array.isArray(s.mods) ? s.mods : null;
+  // Rigs saved before pedal LFOs had one "Follow" mapping: it becomes the first slot.
+  if (!mods && (s.followSource || s.followControl)) mods = [{ source: s.followSource, control: s.followControl }];
+  return {
     enabled: flag(s.enabled, base.enabled),
     channel: Math.round(clamp(num(s.channel, base.channel), 1, 16)),
-    followSource: FOLLOW_SOURCES.some(f => f.id === s.followSource) ? s.followSource : '',
-    followControl: '',
+    // A slot runs only when both its source and control are chosen; either may be set first.
+    mods: Array.from({ length: MOD_SLOTS }, (_, i) => sanitizeModSlot(id, mods && mods[i])),
   };
-  // Only a continuous or switch control of this pedal can follow a source.
-  const c = typeof s.followControl === 'string' ? findControl(PEDAL_PROFILES[id], s.followControl) : null;
-  if (c && c.kind !== 'trigger') out.followControl = c.id;
-  // A follow mapping runs only when both halves are chosen; either may be set first.
-  return out;
 }
 
 /** Keep only known keys with valid values; fill the rest from the defaults. */
@@ -124,6 +172,7 @@ export function sanitizeRig(src) {
     returnDelay: clamp(num(src.returnDelay, d.returnDelay), 0, 1),
     returnReverb: clamp(num(src.returnReverb, d.returnReverb), 0, 1),
     midiOutputId: str(src.midiOutputId, d.midiOutputId),
+    patchesRecallPedals: flag(src.patchesRecallPedals, d.patchesRecallPedals),
     lastLatencyMs: Number.isFinite(src.lastLatencyMs) && src.lastLatencyMs >= 0 && src.lastLatencyMs < 2000 ? src.lastLatencyMs : null,
     compensate: flag(src.compensate, d.compensate),
     compOffsetMs: Math.round(clamp(num(src.compOffsetMs, d.compOffsetMs), COMP_OFFSET_RANGE.min, COMP_OFFSET_RANGE.max) * 10) / 10,

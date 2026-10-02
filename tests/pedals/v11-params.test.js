@@ -53,7 +53,7 @@ describe('migrating saved sessions', () => {
     old.parts[2].params.cutoff = 1234;
     old.parts[1].links = [{ src: 5, dst: 'morph', amt: 0.4, curve: 1 }];
     const m = migrateState(old);
-    expect(STATE_VERSION).toBe(2);
+    expect(STATE_VERSION).toBe(3); // 3 only adds optional pedal presets to scenes
     expect(m.version).toBe(STATE_VERSION);
     for (const p of m.parts) for (const id of PEDAL_PARAM_IDS) expect(p.params[id]).toBe(0);
     expect(m.parts[2].params.cutoff).toBe(1234);
