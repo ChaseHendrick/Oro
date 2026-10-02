@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Orograph UI harness</title>
+  <script>
+    (function () {
+      var pref = 'system';
+      try { pref = localStorage.getItem('orograph.theme') || 'system'; } catch (e) {}
+      if (pref !== 'dark' && pref !== 'light') pref = 'system';
+      var dark = true;
+      try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {}
+      var theme = pref === 'system' ? (dark ? 'dark' : 'light') : pref;
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar" data-region="topbar"></header>
+    <main class="stage" data-region="stage" aria-label="3D map">
+      <div class="viewport" data-viewport></div>
+    </main>
+    <nav class="mobile-tabs" data-region="mtabs"></nav>
+    <aside class="mappanel" data-region="map"></aside>
+    <section class="dock" data-region="dock"></section>
+    <section class="keys" data-region="keys"></section>
+  </div>
+  <script type="module" src="./harness.js"></script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+/* Reset, typography, focus and scrollbars. */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  background-image: var(--bg-glow);
+  color: var(--text);
+  font: 400 var(--fs) / 1.4 var(--font-ui);
+  letter-spacing: 0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+button:disabled { cursor: not-allowed; }
+svg { display: block; }
+a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--accent-strong); }
+h1, h2, h3, h4, p, dl, dd, ol, ul, figure { margin: 0; }
+ol, ul { padding: 0; }
+[hidden] { display: none !important; }
+::selection { background: var(--accent-soft); }
+
+.icon { width: 18px; height: 18px; flex: none; }
+.mono, .knob-value, kbd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* One focus style everywhere: a two-tone ring that reads on any surface. */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.mini-label {
+  font-size: var(--fs-2xs);
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Thin, theme-aware scrollbars inside panels. */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+:root.is-knob-dragging, :root.is-knob-dragging * { cursor: ns-resize !important; user-select: none !important; }
+
+.boot-error {
+  position: fixed; inset: 24px; margin: 0; padding: 24px;
+  background: var(--panel-solid); color: var(--text); border: 1px solid var(--error);
+  border-radius: var(--r-lg); font: var(--fs) / 1.5 var(--font-mono); white-space: pre-wrap; overflow: auto; z-index: 1000;
+}
+
+.noscript {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center;
+  background: var(--bg); color: var(--text); font-size: var(--fs-md); z-index: 2000;
+}
+
+/* Reduced motion: honour the OS setting unless the user forces motion on,
+   and always when the user asks for it in Settings. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) *, :root:not([data-motion="full"]) *::before, :root:not([data-motion="full"]) *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}

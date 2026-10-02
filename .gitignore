@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-single/
+release/
+test-results/
+*.log
+.DS_Store
+.vite/
+.claude/worktrees/

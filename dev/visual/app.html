@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Orograph: real 3D map inside the real UI</title>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var theme = q.get('theme') === 'light' ? 'light' : 'dark';
+      try { localStorage.setItem('orograph.theme', theme); } catch (e) {}
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar" data-region="topbar"></header>
+    <main class="stage" data-region="stage" aria-label="3D map">
+      <div class="viewport" data-viewport></div>
+    </main>
+    <nav class="mobile-tabs" data-region="mtabs"></nav>
+    <aside class="mappanel" data-region="map"></aside>
+    <section class="dock" data-region="dock"></section>
+    <section class="keys" data-region="keys"></section>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

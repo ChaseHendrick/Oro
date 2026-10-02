@@ -1,0 +1,16 @@
+:root { --stub-css: loaded; color-scheme: dark; }
+body {
+  margin: 0;
+  padding: 24px 32px;
+  background: #0f0c24;
+  color: #efe9ff;
+  font: 15px/1.5 system-ui, sans-serif;
+}
+header { display: flex; align-items: center; gap: 14px; }
+h1 { font-size: 22px; margin: 0; }
+a { color: #ff9a6b; }
+code { color: #ffb38f; }
+table { border-collapse: collapse; margin-top: 12px; min-width: 640px; }
+td { padding: 3px 12px; border-bottom: 1px solid #2a2350; font-family: ui-monospace, monospace; font-size: 13px; }
+td.pass { color: #7be0a4; }
+td.fail { color: #ff6b6b; }

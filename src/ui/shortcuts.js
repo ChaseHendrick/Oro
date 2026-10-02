@@ -1,0 +1,87 @@
+// Global keyboard shortcuts and the list shown in Settings and Help.
+
+import { isTypingTarget } from './dom.js';
+
+export const SHORTCUTS = [
+  { group: 'Playing', items: [
+    { keys: ['Space'], text: 'Play / stop' },
+    { keys: ['A', 'W', 'S', 'E', 'D', 'F', 'T', 'G', 'Y', 'H', 'U', 'J', 'K', 'O', 'L', 'P', ';', "'"], text: 'Play notes (C up to F an octave higher)', compact: 'A ... \'' },
+    { keys: ['Z', 'X'], text: 'Keyboard octave down / up' },
+    { keys: ['C', 'V'], text: 'Keyboard velocity down / up' },
+    { keys: ['R'], text: 'Record on / off (saves a WAV)' },
+    { keys: ['Shift', 'P'], text: 'Preview the selected part with a short phrase (P alone plays a note)', join: '+' },
+  ] },
+  { group: 'Navigating', items: [
+    { keys: ['1', '2', '3', '4'], text: 'Select part', compact: '1 ... 4' },
+    { keys: ['['], text: 'Previous patch (Size of the orbit when the map has focus)' },
+    { keys: [']'], text: 'Next patch (Size of the orbit when the map has focus)' },
+    { keys: [','], text: 'Settings' },
+    { keys: ['?'], text: 'Help' },
+    { keys: ['Esc'], text: 'Close menus and dialogs, cancel MIDI learn' },
+  ] },
+  { group: 'Knobs', items: [
+    { keys: ['Drag'], text: 'Up / down (or left / right) to change' },
+    { keys: ['Shift', 'Drag'], text: 'Fine adjustment', join: '+' },
+    { keys: ['Double-click'], text: 'Reset to default (also Ctrl / Cmd + click)' },
+    { keys: ['Arrows'], text: 'Adjust the focused knob; Page Up / Down for big steps' },
+    { keys: ['Enter'], text: 'Type an exact value' },
+    { keys: ['Right-click'], text: 'Modulate, MIDI Learn, Reset (long-press on touch)' },
+  ] },
+  { group: 'Map', items: [
+    { keys: ['Click'], text: 'Move the dot (or add a waypoint while editing a Tour)' },
+    { keys: ['Shift', 'Drag'], text: 'Change the orbit Size', join: '+' },
+    { keys: ['Alt', 'Drag'], text: 'Rotate the orbit', join: '+' },
+    { keys: ['Wheel'], text: 'Over the dot: Size. Elsewhere: zoom' },
+  ] },
+  { group: 'Sequencer', items: [
+    { keys: ['Arrows'], text: 'Left / right move along a row; up / down change the value' },
+    { keys: ['Space'], text: 'Toggle the focused step, accent or slide' },
+    { keys: ['Drag'], text: 'Drag across pads or bars to paint them' },
+    { keys: ['Shift', 'Click'], text: 'On a Dot cell: move that step\'s dot lock to where the dot is now', join: '+' },
+  ] },
+];
+
+function activatesOnSpace(el) {
+  if (!el || el === document.body) return false;
+  const role = el.getAttribute && el.getAttribute('role');
+  const tag = el.tagName;
+  const isControl = tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'A' || role === 'button' || role === 'radio' || role === 'tab' || role === 'option' || role === 'menuitem' || role === 'checkbox' || role === 'switch';
+  if (!isControl) return false;
+  // Keyboard users (visible focus) keep the standard "Space activates" behaviour;
+  // after a mouse click, Space goes back to being the transport key.
+  try { return el.matches(':focus-visible'); } catch { return true; }
+}
+
+/**
+ * actions: { togglePlay, selectPart(i), help, settings, record, prevPatch, nextPatch, preview }
+ */
+export function installShortcuts({ layers, actions }) {
+  function onKey(e) {
+    if (e.defaultPrevented) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (isTypingTarget(e.target)) return;
+    if (layers && layers.hasModal()) return;
+    const key = e.key;
+    if (key === ' ' || e.code === 'Space') {
+      if (activatesOnSpace(e.target)) return;
+      e.preventDefault();
+      if (!e.repeat) actions.togglePlay();
+      return;
+    }
+    if (e.repeat) return;
+    if (/^[1-4]$/.test(key)) { e.preventDefault(); actions.selectPart(Number(key) - 1); return; }
+    if (key === '?') { e.preventDefault(); actions.help(); return; }
+    if (key === ',') { e.preventDefault(); actions.settings(); return; }
+    if (key === '[' || key === ']') {
+      // With the map focused, the 3D view uses [ and ] for the orbit size.
+      if (e.target && e.target.closest && e.target.closest('[data-viewport]')) return;
+      e.preventDefault();
+      if (key === '[') actions.prevPatch(); else actions.nextPatch();
+      return;
+    }
+    if (e.code === 'KeyR' && !e.shiftKey) { e.preventDefault(); actions.record(); return; }
+    if (e.code === 'KeyP' && e.shiftKey && actions.preview) { e.preventDefault(); actions.preview(); }
+  }
+  document.addEventListener('keydown', onKey);
+  return () => document.removeEventListener('keydown', onKey);
+}
