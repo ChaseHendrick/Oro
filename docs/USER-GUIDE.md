@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.2.1, including the guitar pedal features
+going on under the hood. It describes version 1.2.2, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)).
 
