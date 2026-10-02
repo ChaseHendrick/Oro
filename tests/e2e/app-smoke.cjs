@@ -79,11 +79,16 @@ async function run(viewport, theme, tag) {
   if (await canvas.count()) {
     const box = await canvas.boundingBox();
     await page.mouse.click(box.x + box.width * 0.62, box.y + box.height * 0.62);
-    await sleep(900);
-    const after = await page.evaluate(() => {
+    // Poll: under software GL one frame can block the page for over a second.
+    const readCenter = () => page.evaluate(() => {
       const s = window.orograph.store; const p = s.get('ui.selectedPart');
       return [s.get(`parts.${p}.params.centerX`), s.get(`parts.${p}.params.centerY`)];
     });
+    let after = before;
+    for (let t = 0; t < 4000 && Math.hypot(after[0] - before[0], after[1] - before[1]) <= 0.01; t += 250) {
+      await sleep(250);
+      after = await readCenter();
+    }
     const moved = Math.hypot(after[0] - before[0], after[1] - before[1]);
     check(moved > 0.01, `${tag}: clicking the map moves the dot (${before.map(v => v.toFixed(3))} -> ${after.map(v => v.toFixed(3))})`);
   } else {

@@ -190,6 +190,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   // physics timer). Glides, camera moves and write throttles run on it, so
   // test stepping (debug.advance) and real frames behave identically.
   let clock = 0;
+  let glideTimer = 0;
   let envT = -1;
   let paletteIndex = Number.isInteger(store.get('ui.palette')) ? store.get('ui.palette') : 0;
   let styleIndex = Math.max(0, RENDER_STYLES.indexOf(store.get('ui.renderStyle')));
@@ -471,9 +472,20 @@ export async function createVisuals(container, { store, engine = null, quality, 
     ctl.dur = reduced ? 140 : Math.min(620, GLIDE_MS * (0.6 + d * 2));
     ctl.mode = 'glide';
     ctl.u = _base.u; ctl.v = _base.v;
+    // The glide advances per frame; if frames stall (slow GPU, hidden tab) the
+    // dot must still land, because the sound follows the store, not the picture.
+    clearTimeout(glideTimer);
+    const part = sel;
+    glideTimer = setTimeout(() => {
+      if (disposed || ctl.mode !== 'glide' || part !== sel) return;
+      ctl.u = wrap01(ctl.toU); ctl.v = wrap01(ctl.toV);
+      ctl.mode = 'idle';
+      sim.userWrite(part, ctl.u, ctl.v, true, clock);
+      if (sim.isActive(part)) sim.release(part, 0, 0);
+    }, ctl.dur + 120);
   }
 
-  function cancelGlide() { if (ctl.mode === 'glide') ctl.mode = 'idle'; }
+  function cancelGlide() { clearTimeout(glideTimer); if (ctl.mode === 'glide') ctl.mode = 'idle'; }
 
   function recordHist(x, z) {
     const i = ctl.histI;
@@ -1021,6 +1033,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       raf = requestAnimationFrame(frame);
     } else if (!want && running) {
       running = false;
+      clearTimeout(glideTimer);
       cancelAnimationFrame(raf);
     }
     // Keep rolling / drifting dots alive (they shape the sound) while the map
