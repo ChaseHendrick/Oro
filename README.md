@@ -11,6 +11,11 @@ It runs as a desktop app on Mac, Windows and Linux, or in a web browser (even of
 from a single file). It plays from your computer keyboard, the on-screen keys, its own
 step sequencer, or a MIDI controller such as an Akai MPC.
 
+**[Download](#download)** · **[User guide](docs/USER-GUIDE.md)** ·
+**[Play in the browser](#play-in-the-browser)** · **[What's new](CHANGELOG.md)**
+
+![Orograph in the dark theme: a 3D landscape with a glowing dot and its orbit, the Map panel on the right and the Sound controls below](docs/screenshots/orograph-dark.webp)
+
 ## How it makes sound
 
 Orograph uses a technique called **wave terrain synthesis**.
@@ -33,10 +38,44 @@ can grow, squash, rotate and spin, small moves give smooth, continuous changes i
 something like moving through a wavetable but in two dimensions instead of one.
 
 The idea comes from computer music research of the late 1970s and early 1980s (Rich
-Gold; Yasuhiro Mitsuhashi; Alberto Borgonovo and Goffredo Haus). Orograph adds the
-3D view, a dot that can roll around the land like a marble or drift on its own, and
-modern sound shaping: a filter, envelopes, an LFO for each of the main sound knobs,
-four parts that play together, a sequencer and arpeggiator, delay and reverb.
+Gold; Yasuhiro Mitsuhashi; Alberto Borgonovo and Goffredo Haus). Orograph adds a 3D
+view you can play directly, and a modern synthesizer around it. The
+[user guide](docs/USER-GUIDE.md#1-what-wave-terrain-synthesis-is) has the maths in a
+few lines.
+
+## A quick tour
+
+* **Thirteen landscapes and your own.** Swell, Ripple, Bessel, Dunes, Ridge, Massif,
+  Craters, Terraces, Cells, Canyon, Spectra, Lattice and Vortex, each with Seed and
+  Detail. Blend any two with Morph, ripple them with Warp, and shape the result with
+  Lift and Fold. Import a photo or a 16-bit elevation map (DEM) as land, or a WAV
+  wavetable.
+* **Twelve paths.** Ellipse, Lissajous, Rose, Polygon, Star, Spiral, Scan, Spirograph,
+  Figure 8, Epicycloid, Superformula and Scribble, with Size, Stretch, Rotate and Spin.
+  **Laps** gives hard-sync sweeps and **Pace** gives phase distortion.
+* **A dot with a mind of its own.** Pin it, let it **Roll** downhill as a marble you can
+  flick, **Drift**, **Explore** the land playing in-key notes at peaks and valleys, or
+  **Tour** through waypoints in time with the music. A minimap and keyboard control make
+  precise placement easy.
+* **Sound shaping.** Poly, Mono and Legato voices with unison, a sub oscillator and a
+  breathy Air layer; low, band, high, notch, comb and vowel filters; two envelopes.
+* **Modulation everywhere.** Every moving knob has its own LFO (including a drawable
+  16-step shape) and envelope depth. **Links** route velocity, aftertouch, MPE slide,
+  the marble, the terrain height or four global **Macros** to anything.
+* **Music.** Four parts, a 16-step sequencer per part that stores scale degrees so it
+  follows the key, accents, slides, **dot locks** that move the dot per step, an
+  arpeggiator, swing, and a one-key **preview** phrase for every patch.
+* **Patches and scenes.** More than fifty factory patches in ten categories, seven
+  factory scenes, your own patches and scenes, random patches, and JSON export and
+  import.
+* **Mix and record.** Ping-pong delay, reverb, chorus, warmth and a limiter with an
+  adjustable ceiling. Record what you play to a 24-bit WAV, or **bounce** the sequencers
+  offline, with optional stems per part.
+* **MIDI and the Akai MPC XL.** Omni or one channel per part, MPC pad scale mode, a
+  Q-Link learn wizard, MIDI Learn on any knob, clock in or out, MPE, and a step by step
+  MPC guide inside the app.
+* **Dark and light themes**, keyboard shortcuts for the main actions, and a layout that
+  works on a phone.
 
 ## Download
 
@@ -52,6 +91,10 @@ or use these direct links:
 | Windows, no installation needed | [Orograph-windows-portable.exe](https://github.com/ChaseHendrick/synth/releases/latest/download/Orograph-windows-portable.exe) |
 | Linux (64-bit PC) | [Orograph-linux-x86_64.AppImage](https://github.com/ChaseHendrick/synth/releases/latest/download/Orograph-linux-x86_64.AppImage) |
 | Any computer, in Chrome or Edge | [Orograph.html](https://github.com/ChaseHendrick/synth/releases/latest/download/Orograph.html) (see [Play in the browser](#play-in-the-browser)) |
+
+Releases are built and published automatically by GitHub Actions from the `main`
+branch. If a link above says "Not Found", the first release has not been published yet;
+[build it yourself](#build-it-yourself) in the meantime.
 
 Not sure which Mac you have? Open the Apple menu and choose **About This Mac**. If it
 says **Chip: Apple M1** (or M2, M3 and so on), take the Apple silicon version. If it says
@@ -117,11 +160,14 @@ the Releases page too.
 
 No installation at all:
 
-* **Online:** <https://www.hendrickresearch.com/music/orograph/>
+* **Online:** <https://www.hendrickresearch.com/music/orograph/> (this page goes live
+  when the matching update to the Hendrick Research website is merged).
 * **Offline:** download **Orograph.html** from the
   [Releases page](https://github.com/ChaseHendrick/synth/releases/latest) and
   double-click it. The whole synthesizer is inside that one file, so it works on a
   plane, in a practice room, or anywhere without internet.
+* **On your own website:** each release also has **Orograph-web.zip**, the normal web
+  build. It works from any folder of a site, for example `/music/orograph/`.
 
 Use a recent **Chrome** or **Edge** for the best results, especially for MIDI. Other
 browsers can play sound, but some cannot talk to MIDI devices. The first time you
@@ -144,6 +190,10 @@ connect a MIDI device the browser asks for permission; click **Allow**.
 
 Your last session is saved automatically, so Orograph opens where you left off.
 
+The **[user guide](docs/USER-GUIDE.md)** goes through every control: the map and the
+dot, all the terrains and paths, the sound and modulation, the sequencer and dot locks,
+mixing, recording, settings and MIDI.
+
 ## Connect an Akai MPC (or any MIDI controller)
 
 Orograph works with class-compliant USB MIDI devices, including Akai MPCs in
@@ -151,8 +201,8 @@ Standalone mode.
 
 1. Connect the MPC's **USB-C** port to your computer with a USB cable that carries
    data (some charging-only cables do not).
-2. In Orograph, open **Settings**, go to **MIDI & MPC**, and turn on the MPC input
-   (its name contains "MPC").
+2. In Orograph, open **Settings**, go to **MIDI & MPC**, press **Connect MIDI**, and
+   make sure the MPC input is on (its name contains "MPC").
 3. On the MPC, set a MIDI track's output to the USB MIDI port and play the pads.
 
 The in-app guide (Settings, MIDI & MPC) walks through the MPC menus step by step,
@@ -163,9 +213,21 @@ Akai's software center.
 
 MIDI works in the desktop app and in Chrome or Edge.
 
+The full MPC XL notes, with sources, are in [docs/MPC-XL.md](docs/MPC-XL.md). None of
+the MPC steps have been tried on a physical MPC XL yet, so treat the menu names as
+guidance.
+
+## Guitar pedals (coming in 1.1)
+
+Version 1.1 is planned to run Orograph through a real pedalboard via the MPC XL's audio
+inputs and outputs, send MIDI to pedals that accept it, and let a guitar play and
+modulate Orograph. The design is in [docs/PEDALS.md](docs/PEDALS.md). It is not part of
+0.1.0.
+
 ## Keyboard shortcuts
 
-Press **?** in the app to see every shortcut.
+Press **?** in the app to see every shortcut. They are also listed in the
+[user guide](docs/USER-GUIDE.md#16-keyboard-shortcuts).
 
 ## Build it yourself
 
@@ -182,6 +244,7 @@ these commands in a terminal inside the project folder:
 | `npm run build:single` | Builds the one-file offline version into `dist-single/index.html`. |
 | `npm run electron` | Builds, then opens the desktop app from the source code. |
 | `npm run dist` | Builds the desktop app for your computer into `release/`. |
+| `npm run dist:mac`, `dist:win`, `dist:linux` | Builds the desktop app for one system. Each is best run on that system. |
 
 Every change pushed to the `main` branch is built automatically for Mac, Windows and
 Linux by GitHub Actions and published on the
@@ -200,8 +263,19 @@ Linux by GitHub Actions and published on the
 | `electron/` | The desktop app shell |
 | `public/`, `build/` | Icons and the web app manifest |
 | `tests/` | Automated tests |
-| `docs/` | Architecture notes and the MPC research behind the in-app guide |
+| `docs/` | The user guide, architecture notes, the research brief, MPC and pedal notes, screenshots |
 | `dev/` | Developer test pages and tools (icon and notice generators) |
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [User guide](docs/USER-GUIDE.md) | How to play Orograph, every control explained, troubleshooting |
+| [Changelog](CHANGELOG.md) | What is in each version |
+| [Akai MPC XL](docs/MPC-XL.md) | Connecting and syncing an MPC XL, with sources |
+| [Guitar pedals](docs/PEDALS.md) | The design for version 1.1's pedalboard integration |
+| [Research brief](docs/RESEARCH.md) | Wave terrain synthesis: history, maths, prior art and the build stack |
+| [Architecture](docs/ARCHITECTURE.md) | How the code fits together, for developers |
 
 ## Independent work
 
