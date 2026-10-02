@@ -3,6 +3,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 import { build as esbuild } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,11 +37,32 @@ function workletString() {
   };
 }
 
+// In the one-file offline build there is no folder next to the HTML file, so
+// inline the SVG favicon and drop links that would point at missing files.
+function singleFileHead() {
+  return {
+    name: 'orograph-single-file-head',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        const svg = fs.readFileSync(path.resolve(root, 'public/favicon.svg'));
+        const dataUri = `data:image/svg+xml;base64,${svg.toString('base64')}`;
+        return html.replace(/<link\b[^>]*\brel="(icon|apple-touch-icon|manifest)"[^>]*>\s*/g, (tag, rel) =>
+          rel === 'icon' && /favicon\.svg/.test(tag) ? tag.replace(/href="[^"]*"/, `href="${dataUri}"`) : '');
+      },
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   base: './',
-  plugins: [workletString(), ...(mode === 'single' ? [viteSingleFile({ removeViteModuleLoader: true })] : [])],
+  plugins: [
+    workletString(),
+    ...(mode === 'single' ? [viteSingleFile({ removeViteModuleLoader: true }), singleFileHead()] : []),
+  ],
   build: {
     outDir: mode === 'single' ? 'dist-single' : 'dist',
+    copyPublicDir: mode !== 'single',
     target: 'es2022',
     chunkSizeWarningLimit: 4000,
     assetsInlineLimit: mode === 'single' ? 100_000_000 : 4096,

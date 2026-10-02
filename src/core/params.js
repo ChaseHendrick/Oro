@@ -103,6 +103,11 @@ export const PART_PARAMS = [
   P('reverbSend', 'Reverb',  'mix', 'lin', 0, 1, 0.22),
   P('mute',       'Mute',    'mix', 'bool', 0, 1, 0),
   P('solo',       'Solo',    'mix', 'bool', 0, 1, 0),
+  // Added after v0.1 contract (appended so numeric slots stay stable)
+  P('laps',      'Laps',     'path', 'lin', 1, 8, 1,     { mod: true, hint: 'Trace the path this many times per cycle and restart it each cycle (hard sync). In-between values give sync sweeps' }),
+  P('pace',      'Pace',     'path', 'lin', -1, 1, 0,    { mod: true, hint: 'Speed up and slow down along the path within each cycle (phase distortion)' }),
+  P('paceShape', 'Curve',    'path', 'enum', 0, 2, 0,    { options: ['Bend', 'Skew', 'Pinch'], hint: 'How Pace bends the traversal speed' }),
+  P('sub',       'Sub',      'voice', 'lin', 0, 1, 0,    { hint: 'Clean sine one octave below the note' }),
 ];
 
 export const GLOBAL_PARAMS = [
@@ -210,10 +215,12 @@ export const ARP_MODES = ['Off', 'Up', 'Down', 'Up/Down', 'Random', 'As Played',
  * so changing key/scale re-harmonises every pattern.
  */
 export function defaultStep() {
-  return { on: 0, degree: 0, octave: 0, vel: 0.8, gate: 0.5, slide: 0, accent: 0 };
+  // lock/lx/ly: optional dot lock. When lock = 1 the dot glides to (lx, ly) as the step plays.
+  return { on: 0, degree: 0, octave: 0, vel: 0.8, gate: 0.5, slide: 0, accent: 0, lock: 0, lx: 0.5, ly: 0.5 };
 }
 export function defaultSeq() {
-  return { enabled: 0, rate: 3, length: 16, baseOctave: 3, steps: Array.from({ length: SEQ_STEPS }, defaultStep) };
+  // lockGlide: how long the dot takes to reach a step's lock, as a fraction of one step (0 = jump).
+  return { enabled: 0, rate: 3, length: 16, baseOctave: 3, lockGlide: 0.5, steps: Array.from({ length: SEQ_STEPS }, defaultStep) };
 }
 export function defaultArp() {
   return { mode: 0, rate: 3, octaves: 1, gate: 0.6, hold: 0 };

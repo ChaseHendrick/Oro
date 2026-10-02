@@ -46,6 +46,7 @@ function sanitizeSeq(src, base) {
     rate: Math.round(clamp(num(s.rate, base.rate), 0, 5)),
     length: Math.round(clamp(num(s.length, base.length), 1, SEQ_STEPS)),
     baseOctave: Math.round(clamp(num(s.baseOctave, base.baseOctave), 0, 7)),
+    lockGlide: clamp(num(s.lockGlide, base.lockGlide), 0, 1),
     steps: [],
   };
   for (let i = 0; i < SEQ_STEPS; i++) {
@@ -59,6 +60,9 @@ function sanitizeSeq(src, base) {
       gate: clamp(num(st.gate, d.gate), 0.05, 1),
       slide: num(st.slide, d.slide) ? 1 : 0,
       accent: num(st.accent, d.accent) ? 1 : 0,
+      lock: num(st.lock, d.lock) ? 1 : 0,
+      lx: clamp(num(st.lx, d.lx), 0, 1),
+      ly: clamp(num(st.ly, d.ly), 0, 1),
     });
   }
   return out;

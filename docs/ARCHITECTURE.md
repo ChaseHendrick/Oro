@@ -109,6 +109,8 @@ Worklet → main, about 60 times per second:
   spinPhase, voices: [{id, note, amp}], peak: [L, R], activeVoices: [count per part] }
 ```
 
+Two protocol extras: a single port message may be an **array** of messages (applied in order), and `processorOptions.init` may carry an array of messages applied in the constructor (needed for OfflineAudioContext renders, which start before port messages arrive).
+
 `dsp-core.js` exports `class OrographDSP { constructor(sampleRate); handleMessage(msg); process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime); }` plus a `postMessage` hook, so the same engine runs inside the AudioWorklet, inside a ScriptProcessorNode fallback, and in Node tests.
 
 ## Audio host API (`src/audio/engine.js`)
@@ -128,6 +130,14 @@ engine.level() -> 0..1 smoothed output level (for visuals)
 ```
 
 The engine subscribes to the store and forwards every change itself (params, mods, global, terrain regeneration with debounce, watched part = `ui.selectedPart`). Effects: stereo ping-pong delay (tempo-synced `delayDiv`, feedback, tone, return), algorithmic-IR convolution reverb (size, damp, return), master chorus, warmth (saturation), limiter, master volume, analyser.
+
+## Features added after v0.1 of this contract
+
+* **Laps** (`laps`, 1..8, modulatable): the path is traced `laps` times per oscillator cycle and restarted at every cycle boundary (hard sync; fractional values give sync sweeps). The restart is band-limited with a polyBLEP correction.
+* **Pace** (`pace`, −1..1, modulatable) with **Curve** (`paceShape`: Bend, Skew, Pinch): monotonic phase distortion of the cycle phase before Laps: `t = frac(laps · g(φ))`. Helpers `paceWarp`, `paceSpeed`, `syncPhase` are exported from `src/dsp/` for the visuals.
+* **Sub** (`sub`, 0..1): one sine an octave below each voice, before the filter.
+* **Dot locks**: sequencer steps carry `lock`, `lx`, `ly`; `seq.lockGlide` sets the glide time as a fraction of a step. The music transport glides the dot (wrap-aware) when a locked step plays, writing `centerX/centerY` with `{source: 'lock'}`; any other source cancels the glide. `ui.lockRecord` records dot moves into the sounding step while playing.
+* **Harmonic bars**: the UI shows the magnitudes of the first harmonics of the exact single cycle (terrain sampled along the current path), next to the cycle view.
 
 ## Visuals API (`src/visual/visuals.js`)
 
