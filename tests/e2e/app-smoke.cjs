@@ -34,8 +34,11 @@ async function run(viewport, theme, tag) {
 
   // Start audio the way a person would: click the start button if present, else anywhere.
   const startBtn = page.locator('[data-action="start"], .og-start button, button:has-text("Start")').first();
-  if (await startBtn.count()) await startBtn.click({ timeout: 5000 }).catch(() => {});
+  if (await startBtn.count()) await startBtn.click({ timeout: 20000 }).catch(() => {});
   else await page.mouse.click(viewport.width / 2, viewport.height / 2);
+  // The start screen fades out; the map is only clickable once it is gone.
+  const startGone = await page.waitForSelector('.start-card', { state: 'hidden', timeout: 20000 }).then(() => true, () => false);
+  check(startGone, `${tag}: start screen closes after Start`);
   await sleep(800);
 
   const state = await page.evaluate(() => {
@@ -78,7 +81,9 @@ async function run(viewport, theme, tag) {
   const canvas = page.locator('[data-viewport] canvas').first();
   if (await canvas.count()) {
     const box = await canvas.boundingBox();
-    await page.mouse.click(box.x + box.width * 0.62, box.y + box.height * 0.62);
+    const cx = box.x + box.width * 0.62, cy = box.y + box.height * 0.62;
+    const hitEl = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.tagName + '.' + e.className : 'none'; }, [cx, cy]);
+    await page.mouse.click(cx, cy);
     // Poll: under software GL one frame can block the page for over a second.
     const readCenter = () => page.evaluate(() => {
       const s = window.orograph.store; const p = s.get('ui.selectedPart');
@@ -90,7 +95,7 @@ async function run(viewport, theme, tag) {
       after = await readCenter();
     }
     const moved = Math.hypot(after[0] - before[0], after[1] - before[1]);
-    check(moved > 0.01, `${tag}: clicking the map moves the dot (${before.map(v => v.toFixed(3))} -> ${after.map(v => v.toFixed(3))})`);
+    check(moved > 0.01, `${tag}: clicking the map moves the dot (${before.map(v => v.toFixed(3))} -> ${after.map(v => v.toFixed(3))}${moved > 0.01 ? '' : ', clicked ' + hitEl})`);
   } else {
     check(false, `${tag}: 3D canvas present`);
   }
