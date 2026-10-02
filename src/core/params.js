@@ -189,10 +189,12 @@ export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
 // Links: per-part modulation routing (source -> any modulatable parameter), applied
 // in normalised space on top of the per-parameter LFO/Env depths.
 // Source value ranges: Velocity, Mod Wheel, Pressure, Slide, Macros, Marble Speed,
-// Env 1, Env 2, Guitar Level (envelope of the guitar on the pedal return, v1.1) are 0..1; Key ((note - 60) / 48), Marble Height, Random (per note) and
-// Terrain Height (height under the modulated dot) are -1..1.
+// Env 1, Env 2, Guitar Level (envelope of the guitar on the pedal return, v1.1), Voice Level (envelope of the
+// microphone, v1.4) are 0..1; Key ((note - 60) / 48), Marble Height, Random (per note) and
+// Terrain Height (height under the modulated dot) are -1..1. New sources are only ever appended, so saved
+// links keep their meaning; an older build clamps an index it does not know to its own last source.
 export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
-  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level'];
+  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level', 'Voice Level'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {

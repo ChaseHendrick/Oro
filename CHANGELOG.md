@@ -3,6 +3,53 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.4.0 (October 2026): Voice input
+
+### Voice
+
+* **Settings > Voice** brings in a microphone, a plain laptop microphone included: pick the
+  input, switch **Voice** on, set the **Input gain** with a meter and a **Clip** light (it
+  tells a clipping microphone from too much gain), choose **Mono** or **Stereo**.
+* **Clean by default.** The browser's echo cancellation, noise suppression and auto gain are
+  off, Orograph asks for its own audio rate (48 kHz on most computers) and 24-bit, so the
+  browser does not resample, and the audio context keeps its interactive latency.
+  **Mic Cleanup** turns noise suppression and echo cancellation on for singing into a laptop
+  with its speakers playing.
+* **Monitor** (Auto, On, Off). Auto hears the voice only with headphones or an audio
+  interface, and stays off for a laptop's built-in microphone with its built-in speakers,
+  with a "use headphones to avoid feedback" hint. A feedback guard, tuned for voices, is
+  armed whenever the microphone is open and mutes a howl, a runaway or clipping.
+* **Optional processing**, all off by default: a high-pass at 80 Hz, a gentle compressor and
+  a split-band de-esser. A voice strip sets level, pan and the delay and reverb sends.
+* **Looping vocals.** The voice joins the master like a part, so the looper records and
+  overdubs it and Resample turns vocal loops into terrains. With Monitor off the voice is
+  not heard but still reaches the looper. The voice never reaches the pedal send and is
+  never routed back into itself.
+* **Voice plays notes.** The guitar's pitch tracker follows singing or humming and plays a
+  chosen part (note source `voice`), with a gate and slides and vibrato as pitch bend.
+* **Capture** a sung note into a wavetable terrain on the voice's part (named, for example,
+  Voice A3).
+* **Voice Level** is a new Links source (0 to 1, the envelope of the voice), so singing can
+  move the terrain. It is appended after Guitar Level, so saved links keep their meaning and
+  the session format is unchanged.
+* **Permissions.** Settings > Voice says why the microphone is needed before the browser
+  asks, and explains what to do when access is refused, no microphone is found or another
+  app holds it, with **Try again**. The desktop app's macOS microphone description now
+  mentions vocals.
+* Voice settings belong to the computer (stored with the browser, like the pedal rig) and
+  are never saved in sessions, scenes or patches. The microphone reopens at start only when
+  permission was already given.
+* The feedback guard on the voice tells a howl from singing by pitch as well as steadiness: a
+  howl holds one exact pitch, a sung note wobbles. A note starting out of silence no longer
+  counts as a runaway level. A very loud note held almost perfectly straight for over half a
+  second can still trip it; press **Unmute**.
+* Voice input has been tested with simulated signals, not yet with real microphones.
+
+### Fixes
+
+* **Guitar plays notes** on Track 5 to 16 now plays that track; it fell back to the selected
+  track in 1.3.0.
+
 ## 1.3.0 (October 2026): Tracks
 
 * New: an open track list. Sessions start with four tracks as before; add up to 16 with the

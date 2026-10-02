@@ -38,7 +38,8 @@ const ALLOWED_PERMISSIONS = new Set([
 // enumerateDevices and AudioContext.setSinkId) for an audio interface or an MPC.
 const CHECK_ONLY_PERMISSIONS = new Set(['speaker-selection']);
 
-// v1.1 pedal return (Settings > Pedals): getUserMedia asks the request handler for
+// v1.1 pedal return (Settings > Pedals) and v1.4 voice input (Settings > Voice, a
+// laptop's own microphone included): getUserMedia asks the request handler for
 // 'media'. Audio capture is granted to our own origin only, and only when every
 // requested media type is audio: cameras and screen capture stay refused.
 const AUDIO_ONLY = new Set(['audio']);

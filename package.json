@@ -1,7 +1,7 @@
 {
   "name": "orograph",
   "productName": "Orograph",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Orograph: a 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
   "author": "Chase",
   "license": "MIT",
@@ -85,7 +85,7 @@
       "identity": "-",
       "artifactName": "Orograph-mac-${arch}.${ext}",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Orograph listens to an audio input only when you turn on the pedal return in Settings > Pedals, to hear your guitar pedals and to measure their latency."
+        "NSMicrophoneUsageDescription": "Orograph listens to a microphone or audio input only when you turn on Voice in Settings > Voice (to hear and loop your vocals, play notes by singing and capture sung notes as terrains) or the pedal return in Settings > Pedals (to hear your guitar pedals and measure their latency)."
       }
     },
     "dmg": {

@@ -112,10 +112,10 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 // for the whole part (folded into the part's shared modulation, so they also
 // show in idle telemetry) rather than per voice.
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
-  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15;
+  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16;
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
-for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR]) if (s < NSRC) PART_SOURCE[s] = 1;
+for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE]) if (s < NSRC) PART_SOURCE[s] = 1;
 const NCURVES = LINK_CURVES.length;
 const DEFAULT_LINKS = defaultLinks();
 
@@ -714,7 +714,7 @@ class Part {
   }
 
   /** Recompute the summed contribution of the part-wide Link sources. */
-  updatePartLinks(macros, guitar = 0) {
+  updatePartLinks(macros, guitar = 0, voice = 0) {
     const pl = this.partLink;
     pl.fill(0);
     for (let i = 0; i < this.nLinks; i++) {
@@ -725,6 +725,7 @@ class Part {
       else if (s === L_MSPEED) x = this.sMarbleSpeed;
       else if (s === L_MHEIGHT) x = this.sMarbleHeight;
       else if (s === L_GUITAR) x = guitar;
+      else if (s === L_VOICE) x = voice;
       else x = macros[s - L_MACRO];
       pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], x);
     }
@@ -838,6 +839,7 @@ export class OrographDSP {
     // mode (pedal send above 0, Insert off) while the pedal loop runs.
     this.dryDelayN = 0;
     this.guitar = 0; this.sGuitar = 0;  // Guitar Level link source (0..1), smoothed like the marble
+    this.voice = 0; this.sVoice = 0;    // Voice Level link source (0..1, v1.4 microphone envelope), smoothed the same way
     this.transport = { playing: false, beatTime: 0, beat: 0 };
     this.watch = 0;
     this.voiceCounter = 0;
@@ -941,6 +943,7 @@ export class OrographDSP {
       case 'pedal': this.pedalOn = !!msg.active; break;
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
+      case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
       case 'tracks': this.setTracks(msg); break;
       case 'watch': {
@@ -1144,7 +1147,7 @@ export class OrographDSP {
     }
     P.nLinks = n;
     this.updateLinkFlags(P);
-    P.updatePartLinks(this.macros, this.sGuitar);
+    P.updatePartLinks(this.macros, this.sGuitar, this.sVoice);
   }
 
   /** Which slots need per-voice evaluation, and whether the orbit is modulated per voice. */
@@ -1726,7 +1729,7 @@ export class OrographDSP {
   }
 
   partMods(P) {
-    P.updatePartLinks(this.macros, this.sGuitar);
+    P.updatePartLinks(this.macros, this.sGuitar, this.sVoice);
     const PL = P.partLink;
     for (let m = 0; m < NMOD; m++) {
       let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m];
@@ -2244,6 +2247,8 @@ export class OrographDSP {
     const n2 = this.os * CTRL;
     const gtr = this.guitar;
     this.sGuitar = Math.abs(gtr - this.sGuitar) < 1e-6 ? gtr : this.sGuitar + (gtr - this.sGuitar) * this.kMarble;
+    const vox = this.voice;
+    this.sVoice = Math.abs(vox - this.sVoice) < 1e-6 ? vox : this.sVoice + (vox - this.sVoice) * this.kMarble;
     const pedalOn = this.pedalOn;
     const parts = this.parts, liveN = this.liveN;
     for (let i = 0; i < liveN; i++) {

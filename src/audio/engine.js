@@ -29,6 +29,7 @@ import { loadWorkletModule, withTimeout } from './worklet-loader.js';
 import { bounceOptions, normaliseEvents, stemParts, passInit, renderPass, encodeBuffer } from './bounce.js';
 import { sequencerEvents } from './bounce-events.js';
 import { createPedalHost } from './pedal-host.js';
+import { createVoiceHost } from './voice-host.js';
 import { dryDelaySamples, MAX_COMP_MS } from '../pedals/latency-comp.js';
 
 export { loadWorkletModule };
@@ -109,12 +110,14 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let transportMsg = null;
   // v1.1 pedal loop state the DSP needs back after a rebuild.
   let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
+  let voiceMsg = null;            // v1.4 Voice Level link source
   let pedalCompMs = 0;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
     if (pedalMsg && pedalMsg.active) out.push({ ...pedalMsg });
     if (dryDelayMsg && dryDelayMsg.samples) out.push({ ...dryDelayMsg });
     if (guitarMsg && guitarMsg.v) out.push({ ...guitarMsg });
+    if (voiceMsg && voiceMsg.v) out.push({ ...voiceMsg });
     controllers.forEach((c, part) => {
       if (c.bend) out.push({ t: 'bend', part, v: c.bend });
       if (c.wheel) out.push({ t: 'wheel', part, v: c.wheel });
@@ -257,6 +260,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   // mainOut: the master output on its way to the device. The pedal host moves
   // it onto outputs 1/2 of a multichannel map when the pedal send is on.
   let mainOut = null, pedalSendBus = null, pedals = null;
+  // v1.4 voice input; looperIn sums the master tap and the voice while its Monitor is off.
+  let voice = null, looperIn = null;
   if (ctx) {
     const stereoNode = () => { const g = ctx.createGain(); g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; return g; };
     mainOut = stereoNode();
@@ -279,6 +284,17 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     } catch (err) {
       console.warn('[audio] the pedal loop is unavailable', err);
       pedals = null;
+    }
+    looperIn = stereoNode();
+    fx.masterTap.connect(looperIn);
+    try {
+      voice = createVoiceHost(ctx, {
+        masterIn: fx.dryIn, delayIn: fx.delayIn, reverbIn: fx.reverbIn, loopIn: looperIn,
+        post: (m) => { voiceMsg = m; sync.flush(); send(m); },
+      });
+    } catch (err) {
+      console.warn('[audio] voice input is unavailable', err);
+      voice = null;
     }
     const init = sync.snapshot();
     if (dspMode === 'worklet') {
@@ -309,9 +325,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     onEvent: (e) => events.emit('recording', e),
   }) : null;
 
-  // v1.2 looper: hears the master after the effects (fx.masterTap) and plays
-  // into the limiter input (fx.masterReturn). See src/audio/looper.js.
-  const looper = createLooper(ctx, { input: fx ? fx.masterTap : null, output: fx ? fx.masterReturn : null, worklet: looperWorklet });
+  // v1.2 looper: hears the master after the effects (fx.masterTap, through
+  // looperIn, which also carries the unmonitored voice) and plays into the
+  // limiter input (fx.masterReturn). See src/audio/looper.js.
+  const looper = createLooper(ctx, { input: looperIn, output: fx ? fx.masterReturn : null, worklet: looperWorklet });
 
   // ---- context state ----------------------------------------------------------------
   let wantRunning = false;
@@ -421,6 +438,13 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
      * ping(), resetGuard(), status(), on('change' | 'guitar' | 'ping', fn).
      */
     get pedals() { return pedals; },
+    /**
+     * v1.4 voice input (src/audio/voice-host.js), or null without Web Audio:
+     * set({enabled, deviceId, cleanup, channels, inputGainDb, monitor, highpass, compressor,
+     * deesser, level, pan, delay, reverb, gateDb, bendRange}), meter(), capture(), resetGuard(),
+     * status(), on('change' | 'level' | 'voiceNote', fn).
+     */
+    get voice() { return voice; },
     /**
      * Pedal latency compensation (src/pedals/latency-comp.js): delay the dry
      * sound of Send mode parts (pedal send above 0, Insert off) by `ms` while
@@ -562,7 +586,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         // render starts its bar at 0 (events from music.renderEvents say so too).
         // The pedals are hardware and cannot take part in an offline render:
         // the bounce plays every part dry (Insert ignored, no pedal send).
-        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'dryDelay');
+        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay');
         snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
         if (opts.quality && QUALITY_MODES.includes(opts.quality)) snapshot.push({ t: 'quality', mode: opts.quality });
         const terrains = terrain.messages();
@@ -710,6 +734,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         generator: generator.stats(),
         fx: fx ? fx.stats() : null,
         pedals: pedals ? pedals.status() : null,
+        voice: voice ? voice.status() : null,
         pedalCompensation: { ms: pedalCompMs, samples: dryDelayMsg ? dryDelayMsg.samples : 0 },
         import: { ...importStats },
         sync: sync.stats(),
@@ -733,6 +758,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       if (recorder) recorder.dispose();
       looper.dispose();
       if (pedals) { try { pedals.dispose(); } catch { /* ignore */ } }
+      if (voice) { try { voice.dispose(); } catch { /* ignore */ } }
       teardownSource();
       if (fx) fx.dispose();
       events.clear();
