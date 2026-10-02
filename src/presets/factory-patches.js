@@ -4,7 +4,9 @@
 // map (centerX / centerY LFOs), terrains morphing into each other, rotating
 // and spinning orbits, orbit-size envelopes for plucks and bells (the orbit
 // grows from almost nothing, so brightness and loudness bloom together) and
-// Fold for grit.
+// Fold for grit. Later patches add Laps (hard sync: the path is traced several
+// times per cycle and restarted each cycle, so sweeping it gives the classic
+// sync scream), Pace (phase distortion along the path) and the Sub sine.
 //
 // Levels were balanced by rendering every patch offline through the DSP
 // engine (tests/presets/levels.test.js).
@@ -16,6 +18,7 @@ const MODE = { poly: 0, mono: 1, legato: 2 };
 const SH = { sine: 0, tri: 1, saw: 2, square: 3, sh: 4, drift: 5 };
 const DIV = { '4bar': 0, '2bar': 1, '1bar': 2, '1/2': 3, '1/4.': 4, '1/4': 5, '1/8.': 6, '1/4T': 7, '1/8': 8, '1/16.': 9, '1/8T': 10, '1/16': 11, '1/32': 12 };
 const DOT = { pin: 0, roll: 1, drift: 2 };
+const PACE = { bend: 0, skew: 1, pinch: 2 };
 
 /** Free-running LFO: depth in knob travel, rate in Hz. */
 const lfo = (depth, rate, shape = SH.sine, more = {}) => ({ lfoDepth: depth, lfoRate: rate, lfoShape: shape, ...more });
@@ -34,7 +37,7 @@ export const FACTORY_PATCHES = [
     name: 'Basalt Bass', category: 'Bass', tags: ['round', 'punchy', 'mono'],
     params: {
       terrainA: T.swell, terrainB: T.ridge, morph: 0.18, lift: 1.3, fold: 0.08, seed: 11, detail: 0.35,
-      pathShape: P.ellipse, pathOrder: 2, size: 0.2,
+      pathShape: P.ellipse, pathOrder: 2, size: 0.2, sub: 0.45,
       polyMode: MODE.legato, glide: 0.04, velSens: 0.5,
       filterType: F.low, cutoff: 700, resonance: 0.28, filterEnv: 0.4, keyTrack: 0.4, drive: 0.3,
       ...amp(0.002, 0.5, 0.75, 0.12), ...env2(0.002, 0.28, 0.12, 0.2),
@@ -70,7 +73,7 @@ export const FACTORY_PATCHES = [
     name: 'Delta Wobble', category: 'Bass', tags: ['wobble', 'synced', 'morph'],
     params: {
       terrainA: T.dunes, terrainB: T.fm, morph: 0.3, seed: 5, detail: 0.5,
-      pathShape: P.ellipse, pathOrder: 3, size: 0.26,
+      pathShape: P.ellipse, pathOrder: 3, size: 0.26, sub: 0.5,
       polyMode: MODE.legato, glide: 0.06,
       filterType: F.low, cutoff: 600, resonance: 0.45, filterEnv: 0.2, keyTrack: 0.4, drive: 0.35,
       ...amp(0.003, 0.5, 0.85, 0.15), ...env2(0.003, 0.3, 0.3, 0.2),
@@ -83,12 +86,39 @@ export const FACTORY_PATCHES = [
     params: {
       terrainA: T.massif, terrainB: T.ridge, morph: 0.4, lift: 1.4, seed: 42, detail: 0.45,
       pathShape: P.ellipse, pathOrder: 2, size: 0.22, spin: 0.25,
-      polyMode: MODE.mono, glide: 0.05, unison: 3, detune: 22, spread: 0.35,
+      // The detuned unison smears the low end; the Sub keeps a solid mono root under it.
+      polyMode: MODE.mono, glide: 0.05, unison: 3, detune: 22, spread: 0.35, sub: 0.55,
       filterType: F.low, cutoff: 900, resonance: 0.2, filterEnv: 0.25, keyTrack: 0.4, drive: 0.35,
       ...amp(0.004, 0.6, 0.9, 0.2), ...env2(0.004, 0.4, 0.3, 0.3),
       level: 0.54, delaySend: 0.05, reverbSend: 0.1,
     },
     mods: { rotate: lfo(0.15, 0.2, SH.tri), morph: lfo(0.2, 0.13, SH.drift) },
+  },
+  {
+    name: 'Undertow Bass', category: 'Bass', tags: ['phase distortion', 'pace', 'sub'],
+    params: {
+      terrainA: T.fm, terrainB: T.dunes, morph: 0.25, seed: 9, detail: 0.4, lift: 1.2,
+      pathShape: P.ellipse, pathOrder: 2, size: 0.2, pace: -0.15, paceShape: PACE.skew, sub: 0.45,
+      polyMode: MODE.mono, glide: 0.03, velSens: 0.5,
+      filterType: F.low, cutoff: 1100, resonance: 0.3, filterEnv: 0.35, keyTrack: 0.4, drive: 0.3,
+      ...amp(0.002, 0.45, 0.7, 0.12), ...env2(0.001, 0.25, 0.1, 0.2),
+      level: 0.58, delaySend: 0, reverbSend: 0.05,
+    },
+    // Pace leans on the attack, then a quarter-note sweep keeps the tone rocking.
+    mods: { pace: env(-0.3, synced(0.22, '1/4', SH.tri)), size: env(0.08) },
+  },
+  {
+    name: 'Sinkhole Sub', category: 'Bass', tags: ['sub', 'deep', 'mono'],
+    params: {
+      terrainA: T.ripple, terrainB: T.massif, morph: 0.2, seed: 16, detail: 0.35, lift: 1.3,
+      pathShape: P.lissa, pathOrder: 1, pathParam: 0.5, size: 0.12, sub: 0.7,
+      polyMode: MODE.mono, glide: 0.02, velSens: 0.45,
+      filterType: F.low, cutoff: 900, resonance: 0.1, filterEnv: 0.25, keyTrack: 0.5, drive: 0.2,
+      ...amp(0.003, 0.4, 0.85, 0.14), ...env2(0.001, 0.2, 0, 0.15),
+      level: 0.64, delaySend: 0, reverbSend: 0,
+    },
+    // The Sub carries the weight; the small orbit only adds a growl an octave up.
+    mods: { size: env(0.15), morph: lfo(0.1, 0.13, SH.drift) },
   },
 
   // ------------------------------------------------------------------ Lead
@@ -151,6 +181,19 @@ export const FACTORY_PATCHES = [
       level: 0.82, delaySend: 0.2, reverbSend: 0.18,
     },
     mods: { stretch: lfo(0.2, 0.4, SH.tri), fine: lfo(0.02, 5) },
+  },
+  {
+    name: 'Rift Sync', category: 'Lead', tags: ['hard sync', 'laps sweep', 'envelope'],
+    params: {
+      terrainA: T.swell, terrainB: T.canyon, morph: 0.15, seed: 21, detail: 0.4,
+      pathShape: P.ellipse, pathOrder: 1, pathParam: 0.5, size: 0.26, lift: 1.4, laps: 1.5,
+      polyMode: MODE.legato, glide: 0.06, unison: 2, detune: 7, spread: 0.5,
+      filterType: F.low, cutoff: 5500, resonance: 0.18, filterEnv: 0.15, keyTrack: 0.5, drive: 0.15,
+      ...amp(0.004, 0.5, 0.85, 0.25), ...env2(0.002, 0.9, 0.25, 0.4),
+      level: 0.68, delaySend: 0.2, reverbSend: 0.18,
+    },
+    // Envelope 2 throws Laps up to about 4.4 and lets it fall back to about 2.2: the sync sweep.
+    mods: { laps: env(0.42), fine: lfo(0.02, 5.2) },
   },
 
   // ------------------------------------------------------------------- Pad
@@ -215,6 +258,19 @@ export const FACTORY_PATCHES = [
     },
     mods: { morph: lfo(0.35, 0.04, SH.drift), size: lfo(0.08, 0.07, SH.tri) },
   },
+  {
+    name: 'Orbital Haze', category: 'Pad', tags: ['laps', 'slow sync sweep', 'wide'],
+    params: {
+      terrainA: T.swell, terrainB: T.vortex, morph: 0.3, seed: 33, detail: 0.45,
+      pathShape: P.ellipse, pathOrder: 2, size: 0.2, laps: 2.3, sub: 0.15,
+      unison: 3, detune: 14, spread: 0.9,
+      filterType: F.low, cutoff: 2800, resonance: 0.15, filterEnv: 0, keyTrack: 0.5,
+      ...amp(1.5, 2, 0.85, 3),
+      level: 0.72, delaySend: 0.15, reverbSend: 0.55,
+    },
+    // A very slow Laps LFO (about 1.5 to 3.1 laps over 16 s) makes the sync harmonics drift like weather.
+    mods: { laps: lfo(0.12, 0.06), morph: lfo(0.2, 0.045, SH.drift), centerX: lfo(0.06, 0.03, SH.drift) },
+  },
 
   // ------------------------------------------------------------------ Keys
   {
@@ -261,6 +317,18 @@ export const FACTORY_PATCHES = [
       level: 0.68, delaySend: 0.1, reverbSend: 0.12,
     },
     mods: { fold: env(0.2), size: env(0.12) },
+  },
+  {
+    name: 'Kiln Keys', category: 'Keys', tags: ['phase distortion', 'skew', 'bright attack'],
+    params: {
+      terrainA: T.swell, terrainB: T.terrace, morph: 0.15, seed: 41, detail: 0.35,
+      pathShape: P.ellipse, pathOrder: 1, size: 0.16, lift: 1.5, pace: -0.1, paceShape: PACE.skew, sub: 0.12, velSens: 0.8,
+      filterType: F.low, cutoff: 6000, resonance: 0.08, filterEnv: 0.2, keyTrack: 0.7,
+      ...amp(0.002, 1.5, 0.3, 0.6), ...env2(0.001, 0.6, 0.1, 0.5),
+      level: 0.68, delaySend: 0.08, reverbSend: 0.25,
+    },
+    // A skewed Pace on the strike, relaxing as Envelope 2 decays: the bright-then-mellow keys of phase distortion.
+    mods: { pace: env(-0.42), size: env(0.15) },
   },
 
   // ----------------------------------------------------------------- Pluck
@@ -315,9 +383,21 @@ export const FACTORY_PATCHES = [
       pathShape: P.polygon, pathOrder: 3, pathParam: 0.15, size: 0.1,
       filterType: F.low, cutoff: 3600, resonance: 0.35, filterEnv: 0.45, keyTrack: 0.6, drive: 0.3,
       ...amp(0.001, 0.4, 0, 0.25), ...env2(0.001, 0.15, 0, 0.15),
-      level: 0.83, delaySend: 0.3, reverbSend: 0.2,
+      level: 1, delaySend: 0.3, reverbSend: 0.2,
     },
     mods: { size: env(0.3), fold: env(0.35), rotate: lfo(0.1, 0.5, SH.tri) },
+  },
+  {
+    name: 'Flint Sync', category: 'Pluck', tags: ['hard sync', 'zap', 'laps envelope'],
+    params: {
+      terrainA: T.fm, terrainB: T.canyon, morph: 0.2, seed: 48, detail: 0.5,
+      pathShape: P.ellipse, pathOrder: 1, size: 0.12, lift: 1.6,
+      filterType: F.low, cutoff: 5000, resonance: 0.15, filterEnv: 0.35, keyTrack: 0.6,
+      ...amp(0.001, 0.5, 0, 0.3), ...env2(0.001, 0.25, 0, 0.2),
+      level: 0.7, delaySend: 0.25, reverbSend: 0.25,
+    },
+    // Each note starts as a sync zap (about 3.8 laps) and settles onto the plain orbit.
+    mods: { laps: env(0.4), size: env(0.36) },
   },
 
   // ------------------------------------------------------------------ Bell
@@ -364,6 +444,18 @@ export const FACTORY_PATCHES = [
       level: 0.81, delaySend: 0.2, reverbSend: 0.4,
     },
     mods: { size: env(0.12), morph: env(-0.3) },
+  },
+  {
+    name: 'Tidepool Bell', category: 'Bell', tags: ['pace', 'pinch', 'shimmer'],
+    params: {
+      terrainA: T.vortex, terrainB: T.fm, morph: 0.4, seed: 53, detail: 0.6,
+      pathShape: P.cusp, pathOrder: 4, pathParam: 0.45, size: 0.22, spin: 0.2, paceShape: PACE.pinch, velSens: 0.7,
+      filterType: F.low, cutoff: 9000, resonance: 0.05, filterEnv: 0, keyTrack: 0.8,
+      ...amp(0.001, 3, 0, 2.6), ...env2(0.001, 1.2, 0, 1.2),
+      level: 0.65, delaySend: 0.18, reverbSend: 0.45,
+    },
+    // Pace swinging either side of zero ripples the partials while the bell rings.
+    mods: { pace: lfo(0.25, 0.35), size: env(0.12) },
   },
 
   // --------------------------------------------------------------- Texture
@@ -569,5 +661,17 @@ export const FACTORY_PATCHES = [
       level: 0.86, delaySend: 0.3, reverbSend: 0.25,
     },
     mods: { centerX: synced(0.12, '1bar'), centerY: synced(0.12, '2bar'), size: env(0.2) },
+  },
+  {
+    name: 'Gyre Arp', category: 'Arp', tags: ['hard sync', 'stepped laps', 'star'],
+    params: {
+      terrainA: T.ripple, terrainB: T.cells, morph: 0.3, seed: 62, detail: 0.5,
+      pathShape: P.star, pathOrder: 3, pathParam: 0.5, size: 0.13, lift: 1.5, laps: 1.8,
+      filterType: F.low, cutoff: 4200, resonance: 0.25, filterEnv: 0.35, keyTrack: 0.6,
+      ...amp(0.001, 0.3, 0.05, 0.2), ...env2(0.001, 0.14, 0, 0.15),
+      level: 0.69, delaySend: 0.3, reverbSend: 0.2,
+    },
+    // A sample-and-hold on Laps every 16th: each arp note gets its own sync colour.
+    mods: { laps: synced(0.2, '1/16', SH.sh), size: env(0.25) },
   },
 ];

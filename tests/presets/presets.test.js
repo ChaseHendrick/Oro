@@ -4,11 +4,12 @@ import { defaultState, defaultPart, PART_PARAM_MAP, MOD_PARAM_IDS, NUM_PARTS } f
 import { migrateState, sanitizePart } from '../../src/core/migrate.js';
 import { createPresets, STORAGE_KEY } from '../../src/presets/presets.js';
 import { FACTORY_PATCHES, CATEGORIES } from '../../src/presets/factory-patches.js';
-import { FACTORY_SCENES, parsePattern } from '../../src/presets/factory-scenes.js';
-import { partWithPatch } from '../../src/presets/apply.js';
+import { FACTORY_SCENES, parsePattern, applyLocks } from '../../src/presets/factory-scenes.js';
+import { partWithPatch, patchMods, compactMods } from '../../src/presets/apply.js';
 import { randomPatch } from '../../src/presets/random-patch.js';
 import { makeRng } from '../../src/music/patterns.js';
-import { createMemoryStorage } from '../music/fakes.js';
+import { createMusic } from '../../src/music/music.js';
+import { createMemoryStorage, createFakeClock, createFakeEngine } from '../music/fakes.js';
 
 const stripMeta = ({ name, description, ...state }) => state;
 
@@ -36,6 +37,26 @@ describe('factory patches', () => {
       expect(combos.has(key), `${p.name} repeats ${key}`).toBe(false);
       combos.add(key);
     }
+  });
+
+  it('copies Steps LFO values per part and saves only real differences', () => {
+    const a = patchMods(FACTORY_PATCHES[0]);
+    const b = patchMods(FACTORY_PATCHES[0]);
+    expect(a.morph.steps).toEqual(b.morph.steps);
+    expect(a.morph.steps).not.toBe(b.morph.steps);
+    expect(compactMods(sanitizePart(partWithPatch(defaultPart(0), FACTORY_PATCHES[0]), 0).mods)).toEqual(compactMods(a));
+    const edited = { ...a, morph: { ...a.morph, steps: a.morph.steps.map((v, i) => (i === 3 ? 0.5 : v)) } };
+    expect(compactMods(edited).morph.steps[3]).toBe(0.5);
+  });
+
+  it('showcases Laps, Pace and Sub', () => {
+    const uses = (id) => FACTORY_PATCHES.filter(p => (p.params[id] != null && p.params[id] !== PART_PARAM_MAP[id].default) || (p.mods && p.mods[id]));
+    expect(uses('laps').length).toBeGreaterThanOrEqual(4);
+    expect(uses('pace').length).toBeGreaterThanOrEqual(3);
+    expect(uses('sub').filter(p => p.category === 'Bass').length).toBeGreaterThanOrEqual(4);
+    // At least one sync patch sweeps Laps with Envelope 2, and one pad moves it slowly with an LFO.
+    expect(FACTORY_PATCHES.some(p => p.mods.laps && p.mods.laps.envDepth > 0)).toBe(true);
+    expect(FACTORY_PATCHES.some(p => p.category === 'Pad' && p.mods.laps && p.mods.laps.lfoDepth && p.mods.laps.lfoRate < 0.2)).toBe(true);
   });
 
   it('never uses em dashes in names or tags', () => {
@@ -66,6 +87,49 @@ describe('factory scenes', () => {
     expect(s.global.tempo).toBeGreaterThanOrEqual(100);
     expect(s.global.tempo).toBeLessThanOrEqual(112);
     expect(s.parts[0].patchName).toMatch(/Bass/);
+  });
+
+  it('gives at least two scenes dot-lock motion on a pinned part', () => {
+    const locked = [];
+    for (const scene of FACTORY_SCENES) {
+      scene.parts.forEach((part, i) => {
+        const locks = part.seq.steps.slice(0, part.seq.length).filter(st => st.lock);
+        if (locks.length) locked.push({ scene, part, i, locks });
+      });
+    }
+    expect(new Set(locked.map(l => l.scene.name)).size).toBeGreaterThanOrEqual(2);
+    for (const { scene, part, locks } of locked) {
+      const label = `${scene.name}/${part.name}`;
+      // A rolling or drifting dot would be dragged around by the visuals' simulation.
+      expect(part.dot.mode, label).toBe(0);
+      expect(new Set(locks.map(l => `${l.lx},${l.ly}`)).size, label).toBeGreaterThanOrEqual(4);
+      expect(part.seq.lockGlide, label).toBeGreaterThan(0);
+    }
+    expect(() => applyLocks(parsePattern('0 . . .').steps, { 4: [0.1, 0.1] }, 4)).toThrow(/outside/);
+    expect(() => applyLocks(parsePattern('0').steps, { 0: [1, 0.1] }, 1)).toThrow(/0\.\.1/);
+  });
+
+  it('walks the locked dots through their spots when a scene plays', () => {
+    for (const scene of FACTORY_SCENES) {
+      const p = scene.parts.findIndex(part => part.seq.steps.some(st => st.lock));
+      if (p < 0) continue;
+      const clock = createFakeClock({ startSec: 0 });
+      const store = createStore(migrateState(scene));
+      const music = createMusic({ store, engine: createFakeEngine(clock), timers: clock.timers, perfNow: clock.perfNow });
+      // Where the dot starts counts: a lock on that spot has nothing to move.
+      const seen = new Set([`${store.get(`parts.${p}.params.centerX`)},${store.get(`parts.${p}.params.centerY`)}`]);
+      store.subscribe(`parts.${p}.params`, (path, value, meta) => {
+        if (meta && meta.source === 'lock') seen.add(`${store.get(`parts.${p}.params.centerX`)},${store.get(`parts.${p}.params.centerY`)}`);
+      });
+      music.transport.play();
+      const seq = scene.parts[p].seq;
+      const stepBeats = [1, 0.5, 1 / 3, 0.25, 1 / 6, 0.125][seq.rate];
+      clock.advance(seq.length * stepBeats * 60 / scene.global.tempo + 0.5, 0.004);
+      music.dispose();
+      for (const st of seq.steps.slice(0, seq.length).filter(s => s.lock)) {
+        expect(seen.has(`${st.lx},${st.ly}`), `${scene.name}: dot reached ${st.lx},${st.ly}`).toBe(true);
+      }
+    }
   });
 
   it('parses the step notation', () => {

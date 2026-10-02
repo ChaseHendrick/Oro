@@ -180,7 +180,8 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       tags: from ? (from.tags || []).slice() : [],
       params,
       mods: compactMods(cur.mods),
-      dot: { ...cur.dot },
+      // A deep copy: the dot holds arrays (waypoints) that later edits to the part must not reach.
+      dot: JSON.parse(JSON.stringify(cur.dot || {})),
     };
     if (cur.userTerrain && (cur.userTerrain.A || cur.userTerrain.B)) patch.userTerrain = { ...cur.userTerrain };
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;

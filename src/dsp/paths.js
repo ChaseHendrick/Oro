@@ -403,3 +403,191 @@ export function samplePath(shape, order, param, n, out) {
   }
   return arr;
 }
+
+// --- Pace (phase distortion) and Laps (hard sync) ----------------------------
+// The oscillator's cycle phase φ ∈ [0, 1) advances at the note frequency.
+// Pace bends it into ψ = paceWarp(φ): a monotonic map with ψ(0) = 0 and
+// ψ(1) = 1, so the cycle (and therefore the pitch) keeps its length while the
+// dot speeds up and slows down along the path: timbre only. paceSpeed(φ) =
+// dψ/dφ is the local traversal speed relative to an even one. Every curve
+// keeps it >= 0.1 for |pace| <= 1 (the dot never stops or runs backwards) and
+// periodic, so the speed has no corner at the cycle boundary either.
+// Laps then picks the path phase t = frac(laps · ψ): integer laps trace the
+// closed path that many times per cycle; fractional laps cut the last lap
+// short and restart at t = 0 on every cycle boundary (hard sync).
+// Audio (dsp-core.js) and the visuals' comet trail both use these functions.
+
+export const PACE_SHAPES = ['Bend', 'Skew', 'Pinch'];
+export const PACE_BEND = 0, PACE_SKEW = 1, PACE_PINCH = 2;
+const PACE_DEPTH = 0.9;      // Bend / Pinch: |k| <= 0.9 keeps the speed within [0.1, 1.9]
+const SKEW_RANGE = 0.42;     // Skew: the knee moves from 0.5 to 0.08 (pace 1) or 0.92 (pace -1)
+const SKEW_SOFT = 0.4;       // Skew: half-width of each speed change, as a fraction of the shorter segment
+const INV_2PI = 1 / (2 * Math.PI), INV_4PI = 1 / (4 * Math.PI);
+
+// Skew: the first half of the path (ψ 0 → 0.5) takes a fraction d of the
+// cycle and the second half the rest, like a two-segment CZ phase distortion.
+// A hard knee would put corners in the speed (a kink in the waveform per
+// corner, which aliases); here the speed steps between s1 = 0.5/d and
+// s2 = 0.5/(1 - d) through raised-cosine ramps of half-width h centred on the
+// knee (φ = d) and on the cycle boundary, so the speed is C1. The ramps are
+// symmetric about their centres, which keeps ∫speed = s2 + (s1 - s2) d = 1.
+// ψ = s2 φ + (s1 - s2) I(φ) where I integrates the smoothed "first segment"
+// indicator; the five branches below are that integral in closed form.
+function skewWarp(phi, pace) {
+  const d = 0.5 - SKEW_RANGE * pace;
+  const s2 = 0.5 / (1 - d), ds = 0.5 / d - s2;
+  const h = SKEW_SOFT * (d < 0.5 ? d : 1 - d), c = h / Math.PI, q = 0.25 / h;
+  let I;
+  if (phi < h) I = 0.5 * phi + c * (1 - fastCos(phi * q));
+  else if (phi < d - h) I = phi - 0.5 * h + c;
+  else if (phi < d + h) { const x = phi - d; I = d - h + c + 0.5 * x + c * fastCos(x * q); }
+  else if (phi < 1 - h) I = d - 0.5 * h + c;
+  else { const x = phi - 1; I = d + c + 0.5 * x - c * fastCos(x * q); }
+  return s2 * phi + ds * I;
+}
+
+function skewSpeed(phi, pace) {
+  const d = 0.5 - SKEW_RANGE * pace;
+  const s2 = 0.5 / (1 - d), ds = 0.5 / d - s2;
+  const h = SKEW_SOFT * (d < 0.5 ? d : 1 - d), q = 0.25 / h;
+  let b;
+  if (phi < h) b = 0.5 + 0.5 * fastSin(phi * q);
+  else if (phi < d - h) b = 1;
+  else if (phi < d + h) b = 0.5 - 0.5 * fastSin((phi - d) * q);
+  else if (phi < 1 - h) b = 0;
+  else b = 0.5 + 0.5 * fastSin((phi - 1) * q);
+  return s2 + ds * b;
+}
+
+/**
+ * Pace: warped cycle phase ψ for the cycle phase phi ∈ [0, 1).
+ * pace -1..1 (0 = identity, exactly; clamped), shape 0 Bend | 1 Skew | 2 Pinch.
+ *   Bend:  ψ = φ + k sin(2πφ) / 2π, k = 0.9 pace: one speed hump per cycle
+ *          (pace > 0 rushes through the start of the path and lingers halfway).
+ *   Skew:  two-speed CZ-style split with smoothed knees (see skewWarp).
+ *   Pinch: ψ = φ + k sin(4πφ) / 4π: two symmetric speed-ups per cycle.
+ */
+export function paceWarp(phi, pace, shape) {
+  pace = pace < -1 ? -1 : pace > 1 ? 1 : pace;
+  if (shape === PACE_SKEW) return pace === 0 ? phi : skewWarp(phi, pace);
+  const k = PACE_DEPTH * pace;
+  return shape === PACE_PINCH ? phi + k * fastSin(2 * phi) * INV_4PI : phi + k * fastSin(phi) * INV_2PI;
+}
+
+/** Pace: local traversal speed dψ/dφ at phi (1 = even), always in [0.1, 6.3]. */
+export function paceSpeed(phi, pace, shape) {
+  pace = pace < -1 ? -1 : pace > 1 ? 1 : pace;
+  if (shape === PACE_SKEW) return pace === 0 ? 1 : skewSpeed(phi, pace);
+  const k = PACE_DEPTH * pace;
+  return shape === PACE_PINCH ? 1 + k * fastCos(2 * phi) : 1 + k * fastCos(phi);
+}
+
+/** Pace: the fastest local speed over a cycle (for normalising a speed display). */
+export function paceMaxSpeed(pace, shape) {
+  const a = pace < -1 || pace > 1 ? 1 : pace < 0 ? -pace : pace;
+  if (shape !== PACE_SKEW) return 1 + PACE_DEPTH * a;
+  const d = 0.5 - SKEW_RANGE * a;
+  return 0.5 / d;
+}
+
+/**
+ * Block form of paceWarp for the oscillator: for cycle phases PH[0..n) with
+ * pace ramping from pace0 (pace0 + dPace at j = 0), writes ψ to PSI[j]. Same
+ * formulas as paceWarp; a held Skew pace computes its knee coefficients once
+ * per block instead of per sample.
+ */
+export function paceBlock(shape, n, PH, pace0, dPace, PSI) {
+  // unboxed locals for the ramp (see the note above pathBlockAt)
+  let pc = +pace0;
+  const dPc = +dPace;
+  if (shape === PACE_SKEW) {
+    if (dPc === 0 && pc !== 0) {
+      const d = 0.5 - SKEW_RANGE * pc;
+      const s2 = 0.5 / (1 - d), ds = 0.5 / d - s2;
+      const h = SKEW_SOFT * (d < 0.5 ? d : 1 - d), c = h / Math.PI, q = 0.25 / h;
+      const e1 = d - h, e2 = d + h, e3 = 1 - h;
+      for (let j = 0; j < n; j++) {
+        const phi = PH[j];
+        let I;
+        if (phi < h) I = 0.5 * phi + c * (1 - fastCos(phi * q));
+        else if (phi < e1) I = phi - 0.5 * h + c;
+        else if (phi < e2) { const x = phi - d; I = d - h + c + 0.5 * x + c * fastCos(x * q); }
+        else if (phi < e3) I = d - 0.5 * h + c;
+        else { const x = phi - 1; I = d + c + 0.5 * x - c * fastCos(x * q); }
+        PSI[j] = s2 * phi + ds * I;
+      }
+    } else {
+      for (let j = 0; j < n; j++) {
+        pc += dPc;
+        PSI[j] = pc === 0 ? PH[j] : skewWarp(PH[j], pc);
+      }
+    }
+  } else if (shape === PACE_PINCH) {
+    for (let j = 0; j < n; j++) {
+      pc += dPc;
+      const phi = PH[j];
+      PSI[j] = phi + PACE_DEPTH * pc * fastSin(2 * phi) * INV_4PI;
+    }
+  } else {
+    for (let j = 0; j < n; j++) {
+      pc += dPc;
+      const phi = PH[j];
+      PSI[j] = phi + PACE_DEPTH * pc * fastSin(phi) * INV_2PI;
+    }
+  }
+}
+
+/** Laps: path phase t = frac(laps · psi) for the (paced) cycle phase psi. */
+export function syncPhase(psi, laps) {
+  const t = laps * psi;
+  return t - Math.floor(t);
+}
+
+/**
+ * Path phase for cycle phase phi with Pace and Laps applied: what the
+ * oscillator traces. Same argument order as the UI's dsp-bridge cyclePhase.
+ */
+export function cyclePhase(phi, laps = 1, pace = 0, shape = 0) {
+  return syncPhase(paceWarp(phi, pace, shape), laps);
+}
+
+// Block renderer for precomputed path phases (the Laps / Pace oscillator):
+// X[j], Y[j] = the path at T[j] with param ramped linearly from `param`
+// (param + dParam at j = 0, as in pathBlock). Monomorphic per-shape loops.
+// The ramp lives in fresh locals (`+p0`): accumulating into a parameter that
+// may arrive as a small integer made V8 box a heap number every sample.
+function atEllipse(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; ellipseAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atLissa(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; lissaAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atRose(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; roseAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atPolygon(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; polygonAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atStar(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; starAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atSpiral(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; spiralAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atScan(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; scanAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atSpiro(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; spiroAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atEight(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; eightAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atCusp(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; cuspAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atSuper(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; superAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+function atScribble(n, T, p0, d0, X, Y, o) { let p = +p0; const dp = +d0; for (let j = 0; j < n; j++) { p += dp; scribbleAt(T[j], o, p < 0 ? 0 : p > 1 ? 1 : p, X, Y, j); } }
+
+/**
+ * Render the path at n precomputed phases T[0..n) (each in [0, 1)) into X/Y,
+ * with param ramping from `param` by `dParam` per sample. Identical to calling
+ * pathPoint(shape, T[j], order, param + (j + 1) dParam) for each j.
+ */
+export function pathBlockAt(shape, order, n, T, param, dParam, X, Y) {
+  const o = order >= 1 && order <= 8 && order === (order | 0) ? order : clampOrder(order);
+  switch (shape) {
+    case LISSA: atLissa(n, T, param, dParam, X, Y, o); break;
+    case ROSE: atRose(n, T, param, dParam, X, Y, o); break;
+    case POLYGON: atPolygon(n, T, param, dParam, X, Y, o); break;
+    case STAR: atStar(n, T, param, dParam, X, Y, o); break;
+    case SPIRAL: atSpiral(n, T, param, dParam, X, Y, o); break;
+    case SCAN: atScan(n, T, param, dParam, X, Y, o); break;
+    case SPIRO: atSpiro(n, T, param, dParam, X, Y, o); break;
+    case EIGHT: atEight(n, T, param, dParam, X, Y, o); break;
+    case CUSP: atCusp(n, T, param, dParam, X, Y, o); break;
+    case SUPER: atSuper(n, T, param, dParam, X, Y, o); break;
+    case SCRIBBLE: atScribble(n, T, param, dParam, X, Y, o); break;
+    default: atEllipse(n, T, param, dParam, X, Y, o); break;
+  }
+}

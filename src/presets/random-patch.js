@@ -2,7 +2,8 @@
 // silence or noise, so it first picks an archetype (pluck, pad, lead, bass,
 // keys, bell) that fixes the envelope, filter and voice settings within
 // sensible ranges, then rolls the terrain pair, orbit and a few modulation
-// recipes from a list of moves that show off the terrain.
+// recipes from a list of moves that show off the terrain (including Laps sync
+// sweeps and Pace phase distortion), and sometimes a Sub under basses.
 
 import { TERRAINS, PATHS } from '../dsp/catalog.js';
 
@@ -47,6 +48,8 @@ const ARCHETYPES = {
       env2Attack: 0.002, env2Decay: r.range(0.15, 0.35), env2Sustain: 0.1, env2Release: 0.2,
       cutoff: r.range(500, 1400), resonance: r.range(0.15, 0.45), filterEnv: r.range(0.3, 0.55), drive: r.range(0.15, 0.4),
       polyMode: r.int(1, 2), glide: r.range(0, 0.06), octave: r.int(-1, 0),
+      // Sub is on a squared taper: below about 0.3 it is barely there.
+      sub: r.pick([0, 0, 0.35, 0.45, 0.6]),
       delaySend: 0, reverbSend: r.range(0, 0.08), level: 0.75,
     }),
     mods: [['size', { envDepth: 0.12 }]],
@@ -82,6 +85,10 @@ const RECIPES = [
   (r) => ['centerX', { lfoShape: 5, lfoRate: r.range(0.02, 0.15), lfoDepth: r.range(0.05, 0.15) }],
   (r) => ['fold', { envDepth: r.range(0.1, 0.3) }],
   (r) => ['cutoff', { lfoShape: 0, lfoSync: 1, lfoDiv: r.pick([2, 3, 5]), lfoDepth: r.range(0.05, 0.2) }],
+  // Envelope 2 sweeps Laps up from the plain orbit: a hard-sync zap on every note.
+  (r) => ['laps', { envDepth: r.range(0.15, 0.4) }],
+  // Pace wobbling either side of zero: phase distortion that breathes.
+  (r) => ['pace', { lfoShape: r.pick([0, 1]), lfoRate: r.range(0.1, 0.6), lfoDepth: r.range(0.1, 0.25) }],
 ];
 
 const tidy = (v) => Math.round(v * 1000) / 1000;
@@ -108,6 +115,7 @@ export function randomPatch(rng = Math.random) {
     pathShape: r.pick(pathIds), pathOrder: r.int(1, 6), pathParam: r.range(0.2, 0.8),
     stretch: rng() < 0.3 ? r.range(-0.3, 0.3) : 0,
     rotate: r.int(0, 359),
+    paceShape: r.int(0, 2),
     filterType: 1, keyTrack: 0.5,
     ...arch.params(r),
   };

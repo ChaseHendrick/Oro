@@ -43,6 +43,9 @@ const rt = {
   spirograph: rtFactor({ pathShape: 7, pathOrder: 4 }),
   scribble: rtFactor({ pathShape: 11, pathOrder: 3 }),
   heavy: rtFactor({ morph: 0.5, warp: 0.3, fold: 0.4, drive: 0.3 }),
+  // hard sync with polyBLEP, phase distortion with per-sample mips, sub sine
+  features: rtFactor({ laps: 1.5, pace: 0.6, sub: 0.5 }),
+  featuresSkew: rtFactor({ laps: 1.5, pace: 0.6, paceShape: 1, sub: 0.5 }),
 };
 
 const gen = {};

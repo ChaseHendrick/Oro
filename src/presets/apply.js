@@ -3,6 +3,14 @@
 
 import { defaultPart, defaultPartParams, defaultMods, MOD_DEFAULT, PART_PARAM_MAP } from '../core/params.js';
 
+// Mod settings may hold arrays (the Steps LFO values). Each part gets its own
+// copies, so editing one part's steps can never touch another part, a factory
+// patch or the frozen defaults.
+const copyField = (v) => (Array.isArray(v) ? v.slice() : v);
+const sameField = (a, b) => (Array.isArray(a) || Array.isArray(b)
+  ? Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i])
+  : a === b);
+
 export function patchParams(patch) {
   const params = defaultPartParams();
   for (const [id, v] of Object.entries((patch && patch.params) || {})) {
@@ -14,13 +22,19 @@ export function patchParams(patch) {
 export function patchMods(patch) {
   const mods = defaultMods();
   for (const [id, m] of Object.entries((patch && patch.mods) || {})) {
-    if (mods[id] && m && typeof m === 'object') mods[id] = { ...MOD_DEFAULT, ...m };
+    if (!mods[id] || !m || typeof m !== 'object') continue;
+    const merged = { ...mods[id], ...m };
+    for (const k of Object.keys(merged)) merged[k] = copyField(merged[k]);
+    mods[id] = merged;
   }
   return mods;
 }
 
 export function patchDot(patch) {
-  return { ...defaultPart(0).dot, ...((patch && patch.dot) || {}) };
+  const dot = { ...defaultPart(0).dot, ...((patch && patch.dot) || {}) };
+  // Waypoints are objects in an array: copy them so parts never share them.
+  if (Array.isArray(dot.waypoints)) dot.waypoints = dot.waypoints.map(w => ({ ...w }));
+  return dot;
 }
 
 /**
@@ -51,7 +65,7 @@ export function compactMods(mods) {
   for (const [id, m] of Object.entries(mods || {})) {
     if (!m) continue;
     const diff = {};
-    for (const [k, v] of Object.entries(m)) if (MOD_DEFAULT[k] !== v) diff[k] = v;
+    for (const [k, v] of Object.entries(m)) if (!sameField(MOD_DEFAULT[k], v)) diff[k] = copyField(v);
     if (Object.keys(diff).length) out[id] = diff;
   }
   return out;

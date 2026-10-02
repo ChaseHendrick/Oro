@@ -142,7 +142,8 @@ export function roughMix({ L, R, D, V }, { tempo = 120, delayBeats = 0.75, feedb
 
 /**
  * Play a scene through the real transport (fake clock) into the DSP engine,
- * rendering in lockstep, for `bars` bars.
+ * rendering in lockstep, for `bars` bars. Dot locks move the dot in the store
+ * and the change is forwarded to the engine, so renders include that motion.
  */
 export function renderScene(scene, bars = 4) {
   const state = migrateState(scene);
@@ -158,6 +159,11 @@ export function renderScene(scene, bars = 4) {
     allNotesOff(part) { dsp.handleMessage({ t: 'allOff', part }); },
   };
   const store = createStore(state);
+  // Forward parameter changes made while playing (dot locks) to the engine, as the audio host does.
+  store.subscribe('parts', (path, value) => {
+    const m = /^parts\.(\d+)\.params\.(\w+)$/.exec(path);
+    if (m) dsp.handleMessage({ t: 'params', part: Number(m[1]), p: { [m[2]]: value } });
+  });
   const music = createMusic({ store, engine, timers: clock.timers, perfNow: clock.perfNow });
   music.transport.play();
   const seconds = bars * 4 * 60 / state.global.tempo + 0.3;

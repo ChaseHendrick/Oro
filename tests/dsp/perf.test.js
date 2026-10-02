@@ -22,6 +22,12 @@ describe('performance', () => {
     expect(r.spirograph).toBeLessThan(0.35);
   });
 
+  it('16 voices x unison 2 with Laps 1.5, Pace 0.6 and Sub 0.5 stay under 35% of one core', () => {
+    const r = result.rt;
+    console.log(`[perf] CPU per audio second, 16 voices x unison 2, Laps 1.5 + Pace 0.6 + Sub 0.5: Bend ${(r.features * 100).toFixed(1)}% | Skew ${(r.featuresSkew * 100).toFixed(1)}%`);
+    expect(r.features).toBeLessThan(0.35);
+  });
+
   it('generates every 512 x 512 terrain in under 120 ms', () => {
     console.log('[perf] 512² terrain generation, CPU ms, best of 3, detail 1: ' + Object.entries(result.gen).map(([n, t]) => `${n} ${t}`).join(', '));
     for (const t of Object.values(result.gen)) expect(t).toBeLessThan(120);

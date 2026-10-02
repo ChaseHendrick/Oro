@@ -6,6 +6,7 @@
 // blues and chromatic scales have them at different indices).
 
 import { NUM_PARTS, SEQ_STEPS, SCALES, SCALE_NAMES, defaultStep, clamp } from '../core/params.js';
+import { keepLocks } from './locks.js';
 
 /** Small deterministic PRNG (mulberry32) so tests and "same seed" are repeatable. */
 export function makeRng(seed = 1) {
@@ -118,7 +119,8 @@ export function randomizePattern(store, part, { density = 0.6, rng = Math.random
   if (p == null) return null;
   const seq = store.get(`parts.${p}.seq`) || {};
   const style = (seq.baseOctave ?? 3) <= 2 ? 'bass' : 'melody';
-  const steps = generatePattern({ length: seq.length || 16, density, rng, style, scaleType: store.get('global.scaleType') ?? 1 });
+  // New notes, same dot locks: the dot choreography is a separate layer the user built on purpose.
+  const steps = keepLocks(generatePattern({ length: seq.length || 16, density, rng, style, scaleType: store.get('global.scaleType') ?? 1 }), seq.steps);
   store.batch(() => {
     store.set(`parts.${p}.seq.steps`, steps, { source: 'music' });
     if (!seq.enabled) store.set(`parts.${p}.seq.enabled`, 1, { source: 'music' });
@@ -126,13 +128,14 @@ export function randomizePattern(store, part, { density = 0.6, rng = Math.random
   return steps;
 }
 
+/** Every step back to default, dot locks included. */
 export function clearPattern(store, part) {
   const p = partIndex(store, part);
   if (p == null) return;
   store.set(`parts.${p}.seq.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'music' });
 }
 
-/** Rotate the active steps (within the pattern length) by one step, wrapping. */
+/** Rotate the active steps (within the pattern length) by one step, wrapping. Locks move with their steps. */
 export function shiftPattern(store, part, dir = 1) {
   const p = partIndex(store, part);
   if (p == null) return;

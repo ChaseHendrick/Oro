@@ -10,10 +10,15 @@
 // already queued moves. In follow mode the anchor is moved by every incoming
 // MIDI clock pulse (see src/midi/clock.js), and events are only scheduled a
 // few pulses ahead of the last one received, so the external clock leads.
+//
+// Dot locks (see locks.js) ride on the same scheduler: a locked step hands its
+// spot to the lock player with the step's audio time, and the player starts
+// the glide when that moment is heard.
 
 import { NUM_PARTS, SEQ_RATES, stepToMidi, clamp } from '../core/params.js';
 import { createEmitter } from './emitter.js';
 import { MIN_GAP, LATE_WINDOW } from './router.js';
+import { createLockPlayer, wrap01 } from './locks.js';
 
 export const LOOKAHEAD = 0.12;       // seconds of audio scheduled ahead
 export const INTERVAL_MS = 25;       // scheduler wake-up period
@@ -21,6 +26,7 @@ export const START_DELAY = 0.06;     // headroom so the first notes are not late
 export const PPQ = 24;               // MIDI clock pulses per quarter note
 const EXT_AHEAD_BEATS = 6 / PPQ;     // follow mode: schedule at most a 16th past the last pulse received
 const SLIDE_OVERLAP = 0.004;         // a slid note overlaps the next one by this much (legato)
+const HEARD_KEEP = 8;                // per part: recently scheduled steps kept to answer "which step is sounding"
 
 /** Delay of the off-beat 16th, in beats. Swing 0.6 (the maximum) = a 3:1 shuffle. */
 export function swingOffsetBeats(swing) {
@@ -41,6 +47,13 @@ export function swingBeat(beat, swing) {
 }
 
 const isTriplet = (rateIdx) => /T$/.test((SEQ_RATES[rateIdx] || {}).name || '');
+const finite = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** The lock a step carries when it plays, or null. A switched-off sequencer moves nothing. */
+export function stepLock(seq, step) {
+  if (!seq || !seq.enabled || !step || !step.lock) return null;
+  return { x: wrap01(finite(step.lx, 0.5)), y: wrap01(finite(step.ly, 0.5)) };
+}
 
 export function createTransport({ store, engine, timebase, router, timers }) {
   const emitter = createEmitter();
@@ -58,7 +71,9 @@ export function createTransport({ store, engine, timebase, router, timers }) {
   let extLastPulse = -Infinity;  // audio time of the latest external pulse (playing or not)
   let engineBeat = -1;
   let timer = null;
-  const ps = Array.from({ length: NUM_PARTS }, () => ({ absStep: 0, rateIdx: null, tie: null }));
+  // heard: [{ time, step }] of the latest scheduled steps, oldest first.
+  const ps = Array.from({ length: NUM_PARTS }, () => ({ absStep: 0, rateIdx: null, tie: null, heard: [] }));
+  const locks = createLockPlayer({ store, timebase, timers, currentStep, isPlaying: () => playing });
 
   function tempoNow() {
     return clamp(Number(store.get('global.tempo')) || 120, 20, 400);
@@ -102,7 +117,17 @@ export function createTransport({ store, engine, timebase, router, timers }) {
       ps[p].rateIdx = rateIdx;
       ps[p].absStep = Math.ceil(beat / rate - 1e-9);
       ps[p].tie = null;
+      ps[p].heard = [];
     }
+  }
+
+  /** Index of the step of `part` being heard right now, or -1 (stopped, or before the first step). */
+  function currentStep(part) {
+    if (!playing || !(part >= 0 && part < NUM_PARTS)) return -1;
+    const heardNow = timebase.perfToAudio(timebase.perfNow()) + 1e-4;
+    const list = ps[part].heard;
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].time <= heardNow) return list[i].step;
+    return -1;
   }
 
   function releaseTies(now) {
@@ -114,18 +139,23 @@ export function createTransport({ store, engine, timebase, router, timers }) {
     }
   }
 
-  function announceStep(part, step, time) {
+  function announceStep(part, step, time, lock) {
     if (!emitter.has('step')) return;
-    const detail = { part, step, time };
+    const detail = { part, step, time, lock };
     const delay = timebase.heardDelayMs(time);
     if (delay < 4) emitter.emit('step', detail);
     else timers.setTimeout(() => emitter.emit('step', detail), delay);
   }
 
   function playStep(p, seq, idx, t, tNext, rate) {
-    announceStep(p, idx, t);
     const st = ps[p];
     const step = seq.steps && seq.steps[idx];
+    st.heard.push({ time: t, step: idx });
+    if (st.heard.length > HEARD_KEEP) st.heard.shift();
+    // A lock moves the dot whether or not the step has a note.
+    const lock = stepLock(seq, step);
+    announceStep(p, idx, t, lock);
+    if (lock) locks.schedule(p, idx, lock, t, clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t));
     const active = seq.enabled && step && step.on;
     if (!active) {
       if (st.tie) { router._engineOff(p, st.tie.note, t, 'seq'); st.tie = null; }
@@ -249,6 +279,7 @@ export function createTransport({ store, engine, timebase, router, timers }) {
     const now = timebase.now();
     playing = false;
     releaseTies(now);
+    locks.cancelAll();
     if (anchored && !external) emitter.emit('clock', { type: 'stop', time: now });
     notifyEngine();
     anchored = false;
@@ -358,12 +389,14 @@ export function createTransport({ store, engine, timebase, router, timers }) {
     isExternal: () => playing && external,
     on: (type, fn) => emitter.on(type, fn),
     off: (type, fn) => emitter.off(type, fn),
-    // Older contract shape kept for convenience: onStep((part, step, time) => {}).
-    onStep: (fn) => emitter.on('step', e => fn(e.part, e.step, e.time)),
+    // Older contract shape kept for convenience: onStep((part, step, time, lock) => {}).
+    onStep: (fn) => emitter.on('step', e => fn(e.part, e.step, e.time, e.lock)),
+    currentStep,
+    locks,
     setFollow, syncStart, syncTick, syncStop,
     tick, kick,
     tempo: () => (external ? 60 / spb : tempoNow()),
     beatAt: (time) => (anchored ? beatAt(time) : 0),
-    dispose() { stopTimer(); for (const u of unsubs) u(); },
+    dispose() { stopTimer(); locks.dispose(); for (const u of unsubs) u(); },
   };
 }

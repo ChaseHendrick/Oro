@@ -5,10 +5,12 @@
 // Node tests. process() never allocates (telemetry objects excepted, ~60/s).
 //
 // Signal flow per voice (at 2x the host rate):
-//   unison phases -> path (pathBlock) -> transform (size, stretch, rotate +
-//   spin, centre) -> warp -> trilinear terrain lookup (mip level from traversal
-//   speed), A/B morph -> Lift/Fold shaper -> DC blocker -> drive -> TPT state
-//   variable filter -> amp envelope -> pan
+//   unison cycle phases -> Pace (phase distortion) -> Laps (path phase, hard
+//   sync restart) -> path (pathBlock / pathBlockAt) -> transform (size,
+//   stretch, rotate + spin, centre) -> warp -> trilinear terrain lookup (mip
+//   level from traversal speed), A/B morph -> Lift/Fold shaper -> polyBLEP at
+//   sync restarts -> DC blocker -> + sub sine -> drive -> TPT state variable
+//   filter -> amp envelope -> pan
 // Voices of a part are summed at 2x, then a 63-tap half-band FIR decimates the
 // part to the host rate before level, mute/solo and send gains.
 //
@@ -16,12 +18,15 @@
 // Envelope 2 / glide, re-evaluates modulation in normalised space, smooths the
 // targets with a one-pole and sets per-sample linear ramps for everything that
 // could zipper. Events (notes) split the block at their exact sample.
+//
+// Laps = 1 with Pace = 0 (the defaults) takes the original fast path, which is
+// bit-identical to the engine before those controls existed.
 
 import {
   PART_PARAMS, PART_PARAM_INDEX, PART_PARAM_MAP, MOD_PARAM_IDS, MOD_DEFAULT,
   NUM_PARTS, VOICES_PER_PART, SYNC_DIVS, toNorm, fromNorm,
 } from '../core/params.js';
-import { pathBlock, pathPoint, pathLength } from './paths.js';
+import { pathBlock, pathBlockAt, pathPoint, pathLength, paceWarp, paceBlock } from './paths.js';
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
 import { generateTerrain, buildMipChain } from './terrains.js';
 
@@ -35,6 +40,10 @@ const STEAL_FADE_TIME = 0.003;          // fade-out of a stolen voice (s)
 const ATTACK_OVERSHOOT = 1.2;           // analog-style attack aims past 1 and stops at 1
 const ENV_FLOOR = 0.001;                // -60 dB: where decay/release times are measured
 const OUT_LIMIT = 4;
+const SUB_GAIN = 0.8;                   // Sub at 1: a sine 2 dB under a full-scale voice
+// Snap distance for the Laps / Pace / Sub one-poles, so they land exactly on
+// their targets (and Laps 1 / Pace 0 get back onto the fast path).
+const SNAP = 1e-5;
 
 const IDLE = 0, ATTACK = 1, DECAY = 2, RELEASE = 3;
 
@@ -46,9 +55,28 @@ const M_MORPH = MOD_SLOT.morph, M_WARP = MOD_SLOT.warp, M_LIFT = MOD_SLOT.lift, 
 const M_PARAM = MOD_SLOT.pathParam, M_SIZE = MOD_SLOT.size, M_STRETCH = MOD_SLOT.stretch;
 const M_ROTATE = MOD_SLOT.rotate, M_CX = MOD_SLOT.centerX, M_CY = MOD_SLOT.centerY, M_FINE = MOD_SLOT.fine;
 const M_CUTOFF = MOD_SLOT.cutoff, M_RES = MOD_SLOT.resonance, M_DRIVE = MOD_SLOT.drive, M_PAN = MOD_SLOT.pan;
+const M_LAPS = MOD_SLOT.laps, M_PACE = MOD_SLOT.pace;
 
 const PI = PART_PARAM_INDEX;
 const NPARAMS = PART_PARAMS.length;
+
+// Hard-sync restarts recorded per segment: at most one per oscillator per
+// sample (the increment is capped at 0.45) plus one look-ahead each.
+const MAX_SYNC_EVENTS = MAX_UNISON * (OVERSAMPLE * CTRL + 1);
+
+// log2 of a Pace speed factor (0.1 .. 6.3) for the per-sample mip level: a
+// table read instead of a Math.log2 call per oscillator sample. Linear
+// interpolation is within 0.002 octave over that range, far below what a mip
+// crossfade can resolve.
+const LOG2_RES = 128, LOG2_TOP = 8 * LOG2_RES;
+const LOG2_T = new Float64Array(LOG2_TOP + 2);
+for (let i = 0; i < LOG2_T.length; i++) LOG2_T[i] = Math.log2(Math.max(i, 1) / LOG2_RES);
+function speedLog2(x) {
+  let f = x * LOG2_RES;
+  if (f > LOG2_TOP) f = LOG2_TOP;
+  const i = f | 0;
+  return LOG2_T[i] + (f - i) * (LOG2_T[i + 1] - LOG2_T[i]);
+}
 
 // --- half-band decimator ---------------------------------------------------
 // 63-tap Kaiser (β = 7.4) windowed sinc at a quarter of the oversampled rate.
@@ -133,7 +161,7 @@ class Voice {
     this.pitch = 60;           // current (gliding) note, without fine/bend
     this.uniPrev = 0;
 
-    this.phase = new Float64Array(MAX_UNISON);
+    this.phase = new Float64Array(MAX_UNISON);   // cycle phase φ per unison oscillator
     this.inc = new Float64Array(MAX_UNISON);
     this.dinc = new Float64Array(MAX_UNISON);
 
@@ -153,6 +181,8 @@ class Voice {
     this.sMorph = 0; this.sWarp = 0; this.sLift = 1; this.sFold = 0; this.sParam = 0.5;
     this.sCut = 13; this.sRes = 0.1; this.sDrive = 0; this.sPan = 0;
     this.sLvA = 0; this.sLvB = 0;
+    this.uLvA = 0; this.uLvB = 0;           // unclamped mip levels (per-sample Pace mips add to these)
+    this.sLaps = 1; this.sPace = 0; this.sSub = 0;
 
     // per-sample ramps (current value + increment per oversampled sample)
     this.tA = 0; this.dtA = 0; this.tB = 0; this.dtB = 0; this.tC = 0; this.dtC = 0; this.tD = 0; this.dtD = 0;
@@ -165,6 +195,19 @@ class Voice {
     this.gl = 1; this.dgl = 0; this.gr = 1; this.dgr = 0;
     this.lA = 0; this.wA = 0; this.dwA = 0;
     this.lB = 0; this.wB = 0; this.dwB = 0;
+    this.cLvA = 0; this.dcLvA = 0; this.cLvB = 0; this.dcLvB = 0;
+    this.laps = 1; this.dLaps = 0;
+    this.pace = 0; this.dPace = 0;
+    this.paceShape = 0;        // Pace curve in use (switches only while Pace is faded to 0)
+
+    // sub oscillator (one per voice, not per unison oscillator)
+    this.subPh = 0; this.subInc = 0; this.dSubInc = 0;
+    this.subLv = 0; this.dSubLv = 0;
+
+    // hard-sync polyBLEP carried across a segment boundary: the correction for
+    // the first sample of the next segment, and whether its restart is done
+    this.blepPend = new Float64Array(MAX_UNISON);
+    this.blepSkip = new Uint8Array(MAX_UNISON);
 
     // filter + DC blocker state
     this.ic1L = 0; this.ic2L = 0; this.ic1R = 0; this.ic2R = 0;
@@ -178,6 +221,8 @@ class Voice {
     this.envLvl = 0; this.env2Lvl = 0;
     this.envStage = IDLE; this.env2Stage = IDLE;
     this.stealFade = 0; this.stealGain = 1; this.pending = false;
+    this.subPh = 0;
+    this.blepPend.fill(0); this.blepSkip.fill(0);
   }
 }
 
@@ -249,6 +294,7 @@ class Part {
 
     this.sr = sr;
     this.shapeI = 0; this.orderI = 1; this.ftype = 1; this.mode = 0;
+    this.paceShapeI = 0; this.subT = 0;
     this.gainS = 0; this.dlyS = 0; this.revS = 0;
     this.updateDerived();
   }
@@ -266,6 +312,10 @@ class Part {
     this.orderI = Math.max(1, Math.min(8, Math.round(P[PI.pathOrder]) || 1));
     this.ftype = Math.max(0, Math.min(4, Math.round(P[PI.filterType]) || 0));
     this.mode = Math.max(0, Math.min(2, Math.round(P[PI.polyMode]) || 0));
+    this.paceShapeI = Math.max(0, Math.min(2, Math.round(P[PI.paceShape]) || 0));
+    // Sub level on a squared (audio taper) curve: half way is about -12 dB
+    const sub = clamp01(P[PI.sub]);
+    this.subT = SUB_GAIN * sub * sub;
     // unison
     const U = Math.max(1, Math.min(MAX_UNISON, Math.round(P[PI.unison])));
     const det = P[PI.detune];
@@ -327,6 +377,19 @@ function softLimit(x) {
   return x;
 }
 
+/**
+ * Height of one mip chain at (u, v) for one sample, as the terrain passes
+ * compute it: either the block's integer level `l` blended by `wt` towards
+ * l + 1 (wt <= 0: no blend), with the outgoing terrain crossfaded in by `f`.
+ */
+function chainHeight(chain, l, wt, old, f, u, v) {
+  const t0 = chain[l];
+  let h = bil(t0.data, t0.size, t0.size - 1, u, v);
+  if (wt > 0 && l + 1 < chain.length) { const t1 = chain[l + 1]; h += wt * (bil(t1.data, t1.size, t1.size - 1, u, v) - h); }
+  if (old !== null && f > 0) { const o = old[l < old.length ? l : old.length - 1]; h += f * (bil(o.data, o.size, o.size - 1, u, v) - h); }
+  return h;
+}
+
 // ---------------------------------------------------------------------------
 
 export class OrographDSP {
@@ -352,8 +415,10 @@ export class OrographDSP {
     this.fadeStep = CTRL / (this.sr * TERRAIN_FADE_TIME);
     this.stealSamples = Math.max(8, Math.round(STEAL_FADE_TIME * this.fs2));
     this.dcR = 1 - 2 * Math.PI * 8 / this.fs2;
-    /** Octaves added to the mip level choice (see mipLevel); -99 disables mip mapping (tests). */
+    /** Octaves added to the mip level choice (see mipRaw); -99 disables mip mapping (tests). */
     this.mipBias = 1;
+    /** false: hard-sync restarts are left naive (no polyBLEP), for A/B tests. */
+    this.blep = true;
 
     this.teleInterval = Math.max(64, Math.round(this.sr / 60));
     this.teleCount = 0;
@@ -361,13 +426,23 @@ export class OrographDSP {
 
     // scratch for renderVoice (a segment never spans more than one control block)
     const n2max = OVERSAMPLE * CTRL;
-    this.xs = []; this.ys = [];
-    for (let q = 0; q < MAX_UNISON; q++) { this.xs.push(new Float64Array(n2max)); this.ys.push(new Float64Array(n2max)); }
+    this.xs = []; this.ys = []; this.lvs = [];
+    for (let q = 0; q < MAX_UNISON; q++) {
+      this.xs.push(new Float64Array(n2max)); this.ys.push(new Float64Array(n2max));
+      this.lvs.push(new Float64Array(n2max));   // per-sample mip level offset (Pace)
+    }
+    this.ts = new Float64Array(n2max);           // path phases (Laps / Pace)
+    this.phs = new Float64Array(n2max);          // cycle phases (Laps / Pace)
     this.sumL = new Float64Array(n2max);
     this.sumR = new Float64Array(n2max);
     this.pst = new Float64Array(5);
     this.pt = { x: 0, y: 0 };
     this.rng = mulberry32(0x6f726f67);
+    // hard-sync restarts of the current segment: oscillator, sample (n2 = look-ahead), fraction, laps
+    this.evQ = new Int32Array(MAX_SYNC_EVENTS);
+    this.evJ = new Int32Array(MAX_SYNC_EVENTS);
+    this.evD = new Float64Array(MAX_SYNC_EVENTS);
+    this.evL = new Float64Array(MAX_SYNC_EVENTS);
   }
 
   // ---- message protocol ---------------------------------------------------
@@ -671,14 +746,19 @@ export class OrographDSP {
     v.dcInit = true;
   }
 
-  /** Mean shaped terrain height over one cycle of the voice's current orbit. */
+  /** Mean shaped terrain height over one cycle of the voice's current orbit (with Pace and Laps). */
   orbitMean(P, v) {
     const pt = this.pt;
-    const K = 48;
+    const L = v.laps, pc = v.pace, shp = v.paceShape;
+    const plain = L === 1 && pc === 0;
+    // more points when Laps/Pace crowd several traversals into one cycle
+    const K = plain ? 48 : 192;
     const A = P.terrA[Math.min(v.lA, P.terrA.length - 1)], B = P.terrB[Math.min(v.lB, P.terrB.length - 1)];
     let sum = 0;
     for (let i = 0; i < K; i++) {
-      pathPoint(P.shapeI, i / K, P.orderI, v.param, pt);
+      let t = i / K;
+      if (!plain) { t = L * paceWarp(t, pc, shp); t -= Math.floor(t); }
+      pathPoint(P.shapeI, t, P.orderI, v.param, pt);
       let u = v.cx + pt.x * v.tA - pt.y * v.tB;
       let w = v.cy + pt.x * v.tC + pt.y * v.tD;
       if (v.warp > 0) {
@@ -823,6 +903,30 @@ export class OrographDSP {
       v.sCy -= Math.floor(v.sCy);
     }
 
+    // Laps / Pace / Sub. Each ramp first lands exactly on the previous target
+    // when it is within rounding of it, so a voice whose Laps returns to 1 and
+    // Pace to 0 drops back onto the fast path.
+    if (Math.abs(v.laps - v.sLaps) < 1e-9) v.laps = v.sLaps;
+    if (Math.abs(v.pace - v.sPace) < 1e-9) v.pace = v.sPace;
+    if (Math.abs(v.subLv - v.sSub) < 1e-9) v.subLv = v.sSub;
+    const lapsT = MP[M_LAPS];
+    let paceT = MP[M_PACE];
+    if (snap) {
+      v.paceShape = P.paceShapeI;
+    } else if (v.paceShape !== P.paceShapeI) {
+      // Switching curves at full Pace would jump the waveform: fade Pace out,
+      // switch while it is exactly 0, then fade back in (~40 ms in all).
+      if (v.pace === 0 && v.sPace === 0) v.paceShape = P.paceShapeI;
+      else paceT = 0;
+    }
+    if (snap) {
+      v.sLaps = lapsT; v.sPace = paceT; v.sSub = P.subT;
+    } else {
+      v.sLaps = Math.abs(lapsT - v.sLaps) < SNAP ? lapsT : v.sLaps + (lapsT - v.sLaps) * k;
+      v.sPace = Math.abs(paceT - v.sPace) < SNAP ? paceT : v.sPace + (paceT - v.sPace) * k;
+      v.sSub = Math.abs(P.subT - v.sSub) < SNAP ? P.subT : v.sSub + (P.subT - v.sSub) * k;
+    }
+
     // transform coefficients at the end of the block
     const ax = Math.exp(v.sStretch * 1.5 * Math.LN2);
     const sx = ax * v.sSize, sy = v.sSize / ax;
@@ -835,11 +939,19 @@ export class OrographDSP {
     let f = 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
     if (!(f > 0)) f = 1;
 
-    // mip level from traversal speed (terrain units per second)
-    const speed = f * pathLength(P.shapeI, P.orderI, v.sParam) * v.sSize * (ax > 1 ? ax : 1 / ax) * (1 + 1.3 * v.sWarp) + 1e-9;
-    const lvA = this.mipLevel(P.terrA, speed);
-    const lvB = this.mipLevel(P.terrB, speed);
+    // mip level from traversal speed (terrain units per second); Laps traces
+    // the path `laps` times per cycle, so it scales the speed. Pace speeds up
+    // and slows down within the cycle: it is added per sample (see terrainPaced).
+    const speed = f * pathLength(P.shapeI, P.orderI, v.sParam) * v.sSize * (ax > 1 ? ax : 1 / ax) * (1 + 1.3 * v.sWarp) * v.sLaps + 1e-9;
+    const rawA = this.mipRaw(P.terrA, speed), rawB = this.mipRaw(P.terrB, speed);
+    const topA = P.terrA.length - 1, topB = P.terrB.length - 1;
+    const lvA = rawA < 0 ? 0 : rawA > topA ? topA : rawA;
+    const lvB = rawB < 0 ? 0 : rawB > topB ? topB : rawB;
     if (snap) { v.sLvA = lvA; v.sLvB = lvB; } else { v.sLvA += (lvA - v.sLvA) * k; v.sLvB += (lvB - v.sLvB) * k; }
+    // unclamped twins: a slow stretch of a paced cycle may need a level below
+    // the block's, which clamping first would hide
+    const uA = rawA < -16 ? -16 : rawA, uB = rawB < -16 ? -16 : rawB;
+    if (snap) { v.uLvA = uA; v.uLvB = uB; } else { v.uLvA += (uA - v.uLvA) * k; v.uLvB += (uB - v.uLvB) * k; }
 
     // filter
     let fc = Math.exp((v.sCut + prm[PI.keyTrack] * (semis - 60) / 12 + prm[PI.filterEnv] * 6 * e2) * Math.LN2);
@@ -863,6 +975,8 @@ export class OrographDSP {
       v.g = g; v.k = kq; v.dg = v.dk = 0;
       v.drive = v.sDrive; v.dDrive = 0;
       v.gl = gl; v.gr = gr; v.dgl = v.dgr = 0;
+      v.laps = v.sLaps; v.pace = v.sPace; v.subLv = v.sSub; v.dLaps = v.dPace = v.dSubLv = 0;
+      v.cLvA = v.uLvA; v.cLvB = v.uLvB; v.dcLvA = v.dcLvB = 0;
     } else {
       v.dtA = (tA - v.tA) * inv; v.dtB = (tB - v.tB) * inv; v.dtC = (tC - v.tC) * inv; v.dtD = (tD - v.tD) * inv;
       v.cx -= Math.floor(v.cx); v.cy -= Math.floor(v.cy);
@@ -873,13 +987,21 @@ export class OrographDSP {
       v.dg = (g - v.g) * inv; v.dk = (kq - v.k) * inv;
       v.dDrive = (v.sDrive - v.drive) * inv;
       v.dgl = (gl - v.gl) * inv; v.dgr = (gr - v.gr) * inv;
+      v.dLaps = (v.sLaps - v.laps) * inv; v.dPace = (v.sPace - v.pace) * inv; v.dSubLv = (v.sSub - v.subLv) * inv;
+      v.dcLvA = (v.uLvA - v.cLvA) * inv; v.dcLvB = (v.uLvB - v.cLvB) * inv;
     }
     for (let q = 0; q < U; q++) {
       let incT = f * P.detRatio[q] / fs2;
       if (incT > 0.45) incT = 0.45;
       if (snap || q >= v.uniPrev) { v.inc[q] = incT; v.dinc[q] = 0; } else v.dinc[q] = (incT - v.inc[q]) * inv;
     }
+    // oscillators that are not running carry no sync correction into the future
+    for (let q = U; q < MAX_UNISON; q++) { v.blepPend[q] = 0; v.blepSkip[q] = 0; }
     v.uniPrev = U;
+    // sub: one octave below the voice's (glided, bent) pitch, no unison detune
+    let subIncT = 0.5 * f / fs2;
+    if (subIncT > 0.45) subIncT = 0.45;
+    if (snap) { v.subInc = subIncT; v.dSubInc = 0; } else v.dSubInc = (subIncT - v.subInc) * inv;
 
     this.setMipRamp(v, P.terrA.length, v.sLvA, snap, true, inv);
     this.setMipRamp(v, P.terrB.length, v.sLvB, snap, false, inv);
@@ -896,14 +1018,22 @@ export class OrographDSP {
     }
   }
 
+  /**
+   * Unclamped mip level for a traversal speed (terrain units per second).
+   * A table of side S holds up to S/2 cycles per unit; traversed at `speed`
+   * units/s that is S/2 * speed Hz. Keeping it under the oversampled Nyquist
+   * (fs2/2) avoids folding at 2x; the default bias of one more octave keeps
+   * it under the host Nyquist instead, which loses nothing (the decimator
+   * removes that band anyway) but also pushes the images that bilinear
+   * interpolation makes of near-Nyquist detail into the decimator's stopband.
+   */
+  mipRaw(chain, speed) {
+    return Math.log2(chain[0].size * speed / this.fs2) + this.mipBias;
+  }
+
+  /** Mip level for a traversal speed, clamped to the chain (the block-rate choice). */
   mipLevel(chain, speed) {
-    // A table of side S holds up to S/2 cycles per unit; traversed at `speed`
-    // units/s that is S/2 * speed Hz. Keeping it under the oversampled Nyquist
-    // (fs2/2) avoids folding at 2x; the default bias of one more octave keeps
-    // it under the host Nyquist instead, which loses nothing (the decimator
-    // removes that band anyway) but also pushes the images that bilinear
-    // interpolation makes of near-Nyquist detail into the decimator's stopband.
-    const lv = Math.log2(chain[0].size * speed / this.fs2) + this.mipBias;
+    const lv = this.mipRaw(chain, speed);
     const top = chain.length - 1;
     return lv < 0 ? 0 : lv > top ? top : lv;
   }
@@ -973,9 +1103,10 @@ export class OrographDSP {
   /**
    * Render n2 oversampled samples of one voice into its part bus at off2.
    * Pass 1 traces each unison oscillator's path for the whole segment, pass 2
-   * maps it onto the terrain and sums the oscillators, pass 3 runs the per-
-   * voice chain (DC block, drive, filter, envelope, pan). Segments never span
-   * a control block, so n2 <= OVERSAMPLE * CTRL and the scratch fits.
+   * maps it onto the terrain and sums the oscillators (then band-limits any
+   * hard-sync restarts), pass 3 runs the per-voice chain (DC block, sub,
+   * drive, filter, envelope, pan). Segments never span a control block, so
+   * n2 <= OVERSAMPLE * CTRL and the scratch fits.
    */
   renderVoice(P, v, off2, n2) {
     const bL = P.busL, bR = P.busR;
@@ -986,11 +1117,22 @@ export class OrographDSP {
     const pst = this.pst;
 
     // ---- pass 1: paths
-    for (let q = 0; q < U; q++) {
-      pst[0] = v.phase[q]; pst[1] = v.inc[q]; pst[2] = v.dinc[q];
-      pst[3] = v.param; pst[4] = v.dParam;
-      pathBlock(P.shapeI, P.orderI, n2, pst, XS[q], YS[q]);
-      v.phase[q] = pst[0]; v.inc[q] = pst[1];
+    // Laps 1 and Pace 0 for the whole segment: the cycle phase is the path
+    // phase, the original fast path. Otherwise the Laps/Pace oscillator.
+    const param0 = v.param;
+    const sync = v.laps !== 1 || v.dLaps !== 0 || v.pace !== 0 || v.dPace !== 0;
+    const paced = sync && (v.pace !== 0 || v.dPace !== 0);
+    let nEv = 0;
+    if (sync) {
+      nEv = this.syncPaths(P, v, n2, paced);
+    } else {
+      for (let q = 0; q < U; q++) {
+        pst[0] = v.phase[q]; pst[1] = v.inc[q]; pst[2] = v.dinc[q];
+        pst[3] = v.param; pst[4] = v.dParam;
+        pathBlock(P.shapeI, P.orderI, n2, pst, XS[q], YS[q]);
+        v.phase[q] = pst[0]; v.inc[q] = pst[1];
+        v.blepSkip[q] = 0;
+      }
     }
     v.param += v.dParam * n2;
 
@@ -1029,57 +1171,73 @@ export class OrographDSP {
     const tA0 = v.tA, tB0 = v.tB, tC0 = v.tC, tD0 = v.tD, cx0 = v.cx, cy0 = v.cy;
     const dtA = v.dtA, dtB = v.dtB, dtC = v.dtC, dtD = v.dtD, dcx = v.dcx, dcy = v.dcy;
 
-    for (let q = 0; q < U; q++) {
-      const X = XS[q], Y = YS[q];
-      const gl = gUL[q], gr = gUR[q];
-      let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
-      let morph = m0, warp = wp0, lift = lf0, fold = fd0, wA = wA0, wB = wB0, fA = fA0, fB = fB0;
-      for (let j = 0; j < n2; j++) {
-        tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
-        const px = X[j], py = Y[j];
-        let u = cx + px * tA - py * tB;
-        let w = cy + px * tC + py * tD;
-        if (warpOn) {
-          warp += dWarp;
-          const ww = warp * 0.06;
-          const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
-          w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
-          u = u2;
-        }
-        let h = 0;
-        if (needA) {
-          h = bil(a0, sa0, ma0, u, w);
-          if (mipA) { wA += dwA; if (wA > 0) h += wA * (bil(a1, sa1, ma1, u, w) - h); }
-          if (fadeAOn) { fA += dfA; if (fA > 0) h += fA * (bil(oa, osa, oma, u, w) - h); }
-        }
-        if (needB) {
-          let hb = bil(b0, sb0, mb0, u, w);
-          if (mipB) { wB += dwB; if (wB > 0) hb += wB * (bil(b1, sb1, mb1, u, w) - hb); }
-          if (fadeBOn) { fB += dfB; if (fB > 0) hb += fB * (bil(ob, osb, omb, u, w) - hb); }
-          morph += dMorph;
-          h = needA ? h + morph * (hb - h) : hb;
-        }
-        if (shapeOn) {
-          lift += dLift; fold += dFold;
-          const y = h * lift;
-          const ay = y < 0 ? -y : y;
-          let sh = y;
-          if (ay > 1) {
-            const e = 2 * (ay - 1);
-            const kk = 1 + 0.5 * e / (1 + e);
-            sh = y < 0 ? -kk : kk;
+    if (paced) {
+      // the local traversal speed changes within the cycle: per-sample mips
+      this.terrainPaced(P, v, n2);
+    } else {
+      for (let q = 0; q < U; q++) {
+        const X = XS[q], Y = YS[q];
+        const gl = gUL[q], gr = gUR[q];
+        let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
+        let morph = m0, warp = wp0, lift = lf0, fold = fd0, wA = wA0, wB = wB0, fA = fA0, fB = fB0;
+        for (let j = 0; j < n2; j++) {
+          tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
+          const px = X[j], py = Y[j];
+          let u = cx + px * tA - py * tB;
+          let w = cy + px * tC + py * tD;
+          if (warpOn) {
+            warp += dWarp;
+            const ww = warp * 0.06;
+            const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+            w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+            u = u2;
           }
-          if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
-          h = sh;
+          let h = 0;
+          if (needA) {
+            h = bil(a0, sa0, ma0, u, w);
+            if (mipA) { wA += dwA; if (wA > 0) h += wA * (bil(a1, sa1, ma1, u, w) - h); }
+            if (fadeAOn) { fA += dfA; if (fA > 0) h += fA * (bil(oa, osa, oma, u, w) - h); }
+          }
+          if (needB) {
+            let hb = bil(b0, sb0, mb0, u, w);
+            if (mipB) { wB += dwB; if (wB > 0) hb += wB * (bil(b1, sb1, mb1, u, w) - hb); }
+            if (fadeBOn) { fB += dfB; if (fB > 0) hb += fB * (bil(ob, osb, omb, u, w) - hb); }
+            morph += dMorph;
+            h = needA ? h + morph * (hb - h) : hb;
+          }
+          if (shapeOn) {
+            lift += dLift; fold += dFold;
+            const y = h * lift;
+            const ay = y < 0 ? -y : y;
+            let sh = y;
+            if (ay > 1) {
+              const e = 2 * (ay - 1);
+              const kk = 1 + 0.5 * e / (1 + e);
+              sh = y < 0 ? -kk : kk;
+            }
+            if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
+            h = sh;
+          }
+          if (q === 0) { SL[j] = h * gl; if (stereo) SR[j] = h * gr; }
+          else { SL[j] += h * gl; SR[j] += h * gr; }
         }
-        if (q === 0) { SL[j] = h * gl; if (stereo) SR[j] = h * gr; }
-        else { SL[j] += h * gl; SR[j] += h * gr; }
       }
     }
+
+    // hard-sync band-limiting: the half correction a restart left for this
+    // segment's first sample, then this segment's restarts
+    for (let q = 0; q < U; q++) {
+      const pd = v.blepPend[q];
+      if (pd !== 0) { SL[0] += pd * gUL[q]; if (stereo) SR[0] += pd * gUR[q]; v.blepPend[q] = 0; }
+    }
+    if (nEv > 0) this.syncBlep(P, v, n2, nEv, param0, paced);
+
     v.tA = tA0 + dtA * n2; v.tB = tB0 + dtB * n2; v.tC = tC0 + dtC * n2; v.tD = tD0 + dtD * n2;
     v.cx = cx0 + dcx * n2; v.cy = cy0 + dcy * n2;
     v.morph = mEnd; v.warp = wp0 + dWarp * n2; v.lift = lf0 + dLift * n2; v.fold = fd0 + dFold * n2;
     v.wA = wA0 + dwA * n2; v.wB = wB0 + dwB * n2;
+    v.cLvA += v.dcLvA * n2; v.cLvB += v.dcLvB * n2;
+    v.laps += v.dLaps * n2; v.pace += v.dPace * n2;
 
     // ---- pass 3: voice chain
     const ftype = P.ftype;
@@ -1097,6 +1255,11 @@ export class OrographDSP {
     const stealing = v.stealFade > 0;
     let sg = v.stealGain;
     const ss = v.stealStep;
+    // sub sine: after the DC blocker (it has no DC to remove and the blocker
+    // would only shift its phase), before drive and filter so they shape it
+    const subOn = v.subLv !== 0 || v.dSubLv !== 0;
+    let sPh = v.subPh, sInc = v.subInc, sLv = v.subLv;
+    const dsInc = v.dSubInc, dsLv = v.dSubLv;
 
     if (v.dcInit) {
       // see startVoice(): y[-1] = x[0] - mean makes the first output x[0] - mean
@@ -1111,6 +1274,13 @@ export class OrographDSP {
       dxL = sL; dyL = yL;
       let yR = 0;
       if (stereo) { const sR = SR[j]; yR = sR - dxR + R * dyR; dxR = sR; dyR = yR; }
+      if (subOn) {
+        sPh += sInc;
+        if (sPh >= 1) sPh -= 1;
+        sInc += dsInc; sLv += dsLv;
+        const sv = sLv * fastSin(sPh);
+        yL += sv; yR += sv;
+      }
       if (driveOn) {
         drive += dDrive;
         const dgain = 1 + 5 * drive, comp = 1 / (1 + drive);
@@ -1169,6 +1339,289 @@ export class OrographDSP {
     v.dcxL = dxL; v.dcyL = dyL; v.dcxR = dxR; v.dcyR = dyR;
     v.envStage = st; v.envLvl = lvl;
     v.stealGain = sg;
+    if (subOn) { v.subPh = sPh; v.subInc = sInc; v.subLv = sLv; } else v.subInc += dsInc * n2;
+  }
+
+  /**
+   * Pass 1 of the Laps/Pace oscillator. Per unison oscillator and sample: the
+   * cycle phase φ advances at the note frequency; Pace warps it to ψ, Laps
+   * gives the path phase t = frac(laps ψ). Every wrap of φ is a hard-sync
+   * restart; it is recorded (sample, sub-sample position, laps) for
+   * syncBlep(), including one look-ahead restart that falls between this
+   * segment's last sample and the next segment's first. With `paced` the
+   * log2 of the local Pace speed goes into this.lvs[q] for the per-sample mip
+   * level. Returns the number of recorded restarts.
+   */
+  syncPaths(P, v, n2, paced) {
+    const U = P.uni, T = this.ts, PH = this.phs;
+    const L0 = v.laps, dL = v.dLaps;
+    const evQ = this.evQ, evJ = this.evJ, evD = this.evD, evL = this.evL;
+    let nEv = 0;
+    for (let q = 0; q < U; q++) {
+      const LV = this.lvs[q];
+      let ph = v.phase[q], inc = v.inc[q];
+      const dinc = v.dinc[q];
+      // the previous segment already corrected a restart on our first sample
+      const done = v.blepSkip[q] === 1;
+      for (let j = 0; j < n2; j++) {
+        const step = inc;
+        ph += inc;
+        inc += dinc;
+        if (ph >= 1) {
+          ph -= 1;
+          if (j > 0 || !done) { evQ[nEv] = q; evJ[nEv] = j; evD[nEv] = ph / step; evL[nEv] = L0 + dL * (j + 1); nEv++; }
+        }
+        PH[j] = ph;
+      }
+      // look-ahead: the next segment's first sample computes exactly ph + inc
+      v.blepSkip[q] = 0;
+      if (ph + inc >= 1) {
+        evQ[nEv] = q; evJ[nEv] = n2; evD[nEv] = (ph + inc - 1) / inc; evL[nEv] = L0 + dL * n2; nEv++;
+        v.blepSkip[q] = 1;
+      }
+      let L = L0;
+      if (paced) {
+        // ψ, then the local speed as dψ/dφ over each sample step: what the
+        // dot actually travelled, without a second curve evaluation
+        let prev = paceWarp(v.phase[q], v.pace, v.paceShape);
+        const invInc = 2 / (v.inc[q] + inc);
+        paceBlock(v.paceShape, n2, PH, v.pace, v.dPace, T);
+        for (let j = 0; j < n2; j++) {
+          L += dL;
+          const psi = T[j];
+          let dpsi = psi - prev;
+          if (dpsi < 0) dpsi += 1;
+          prev = psi;
+          LV[j] = speedLog2(dpsi * invInc);
+          const t = L * psi;
+          T[j] = t - Math.floor(t);
+        }
+      } else {
+        for (let j = 0; j < n2; j++) {
+          L += dL;
+          const t = L * PH[j];
+          T[j] = t - Math.floor(t);
+        }
+      }
+      v.phase[q] = ph; v.inc[q] = inc;
+      pathBlockAt(P.shapeI, P.orderI, n2, T, v.param, v.dParam, this.xs[q], this.ys[q]);
+    }
+    return nEv;
+  }
+
+  /**
+   * Pass 2 when Pace is active: as the block pass, but the mip level follows
+   * the local traversal speed sample by sample (block level + log2 of the
+   * Pace speed from syncPaths), so the rushed part of a cycle reads smoother
+   * tables than the lingering part and neither aliases nor dulls.
+   */
+  terrainPaced(P, v, n2) {
+    const U = P.uni, gUL = P.gUL, gUR = P.gUR, stereo = U > 1;
+    const XS = this.xs, YS = this.ys, SL = this.sumL, SR = this.sumR;
+    const chA = P.terrA, topA = chA.length - 1, chB = P.terrB, topB = chB.length - 1;
+    const fA0 = P.fadeACur, dfA = P.dFadeA, oldA = P.oldA;
+    const fadeAOn = oldA !== null && (fA0 > 0 || fA0 + dfA * n2 > 0);
+    const fB0 = P.fadeBCur, dfB = P.dFadeB, oldB = P.oldB;
+    const fadeBOn = oldB !== null && (fB0 > 0 || fB0 + dfB * n2 > 0);
+    const m0 = v.morph, dMorph = v.dMorph, mEnd = m0 + dMorph * n2;
+    const needA = m0 < 0.9999 || mEnd < 0.9999;
+    const needB = m0 > 1e-4 || mEnd > 1e-4;
+    const wp0 = v.warp, dWarp = v.dWarp;
+    const warpOn = wp0 > 0 || wp0 + dWarp * n2 > 0;
+    const lf0 = v.lift, dLift = v.dLift, fd0 = v.fold, dFold = v.dFold;
+    const shapeOn = !(lf0 === 1 && dLift === 0 && fd0 <= 0 && fd0 + dFold * n2 <= 0);
+    const tA0 = v.tA, tB0 = v.tB, tC0 = v.tC, tD0 = v.tD, cx0 = v.cx, cy0 = v.cy;
+    const dtA = v.dtA, dtB = v.dtB, dtC = v.dtC, dtD = v.dtD, dcx = v.dcx, dcy = v.dcy;
+    const lvA0 = v.cLvA, dlvA = v.dcLvA, lvB0 = v.cLvB, dlvB = v.dcLvB;
+
+    // The level changes only a few times per cycle, so the tables of the
+    // current level pair are cached and re-read only when it moves.
+    const oA = oldA !== null ? oldA : chA, oB = oldB !== null ? oldB : chB;
+    for (let q = 0; q < U; q++) {
+      const X = XS[q], Y = YS[q], LV = this.lvs[q];
+      const gl = gUL[q], gr = gUR[q];
+      let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
+      let morph = m0, warp = wp0, lift = lf0, fold = fd0, fA = fA0, fB = fB0, lvA = lvA0, lvB = lvB0;
+      let curA = -1, a0 = chA[0].data, sa0 = 1, ma0 = 0, a1 = a0, sa1 = 1, ma1 = 0, oa = a0, osa = 1, oma = 0;
+      let curB = -1, b0 = chB[0].data, sb0 = 1, mb0 = 0, b1 = b0, sb1 = 1, mb1 = 0, ob = b0, osb = 1, omb = 0;
+      for (let j = 0; j < n2; j++) {
+        tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
+        lvA += dlvA; lvB += dlvB;
+        const px = X[j], py = Y[j], off = LV[j];
+        let u = cx + px * tA - py * tB;
+        let w = cy + px * tC + py * tD;
+        if (warpOn) {
+          warp += dWarp;
+          const ww = warp * 0.06;
+          const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+          w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+          u = u2;
+        }
+        let h = 0;
+        if (needA) {
+          let lv = lvA + off;
+          if (lv < 0) lv = 0; else if (lv > topA) lv = topA;
+          const l = lv | 0;
+          if (l !== curA) {
+            curA = l;
+            const t0 = chA[l], t1 = chA[l < topA ? l + 1 : l], to = oA[l < oA.length ? l : oA.length - 1];
+            a0 = t0.data; sa0 = t0.size; ma0 = sa0 - 1;
+            a1 = t1.data; sa1 = t1.size; ma1 = sa1 - 1;
+            oa = to.data; osa = to.size; oma = osa - 1;
+          }
+          h = bil(a0, sa0, ma0, u, w);
+          const z = (lv - l - 0.5) * 2;   // mipZone; 0 at the top level (t1 = t0 there)
+          if (z > 0) h += (z > 1 ? 1 : z) * (bil(a1, sa1, ma1, u, w) - h);
+          if (fadeAOn) { fA += dfA; if (fA > 0) h += fA * (bil(oa, osa, oma, u, w) - h); }
+        }
+        if (needB) {
+          let lv = lvB + off;
+          if (lv < 0) lv = 0; else if (lv > topB) lv = topB;
+          const l = lv | 0;
+          if (l !== curB) {
+            curB = l;
+            const t0 = chB[l], t1 = chB[l < topB ? l + 1 : l], to = oB[l < oB.length ? l : oB.length - 1];
+            b0 = t0.data; sb0 = t0.size; mb0 = sb0 - 1;
+            b1 = t1.data; sb1 = t1.size; mb1 = sb1 - 1;
+            ob = to.data; osb = to.size; omb = osb - 1;
+          }
+          let hb = bil(b0, sb0, mb0, u, w);
+          const z = (lv - l - 0.5) * 2;
+          if (z > 0) hb += (z > 1 ? 1 : z) * (bil(b1, sb1, mb1, u, w) - hb);
+          if (fadeBOn) { fB += dfB; if (fB > 0) hb += fB * (bil(ob, osb, omb, u, w) - hb); }
+          morph += dMorph;
+          h = needA ? h + morph * (hb - h) : hb;
+        }
+        if (shapeOn) {
+          lift += dLift; fold += dFold;
+          const y = h * lift;
+          const ay = y < 0 ? -y : y;
+          let sh = y;
+          if (ay > 1) {
+            const e = 2 * (ay - 1);
+            const kk = 1 + 0.5 * e / (1 + e);
+            sh = y < 0 ? -kk : kk;
+          }
+          if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
+          h = sh;
+        }
+        if (q === 0) { SL[j] = h * gl; if (stereo) SR[j] = h * gr; }
+        else { SL[j] += h * gl; SR[j] += h * gr; }
+      }
+    }
+  }
+
+  /**
+   * Shaped terrain height the oscillator q would read at sample j of this
+   * segment for the unit path point in this.pt: the scalar twin of pass 2
+   * (same ramps, mips, crossfades, morph, warp, Lift/Fold), used to measure
+   * the jump at a hard-sync restart. Takes no fractional arguments, so the
+   * call boxes nothing (it runs once per restart, thousands of times a second).
+   */
+  heightAt(P, v, n2, j, q, paced) {
+    const s = j + 1, px = this.pt.x, py = this.pt.y;
+    const tA = v.tA + v.dtA * s, tB = v.tB + v.dtB * s, tC = v.tC + v.dtC * s, tD = v.tD + v.dtD * s;
+    let u = v.cx + v.dcx * s + px * tA - py * tB;
+    let w = v.cy + v.dcy * s + px * tC + py * tD;
+    if (v.warp > 0 || v.warp + v.dWarp * n2 > 0) {
+      const ww = (v.warp + v.dWarp * s) * 0.06;
+      const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
+      w += ww * (fastSin(2 * u) + 0.5 * fastSin(3 * u - 2 * w));
+      u = u2;
+    }
+    const off = paced ? this.lvs[q][j] : 0;
+    const m0 = v.morph, mEnd = m0 + v.dMorph * n2;
+    const needA = m0 < 0.9999 || mEnd < 0.9999;
+    const needB = m0 > 1e-4 || mEnd > 1e-4;
+    let h = 0;
+    if (needA) {
+      const ch = P.terrA, n = ch.length;
+      let l, wt;
+      if (paced) {
+        let lv = v.cLvA + v.dcLvA * s + off;
+        lv = lv < 0 ? 0 : lv > n - 1 ? n - 1 : lv;
+        l = lv | 0;
+        wt = l < n - 1 ? mipZone(lv - l) : 0;
+      } else {
+        l = v.lA < n ? v.lA : n - 1;
+        const ws = l + 1 < n ? v.wA : 0, dw = l + 1 < n ? v.dwA : 0;
+        wt = ws > 0 || ws + dw * n2 > 0 ? ws + dw * s : 0;
+      }
+      const f0 = P.fadeACur, df = P.dFadeA;
+      const fadeOn = P.oldA !== null && (f0 > 0 || f0 + df * n2 > 0);
+      h = chainHeight(ch, l, wt, fadeOn ? P.oldA : null, f0 + df * s, u, w);
+    }
+    if (needB) {
+      const ch = P.terrB, n = ch.length;
+      let l, wt;
+      if (paced) {
+        let lv = v.cLvB + v.dcLvB * s + off;
+        lv = lv < 0 ? 0 : lv > n - 1 ? n - 1 : lv;
+        l = lv | 0;
+        wt = l < n - 1 ? mipZone(lv - l) : 0;
+      } else {
+        l = v.lB < n ? v.lB : n - 1;
+        const ws = l + 1 < n ? v.wB : 0, dw = l + 1 < n ? v.dwB : 0;
+        wt = ws > 0 || ws + dw * n2 > 0 ? ws + dw * s : 0;
+      }
+      const f0 = P.fadeBCur, df = P.dFadeB;
+      const fadeOn = P.oldB !== null && (f0 > 0 || f0 + df * n2 > 0);
+      const hb = chainHeight(ch, l, wt, fadeOn ? P.oldB : null, f0 + df * s, u, w);
+      h = needA ? h + (m0 + v.dMorph * s) * (hb - h) : hb;
+    }
+    const lf0 = v.lift, fd0 = v.fold;
+    if (!(lf0 === 1 && v.dLift === 0 && fd0 <= 0 && fd0 + v.dFold * n2 <= 0)) {
+      const lift = lf0 + v.dLift * s, fold = fd0 + v.dFold * s;
+      const y = h * lift;
+      const ay = y < 0 ? -y : y;
+      let sh = y;
+      if (ay > 1) { const e = 2 * (ay - 1); const kk = 1 + 0.5 * e / (1 + e); sh = y < 0 ? -kk : kk; }
+      if (fold > 0) sh += fold * (fastSin(y * (1 + 4 * fold) * 0.25) - sh);
+      h = sh;
+    }
+    return h;
+  }
+
+  /**
+   * Band-limit this segment's hard-sync restarts with a polyBLEP residual.
+   * A restart at a fraction d of a sample before sample j makes the output
+   * jump by D = height(path start) - height(where the cut lap ended), both
+   * measured through the full terrain chain at that moment (t = 0 versus
+   * t = frac(laps); integer Laps restart where they already are, D = 0).
+   * The two-sample polyBLEP residual adds D d^2 / 2 to sample j - 1 and
+   * -D (1 - d)^2 / 2 to sample j. A look-ahead restart (j = n2) puts its
+   * first half on our last sample and leaves the second for the next segment.
+   * (A polyBLAMP for the change of slope at the restart was tried: under
+   * 1 dB less aliasing for twice the lookups, so it is left out.)
+   */
+  syncBlep(P, v, n2, nEv, param0, paced) {
+    if (!this.blep) return;
+    const SL = this.sumL, SR = this.sumR, stereo = P.uni > 1;
+    const evQ = this.evQ, evJ = this.evJ, evD = this.evD, evL = this.evL;
+    const pt = this.pt, dp = v.dParam;
+    for (let e = 0; e < nEv; e++) {
+      const L = evL[e];
+      const tEnd = L - Math.floor(L);
+      if (tEnd === 0) continue;
+      const q = evQ[e], jj = evJ[e], d = evD[e];
+      const j = jj < n2 ? jj : n2 - 1;
+      let p = param0 + dp * (j + 1);
+      p = p < 0 ? 0 : p > 1 ? 1 : p;
+      pathPoint(P.shapeI, tEnd, P.orderI, p, pt);
+      const hEnd = this.heightAt(P, v, n2, j, q, paced);
+      pathPoint(P.shapeI, 0, P.orderI, p, pt);
+      const D = this.heightAt(P, v, n2, j, q, paced) - hEnd;
+      if (D === 0) continue;
+      const gl = P.gUL[q], gr = P.gUR[q];
+      const pre = 0.5 * D * d * d, post = -0.5 * D * (1 - d) * (1 - d);
+      if (jj < n2) {
+        SL[jj] += post * gl; if (stereo) SR[jj] += post * gr;
+        if (jj > 0) { SL[jj - 1] += pre * gl; if (stereo) SR[jj - 1] += pre * gr; }
+      } else {
+        SL[n2 - 1] += pre * gl; if (stereo) SR[n2 - 1] += pre * gr;
+        v.blepPend[q] = post;
+      }
+    }
   }
 
   decimate(P, pos, seg) {

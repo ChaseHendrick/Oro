@@ -8,8 +8,15 @@
 //   !      accent        ~  slide (ties into the next step)
 //   >      long gate     <  short gate        *  softer
 // Degrees follow the global key, so changing key re-harmonises every part.
+//
+// Dot locks are given separately as { step: [x, y] }: when that step plays,
+// the part's dot glides to (x, y) on the map over `lockGlide` of a step.
+//
+// Every sequence, step and arp starts from the registry defaults
+// (defaultSeq / defaultStep / defaultArp), so fields added to the state later
+// are filled in here too and the scenes keep passing migrateState unchanged.
 
-import { defaultState, defaultGlobalParams, defaultStep, SEQ_STEPS, NUM_PARTS, clamp } from '../core/params.js';
+import { defaultState, defaultGlobalParams, defaultSeq, defaultStep, defaultArp, SEQ_STEPS, NUM_PARTS, clamp } from '../core/params.js';
 import { FACTORY_PATCHES } from './factory-patches.js';
 import { partWithPatch } from './apply.js';
 
@@ -46,9 +53,26 @@ export function parsePattern(text, { gate = 0.5, vel = 0.8 } = {}) {
   return { steps, length: tokens.length };
 }
 
-function seq(text, { rate = '1/16', baseOctave = 3, gate, vel } = {}) {
+/**
+ * Add dot locks to parsed steps. `locks` maps a step index to [x, y]; a lock
+ * may sit on a rest (the dot still moves). Throws on a step outside the
+ * pattern so a typo cannot silently drop a lock.
+ */
+export function applyLocks(steps, locks, length = SEQ_STEPS) {
+  for (const [key, xy] of Object.entries(locks || {})) {
+    const i = Number(key);
+    if (!Number.isInteger(i) || i < 0 || i >= length) throw new Error(`Lock on step ${key} is outside the pattern`);
+    if (!Array.isArray(xy) || xy.length !== 2 || !xy.every(v => Number.isFinite(v) && v >= 0 && v < 1)) throw new Error(`Lock on step ${key} needs [x, y] in 0..1`);
+    steps[i] = { ...steps[i], lock: 1, lx: xy[0], ly: xy[1] };
+  }
+  return steps;
+}
+
+function seq(text, { rate = '1/16', baseOctave = 3, gate, vel, locks, lockGlide } = {}) {
   const { steps, length } = parsePattern(text, { gate, vel });
-  return { enabled: 1, rate: RATE[rate], length, baseOctave, steps };
+  const out = { ...defaultSeq(), enabled: 1, rate: RATE[rate], length, baseOctave, steps: applyLocks(steps, locks, length) };
+  if (lockGlide != null) out.lockGlide = lockGlide;
+  return out;
 }
 
 const PATCH_BY_NAME = Object.fromEntries(FACTORY_PATCHES.map(p => [p.name, p]));
@@ -68,7 +92,7 @@ function buildScene({ name, description, global, parts }) {
     if (spec.reverbSend != null) part.params.reverbSend = spec.reverbSend;
     if (spec.delaySend != null) part.params.delaySend = spec.delaySend;
     part.seq = spec.seq;
-    part.arp = { mode: ARP.off, rate: RATE['1/16'], octaves: 1, gate: 0.6, hold: 0, ...(spec.arp || {}) };
+    part.arp = { ...defaultArp(), mode: ARP.off, rate: RATE['1/16'], ...(spec.arp || {}) };
     return part;
   });
   if (state.parts.length !== NUM_PARTS) throw new Error('Scenes need four parts');
@@ -105,7 +129,15 @@ export const FACTORY_SCENES = [
     },
     parts: [
       { name: 'Drone', patch: 'Bedrock Drone', gain: 0.85, seq: seq('0~ 0~ 0~ 0~ 0~ 0~ 0~ 0> 5~ 5~ 5~ 5> 4~ 4~ 4~ 4>', { rate: '1/4', baseOctave: 3, gate: 0.95, vel: 0.7 }) },
-      { name: 'Pad', patch: 'Polar Night', gain: 0.9, pan: -0.2, seq: seq('2~ 2~ 2~ 2> 4~ 4~ 4~ 4> 2~ 2~ 2~ 2> 1~ 1~ 1~ 1>', { rate: '1/4', baseOctave: 3, gate: 0.95, vel: 0.65 }) },
+      {
+        // Each chord gets its own corner of the map, reached with a slow
+        // full-beat glide: open centre, the glassy ring, a warm ridge, a dark shelf.
+        name: 'Pad', patch: 'Polar Night', gain: 0.9, pan: -0.2,
+        seq: seq('2~ 2~ 2~ 2> 4~ 4~ 4~ 4> 2~ 2~ 2~ 2> 1~ 1~ 1~ 1>', {
+          rate: '1/4', baseOctave: 3, gate: 0.95, vel: 0.65, lockGlide: 1,
+          locks: { 0: [0.5, 0.5], 4: [0.25, 0.55], 8: [0.65, 0.35], 12: [0.9, 0.9] },
+        }),
+      },
       {
         name: 'Harp', patch: 'Harbour Harp', gain: 1, pan: 0.2,
         seq: seq('0 4 7 . 3 . 9 . 7 4 . 2 . 6 . .', { rate: '1/8', baseOctave: 4, gate: 0.8, vel: 0.65 }),
@@ -125,7 +157,16 @@ export const FACTORY_SCENES = [
     parts: [
       { name: 'Bass', patch: 'Moraine Reese', gain: 0.9, seq: seq('0 0\' 0 0\' 0 0\' 0 0\' 5 5\' 5 5\' 6 6\' 6 6\'', { rate: '1/8', baseOctave: 2, gate: 0.55 }) },
       { name: 'Pad', patch: 'Aurora Plateau', gain: 0.85, pan: -0.15, seq: seq('4~ 4~ 4~ 4> 2~ 2> 3~ 3>', { rate: '1/4', baseOctave: 3, gate: 0.95, vel: 0.7 }) },
-      { name: 'Lead', patch: 'Summit Saw', gain: 0.9, pan: 0.1, seq: seq('7! . . 6 . 4 . . 2 . 4 . 6~ 7 . .', { rate: '1/16', baseOctave: 4, gate: 0.6 }) },
+      {
+        // The Scan orbit reads one row of the Spectra wavetable, so locking the
+        // dot's height swaps the waveform under each phrase: saw on the downbeat,
+        // hollow square, nasal pulse, then a soft triangle that slides home.
+        name: 'Lead', patch: 'Summit Saw', gain: 0.9, pan: 0.1,
+        seq: seq('7! . . 6 . 4 . . 2 . 4 . 6~ 7 . .', {
+          rate: '1/16', baseOctave: 4, gate: 0.6, lockGlide: 0.6,
+          locks: { 0: [0.5, 0.27], 5: [0.5, 0.33], 8: [0.5, 0.44], 12: [0.5, 0.21] },
+        }),
+      },
       {
         name: 'Arp', patch: 'Survey Arp', gain: 0.9, pan: 0.3,
         seq: seq('0 4 7 4 0 4 7 4 0 4 7 4 2 4 7 9', { rate: '1/16', baseOctave: 4, gate: 0.35, vel: 0.7 }),
