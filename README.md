@@ -62,7 +62,7 @@ few lines.
 * **Modulation everywhere.** Every moving knob has its own LFO (including a drawable
   16-step shape) and envelope depth. **Links** route velocity, aftertouch, MPE slide,
   the marble, the terrain height or four global **Macros** to anything.
-* **Music.** Four parts, a 16-step sequencer per part that stores scale degrees so it
+* **Music.** Up to sixteen tracks, a 16-step sequencer per track that stores scale degrees so it
   follows the key, accents, slides, **dot locks** that move the dot per step, an
   arpeggiator, swing, and a one-key **preview** phrase for every patch.
 * **Patches and scenes.** More than fifty factory patches in ten categories, seven
@@ -74,6 +74,9 @@ few lines.
 * **Looper and resampling.** A tempo-locked looper with overdub, undo and WAV export, and
   **Resample**, which turns the loop (or a few bars of the output) into a new wavetable
   terrain you can play, loop and resample again.
+* **Guitar chords (1.5, experimental).** Single-note tracking with bends or
+  several notes at once from a clean guitar input. Chords respond more slowly and
+  can miss octave-doubled strings. Tested with generated signals, not real hardware.
 * **Voice input (1.4).** Sing into any microphone, a laptop's own included:
   hear it with the synth, loop and resample vocals, play a part by singing or humming,
   capture a sung note as a terrain, and let your voice move the terrain through Links.

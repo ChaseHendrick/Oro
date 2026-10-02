@@ -59,6 +59,20 @@ describe('router: key modes', () => {
     router.noteOff(1, 60);
     expect(seen.map(e => [e.part, e.note, e.on])).toEqual([[1, 60, true], [1, 60, false]]);
   });
+
+  it('removes a panicked track from a Layer note route without clearing new input on it', () => {
+    const { engine, store, router } = setup();
+    store.set('global.keyMode', 1);
+    router.noteOn('sel', 60, 0.8, 'guitar');
+    router.allNotesOff(0);
+    router.noteOn(0, 60, 0.8, 'ui');
+    engine.clear();
+    router.noteOff('sel', 60, 'guitar');
+    expect(engine.offs().map(event => event.part)).toEqual([1, 2, 3]);
+    expect(router.heldNotes(0)).toEqual(new Set([60]));
+    router.noteOff(0, 60, 'ui');
+    expect(engine.offs().at(-1).part).toBe(0);
+  });
 });
 
 describe('router: sustain', () => {

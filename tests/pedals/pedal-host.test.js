@@ -252,7 +252,7 @@ describe('pedal host: guitar notes', () => {
     await host.setReturn({ enabled: true, layout: 'mono+guitar' });
     expect(fx.guitars).toHaveLength(1);                     // shared, no second tracker
     expect(host.status().guitar).toMatchObject({ tracking: true, gateDb: -44, bendRange: 5 });
-    expect(fx.guitar.configure).toHaveBeenLastCalledWith({ tracker: { gateDb: -44, bendRange: 5 } });
+    expect(fx.guitar.configure).toHaveBeenLastCalledWith({ guitarMode: 'single', tracker: { gateDb: -44, bendRange: 5 } });
     fx.guitar.emit('noteOn', { note: 45, velocity: 0.7, time: 1 });
     fx.guitar.emit('bend', { semitones: 0.5, time: 1.1 });
     fx.guitar.emit('noteOff', { note: 45, time: 1.2 });
@@ -291,6 +291,28 @@ describe('pedal host: guitar notes', () => {
     await host.setReturn({ enabled: false });
     await host.setGuitar({ notes: true });
     expect(fx.guitars).toHaveLength(0);
+  });
+
+  it('passes Chords mode to both dedicated and shared trackers and stops old notes before switching', async () => {
+    const { host, fx } = setup({ openReturn: withSource });
+    const seen = [];
+    host.on('guitarNote', event => seen.push(event));
+    await host.setGuitar({ notes: true, guitarMode: 'chords' });
+    await host.setReturn({ enabled: true });
+    expect(fx.guitars[0].opts.guitarMode).toBe('chords');
+    expect(host.status().guitar.guitarMode).toBe('chords');
+    fx.guitars[0].emit('pitch', { mode: 'chords', notes: [52, 55, 59], heard: [52, 55, 59], voiced: true });
+    expect(seen.at(-1)).toMatchObject({ type: 'pitch', notes: [52, 55, 59] });
+    await host.setGuitar({ guitarMode: 'single' });
+    expect(seen.at(-1)).toEqual({ type: 'stop' });
+    expect(fx.guitars[0].configure).toHaveBeenLastCalledWith({ guitarMode: 'single', tracker: { gateDb: -50, bendRange: 2 } });
+    await host.setReturn({ layout: 'mono+guitar' });
+    await host.setGuitar({ guitarMode: 'chords' });
+    const shared = fx.guitars.at(-1);
+    expect(shared.configure).toHaveBeenLastCalledWith({ guitarMode: 'chords', tracker: { gateDb: -50, bendRange: 2 } });
+    await host.setGuitar({ notes: false });
+    expect(shared.configure).toHaveBeenLastCalledWith({ guitarMode: 'single' });
+    expect(shared.dispose).not.toHaveBeenCalled();
   });
 });
 

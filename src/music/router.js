@@ -270,7 +270,11 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       try { if (engine) engine.allNotesOff(p); } catch { /* engine not ready */ }
     }
     if (part == null) routes.clear();
-    else for (const [k, v] of routes) if (v.every(p => list.includes(p))) routes.delete(k);
+    else for (const [key, route] of routes) {
+      const remaining = route.filter(p => !list.includes(p));
+      if (remaining.length) routes.set(key, remaining);
+      else routes.delete(key);
+    }
     // Lets other note sources (the patch preview) stop with a panic too.
     emitter.emit('allOff', { parts: list });
   }

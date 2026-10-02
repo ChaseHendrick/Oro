@@ -2,7 +2,8 @@
 // Node with the few worklet globals they use stubbed, block by block like the
 // browser's audio thread would.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { pluck, midiToHz } from './signals.js';
+import { pluck, midiToHz, strum } from './signals.js';
+import { createChordWorkerCore } from '../../src/pedals/guitar-chord-worker.js';
 
 const registry = {};
 let posted = [];
@@ -61,6 +62,53 @@ describe('guitar worklet processors', () => {
     proc.port.onmessage({ data: { t: 'config', tracker: { gateDb: -40 }, envelope: { attackMs: 1 } } });
     proc.port.onmessage({ data: { t: 'stop' } });
     expect(proc.process([[]], [[new Float32Array(128)]])).toBe(false);
+  });
+
+  it("'orograph-guitar' ships context-aligned chord samples for analysis outside the audio thread", () => {
+    posted = [];
+    const proc = new registry['orograph-guitar']({ processorOptions: { guitarMode: 'chords' } });
+    const startFrame = 96000;
+    runBlocks(proc, strum([52, 55, 59], { duration: 0.5 }), { startFrame });
+    const batches = posted.filter(event => event.t === 'samples');
+    expect(batches.length).toBeGreaterThan(20);
+    expect(batches.every(event => event.data.length === 1024)).toBe(true);
+    expect(batches[0].time).toBe(2);
+    batches.forEach((event, index) => expect(event.time).toBeCloseTo(2 + index * 1024 / 48000, 10));
+    expect(posted.filter(event => event.t === 'noteOn' || event.t === 'bend')).toEqual([]);
+    const results = [];
+    const worker = createChordWorkerCore(message => results.push(message));
+    worker({ t: 'config', sampleRate: 48000, revision: 0 });
+    batches.forEach((batch, id) => worker({ ...batch, id, sampleRate: 48000 }));
+    const events = results.flatMap(result => result.events);
+    const ons = events.filter(event => event.t === 'noteOn');
+    expect([...new Set(ons.map(event => event.note))].sort((a, b) => a - b)).toEqual([52, 55, 59]);
+    expect(ons.every(event => event.time > 2.1 && event.time < 2.4)).toBe(true);
+    expect(posted.filter(event => event.t === 'bend')).toEqual([]);
+    expect(results.find(result => result.pitch?.notes.length === 3).pitch).toMatchObject({ mode: 'chords', notes: [52, 55, 59], voiced: true });
+    const before = posted.length;
+    proc.port.onmessage({ data: { t: 'config', guitarMode: 'single' } });
+    expect(posted.at(-1)).toMatchObject({ t: 'pitch', mode: 'single', voiced: false });
+    expect(posted.slice(before).filter(event => event.t === 'samples')).toEqual([]);
+    proc.port.onmessage({ data: { t: 'stop' } });
+  });
+
+  it("'orograph-guitar' discards partial sample batches on reset or mode changes", () => {
+    posted = [];
+    const proc = new registry['orograph-guitar']({ processorOptions: { guitarMode: 'chords' } });
+    runBlocks(proc, new Float32Array(896).fill(0.5));
+    expect(posted.filter(event => event.t === 'samples')).toEqual([]);
+    proc.port.onmessage({ data: { t: 'reset' } });
+    runBlocks(proc, new Float32Array(1024).fill(-0.25), { startFrame: 896 });
+    const batch = posted.find(event => event.t === 'samples');
+    expect(batch.data.every(value => value === -0.25)).toBe(true);
+    expect(batch.time).toBeCloseTo(896 / 48000, 10);
+    proc.port.onmessage({ data: { t: 'config', guitarMode: 'single', revision: 1 } });
+    proc.port.onmessage({ data: { t: 'config', guitarMode: 'chords', revision: 2 } });
+    const before = posted.length;
+    runBlocks(proc, new Float32Array(1024).fill(0.75), { startFrame: 1920 });
+    expect(posted.slice(before).find(event => event.t === 'samples')).toMatchObject({ revision: 2, mode: 'chords' });
+    proc.port.onmessage({ data: { t: 'stop' } });
+    expect(proc.process([[]])).toBe(false);
   });
 
   it("'orograph-pedal-capture' records channels sample-aligned in chunks", () => {

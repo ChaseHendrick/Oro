@@ -1,6 +1,6 @@
 # Orograph handoff
 
-Written 2026-10-02, about 15:05 UTC, for whoever continues this project next (a person, or
+Updated 2026-10-02 during the continuation of the 15:05 UTC handoff, for whoever continues this project next (a person, or
 an assistant such as ChatGPT that has never seen the earlier conversations). It is meant to
 be enough on its own: read it top to bottom, then `docs/ARCHITECTURE.md` before changing
 code.
@@ -38,47 +38,27 @@ tests, Playwright (Chromium) for browser checks. Node 22.
 Work happens on a branch and goes in through a pull request. The owner wants PRs merged
 (squash) once CI is green, then the website updated (section 6). One feature per release.
 
-## 3. State right now, and what to do first
+## 3. State checked during this continuation
 
-| Item | State |
-|---|---|
-| `main` (synth) | code for **1.3.0** (open-ended track list), commit `5f05f85` |
-| Latest **published** GitHub Release | **1.2.2**. The 1.3.0 release never published, see "Mac runner problem" below |
-| Synth PR **#9** "1.4.0: voice and microphone input" | open, branch `claude/magical-tesla-q993l8`, commit `5fed828` plus this handoff. Tests, web build, Linux and Windows builds pass; the Mac build was cancelled (runner problem, not the code) |
-| Website `main` | serves the **1.3.0** web app (the web app is synced from source, so it does not depend on the GitHub Release) |
-| Website PR **#14** "Update Orograph to 1.4.0" | open, branch `claude/orograph-1.4.0`, checks green. Merge only **after** synth PR #9 is merged |
+The earlier release blocker is resolved. Checked on 2026-10-02:
 
-**Do these in order:**
+* Synth PR #9 is merged as `e47e6b4`; main's CI and Desktop apps workflows passed.
+* GitHub Release **v1.4.0** has Mac ARM64 and x64 DMG/ZIP, Windows installer and
+  portable EXE, Linux AppImage/tar.gz, web ZIP and the offline HTML file.
+* Website PR #14 is merged. Its source declares Orograph **1.4.0**.
+* This continuation prepares **1.5.0: experimental guitar chords**. The implementation
+  replaces the unreliable draft with a conservative spectral detector, adds Single /
+  Chords selection and per-note routing, and fixes stale source routes after Panic.
+  Chords may miss quiet and octave-doubled strings. Physical guitar and pedal tests
+  remain outstanding.
 
-1. Check whether Mac runners work again: open the latest "Desktop apps" run in the synth
-   repo's Actions tab. If Mac jobs now start and pass, re-run the failed jobs of the `main`
-   run for commit `5f05f85` (that publishes 1.3.0) or simply continue with step 2, which
-   publishes 1.4.0.
-2. Merge synth PR #9 (squash). The push to `main` builds and publishes the 1.4.0 release.
-   Confirm https://github.com/ChaseHendrick/synth/releases/latest shows 1.4.0 with Mac,
-   Windows, Linux and the offline HTML file.
-3. Merge website PR #14 (squash). Vercel deploys it.
-4. Reset the working branch for the next feature (section 6, "Branches").
+Follow the release routine in section 6: test both web builds, check browser input
+paths, merge the feature PR only once CI is green, verify all download assets, then
+sync the website. Check the current GitHub release and PR state before repeating a
+step from this snapshot.
 
-### The Mac runner problem (open)
-
-Since about 13:58 UTC on 2026-10-02 every `macos-latest` job in the synth repo stayed
-"queued" with no runner and was cancelled after 15 minutes. Windows and Linux ran
-normally. Before that, Mac builds worked (1.2.2 published with Mac files at 13:58). The
-cause was not visible from the API: no runner was ever assigned, so there are no logs.
-Possible causes: a GitHub-side macOS capacity problem, or an account or billing limit.
-
-The `release` job has `needs: [web, desktop]`, so one cancelled Mac job blocks the whole
-release. If Mac runners stay unavailable, options, from least to most change:
-
-* re-run the failed jobs later (Actions tab, "Re-run failed jobs");
-* pin a specific image instead of `macos-latest` (for example `macos-15` or `macos-14`)
-  and see whether that label gets a runner;
-* let the release publish without the Mac files: `if: always() && needs.web.result ==
-  'success'` on the release job, and build the download table from the files that exist.
-  The owner uses a Mac, so say clearly in the release notes when the Mac files are missing.
-
-Ask the owner before changing release behaviour.
+The macOS runner problem described in the original handoff was temporary. The
+1.4.0 desktop workflow passed without changing runner labels or release behavior.
 
 ## 4. How to work on it
 
@@ -130,7 +110,7 @@ registry). The short version:
 | `docs/RESEARCH.md` | research brief: facts about the Terrain Synth (with sources), wave terrain theory, the original feature spec |
 | `docs/BUGS.md`, `docs/PEDALS.md`, `docs/MPC-XL.md` | bug log, pedal design, MPC notes |
 | `CHANGELOG.md` | one section per release |
-| `wip/chords/` | unfinished draft (section 7) |
+| `src/pedals/chords.js`, `src/pedals/guitar-chord-worker.js` | experimental multi-pitch detector and background analysis |
 
 ## 6. Release and website routine
 
@@ -182,17 +162,18 @@ structured data has `alternateName: "HendrickResearch"`. Do not invent other nam
   Resample (turn a loop into a new terrain). 1.2.1: smoother minimap and displays, no
   frame-rate caps. 1.2.2: the whole 3 x 3 map is playable, walls at the outer edge.
 * 1.3: open-ended track list (1 to 16 tracks), several patterns per track.
-* 1.4 (PR #9, not merged yet): voice and microphone input (Settings > Voice): input gain,
+* 1.4 (merged and published): voice and microphone input (Settings > Voice): input gain,
   meter and clip light, "Mic Cleanup" toggle, Monitor with a feedback guard, optional
   high-pass, compressor and de-esser, voice into the looper and Resample, "Voice plays
   notes", Capture a sung note, Voice Level as a Links source. Also fixes "Guitar plays
   notes" on tracks 5 to 16. **Untested with a real microphone.**
 
-**Partly done:**
+**Implemented in the 1.5.0 continuation:**
 
-* **Guitar chord tracking** (`wip/chords/chords.js`, `wip/chords/signals-test-helper.patch`):
-  a polyphonic "Chords" mode beside the single-note guitar tracking. Unfinished and not
-  wired in. Read the code before deciding whether to finish or restart it.
+* **Experimental guitar chord tracking.** Single remains the default, Chords is an
+  optional slower multi-pitch detector on a clean input, and Capture still requires
+  one held note. Generated-signal tests establish the tested cases only, not real
+  hardware accuracy. The superseded `wip/chords/` draft is removed.
 
 **Requested by the owner, not started:**
 

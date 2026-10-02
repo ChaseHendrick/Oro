@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.4.0, including the guitar pedal features
+going on under the hood. It describes version 1.5.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -1085,15 +1085,22 @@ while the return is open. **Input channel** picks it: with **Mono return + guita
 channel 2, the clean DI (track the guitar before any drive or fuzz; distortion makes the
 pitch harder to find). Nothing here has been tried with a real guitar yet.
 
-* **Guitar plays notes** (off by default) turns single notes into notes on a part, like
+* **Guitar plays notes** (off by default) turns the guitar into notes on a track, like
   playing the keyboard: **Part** is the selected part (which also follows Layer key mode)
-  or Part 1 to 4. A note starts when you pick it and the pitch is steady (expect a few
+  or any existing track, up to Track 16. In **Single** mode a note starts when you pick it and the pitch is steady (expect a few
   tens of milliseconds), a hammer-on, pull-off or slide changes to the new note, and the
   note ends when you mute the string or it decays below the **Gate**. Lower the gate to
   catch quieter playing; raise it if hum or string noise starts notes. Guitar notes go
   through the same path as other notes, so the arpeggiator, sustain and MIDI out (Send
-  notes in MIDI & MPC) all apply. Play one note at a time; chords are not tracked.
-* **Bends as pitch bend**: bends and vibrato move the part's pitch bend, scaled to the
+  notes in MIDI & MPC) all apply.
+* **Tracking: Single / Chords.** Single is the default for melodies, bends and vibrato.
+  **Chords** tries to detect several independent pitches from the same clean input.
+  It is experimental: expect a slower response than Single, missed quiet strings, and
+  omissions in chords with octave-doubled notes. Distortion and string noise make
+  detection less reliable. The pane lists the notes heard. Tested with generated
+  signals, not yet with a real guitar. Switching modes releases the previous notes
+  through the usual note router; held sustain continues until you release the pedal.
+* **Bends as pitch bend** (Single mode only): bends and vibrato move the part's pitch bend, scaled to the
   part's **Bend** range in the Sound panel (2 semitones by default). A bend wider than the
   range becomes a new note. With this off, or with Bend at 0, a bend steps from note to
   note instead.

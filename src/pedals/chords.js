@@ -1,67 +1,36 @@
-// Polyphonic guitar note tracking ("Chords" mode of Guitar plays notes, v1.1).
-// Pure and allocation-free per frame, like pitch.js, so it runs on the main
-// thread (createGuitarInput feeds it sample blocks posted by the guitar
-// worklet), in the ScriptProcessor fallback, or in Node tests.
+// Experimental polyphonic guitar tracker. Pure JavaScript, with no Web Audio
+// dependency. Run outside the audio rendering callback: a polyphonic analysis
+// costs more than one 128-sample audio quantum on typical hardware.
 //
-// Method (written for Orograph; the multi-pitch part follows the idea of
-// A. Klapuri, "Multiple fundamental frequency estimation by summing harmonic
-// amplitudes", ISMIR 2006):
+// A full Hann-windowed spectrum separates nearby guitar notes. A coherent
+// harmonic series uses the existing McLeod tracker, including strings with a
+// weak fundamental. Multiple strings use a nonnegative joint fit of plucked
+// harmonic profiles, so each candidate must explain energy without predicting
+// strong missing partials. Conservative harmonic guards suppress extra notes.
 //
-//   1. Onsets: a rise of the high-frequency envelope (first difference of the
-//      input, 64-sample sub-blocks), as in the single-note tracker. After an
-//      onset only the samples since the pick are analysed, so the previous
-//      chord does not leak into the new one.
-//   2. Spectrum: Hann window over the newest segment (2048 to 4096 samples at
-//      44.1 / 48 kHz, 4096 to 8192 above), zero padded 2x, real FFT, magnitude
-//      scaled to sinusoid amplitude. Then spectral whitening: the magnitude
-//      is divided by the band level (30 overlapping triangular bands up to
-//      about 5.5 kHz) raised to 0.67, which evens out loud and quiet strings.
-//   3. Iterative estimation and cancellation: every candidate fundamental from
-//      D2 to F#6 in quarter tones gets a salience, the sum over its first
-//      harmonics of the largest whitened magnitude near each harmonic, each
-//      weighted by (f0 + 52) / (m f0 + 320) so the low harmonics (and so the
-//      true fundamental rather than its octave) count most. The best
-//      candidate's pitch is refined from its interpolated partial peaks
-//      (allowing for string inharmonicity), and its partials are cancelled
-//      from the residual spectrum: each partial's main lobe is subtracted, at
-//      most up to the larger of its neighbouring partials (spectral
-//      smoothness), so a partial shared with another note keeps the part that
-//      belongs to that note. Repeat until the next salience falls below a
-//      fraction of the first one, below the noise floor, or 6 notes.
-//   4. Octave errors: a note an octave, a twelfth or two octaves from a note
-//      already found needs clearly more salience of its own (its partials all
-//      sit on the lower note's), so a single string never brings its octave.
-//   5. Per-note hysteresis: a note starts after 2 consecutive frames that hear
-//      it (or 1 frame right after a strong pick), and ends after 3 frames
-//      without it, when its partials fall below the gate, or when the whole
-//      input does. A note that is picked again (its level jumps at an onset)
-//      is retriggered; a string left ringing under a new pick is not.
-//
-// Latency (measured in tests/pedals/guitar-chords.test.js on synthetic
-// strings): the first analysis after a pick waits for half a window, 2048
-// samples (43 ms at 48 kHz, 46 ms at 44.1 kHz), and a note normally needs a
-// second frame one hop (512 samples, about 11 ms) later, so chords start about
-// 45 to 60 ms after the pick. The single-note tracker is about 30 to 60 ms.
-//
-// Cost: one 8192-point real FFT (as a 4096-point complex FFT), whitening and
-// the salience search per frame, about 94 frames a second while something
-// sounds; nothing while the input is below the gate.
+// Clean independent triads work best. Octave doublings and other strings with
+// overlapping harmonics can be omitted, and exact octaves are ambiguous.
+// Uneven levels, strong distortion, bends and real pickups remain limitations.
+// Synthetic fixtures are useful regression evidence, not hardware validation.
 
 import { createFft, freqToMidi, gainToDb, dbToGain } from './signal.js';
+import { createMpm } from './pitch.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 export const CHORD_MAX_NOTES = 6;
-/** Typical delay from a pick to its notes (ms) at 44.1 / 48 kHz; see the header. */
-export const CHORD_LATENCY_MS = 55;
+/** Approximate clean-input onset delay at 44.1 / 48 kHz (ms). */
+export const CHORD_LATENCY_MS = 110;
 
-/** Window length for a sample rate: 4096 up to 50 kHz (85-93 ms), 8192 above. */
+/** Power-of-two window lasting at least 80 ms. */
 export function chordWindowSize(sampleRate) {
-  return sampleRate > 50000 ? 8192 : 4096;
+  let size = 1024;
+  while (size < sampleRate * 0.08) size *= 2;
+  return size;
 }
 
 /** Real-input magnitude spectrum of length-N frames via one N/2 complex FFT. */
-function createRealSpectrum(N) {
+export function createRealSpectrum(N) {
   const M = N >> 1;
   const f = createFft(M);
   const zr = new Float64Array(M), zi = new Float64Array(M);
@@ -106,34 +75,39 @@ function hannLobe(x) {
 export function createChordTracker({
   sampleRate = 48000,
   windowSize = chordWindowSize(sampleRate),
-  hopSize = windowSize >> 3,
-  minSegment = windowSize >> 1,
+  hopSize = windowSize >> 2,
+  minSegment = windowSize,
   maxNotes = CHORD_MAX_NOTES,
   minMidi = 38,              // D2 (drop D)
   maxMidi = 88,              // E6, the 24th fret of the high E string
   maxHarmonics = 30,
-  maxPartialHz = 2500,
+  maxPartialHz = 5000,
   inharmonicity = 1e-4,      // typical B of a wound guitar string; partial m sits at m f0 sqrt(1 + B m^2)
   alpha = 52,                // salience weight (f0 + alpha) / (m f0 + beta)
   beta = 320,
-  whitenPower = 0.33,        // Klapuri's nu: band level ^ (nu - 1)
-  relThreshold = 0.2,        // next note's salience vs the first one's
-  octaveThreshold = 0.25,    // the same for a note an octave / twelfth / two octaves from one found
-  noiseFactor = 1.5,          // salience vs the noise floor's
-  levelRangeDb = 20,         // a note this far below the loudest is dropped
-  octaveRangeDb = 10,        // a harmonic-related note's own energy this far below the loudest note's is dropped
+  whitenPower = 1,          // 1 keeps the original magnitude; lower values whiten the spectrum
+  relThreshold = 0.28,        // next note's salience vs the first one's
+  octaveThreshold = 0.65,   // an octave needs strong evidence of its own
+  noiseFactor = 8,          // strongest spectral peak relative to median noise magnitude
   gateDb = -50,
   onsetRiseDb = 6,
   onFrames = 2,
-  offFrames = 3,
+  offFrames = 4,
   strongOnset = 0.6,         // a note this salient (vs the first) in the first frame after a pick starts at once
   retrigDb = 3,
-  trace = null,
 } = {}) {
+  if (!Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new RangeError('Invalid chord tracker sample rate');
+  if (!Number.isInteger(windowSize) || windowSize < 256 || (windowSize & (windowSize - 1))) throw new RangeError('Chord window must be a power of two');
+  if (!Number.isInteger(hopSize) || hopSize < 1 || hopSize > windowSize) throw new RangeError('Invalid chord hop size');
+  if (!Number.isInteger(minSegment) || minSegment < 256 || minSegment > windowSize) throw new RangeError('Invalid chord segment size');
+  if (!Number.isInteger(maxNotes) || maxNotes < 1 || maxNotes > CHORD_MAX_NOTES) throw new RangeError('Invalid chord note limit');
+  if (!Number.isInteger(minMidi) || !Number.isInteger(maxMidi) || minMidi < 0 || maxMidi > 127 || minMidi > maxMidi) throw new RangeError('Invalid chord note range');
+  if (!Number.isInteger(maxHarmonics) || maxHarmonics < 1 || maxHarmonics > 64) throw new RangeError('Invalid chord harmonic limit');
   const cfg = { gateDb, onsetRiseDb, relThreshold, octaveThreshold };
   const W = windowSize;
   const N = 2 * W;                 // FFT size (2x zero padding)
   const spec = createRealSpectrum(N);
+  const monophonic = createMpm({ sampleRate, size: W, minFreq: 440 * 2 ** ((minMidi - 69) / 12), maxFreq: 440 * 2 ** ((maxMidi - 69) / 12) });
   const K = spec.M + 1;            // bins 0..N/2
   const binHz = sampleRate / N;
   const ring = new Float32Array(W);
@@ -207,8 +181,8 @@ export function createChordTracker({
   // ---- note state: midi -> { on, hits, miss, level, preLevel, freq }
   const notes = new Map();
   let soundingCount = 0;
+  const started = new Set();
   const found = [];          // this frame's notes: { midi, freq, sal, level, ownLevel }
-  const prop = Array.from({ length: maxNotes + 3 }, () => ({ midi: 0, freq: 0, sal: 0, level: -240, ownLevel: -240 }));
   const lastFrame = { time: 0, heard: [], notes: [], db: -240, analysed: false };
   const events = [];
   const stats = { frames: 0, analysed: 0 };
@@ -225,6 +199,11 @@ export function createChordTracker({
     for (let i = Math.max(0, histN - 2 * envBlocks); i < histN - envBlocks; i++) if (hist[i] > ref) ref = hist[i];
     for (let i = 0; i < Math.min(lvlN, envBlocks); i++) if (lvl[i] > level) level = lvl[i];
     envDb = level;
+    if (envDb < cfg.gateDb - 3 && (soundingCount || notes.size)) {
+      releaseAll(pos); started.clear(); found.length = 0; freshOnset = false;
+      lastFrame.time = tOf(pos); lastFrame.db = envDb;
+      lastFrame.heard = []; lastFrame.notes = []; lastFrame.analysed = false;
+    }
     const blockStart = pos - SUB;
     if (histN > envBlocks && levelDb >= cfg.gateDb && db >= ref + cfg.onsetRiseDb && db >= cur - 0.01 && blockStart - lastOnsetPos >= refractory) {
       // Pin the pick to the first sample whose slope clearly rises above what came before.
@@ -240,6 +219,7 @@ export function createChordTracker({
       segStart = at;
       nextFrame = at + minSegment;
       freshOnset = true;
+      started.clear();
       for (const st of notes.values()) st.preLevel = st.level;
     } else if (pos - lastOnsetPos < 0.02 * sampleRate && levelDb > onsetPeakDb) {
       onsetPeakDb = levelDb;
@@ -251,6 +231,7 @@ export function createChordTracker({
 
   function emitOn(midi, st, sample) {
     st.on = true;
+    started.add(midi);
     soundingCount++;
     const vel = velocityOf(Math.max(onsetPeakDb, st.level));
     events.push({ type: 'noteOn', note: midi, velocity: vel, time: tOf(sample), sample, freq: st.freq });
@@ -269,6 +250,10 @@ export function createChordTracker({
 
   /** Whitened spectrum Y from X (bands up to maxBin). */
   function whiten() {
+    if (whitenPower === 1) {
+      G.fill(1); Y.set(X); Y.fill(0, maxBin + 1);
+      return;
+    }
     for (let b = 1; b <= NB; b++) {
       const fl = centre[b - 1], fc = centre[b], fh = centre[b + 1];
       const k0 = Math.max(1, Math.ceil(fl / binHz)), k1 = Math.min(maxBin, Math.floor(fh / binHz));
@@ -354,123 +339,161 @@ export function createChordTracker({
     return fDen > 0 ? fNum / fDen : f0;
   }
 
-  const harmonicsOf = (f0) => Math.max(1, Math.min(maxHarmonics, Math.floor(maxPartialHz / f0)));
+  const harmonicsOf = (f0) => Math.max(1, Math.min(maxHarmonics, Math.floor(Math.min(maxPartialHz, (maxBin - 2) * binHz) / f0)));
 
-  /**
-   * Cancel the partials trackPartials just found from the residual: each
-   * partial's Hann main lobe, at most up to the mean of its neighbouring
-   * partials (spectral smoothness), so a partial shared with another note
-   * (an octave's fundamental on this note's second harmonic) keeps that
-   * note's share.
-   */
-  function cancel(H, L) {
-    const lobeBins = 2 * N / L;
-    for (let h = 0; h < H; h++) {
-      let amt = partA[h];
-      if (!(amt > 0)) continue;
-      if (h > 0) {
-        const nb = h + 1 < H ? 0.5 * (partA[h - 1] + partA[h + 1]) : partA[h - 1];
-        if (amt > nb) amt = nb;
+  // Jointly fit all proposed notes to the same magnitude spectrum. A note must
+  // explain energy without predicting strong missing partials; this prevents
+  // a high note from also producing a fictional lower fundamental.
+  const shapes = [];
+  for (const position of [0.06, 0.12, 0.18, 0.24, 0.3]) {
+    for (const brightness of [0, 0.035, 0.1]) {
+      const amplitudes = new Float64Array(maxHarmonics);
+      for (let h = 0; h < maxHarmonics; h++) {
+        const m = h + 1;
+        const amp = Math.abs(Math.sin(Math.PI * m * position)) / m * Math.exp(-brightness * (m - 1));
+        amplitudes[h] = amp;
       }
-      if (!(amt > 0)) continue;
-      const p = partP[h];
-      const k0 = Math.max(0, Math.ceil(p - lobeBins)), k1 = Math.min(K - 1, Math.floor(p + lobeBins));
-      for (let k = k0; k <= k1; k++) {
-        const v = R[k] - amt * hannLobe((k - p) * L / N);
-        R[k] = v > 0 ? v : 0;
-      }
+      shapes.push(amplitudes);
     }
-    peaks();
   }
+  const fit = new Float64Array(K);
+  const noiseBins = new Float64Array(Math.ceil(maxBin / 2));
+  const columns = [];
+  const columnSize = maxHarmonics * (Math.ceil(4 * N / minSegment) + 2);
+  const columnPool = Array.from({ length: (maxMidi - minMidi + 1) * shapes.length }, () => ({
+    midi: 0, freq: 0, indices: new Int32Array(columnSize), values: new Float64Array(columnSize),
+    length: 0, norm: 0, gain: 0, score: 0,
+  }));
+  const selected = [];
 
   /** Multi-pitch estimate of the current segment into `found`. */
   function estimate(L) {
     found.length = 0;
-    // Window the newest L samples, zero pad to N.
     const { win, scale } = hann(L);
-    const end = pos;
-    for (let i = 0; i < L; i++) frame[i] = ring[(end - L + i) % W] * win[i];
+    for (let i = 0; i < L; i++) frame[i] = ring[(pos - L + i) % W];
+    const mono = monophonic.analyze(frame, 0, L);
+    for (let i = 0; i < L; i++) frame[i] *= win[i];
     frame.fill(0, L);
     spec.magnitude(frame, X, scale);
+    let peak = 0, ni = 0;
+    for (let k = 1; k <= maxBin; k++) {
+      if (X[k] > peak) peak = X[k];
+      if (k & 1) noiseBins[ni++] = X[k];
+    }
+    noiseBins.sort();
+    if (!(peak > noiseFactor * noiseBins[ni >> 1])) return;
+    // A coherent harmonic series is a single string, including a weak or
+    // absent fundamental. Independent strings contribute non-harmonic peaks.
+    // An exact octave doubling is ambiguous and deliberately stays one note.
+    if (mono.clarity > 0.97 && mono.freq > 0) {
+      let independent = false;
+      for (let k = 2; k < maxBin; k++) {
+        if (X[k] < peak * 0.12 || X[k] <= X[k - 1] || X[k] < X[k + 1]) continue;
+        const den = X[k - 1] - 2 * X[k] + X[k + 1];
+        const offset = den < 0 ? clamp(0.5 * (X[k - 1] - X[k + 1]) / den, -0.5, 0.5) : 0;
+        const ratio = (k + offset) * binHz / mono.freq;
+        const harmonic = Math.round(ratio);
+        if (harmonic > 12) continue;
+        if (harmonic < 1 || Math.abs(1200 * Math.log2(ratio / harmonic)) > 45) { independent = true; break; }
+      }
+      const midi = Math.round(freqToMidi(mono.freq));
+      if (!independent && midi >= minMidi && midi <= maxMidi) {
+        const level = gainToDb(mono.rms * Math.SQRT2);
+        found.push({ midi, freq: mono.freq, sal: 1, level, ownLevel: level });
+        return;
+      }
+    }
     whiten();
-    // Noise floor of the whitened spectrum: median over the analysed band (by sampling every other bin).
-    const k0 = Math.max(1, Math.floor(60 / binHz));
-    let n = 0;
-    for (let k = k0; k <= maxBin; k += 2) R[n++] = Y[k];
-    const tmp = R.subarray(0, n);
-    tmp.sort();
-    const noise = tmp[n >> 1];
-    for (let k = 0; k < K; k++) R[k] = Y[k];
-    peaks();
+    R.set(Y); peaks();
+    columns.length = 0; selected.length = 0;
+    for (let k = 0; k < K; k++) fit[k] = Y[k];
+    const lobeBins = 2 * N / L;
+    for (let midi = minMidi; midi <= maxMidi; midi++) {
+      let best = null, sal = 0;
+      for (const c of cands) {
+        if (Math.abs(c.midi - midi) > 0.25) continue;
+        const v = salienceOf(c, P);
+        if (v > sal) { sal = v; best = c; }
+      }
+      if (!best) continue;
+      let freq = trackPartials(best.f0, harmonicsOf(best.f0));
+      if (Math.abs(freqToMidi(freq) - midi) > 0.45) continue;
+      const H = harmonicsOf(freq);
+      trackPartials(freq, H);
+      if (partBin[0] >= 0) freq = partP[0] * binHz / Math.sqrt(1 + inharmonicity);
+      let support = 0;
 
-    // Pass 1, greedy: the most salient candidate on the residual, its pitch
-    // refined from its partials, cancelled; repeat. This proposes notes.
-    let first = 0, nc = 0;
-    for (let iter = 0; iter < maxNotes + 3; iter++) {
-      let best = -1, bs = 0;
-      for (let i = 0; i < cands.length; i++) {
-        const v = salienceOf(cands[i], P);
-        if (v > bs) { bs = v; best = i; }
+      for (let h = 0; h < Math.min(8, H); h++) if (partBin[h] >= 0 && X[partBin[h]] > peak * 0.035) support++;
+      if (support < Math.min(3, H) || partBin[0] < 0 || X[partBin[0]] < peak * 0.12) continue;
+      for (const shape of shapes) {
+        const column = columnPool[columns.length];
+        const { indices, values } = column;
+        let norm = 0, length = 0;
+        for (let h = 0; h < H; h++) {
+          const m = h + 1;
+          const predicted = m * freq * Math.sqrt(1 + inharmonicity * m * m) / binHz;
+          const p = partBin[h] >= 0 ? partP[h] : predicted;
+          const low = Math.max(1, Math.ceil(p - lobeBins));
+          const high = Math.min(maxBin, Math.floor(p + lobeBins));
+          for (let k = low; k <= high; k++) {
+            const amp = hannLobe((k - p) * L / N);
+            const value = shape[h] * amp * G[k];
+            if (!(value > 0)) continue;
+            indices[length] = k; values[length++] = value; norm += value * value;
+          }
+        }
+        if (norm > 0) {
+          column.midi = midi; column.freq = freq; column.norm = norm; column.length = length;
+          column.gain = 0; column.score = 0; columns.push(column);
+        }
       }
-      if (best < 0) break;
-      const c = cands[best];
-      if (trace) trace.push({ iter, midi: c.midi, sal: bs, rel: first > 0 ? bs / first : 1, noise: noise * c.wsum });
-      if (bs < noiseFactor * noise * c.wsum) break;
-      if (iter > 0 && bs < 0.5 * cfg.relThreshold * first) break;
-      if (iter === 0) first = bs;
-      const freq = trackPartials(c.f0, harmonicsOf(c.f0));
-      cancel(harmonicsOf(c.f0), L);
-      const midi = Math.round(freqToMidi(freq));
-      if (midi < minMidi || midi > maxMidi) continue;
-      let dup = false;
-      for (let i = 0; i < nc; i++) if (prop[i].midi === midi) { dup = true; break; }
-      if (!dup) { prop[nc].midi = midi; prop[nc].freq = freq; nc++; }
     }
-    if (!nc) return;
-
-    // Pass 2, from the lowest proposal up: measure each on what the notes below
-    // it leave over, so an octave or a high partial is never credited with
-    // energy that belongs to a lower string.
-    const list = prop.slice(0, nc).sort((p, q) => p.freq - q.freq);
-    for (let k = 0; k < K; k++) R[k] = Y[k];
-    peaks();
-    let maxSal = 0, peakOwn = -240;
-    for (const pr of list) {
-      const H = harmonicsOf(pr.freq);
-      const freq = trackPartials(pr.freq, H);
-      let s2 = 0, energy = 0, own = 0;
-      for (let h = 0; h < H; h++) {
-        const k = partBin[h];
-        if (k < 0) continue;
-        s2 += partA[h] * (freq + alpha) / ((h + 1) * freq + beta);
-        energy += X[k] * X[k];
-        const r = partA[h] / G[k];
-        own += r * r;
+    // Matching pursuit proposes the most useful strings. Existing strings
+    // are re-fitted after each addition, because shared harmonics contain
+    // contributions from both notes.
+    for (let iter = 0; iter < maxNotes; iter++) {
+      let best = null, score = 0, gain = 0;
+      for (const c of columns) {
+        if (selected.some(n => n.midi === c.midi)) continue;
+        let dot = 0;
+        for (let j = 0; j < c.length; j++) dot += fit[c.indices[j]] * c.values[j];
+        if (dot <= 0) continue;
+        const improvement = dot * dot / c.norm;
+        if (improvement > score) { score = improvement; best = c; gain = dot / c.norm; }
       }
-      pr.freq = freq;
-      pr.midi = Math.round(freqToMidi(freq));
-      pr.sal = s2;
-      pr.level = gainToDb(Math.sqrt(energy));
-      pr.ownLevel = gainToDb(Math.sqrt(own));
-      if (s2 > maxSal) maxSal = s2;
-      if (pr.ownLevel > peakOwn) peakOwn = pr.ownLevel;
-      cancel(H, L);
+      if (!best) break;
+      if (iter && score < cfg.relThreshold * cfg.relThreshold * selected[0].score) break;
+      best.gain = gain; best.score = score; selected.push(best);
+      for (let j = 0; j < best.length; j++) fit[best.indices[j]] -= gain * best.values[j];
+      for (let cycle = 0; cycle < 3; cycle++) for (let n = 0; n < selected.length; n++) {
+        const prior = selected[n];
+        for (let j = 0; j < prior.length; j++) fit[prior.indices[j]] += prior.gain * prior.values[j];
+        let next = prior, nextGain = 0, nextScore = 0;
+        for (const c of columns) {
+          if (c.midi !== prior.midi) continue;
+          let dot = 0;
+          for (let j = 0; j < c.length; j++) dot += fit[c.indices[j]] * c.values[j];
+          const score = Math.max(0, dot) ** 2 / c.norm;
+          if (score > nextScore) { next = c; nextScore = score; nextGain = dot / c.norm; }
+        }
+        next.gain = nextGain; next.score = nextScore; selected[n] = next;
+        for (let j = 0; j < next.length; j++) fit[next.indices[j]] -= nextGain * next.values[j];
+      }
     }
-    for (const pr of list) {
-      if (pr.midi < minMidi || pr.midi > maxMidi || found.length >= maxNotes) continue;
-      if (pr.sal < cfg.relThreshold * maxSal || pr.ownLevel < peakOwn - levelRangeDb || pr.level < cfg.gateDb - 6) continue;
-      // On a harmonic of a lower note (octave, twelfth, two octaves ...) it has no
-      // partial of its own: it must stand out clearly from what that note explains.
-      let dup = false, related = false;
-      for (const f of found) {
-        if (f.midi === pr.midi) { dup = true; break; }
-        const r = pr.freq / f.freq;
-        const m = Math.round(r);
-        if (m >= 2 && m <= 16 && Math.abs(1200 * Math.log2(r / m)) < 40) related = true;
+    let strongest = 0;
+    for (const c of selected) strongest = Math.max(strongest, c.gain * Math.sqrt(c.norm));
+    for (const c of selected) {
+      const sal = c.gain * Math.sqrt(c.norm) / strongest;
+      const level = gainToDb(c.gain);
+      let harmonic = 0;
+      for (const n of columns) {
+        if (n.midi >= c.midi) continue;
+        const ratio = c.freq / n.freq, m = Math.round(ratio);
+        if (m >= 2 && Math.abs(1200 * Math.log2(ratio / m)) < 45) harmonic = Math.max(harmonic, m);
       }
-      if (dup) continue;
-      if (related && (pr.sal < cfg.octaveThreshold * maxSal || pr.ownLevel < peakOwn - octaveRangeDb)) continue;
-      found.push({ midi: pr.midi, freq: pr.freq, sal: maxSal > 0 ? pr.sal / maxSal : 1, level: pr.level, ownLevel: pr.ownLevel });
+      if (harmonic >= 3 || (harmonic === 2 && sal < cfg.octaveThreshold)) continue;
+      if (sal < cfg.relThreshold || level < cfg.gateDb - 6) continue;
+      found.push({ midi: c.midi, freq: c.freq, sal, level, ownLevel: level });
     }
   }
 
@@ -481,6 +504,7 @@ export function createChordTracker({
     lastFrame.time = tOf(sample); lastFrame.db = envDb;
     if (quiet) {
       if (soundingCount || notes.size) releaseAll(sample);
+      started.clear();
       freshOnset = false;
       lastFrame.heard = []; lastFrame.notes = []; lastFrame.analysed = false;
       return;
@@ -506,7 +530,7 @@ export function createChordTracker({
       if (st.on) {
         // Picked again: retrigger; left ringing under a new pick: carry on.
         if (fresh && f.level >= prev + retrigDb) { emitOff(f.midi, st, sample); if (soundingCount < maxNotes) emitOn(f.midi, st, sample); }
-      } else if (soundingCount < maxNotes && (st.hits >= onFrames || (strong && f.sal >= strongOnset))) {
+      } else if (!started.has(f.midi) && soundingCount < maxNotes && (st.hits >= onFrames || (strong && f.sal >= strongOnset))) {
         emitOn(f.midi, st, sample);
       }
     }
@@ -527,7 +551,7 @@ export function createChordTracker({
   function process(block) {
     events.length = 0;
     for (let i = 0; i < block.length; i++) {
-      const v = block[i];
+      const v = Number.isFinite(block[i]) ? block[i] : 0;
       ring[pos % W] = v;
       pos++;
       const a = v < 0 ? -v : v;
@@ -545,8 +569,10 @@ export function createChordTracker({
   /** Forget everything (no events: the caller releases what it holds). */
   function reset() {
     ring.fill(0); pos = 0; histN = 0; lvlN = 0; subPeak = 0; subLevel = 0; subFill = 0; prevX = 0;
-    lastOnsetPos = -1e12; onsetPeakDb = -240; envDb = -240; segStart = 0; nextFrame = hopSize; freshOnset = false;
-    notes.clear(); soundingCount = 0;
+    lastOnsetPos = -1e12; onsetPeakDb = -240; onsetStrength = 0; envDb = -240; segStart = 0; nextFrame = hopSize; freshOnset = false;
+    notes.clear(); started.clear(); soundingCount = 0;
+    found.length = 0; events.length = 0; stats.frames = 0; stats.analysed = 0;
+    lastFrame.time = 0; lastFrame.db = -240;
     lastFrame.heard = []; lastFrame.notes = []; lastFrame.analysed = false;
   }
 
@@ -554,12 +580,11 @@ export function createChordTracker({
     process,
     reset,
     /** Release every sounding note now (returns the noteOff events). */
-    releaseAll() { events.length = 0; releaseAll(pos); return events; },
+    releaseAll() { events.length = 0; releaseAll(pos); started.clear(); lastFrame.notes = []; return events; },
     configure(o = {}) {
-      if (o.gateDb != null && Number.isFinite(Number(o.gateDb))) cfg.gateDb = Number(o.gateDb);
-      if (o.onsetRiseDb != null) cfg.onsetRiseDb = o.onsetRiseDb;
-      if (o.relThreshold != null) cfg.relThreshold = o.relThreshold;
-      if (o.octaveThreshold != null) cfg.octaveThreshold = o.octaveThreshold;
+      for (const [key, lo, hi] of [['gateDb', -120, 0], ['onsetRiseDb', 2, 30], ['relThreshold', 0.05, 1], ['octaveThreshold', 0.05, 1]]) {
+        if (o[key] != null && Number.isFinite(Number(o[key]))) cfg[key] = clamp(Number(o[key]), lo, hi);
+      }
     },
     /** The notes found in the newest analysed frame (for tests and diagnostics). */
     get found() { return found.map(f => ({ ...f })); },
