@@ -35,7 +35,7 @@ async function openPage(browser, url, { viewport, theme = 'dark', storage = null
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   if (storage) await context.addInitScript((s) => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); }, storage);
   await page.goto(url, { waitUntil: 'load' });
-  await page.waitForFunction(() => document.querySelector('#app.is-ready'), null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelector('#app.is-ready'), null, { timeout: 120000 });
   await sleep(400);
   return { page, context, errors };
 }
@@ -58,7 +58,7 @@ async function startAudio(page) {
 
 async function shot(page, name) {
   await sleep(150);
-  await page.screenshot({ path: `${OUT}/${name}.png` });
+  await page.screenshot({ path: `${OUT}/${name}.png`, timeout: 120000 });
 }
 
 // ------------------------------------------------------------------ accessibility
@@ -551,7 +551,15 @@ async function realApp(browser) {
       continue;
     }
     const { page, context, errors } = ctx;
-    await sleep(1500);
+    page.setDefaultTimeout(120000);
+    // Software WebGL (SwiftShader) can keep the main thread busy for a while at
+    // startup; wait until the page answers quickly before measuring anything.
+    for (let i = 0; i < 40; i++) {
+      const t0 = Date.now();
+      await page.evaluate(() => 1);
+      if (Date.now() - t0 < 300) break;
+      await sleep(1000);
+    }
     await shot(page, `${tag}-start`);
     await startAudio(page);
     await sleep(800);

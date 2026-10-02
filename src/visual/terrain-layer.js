@@ -551,8 +551,9 @@ export function createTerrainLayer(renderer, quality = 'high') {
     const off = (s) => (s ? 0.5 / s.size : 0);
     uniforms.uOff.value.set(off(a.cur), off(a.prev || a.cur), off(b.cur), off(b.prev || b.cur));
     const res = Math.max(a.cur ? a.cur.size : 0, b.cur ? b.cur.size : 0, 64);
-    // 1.5 texels: keeps every feature but does not shade single-texel grain
-    uniforms.uEps.value = 1.5 / res;
+    // A little over two texels: bilinear tables are only C0 between texels,
+    // so a one-texel difference would shade the texel grid when zoomed in.
+    uniforms.uEps.value = 2.25 / res;
   }
 
   function release(entry) {

@@ -19,7 +19,7 @@ export const PATH_POINTS = { high: 512, medium: 384, low: 256 };
 export const MAX_POINTS = 512;
 const SCAN = 6;
 export const LIFT_ABOVE = 0.05;
-const TRAIL = 12;
+const TRAIL = 18;
 const MAX_VOICES = 8;
 
 /**
@@ -302,7 +302,7 @@ export function createOrbitLayer(quality = 'high') {
         for (let j = 0; j < TRAIL; j++, k++) {
           if (amp < 0.01) { bAlpha[k] = 0; continue; }
           // the bead's slowed cycle phase, through Pace and Laps exactly as the oscillator
-          let ph = voicePhase[id] - j * 0.0065;
+          let ph = voicePhase[id] - j * 0.0042;
           ph -= Math.floor(ph);
           const t = syncPhase(paceWarp(ph, pace, paceShape), laps);
           pathPoint(shape, t, order, param, tmp);
@@ -311,8 +311,8 @@ export function createOrbitLayer(quality = 'high') {
           bPos[k * 3 + 1] = hf.y(tmp.u, tmp.v) + LIFT_ABOVE * 1.6;
           bPos[k * 3 + 2] = (tmp.v - 0.5) * W;
           const fall = 1 - j / TRAIL;
-          bAlpha[k] = amp * fall * fall * visibility;
-          bSize[k] = j === 0 ? 0.42 : 0.26 * fall + 0.05;
+          bAlpha[k] = amp * fall * fall * (j === 0 ? 1 : 0.7) * visibility;
+          bSize[k] = j === 0 ? 0.44 : 0.3 * fall + 0.06;
         }
       }
       beadGeo.attributes.position.needsUpdate = true;
