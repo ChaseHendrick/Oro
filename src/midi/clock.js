@@ -18,6 +18,7 @@ export const CONTINUE = 0xfb;
 export const STOP = 0xfc;
 export const SONG_POSITION = 0xf2;
 
+export const CLOCK_ACTIVE_MS = 500; // a clock is "arriving" while its last pulse is younger than this
 const WINDOW = 48;            // pulses in the regression (two beats)
 const GAP_RESET_MS = 400;     // a pause this long means the clock stopped: start a fresh window
 const JUMP = 0.2;             // a pulse interval 20% off the fit counts as a tempo jump...
@@ -86,7 +87,7 @@ export function createClockFollower() {
     /** Tempo from the fit (fast) and a smoothed version for display. */
     bpm() { return slope > 0 ? 60000 / (slope * PPQ) : 0; },
     displayBpm() { return Math.round(smoothBpm * 10) / 10; },
-    active(nowMs) { return nowMs - lastPulseMs < 500; },
+    active(nowMs) { return nowMs - lastPulseMs < CLOCK_ACTIVE_MS; },
     lastPulseMs: () => lastPulseMs,
   };
 }

@@ -20,7 +20,7 @@ async function setup({ inputs, outputs, storage = createMemoryStorage(), permiss
   const mpcOut = fakeOutput('out-1', 'MPC XL MIDI 1', 'Akai');
   const access = fakeAccess({ inputs: inputs || [mpcIn], outputs: outputs || [mpcOut, fakeOutput('out-2', 'MPC XL MIDI 2', 'Akai')] });
   const nav = fakeNavigator(access, { permission });
-  const midi = await createMidi({ store, router: music.router, engine, transport: music.transport, presets, navigator: nav, storage, secure: true, perfNow: clock.perfNow });
+  const midi = await createMidi({ store, router: music.router, engine, transport: music.transport, presets, navigator: nav, storage, secure: true, perfNow: clock.perfNow, timers: clock.timers });
   return { clock, engine, store, music, midi, access, nav, mpcIn, mpcOut, storage };
 }
 
@@ -348,6 +348,37 @@ describe('clock in', () => {
     for (let i = 1; i < ons.length; i++) expect(ons[i].time - ons[i - 1].time).toBeCloseTo(0.125, 2);
     mpcIn.fire([0xfc], clock.perfNow());
     expect(music.transport.isPlaying()).toBe(false);
+  });
+
+  it('announces when the clock stops arriving, so the EXT badge can go (regression)', async () => {
+    const { midi, mpcIn, clock } = await setup({ tempo: 90 });
+    midi.setSetting('followClock', true);
+    const clocks = [];
+    midi.on('clock', c => clocks.push(c));
+    mpcIn.fire([0xfa], clock.perfNow());
+    for (let i = 0; i < 48; i++) { clock.advance(0.5 / 24, 0.004); mpcIn.fire([0xf8], clock.perfNow()); }
+    mpcIn.fire([0xfc], clock.perfNow());
+    expect(midi.externalClock.active).toBe(true);
+    expect(clocks.at(-1)).toMatchObject({ running: false, active: true });
+    const n = clocks.length;
+    // No more pulses: nothing else would ever tell the UI before this fix.
+    clock.advance(0.7, 0.01);
+    expect(midi.externalClock.active).toBe(false);
+    expect(clocks.length).toBe(n + 1);
+    expect(clocks.at(-1)).toMatchObject({ running: false, active: false });
+    clock.advance(2, 0.01);
+    expect(clocks.length).toBe(n + 1);
+  });
+
+  it('keeps the clock active while pulses keep coming, without an event per pulse', async () => {
+    const { midi, mpcIn, clock } = await setup({ tempo: 120 });
+    midi.setSetting('followClock', true);
+    const clocks = [];
+    midi.on('clock', c => clocks.push(c));
+    for (let i = 0; i < 24 * 8; i++) { clock.advance(0.5 / 24, 0.004); mpcIn.fire([0xf8], clock.perfNow()); }
+    expect(midi.externalClock.active).toBe(true);
+    expect(clocks.every(c => c.active)).toBe(true);
+    expect(clocks.length).toBeLessThan(24);
   });
 });
 

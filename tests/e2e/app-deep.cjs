@@ -9,6 +9,7 @@
 //   SKIP=soak,single         skip these sections
 //   SOAK_SECONDS=90          length of the soak (default 90)
 //   SHOTS=/tmp/...           screenshot folder (default /tmp/orograph-shots/deep)
+//   SINGLE_DIR=/tmp/...      single-file build output (default /tmp/og-single-tests)
 //
 // Every check prints PASS or FAIL with its numbers; the exit code is 1 when any
 // check fails. Findings are written up in docs/BUGS.md.
@@ -23,7 +24,7 @@ const zlib = require('node:zlib');
 const ROOT = path.resolve(__dirname, '../..');
 const PORT = 5197;
 const OUT = process.env.SHOTS || '/tmp/orograph-shots/deep';
-const SINGLE_DIR = '/tmp/og-single-tests';
+const SINGLE_DIR = process.env.SINGLE_DIR || '/tmp/og-single-tests';
 const SOAK_SECONDS = Math.max(5, Number(process.env.SOAK_SECONDS) || 90);
 const ONLY = (process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean);
 const SKIP = (process.env.SKIP || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -117,15 +118,27 @@ function pageHelpers() {
       }
       return { rms: Math.sqrt(s / buf.length), peak: pk, bad };
     },
-    /** Max RMS / peak and the NaN count over `ms` milliseconds. */
-    async watch(ms, every = 20) {
+    /**
+     * Milliseconds elapsed since `t` (from T.mark()). With `audio`, counted on
+     * the AudioContext clock: on a loaded machine the audio thread can fall
+     * behind the wall clock, and the sequencer and envelopes run on audio time.
+     */
+    mark(audio) { return audio ? window.orograph.engine.context.currentTime * 1000 : performance.now(); },
+    since(t, audio) { return T.mark(audio) - t; },
+    /** Sleep `ms` of audio time (polled), or at most `capMs` of wall time. */
+    async audioSleep(ms, capMs = ms * 4 + 5000) {
+      const a0 = T.mark(true), w0 = performance.now();
+      while (T.since(a0, true) < ms && performance.now() - w0 < capMs) await sleep(20);
+    },
+    /** Max RMS / peak and the NaN count over `ms` milliseconds (of audio time with { audio: true }). */
+    async watch(ms, every = 20, { audio = false } = {}) {
       const r = { rms: 0, minRms: Infinity, peak: 0, bad: 0, n: 0 };
-      const t0 = performance.now();
+      const t0 = T.mark(audio), w0 = performance.now();
       do {
         const s = T.sample();
         r.rms = Math.max(r.rms, s.rms); r.minRms = Math.min(r.minRms, s.rms); r.peak = Math.max(r.peak, s.peak); r.bad += s.bad; r.n++;
         await sleep(every);
-      } while (performance.now() - t0 < ms);
+      } while (T.since(t0, audio) < ms && performance.now() - w0 < ms * 4 + 5000);
       return r;
     },
     /** Polls until RMS rises above `thr`; returns how long it took (or ms = -1). */
@@ -179,11 +192,11 @@ function pageHelpers() {
       go = false;
       return n / (ms / 1000);
     },
-    async waitVoicesZero(maxMs) {
-      const t0 = performance.now();
-      while (performance.now() - t0 < maxMs) {
+    async waitVoicesZero(maxMs, { audio = false } = {}) {
+      const t0 = T.mark(audio), w0 = performance.now();
+      while (T.since(t0, audio) < maxMs && performance.now() - w0 < maxMs * 4 + 5000) {
         const v = T.voices();
-        if (v && v.every(x => x === 0) && performance.now() - T.teleAt < 200) return { ms: performance.now() - t0, voices: v };
+        if (v && v.every(x => x === 0) && performance.now() - T.teleAt < 200) return { ms: T.since(t0, audio), voices: v };
         await sleep(30);
       }
       return { ms: -1, voices: T.voices() };
@@ -415,15 +428,17 @@ async function sectionScenes(browser, base) {
       const barsMs = 2 * 4 * 60000 / tempo;
       const lt0 = T.longTasks.length;
       o.music.transport.play();
-      const play = await T.watch(barsMs + 80, 25);
+      // Two bars of audio time: the transport schedules on the audio clock,
+      // which a loaded machine can run behind the wall clock.
+      const play = await T.watch(barsMs + 80, 25, { audio: true });
       o.music.transport.stop();
       const stall = Math.max(0, ...T.longTasks.slice(lt0).map(x => x.d));
       offStep(); offNote();
       const releases = [0, 1, 2, 3].map(p => Number(o.store.get(`parts.${p}.params.release`)) || 0);
       const maxRelease = Math.max(...releases);
-      await T.sleep(1000);
+      await T.audioSleep(1000);
       const after1s = { voices: T.voices(), rms: T.sample().rms };
-      const settle = await T.waitVoicesZero(Math.max(0, maxRelease * 1000 + 500));
+      const settle = await T.waitVoicesZero(Math.max(0, maxRelease * 1000 + 500), { audio: true });
       const quiet = await T.waitQuiet(maxRelease * 1000 + 9000, 0.001);
       return { tempo, barsMs, steps, notes, seqOn, arpOn, rates, play, maxRelease, after1s, settle, quiet, stall, name: o.presets.scenes().find(s => s.id === id).name };
     }, sc.id);

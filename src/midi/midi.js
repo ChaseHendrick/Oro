@@ -10,7 +10,7 @@ import { NUM_PARTS, PART_PARAM_MAP, GLOBAL_PARAM_MAP, fromNorm, clamp, stepToMid
 import { createEmitter } from '../music/emitter.js';
 import { createTimebase } from '../music/timing.js';
 import { isMpcPort, detectMpcPort } from './mpc.js';
-import { createClockFollower, clockBytes, parseSongPosition, CLOCK, START, CONTINUE, STOP, SONG_POSITION } from './clock.js';
+import { createClockFollower, clockBytes, parseSongPosition, CLOCK, START, CONTINUE, STOP, SONG_POSITION, CLOCK_ACTIVE_MS } from './clock.js';
 
 export const STORAGE_KEY = 'orograph.midi';
 
@@ -141,6 +141,7 @@ export async function createMidi({
   storage = safeStorage(),
   secure = globalThis.isSecureContext,
   perfNow,
+  timers = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (id) => clearTimeout(id) },
 } = {}) {
   const emitter = createEmitter();
   const timebase = createTimebase(engine, perfNow ? { perfNow } : {});
@@ -168,7 +169,8 @@ export async function createMidi({
   const follower = createClockFollower();
   let clockSourceId = null;
   let lastTempoWrite = -Infinity;
-  let lastClockEmit = { bpm: 0, running: false, at: -Infinity };
+  let lastClockEmit = { bpm: 0, running: false, active: false, at: -Infinity };
+  let quietTimer = null;          // fires once the incoming clock has gone quiet (see watchQuiet)
   let inClockCount = 0;
   let outClockCount = 0;
   // MPE: per input and channel, the note it is playing and its expression.
@@ -590,10 +592,25 @@ export async function createMidi({
     const bpm = follower.displayBpm();
     const running = follower.running;
     const t = now();
-    if (force || running !== lastClockEmit.running || (Math.abs(bpm - lastClockEmit.bpm) >= 0.1 && t - lastClockEmit.at > 200)) {
-      lastClockEmit = { bpm, running, at: t };
-      emitter.emit('clock', { bpm, running });
+    const active = follower.active(t);
+    if (force || running !== lastClockEmit.running || active !== lastClockEmit.active || (Math.abs(bpm - lastClockEmit.bpm) >= 0.1 && t - lastClockEmit.at > 200)) {
+      lastClockEmit = { bpm, running, active, at: t };
+      emitter.emit('clock', { bpm, running, active });
     }
+  }
+
+  // No message marks the end of a clock: it simply stops arriving (the master
+  // was switched off, unplugged, or stops sending clock while stopped). Once
+  // the follower no longer counts it as active, say so, so the UI drops the
+  // EXT badge and makes the tempo editable again.
+  function watchQuiet() {
+    if (quietTimer != null) return;
+    const wait = Math.max(10, follower.lastPulseMs() + CLOCK_ACTIVE_MS - now() + 10);
+    quietTimer = timers.setTimeout(() => {
+      quietTimer = null;
+      if (follower.active(now())) { watchQuiet(); return; }
+      emitClock(true);
+    }, wait);
   }
 
   function systemIn(input, data, ms) {
@@ -622,6 +639,7 @@ export async function createMidi({
           }
         }
         emitClock();
+        watchQuiet();
         return;
       }
       case START:

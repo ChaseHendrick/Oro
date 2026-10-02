@@ -5,7 +5,7 @@
 import './styles/main.css';
 import { createStore, deepClone } from './core/store.js';
 import { defaultState, NUM_PARTS } from './core/params.js';
-import { migrateState } from './core/migrate.js';
+import { loadSession, createAutosave } from './core/session.js';
 import { createEngine } from './audio/engine.js';
 import { createVisuals } from './visual/visuals.js';
 import { createMusic } from './music/music.js';
@@ -13,34 +13,16 @@ import { createPresets } from './presets/presets.js';
 import { createMidi } from './midi/midi.js';
 import { createUI } from './ui/app.js';
 
-const SESSION_KEY = 'orograph.session.v1';
-
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    return migrateState(JSON.parse(raw));
-  } catch (err) {
-    console.warn('[orograph] ignoring unreadable saved session', err);
-    return null;
-  }
-}
-
-function saveSessionSoon(store) {
-  let timer = 0;
-  return () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      try { localStorage.setItem(SESSION_KEY, JSON.stringify(store.serialize())); } catch { /* storage full or blocked */ }
-    }, 600);
-  };
-}
-
 async function boot() {
   const root = document.getElementById('app');
   const saved = loadSession();
   const store = createStore(saved || defaultState());
-  const persist = saveSessionSoon(store);
+  // Saves a moment after changes, at least every couple of seconds while a dot
+  // keeps moving, and at once when the page is hidden or closed.
+  const autosave = createAutosave({ store });
+  const persist = autosave.schedule;
+  window.addEventListener('pagehide', autosave.flush);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosave.flush(); });
   store.subscribe('global', persist);
   store.subscribe('parts', persist);
   store.subscribe('', (path) => { if (path === '') persist(); });
