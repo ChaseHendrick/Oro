@@ -71,6 +71,9 @@ few lines.
 * **Mix and record.** Ping-pong delay, reverb, chorus, warmth and a limiter with an
   adjustable ceiling. Record what you play to a 24-bit WAV, or **bounce** the sequencers
   offline, with optional stems per part.
+* **Looper and resampling.** A tempo-locked looper with overdub, undo and WAV export, and
+  **Resample**, which turns the loop (or a few bars of the output) into a new wavetable
+  terrain you can play, loop and resample again.
 * **MIDI and the Akai MPC XL.** Omni or one channel per part, MPC pad scale mode, a
   Q-Link learn wizard, MIDI Learn on any knob, clock in or out, MPE, and a step by step
   MPC guide inside the app.

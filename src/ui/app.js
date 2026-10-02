@@ -8,7 +8,7 @@
 // explanation and nothing here throws because of them.
 
 import { PART_COLORS } from '../core/params.js';
-import { h, createScope, listen, call, has } from './dom.js';
+import { h, createScope, listen, call, has, downloadBlob } from './dom.js';
 import { addLoop, schedule } from './frame.js';
 import { createBinder, clampPart } from './bind.js';
 import { createTheme } from './theme.js';
@@ -27,6 +27,7 @@ import { createPiano } from './piano.js';
 import { openModPopover } from './mod-popover.js';
 import { openSettings } from './settings.js';
 import { createPedalRig } from './pedal-rig.js';
+import { createLooperControl } from './looper-control.js';
 import { openHelp } from './help.js';
 import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
@@ -211,6 +212,17 @@ export function createUI(root, modules = {}) {
     ctx.pedals = null;
   }
 
+  // v1.2 looper: one control shared by the top bar, the Loop tab, shortcuts and MIDI.
+  ctx.looper = null;
+  try {
+    ctx.looper = createLooperControl({ store, engine, music, toast, startAudio: () => ctx.startAudio(), download: downloadBlob });
+    scope.add(ctx.looper.dispose);
+    if (midi) scope.add(listen(midi, 'action', (e) => { if (e && typeof e.id === 'string' && e.id.startsWith('looper.')) ctx.looper.action(e.id); }));
+  } catch (err) {
+    console.warn('[ui] the looper is unavailable', err);
+    ctx.looper = null;
+  }
+
   ctx.learn = {
     start(target, label, onEnd) {
       if (!ctx.midiOk()) return;
@@ -370,6 +382,11 @@ export function createUI(root, modules = {}) {
       settings: () => openSettingsDialog(),
       record: () => { if (topbar && topbar.recorder.supported) topbar.recorder.toggle(); },
       prevPatch: () => { if (topbar) topbar.patch.step(-1); },
+      loopMain: () => { if (ctx.looper) ctx.looper.main(); },
+      loopStop: () => { if (ctx.looper) ctx.looper.stop(); },
+      loopUndo: () => { if (ctx.looper) ctx.looper.undo(); },
+      loopClear: () => { if (ctx.looper) ctx.looper.clear(); },
+      loopMute: () => { if (ctx.looper) ctx.looper.toggleMute(); },
       nextPatch: () => { if (topbar) topbar.patch.step(1); },
       preview: async () => {
         if (!music || !has(music, 'preview')) { toast('Preview needs the music engine, which is not available here', { kind: 'info' }); return; }

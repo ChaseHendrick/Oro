@@ -5,6 +5,10 @@
 //   reverb send (out 2) ─> HP ─> convolver(s) ─> ret ┘      ─> 1/ceiling ─> limiter ─> soft clip ─> ceiling ─> out
 //                                                                                            ─> analyser ─> destination
 //
+// v1.2: `masterTap` (the volume stage, after every effect) feeds the looper and
+// `masterReturn` (the 1/ceiling stage, before the limiter) takes the loop back,
+// so the limiter sees loop and live together and the loop never hears itself.
+//
 // The ceiling (global.ceiling, dB) scales the limiter and soft clip stage as a
 // whole: 1/c in, c out. Quiet material therefore passes at the same level
 // whatever the ceiling, and peaks can never exceed it (the clip curve stays
@@ -438,6 +442,7 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
 
   return {
     dryIn, delayIn, reverbIn, output, analyser, limiter,
+    masterTap: volume, masterReturn: ceilIn,
     set,
     panic,
     /** Current effect settings (plain values) and timings. */

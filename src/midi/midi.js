@@ -47,6 +47,11 @@ export const QLINK_PARAMS = [
 
 // CC 120-127 are channel mode messages (all notes off etc.): never learn them.
 const LEARNABLE_MAX_CC = 119;
+// v1.2: buttons that can be MIDI-learned. A mapped CC fires the action when it
+// crosses 64 upwards (press on a momentary button); the UI listens for
+// midi.on('action', {id}) and does the rest.
+export const LEARNABLE_ACTIONS = Object.freeze(['looper.main', 'looper.stop', 'looper.undo', 'looper.clear', 'looper.mute', 'looper.resample']);
+const ACTION_REPEAT_MS = 250;     // a controller that only sends "press" (127) still retriggers after this
 
 const STATUS_TEXT = {
   idle: 'MIDI is off. Press Connect MIDI to use a controller or an MPC.',
@@ -89,6 +94,8 @@ export function sanitizeSettings(src = {}) {
 
 /** Also accepts store paths ('parts.0.params.cutoff', 'parts.sel.params.morph', 'global.tempo') or a bare id. */
 function sanitizeTarget(t) {
+  if (typeof t === 'string' && t.startsWith('action:')) return sanitizeTarget({ scope: 'action', id: t.slice(7) });
+  if (t && typeof t === 'object' && t.scope === 'action') return LEARNABLE_ACTIONS.includes(t.id) ? { scope: 'action', id: t.id } : null;
   if (typeof t === 'string') {
     let m = /^parts\.(sel|\d+)\.params\.(\w+)$/.exec(t);
     if (m) return sanitizeTarget({ scope: 'part', part: m[1] === 'sel' ? 'sel' : Number(m[1]), id: m[2] });
@@ -110,7 +117,7 @@ function sanitizeTarget(t) {
 }
 
 function sameTarget(a, b) {
-  return a.scope === b.scope && a.id === b.id && (a.scope === 'global' || a.part === b.part);
+  return a.scope === b.scope && a.id === b.id && (a.scope === 'global' || a.scope === 'action' || a.part === b.part);
 }
 
 function sanitizeMappings(list) {
@@ -420,9 +427,22 @@ export async function createMidi({
     }
   }
 
+  // Last value and trigger time per action mapping (rising-edge detection).
+  const actionLatch = new Map();
+  function applyAction(m, value, learning = false) {
+    const key = `${m.cc}:${m.channel}:${m.target.id}`;
+    const prev = actionLatch.get(key) || { v: 0, at: -Infinity };
+    const t = now();
+    const press = value >= 64 && (prev.v < 64 || t - prev.at >= ACTION_REPEAT_MS);
+    actionLatch.set(key, { v: value, at: press ? t : prev.at });
+    // The press that teaches the mapping only teaches it.
+    if (press && !learning) emitter.emit('action', { id: m.target.id, value });
+  }
+
   function applyMapping(m, value) {
     const n = value / 127;
     const { target } = m;
+    if (target.scope === 'action') { applyAction(m, value); return; }
     if (target.scope === 'global') {
       const def = GLOBAL_PARAM_MAP[target.id];
       if (def) store.set(`global.${target.id}`, fromNorm(def, n), { source: 'midi' });
@@ -450,7 +470,8 @@ export async function createMidi({
       emitter.emit('learn', { target, cc, channel: ch });
       emitChange('mappings');
       resolve({ ...mapping, target: { ...target } });
-      applyMapping(mapping, value);
+      if (target.scope === 'action') applyAction(mapping, value, true);
+      else applyMapping(mapping, value);
       return;
     }
     const hits = mappings.filter(m => m.cc === cc && (m.channel == null || m.channel === ch));

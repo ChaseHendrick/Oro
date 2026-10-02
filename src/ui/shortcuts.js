@@ -11,6 +11,13 @@ export const SHORTCUTS = [
     { keys: ['R'], text: 'Record on / off (saves a WAV)' },
     { keys: ['Shift', 'P'], text: 'Preview the selected part with a short phrase (P alone plays a note)', join: '+' },
   ] },
+  { group: 'Looper', items: [
+    { keys: ['Q'], text: 'Loop: record, then play, then overdub' },
+    { keys: ['Shift', 'Q'], text: 'Stop or restart the loop', join: '+' },
+    { keys: ['B'], text: 'Undo the last overdub layer' },
+    { keys: ['Shift', 'B'], text: 'Clear the loop', join: '+' },
+    { keys: ['M'], text: 'Mute or unmute the loop' },
+  ] },
   { group: 'Navigating', items: [
     { keys: ['1', '2', '3', '4'], text: 'Select part', compact: '1 ... 4' },
     { keys: ['['], text: 'Previous patch (Size of the orbit when the map has focus)' },
@@ -53,7 +60,8 @@ function activatesOnSpace(el) {
 }
 
 /**
- * actions: { togglePlay, selectPart(i), help, settings, record, prevPatch, nextPatch, preview }
+ * actions: { togglePlay, selectPart(i), help, settings, record, prevPatch, nextPatch, preview,
+ *   loopMain, loopStop, loopUndo, loopClear, loopMute }
  */
 export function installShortcuts({ layers, actions }) {
   function onKey(e) {
@@ -80,6 +88,10 @@ export function installShortcuts({ layers, actions }) {
       return;
     }
     if (e.code === 'KeyR' && !e.shiftKey) { e.preventDefault(); actions.record(); return; }
+    // Looper (v1.2): Q, Shift+Q, B, Shift+B, M are free of the note keys.
+    if (e.code === 'KeyQ' && actions.loopMain) { e.preventDefault(); if (e.shiftKey) actions.loopStop(); else actions.loopMain(); return; }
+    if (e.code === 'KeyB' && actions.loopUndo) { e.preventDefault(); if (e.shiftKey) actions.loopClear(); else actions.loopUndo(); return; }
+    if (e.code === 'KeyM' && !e.shiftKey && actions.loopMute) { e.preventDefault(); actions.loopMute(); return; }
     if (e.code === 'KeyP' && e.shiftKey && actions.preview) { e.preventDefault(); actions.preview(); }
   }
   document.addEventListener('keydown', onKey);
