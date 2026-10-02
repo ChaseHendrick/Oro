@@ -239,6 +239,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   let spinPhase = 0, flowHead = 0, level = 0, levelTarget = 0, time = 0;
   let switchT = 1;                   // 0..1 progress of a part switch
   const dispOffset = { u: 0, v: 0 }; // decaying display offset after a part switch
+  let dotSrc = 'base';               // which source placed the dot this frame (debug)
   const fade = { A: 1, B: 1 };
   const ghost = { a: 0 };
   const dotPos = { u: 0.5, v: 0.5, x: 0, y: 0, z: 0 };
@@ -670,7 +671,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
       return;
     }
     if (kind === 'dot') {
-      currentBase(_base);
+      // grab the dot where it is drawn (a modulated or easing dot is not at its knob centre)
+      _base.u = dotPos.u; _base.v = dotPos.v;
+      dispOffset.u = 0; dispOffset.v = 0;
       if (pickTerrain(e.clientX, e.clientY, hit)) {
         press.offU = wrapDelta(_base.u, wrap01(hit.u));
         press.offV = wrapDelta(_base.v, wrap01(hit.v));
@@ -1281,10 +1284,19 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
     // ---- where the dot is shown
     const simActive = sim.isActive(sel);
-    if (ctl.mode !== 'idle') { dotPos.u = ctl.u; dotPos.v = ctl.v; }
-    else if (simActive) { const s = sim.state(sel); dotPos.u = s.u; dotPos.v = s.v; }
-    else if (isModulated(r.mods, 'centerX', r.links) || isModulated(r.mods, 'centerY', r.links)) { dotPos.u = L.centerX; dotPos.v = L.centerY; }
-    else { baseCenter(_base); dotPos.u = _base.u; dotPos.v = _base.v; }
+    // When what places the dot changes (grabbing a modulated or rolling dot,
+    // letting it go, a glide starting), start from where it was drawn and let
+    // the display offset ease it to the new place instead of jumping there.
+    const prevU = dotPos.u, prevV = dotPos.v, prevSrc = dotSrc;
+    const centreMod = isModulated(r.mods, 'centerX', r.links) || isModulated(r.mods, 'centerY', r.links);
+    if (ctl.mode !== 'idle') { dotPos.u = ctl.u; dotPos.v = ctl.v; dotSrc = 'ctl'; }
+    else if (simActive) { const s = sim.state(sel); dotPos.u = s.u; dotPos.v = s.v; dotSrc = 'sim'; }
+    else if (centreMod) { dotPos.u = L.centerX; dotPos.v = L.centerY; dotSrc = 'live'; }
+    else { baseCenter(_base); dotPos.u = _base.u; dotPos.v = _base.v; dotSrc = 'base'; }
+    if (dotSrc !== prevSrc && switchT >= 1 && Number.isFinite(prevU)) {
+      dispOffset.u = wrapDelta(prevU, dotPos.u);
+      dispOffset.v = wrapDelta(prevV, dotPos.v);
+    }
     dotPos.u = wrap01(dotPos.u + dispOffset.u);
     dotPos.v = wrap01(dotPos.v + dispOffset.v);
     dotPos.x = wrapWorld(uToX(dotPos.u));
@@ -1344,9 +1356,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
     baseLive.stretch = num(pr0.stretch, 0); baseLive.size = num(pr0.size, 0.22); baseLive.rotate = num(pr0.rotate, 0);
     baseLive.pathParam = num(pr0.pathParam, 0.5);
     baseCenter(_base);
-    const centreMod = isModulated(r.mods, 'centerX', r.links) || isModulated(r.mods, 'centerY', r.links);
-    baseLive.centerX = centreMod && !simActive && ctl.mode === 'idle' ? _base.u : dotPos.u;
-    baseLive.centerY = centreMod && !simActive && ctl.mode === 'idle' ? _base.v : dotPos.v;
+    // the knob-only orbit sits at the knob centre (a held dot's knob centre is ctl)
+    baseLive.centerX = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.u : ctl.u) : dotPos.u;
+    baseLive.centerY = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.v : ctl.v) : dotPos.v;
     const baseShow = switchT >= 1 && orbitDifference(baseLive, orbitLive) > 1 ? 1 : 0;
 
     const shape = Math.round(num(r.params.pathShape, 0));
@@ -1571,7 +1583,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
         rect = canvas.getBoundingClientRect();
         return pickTerrain(clientX, clientY, hit) ? { u: wrap01(hit.u), v: wrap01(hit.v), y: hit.y } : null;
       },
-      dot() { return { u: dotPos.u, v: dotPos.v, x: dotPos.x, y: dotPos.y, z: dotPos.z }; },
+      dot() { return { u: dotPos.u, v: dotPos.v, x: dotPos.x, y: dotPos.y, z: dotPos.z, src: dotSrc, offset: [dispOffset.u, dispOffset.v] }; },
+      /** Client coordinates of the marble's centre as drawn. */
+      dotScreen() { rect = canvas.getBoundingClientRect(); return dotScreen({ x: 0, y: 0 }); },
       stats() {
         const info = renderer.info;
         return {

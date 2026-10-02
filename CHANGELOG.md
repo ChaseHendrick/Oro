@@ -3,6 +3,14 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 1.1.2 (October 2026)
+
+* Fixed: grabbing the dot made it jump when its position was modulated (by an LFO, Env 2 or
+  a Link, as in the Basalt Bass patch) or still easing. The dot is now picked up exactly
+  where it is drawn, follows the cursor, and eases instead of jumping whenever what moves it
+  changes (grab, release, a glide starting).
+* Orograph on hendrickresearch.com has a back arrow to the Music page.
+
 ## 1.1.1 (October 2026)
 
 * Fixed: on Macs in Chrome, a gray rectangle could cover the 3D map while dragging the dot or
