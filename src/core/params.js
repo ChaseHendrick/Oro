@@ -6,6 +6,20 @@
 import { defaultTrackFx } from '../dsp/track-fx-config.js';
 import { TERRAIN_NAMES, PATH_NAMES, TERRAIN_INDEX, PATH_INDEX } from '../dsp/catalog.js';
 import { COLLAPSE_NAMES, COLLAPSE_BARS } from '../dsp/science-sources.js';
+import { FILTER2_TYPES, FILTER_ROUTES } from '../dsp/filter2.js';
+
+// v2.2 unison: how detune positions are spread, and transposing stacks
+// (semitones cycled across the copies from the outside in; the centre copy
+// stays at the note).
+export const UNISON_MODES = ['Linear', 'Super', 'Exp', 'Random'];
+export const UNISON_STACKS = Object.freeze([
+  { name: 'Off', semis: [0] },
+  { name: '+12', semis: [0, 12] },
+  { name: '±12', semis: [0, 12, -12] },
+  { name: '+7', semis: [0, 7] },
+  { name: '+12 +19', semis: [0, 12, 19] },
+  { name: '+12 +24', semis: [0, 12, 24] },
+]);
 
 // Tracks (called parts in the code). The store holds a variable-length list
 // of 1..MAX_PARTS tracks, each with a stable `id`; what exists, and in which
@@ -128,7 +142,7 @@ export const PART_PARAMS = [
   P('fine',      'Fine',     'voice', 'lin', -100, 100, 0, { mod: true, unit: 'ct' }),
   P('glide',     'Glide',    'voice', 'pow', 0, 2, 0,     { mod: true, k: 3, unit: 's' }),
   P('polyMode',  'Mode',     'voice', 'enum', 0, 2, 0,    { options: ['Poly', 'Mono', 'Legato'] }),
-  P('unison',    'Unison',   'voice', 'int', 1, 8, 1),
+  P('unison',    'Unison',   'voice', 'int', 1, 16, 1),
   P('detune',    'Detune',   'voice', 'lin', 0, 50, 12,   { mod: true, unit: 'ct' }),
   P('spread',    'Width',    'voice', 'lin', 0, 1, 0.6, { mod: true }),
   P('velSens',   'Velocity', 'voice', 'lin', 0, 1, 0.6, { mod: true }),
@@ -203,7 +217,18 @@ export const PART_PARAMS = [
   P('pathWindow', 'Window', 'path', 'lin', 0, 1, 0, { mod: true, hint: 'Taper the path radius with a Hann window' }),
   P('pathMangle', 'Mangle', 'path', 'lin', -1, 1, 0, { mod: true, hint: 'Smooth coordinate distortion of the path' }),
   P('pathMirror', 'Mirror', 'path', 'enum', 0, 3, 0, { options: ['Off', 'X', 'Y', 'Both'] }),
-
+  // v2.2: Filter 2 and its routing (src/dsp/filter2.js), richer unison
+  P('filter2Type', 'Filter 2', 'filter2', 'enum', 0, FILTER2_TYPES.length - 1, 0, { options: FILTER2_TYPES, hint: 'A second filter after (or beside) Filter 1' }),
+  P('filter2Cutoff', 'Cutoff', 'filter2', 'exp', 30, 18000, 2000, { mod: true, unit: 'Hz' }),
+  P('filter2Reso', 'Reso', 'filter2', 'lin', 0, 1, 0.2, { mod: true }),
+  P('filter2Env', 'Env Amt', 'filter2', 'lin', -1, 1, 0, { mod: true, hint: 'Envelope 2 to Filter 2 cutoff, up to ±6 octaves' }),
+  P('filter2Key', 'Key Trk', 'filter2', 'lin', 0, 1, 0.5),
+  P('filterRoute', 'Routing', 'filter2', 'enum', 0, FILTER_ROUTES.length - 1, 0, { options: FILTER_ROUTES, hint: 'Serial: Filter 1 then Filter 2. Parallel: both hear the oscillator and Mix balances them. Split: Filter 1 on the left, Filter 2 on the right' }),
+  P('filter2Mix', 'Mix', 'filter2', 'lin', 0, 1, 1, { mod: true, hint: 'Serial: how much of Filter 2 you hear. Parallel: Filter 1 (0) to Filter 2 (1)' }),
+  P('unisonBlend', 'Blend', 'voice', 'lin', 0, 1, 1, { mod: true, hint: 'Level of the detuned copies against the centre one' }),
+  P('unisonMode', 'Spread', 'voice', 'enum', 0, UNISON_MODES.length - 1, 0, { options: UNISON_MODES, hint: 'How the detune spreads the copies: evenly, bunched at the centre (Super), towards the edges (Exp) or at random per note' }),
+  P('unisonStack', 'Stack', 'voice', 'enum', 0, UNISON_STACKS.length - 1, 0, { options: UNISON_STACKS.map(s => s.name), hint: 'Transpose some unison copies by octaves or fifths' }),
+  P('unisonMap', 'Map spread', 'voice', 'lin', 0, 1, 0, { mod: true, hint: 'Each unison copy reads the land at its own spot around the dot, so the copies differ in tone, not just pitch' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
