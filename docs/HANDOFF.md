@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-03 for Oro 2.0.0. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-03 for Oro 2.0.0; section 10 added for 2.12 (next features with full specs). Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -268,3 +268,110 @@ structured data has `alternateName: "HendrickResearch"`. Do not invent other nam
 * **About the owner:** has a neuroscience degree and is in law school; technical
   explanations are welcome. Uses a Mac with Chrome, owns an Akai MPC XL and guitar pedals.
   Often asks for status and for a percentage of progress; give honest numbers.
+
+---
+
+## 10. Next features: specs ready to build
+
+The owner approved these three during the 2.11 and 2.12 work and asked for them to be kept
+here for later. Build each in its own module (for example `src/live/`, `src/jam/`,
+`src/learn/`), load it lazily from one entry point, keep shared-file edits small, put new
+saved fields through `src/core/migrate.js` (omitted when unused), keep output bit-identical
+when unused, and follow section 9 (no em dashes, clean-room, accurate claims, mark anything
+untested).
+
+### 10.1 Live performance mode
+
+- **Full-screen, distraction-free view** (Fullscreen API, with a maximised overlay as
+  fallback; Esc or a visible Exit leaves). The map stays as a large backdrop (or a calmer
+  flat view). Large, high-contrast controls readable at a distance, dark by default.
+- **Pads** (4x4, adaptable): trigger a scene (quantised to the next bar or beat), a pattern
+  on a track, a track mute or solo, a drum pad, a note or chord, or a macro or smart-control
+  preset. Each pad has a label and colour and shows armed, active and queued states without
+  blinking (steady fill plus a progress ring for quantised waits).
+- **Big controls**: tempo with tap tempo, play and stop, the four macros and the selected
+  track's eight smart knobs as large faders, master volume, panic.
+- **Setlist**: ordered songs (saved scenes, or versions from version history), each with
+  notes (key, tempo, cues), Next and Previous (MIDI and keyboard mappable), a large "Now /
+  Next" display with a bar counter and clock.
+- **Stage safety**: an optional lock that ignores clicks outside the pads (hold to unlock),
+  confirm or quantise song changes while the transport runs, Screen Wake Lock where
+  available, steady CPU.
+- **Mapping**: reuse MIDI learn for pads, faders and setlist; default keys 1 to 0 and Q to P
+  for pads, Space play/stop, arrows for the setlist.
+- **Layouts** from phone to 5K2K ultrawide (5120x2160 at 100 to 200% scaling) and MacBook
+  Retina sizes (1470x956, 1512x982, 1728x1117 at DPR 2).
+- **Tests**: pad dispatch per type, quantised switching with the fake clock in
+  `tests/music/fakes.js`, setlist navigation, lock, mapping persistence, migration.
+
+### 10.2 Jam together (serverless, with chat, voice and moderation)
+
+- **Connecting without a server, host-star**: Start a jam gives an invite code (SDP offer
+  with all ICE candidates, deflate-raw plus base64url, with a short check word). A friend
+  pastes it into Join and gets a reply code to send back. Each joiner connects only to the
+  host, which relays messages; up to 6 people. STUN is off by default, with an opt-in
+  "Use a public STUN server" (`stun:stun.l.google.com:19302`, labelled as Google's). Some
+  networks need a TURN relay, which Oro does not provide; say so.
+- **No audio streaming of music**: every computer renders every track locally. The network
+  carries small messages: a sanitized session snapshot on join, track ownership, scheduled
+  notes, knob changes on owned tracks, transport and tempo, pattern edits, scene changes.
+- **Clock sync**: NTP-style ping/pong offset and round-trip estimates, keeping the best
+  low-RTT samples; transport expressed on the host's timeline; remote notes scheduled at
+  their musical time plus an adaptive jitter buffer (about 2x RTT jitter, at least 40 ms).
+  Optional snap-to-grid for live remote notes (off, 1/16, 1/8). Show each peer's latency.
+- **Ownership**: people own tracks; only owners edit them; the host owns global settings
+  unless handed over. Undo covers only your own edits (a `jam` store source not recorded).
+- **Text chat**: plain text only (textContent), 500 characters, rate limit 5 per 10 s per
+  person enforced by the host relay too, timestamps, system lines, links shown as text, local
+  history cleared on leave unless saved, @name highlights, unread badge.
+- **Voice chat**: opt-in "Join voice", getUserMedia with echo cancellation, noise
+  suppression and AGC; Opus tracks; the host forwards each joiner's voice to the others.
+  Push-to-talk (V by default) or open mic, per-person volume, mute, deafen, a steady speaking
+  ring. Voice uses a separate gain path, never captured by bounces, recordings or stems, never
+  through Oro's effects, never recorded. Recommend headphones.
+- **Moderation**: the host is owner and can make moderators. Owner and moderators can mute a
+  mic or chat for everyone, remove, ban for the jam (by a per-jam random key shown as a short
+  fingerprint), lock the jam, clear chat, and reclaim tracks. Anyone can block someone
+  locally (hide chat, mute voice, ignore notes on their own machine). Mod actions appear as
+  system lines and are enforced in the host relay. Optional chat filter, off by default, with
+  an empty user-editable word list.
+- **Safety**: schema-check and sanitize every message, cap sizes, drop unknown types, rate
+  limit, never execute code; ask before loading the host's session; snapshot your session
+  before joining and restore it on leave.
+- **Privacy notes for the guide**: voice and chat are peer to peer and not stored by any
+  server; invite codes reveal network addresses to whoever receives them.
+- **Tests**: code encode/decode, schemas and sanitizers, clock offset with simulated
+  asymmetric jitter, jitter-buffer scheduling, ownership, relay, mute/ban enforcement, roles,
+  local block, voice excluded from bounce, push-to-talk; plus a two-page Playwright run on
+  one machine (connect via codes, the host starts the transport, a joiner's note is scheduled
+  on the host, loops align within a few ms, a chat message arrives, then a chat mute drops
+  the next one).
+
+### 10.3 Learn: in-depth interactive lessons
+
+- **Accuracy first**: teach only what `docs/RESEARCH.md` (section 3 and its citations),
+  `docs/USER-GUIDE.md`, `docs/ARCHITECTURE.md` and the code support. Cite only what
+  RESEARCH.md cites; Kac, "Can One Hear the Shape of a Drum?" (American Mathematical Monthly,
+  1966) is fine for the Resonator lesson. Standard facts (Nyquist, Fourier series,
+  equal-temperament ratios, the 2D wave equation, the CFL condition) may be stated without
+  citation but must be correct. Original wording only.
+- **Lesson engine**: lessons are data (steps with text, setup actions such as loading a
+  terrain or path, setting params, playing a note, opening a tab, highlighting a control with
+  a steady outline, and checks that watch the store with tolerances, with Hint and Skip).
+  Progress saved per computer; each lesson snapshots the learner's session and restores it on
+  exit. Keyboard and screen-reader friendly (live region), phone widths, reduced motion,
+  nothing flashing.
+- **Curriculum** (8 to 12 lessons, 5 to 12 steps each; skip anything Oro does not do):
+  sound basics and harmonics; wave terrain synthesis (orbit frequency is pitch, terrain
+  cross-sections are timbre); paths in depth; aliasing, Nyquist and the quality modes;
+  filters and envelopes; modulation (LFOs, Links, macros, smart controls, the function
+  generator, science sources); the dot's physics (Roll, Drift, Pendulum, Golf); rhythm
+  (sequencer, probability, ratchets, parameter locks, song mode, drum kit, slicing); tuning
+  (ratios, cents, Scala); the Resonator (2D wave equation, modes, why overtones are
+  inharmonic); Imprint and real places.
+- **Learn panel**: lessons with level (Beginner, Intermediate, Deep dive), minutes and
+  completion; a glossary linked from lesson text. Badges `lesson-complete` and `all-lessons`
+  through `src/core/fun.js`.
+- **Tests**: schema validation (every action references real params, paths, terrains and
+  tabs from the catalogs), check predicates, progress persistence, snapshot and restore
+  around a lesson, and a scan that fails on em dashes in lesson text.
