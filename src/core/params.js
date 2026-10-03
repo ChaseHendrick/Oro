@@ -8,6 +8,7 @@ import { TERRAIN_NAMES, PATH_NAMES, TERRAIN_INDEX, PATH_INDEX } from '../dsp/cat
 import { COLLAPSE_NAMES, COLLAPSE_BARS } from '../dsp/science-sources.js';
 import { FILTER2_TYPES, FILTER_ROUTES } from '../dsp/filter2.js';
 import { defaultFuncPoints } from '../dsp/function-gen.js';
+import { defaultDrum } from '../dsp/drum-kit.js';
 
 // v2.2 unison: how detune positions are spread, and transposing stacks
 // (semitones cycled across the copies from the outside in; the centre copy
@@ -529,6 +530,7 @@ export function defaultPart(i = 0, { id, name, color } = {}) {
       exploreRate: 0.5, exploreRange: 2, exploreNotes: 1, waypoints: [], tourMode: 0,
       pendEnergy: 0.5, pendReach: 0.4, pendRate: 0.5 },
     funcPoints: defaultFuncPoints(),
+    drum: defaultDrum(),
     links: defaultLinks(),
     userTerrain: { A: null, B: null },
     trackFx: defaultTrackFx(),

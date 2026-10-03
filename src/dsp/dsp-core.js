@@ -50,6 +50,7 @@ import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
 import { Filter2 } from './filter2.js';
+import { KitPlayer, synthDrum } from './drum-kit.js';
 import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.js';
 import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
@@ -709,6 +710,7 @@ class Part {
     // unison layout
     this.uni = 1;
     this.uniMode = 0; this.uniStack = 0; this.f2Type = 0; this.f2Route = 0; this.warpMode = 0;
+    this.kit = null; this.kitOn = false;   // v2.7 drum kit: notes play pads instead of synth voices
     this.stackRatio = new Float64Array(MAX_UNISON).fill(1);
     this.uPos = new Float64Array(MAX_UNISON); this.uW = new Float64Array(MAX_UNISON).fill(1);
     this.uMapX = new Float64Array(MAX_UNISON); this.uMapY = new Float64Array(MAX_UNISON);
@@ -1113,6 +1115,7 @@ export class OroDSP {
         break;
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
+      case 'kit': this.setKit(msg.part, msg); break;
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
@@ -1849,8 +1852,34 @@ export class OroDSP {
     this.partMods(P);
   }
 
+  /** v2.7: switch a track's drum kit on or off and load its pads ({synth: i} or {pcm, rate}). */
+  setKit(part, msg) {
+    const P = this.partAt(part);
+    if (!P) return;
+    P.kitOn = !!msg.on;
+    if (!P.kitOn) return;
+    if (!P.kit) P.kit = new KitPlayer(this.sr);
+    const pads = Array.isArray(msg.pads) ? msg.pads : [];
+    pads.forEach((pd, i) => {
+      if (!pd) return;
+      const set = { gain: pd.gain, pitch: pd.pitch, decay: pd.decay, pan: pd.pan, choke: pd.choke };
+      // keep: the pad's sound is unchanged, so only its settings move
+      if (!pd.keep) {
+        if (pd.pcm instanceof Float32Array) { set.data = pd.pcm; set.rate = pd.rate; }
+        else if (Number.isInteger(pd.synth) && pd.synth >= 0) {
+          // synthesized once per engine and shared, never on every knob move
+          if (!this.drumCache) this.drumCache = new Map();
+          if (!this.drumCache.has(pd.synth)) this.drumCache.set(pd.synth, synthDrum(pd.synth, this.sr));
+          set.data = this.drumCache.get(pd.synth); set.rate = this.sr;
+        } else set.data = null;
+      }
+      P.kit.setPad(i, set);
+    });
+  }
+
   noteOn(P, note, vel) {
     if (vel > 1) vel /= 127;
+    if (P.kitOn && P.kit) { if (vel > 0) { P.kit.trigger(note, vel); this.science.noteOn(); } return; }
     if (!(vel > 0)) { this.noteOff(P, note); return; }
     this.science.noteOn();
     if (this.heldCount(P) === 0) this.retrigLfos(P);
@@ -4146,7 +4175,8 @@ export class OroDSP {
       const g = P.ghost;
       const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
-      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active) {
+      const kitBusy = P.kitOn && P.kit !== null && P.kit.busy;
+      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy) {
         P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg; P.vectorGain+=P.dVector*seg;
         continue;
       }
@@ -4169,6 +4199,7 @@ export class OroDSP {
       }
       const oL = P.outL, oR = P.outR;
       this.decimateTo(os, P.busL, P.busR, P.midL, P.midR, oL, oR, pos, seg);
+      if (kitBusy) P.kit.render(oL, oR, pos, seg);
       if (ghostOn) {
         // the outgoing quality: frozen voices into their own buses, then a
         // raised-cosine crossfade (the new path's decimator has just started

@@ -9,6 +9,7 @@ import {
 } from './params.js';
 import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
+import { sanitizeDrum, sanitizeLanes } from '../dsp/drum-kit.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { uniqueIds } from './tracks.js';
@@ -108,6 +109,8 @@ export function sanitizePattern(src, n = 1) {
     // v2.6 humanize, absent unless set
     ...(num(s.humanTime, 0) > 0 ? { humanTime: clamp(num(s.humanTime, 0), 0, 1) } : {}),
     ...(num(s.humanVel, 0) > 0 ? { humanVel: clamp(num(s.humanVel, 0), 0, 1) } : {}),
+    // v2.7 drum lanes, absent until a cell is set
+    ...(sanitizeLanes(s.drumLanes, SEQ_STEPS) ? { drumLanes: sanitizeLanes(s.drumLanes, SEQ_STEPS) } : {}),
     steps: [],
   };
   for (let i = 0; i < SEQ_STEPS; i++) {
@@ -197,6 +200,7 @@ export function sanitizePart(src, i) {
     },
     links: p.links === undefined ? defaultLinks() : sanitizeLinks(p.links),
     funcPoints: sanitizeFuncPoints(p.funcPoints),
+    drum: sanitizeDrum(p.drum),
     userTerrain: { A: sanitizeUserTerrain(p.userTerrain?.A), B: sanitizeUserTerrain(p.userTerrain?.B) },
     trackFx: sanitizeTrackFx(p.trackFx),
     noiseRecording: sanitizeNoiseRecording(p.noiseRecording),
