@@ -98,6 +98,7 @@ const P = {
   loop: '<path d="M18 9.6A6.6 6.6 0 0 0 5.8 9.4"/><path d="M6 14.4a6.6 6.6 0 0 0 12.2.2"/><path d="M18.4 5.4v4.4H14"/><path d="M5.6 18.6v-4.4H10"/>',
   redo: '<path d="M15.4 5.8l4 4-4 4"/><path d="M19 9.8H9.8a4.8 4.8 0 0 0 0 9.6h3.6"/>',
   undo: '<path d="M8.6 5.8L4.6 9.8l4 4"/><path d="M5 9.8h9.2a4.8 4.8 0 0 1 0 9.6H10.6"/>',
+  versions: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/>',
   resample: '<path d="M2.8 10.2c1.4-4.4 2.9-4.4 4.3 0s2.9 4.4 4.3 0"/><rect x="13.4" y="11.4" width="7.6" height="7.6" rx="1.4"/><path d="M13.4 15.2h7.6M17.2 11.4V19"/><path d="M8.6 15.8h2.8M10 14.4l1.4 1.4-1.4 1.4"/>',
   mic: '<rect x="9" y="3.2" width="6" height="11" rx="3"/><path d="M5.8 11.2a6.2 6.2 0 0 0 12.4 0"/><path d="M12 17.4v3.4"/><path d="M8.8 20.8h6.4"/>',
   pedal: '<rect x="5.4" y="3.6" width="13.2" height="16.8" rx="2.2"/><circle cx="9.2" cy="7.6" r="1.3"/><circle cx="14.8" cy="7.6" r="1.3"/><circle cx="12" cy="15.2" r="2.4"/><path d="M5.4 11.2h13.2"/>',

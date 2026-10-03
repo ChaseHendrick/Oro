@@ -1507,6 +1507,43 @@ The browser version does not add a leave-page prompt for this. **Bounce now** op
 with a length that covers the whole pattern, or the whole song when song mode is on.
 Turn the setting off and none of these appear.
 
+### Export stems (2.12)
+
+**Export stems...** at the bottom of the Bounce popover renders every track on its own and
+saves one **.zip** you can drop into a DAW. All files start on the first beat and have the
+same length, so placing them at bar 1 (time 0) lines them up sample for sample.
+
+* **Length**: 1 to 128 bars, or **Whole song**: until the longest song-mode chain has played
+  once (without chains, one pass of the longest pattern).
+* **Tail**: **Auto** renders until the mix falls below -90 dB (at most 30 seconds), or a fixed
+  0 to 8 seconds.
+* **Sample rate**: 44.1, 48, 88.2 or 96 kHz. **Bit depth**: 16 or 24-bit integer, or 32-bit
+  float. **Dither** (TPDF) applies to 16 and 24-bit files.
+* **Stems**: **Wet** keeps each track's delay, reverb, Send A and Send B; **Dry** leaves them
+  out. With dry stems you can add the **send returns** as their own files (Send A reverb,
+  Send B delay, and the master delay and reverb), so stems plus returns add up to the mix.
+  Returns are only offered with dry stems: wet stems already hold their sends, so separate
+  returns would count them twice.
+* **Master processing on stems** (off by default): when off, every stem and return is taken
+  before the master chorus, warmth, volume and limiter, so they add up exactly to
+  `Mix (no master processing)`, which is saved next to the normal full mix for comparison.
+  When on, every file goes through the master chain like the mix; warmth and the limiter
+  are not linear, so the sum is then close to the mix but not exact.
+* **Fader**: **Post-fader** uses each track's level; **Pre-fader** renders every track at
+  full level.
+* **Normalise**: **Off** keeps the session's levels; **Peak, common gain** raises every file
+  by the same amount (the loudest peaks at -1 dBFS) so the balance stays; **Peak, each file**
+  normalises each on its own.
+* **File names**: a pattern such as `{index} {track name} {tempo}bpm {key}`, made safe for
+  every computer (for example `01 Bass 112bpm A Minor.wav`). The full mix is `00`.
+
+Each track plays through its own track effects. The zip also holds a MIDI file of every track, `Tempo map.mid` (Oro's tempo is
+constant, so this is one tempo event at bar 1) and a `README.txt` with the tempo, key,
+tuning, format, length and each track's settings. The dialog shows the expected size, warns
+above 1.5 GB and refuses past 3.5 GB. Files are rendered and encoded one at a time;
+**Cancel** stops within moments, even in the middle of a file, and nothing is saved. In the
+desktop app a save dialog asks where to put the zip; in a browser it downloads.
+
 ### Looper (1.2)
 
 The looper records what you hear and plays it back in a loop, so you can layer parts on top
@@ -1641,6 +1678,31 @@ Undo for the **History**: click any edit there to go back to just before it. Up 
 are kept. Undo covers sounds, patterns, tracks, links, effects and loaded patches or
 scenes; the moving dot, settings and the view are not part of it. Text fields keep their
 own undo.
+
+### Version history (2.12)
+
+The **clock button** next to Undo and Redo opens **Version history**: earlier saves of your
+session, grouped by day (Today, Yesterday, then dates). Oro saves a version when the session
+has changed and then rested for about two minutes (or after ten minutes of steady changes),
+when you switch away from Oro or close it with unsaved changes (at most once a minute), and
+when you press **Save version** (with an optional name). An
+unchanged session never makes a new automatic version.
+
+Each version shows its time, name, track count, tempo and key, and what changed since the
+one before ("Cutoff, track 2; new pattern on track 3"). For each one:
+
+* **Preview** loads it for a listen, with a bar at the bottom: **Keep this** makes it your
+  session, **Go back** returns to what you had. Closing Oro while previewing keeps your
+  session, not the preview.
+* **Restore** makes it your session right away. What you had is saved as a version first,
+  and Undo brings it back.
+* **Rename**, **Delete**, and **Export** (a session file you can import from the patch
+  browser as a scene).
+
+Oro keeps every version from the last 7 days, then one per day for 60 days, plus every named
+version. Versions share large data such as imported terrains, recordings and drum samples,
+so many versions take little space; past 200 MB the oldest unnamed versions go first.
+Versions live in this browser (or the desktop app) only.
 
 ## 13. Settings
 

@@ -91,6 +91,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
   const go = h('button', { type: 'button', class: 'btn btn--primary btn--sm', html: icon('bounce') + '<span>Render WAV</span>', disabled: !ok });
   // v2.9: the same bars as notes, one MIDI track per sequencer that is on
   const midiBtn = h('button', { type: 'button', class: 'btn btn--sm', 'aria-label': 'Save the sequencers as a MIDI file', dataset: { tip: 'Save these bars of every track whose sequencer is on as a .mid file' } }, 'Save MIDI');
+  const stemsBtn = h('button', { type: 'button', class: 'btn btn--sm btn--ghost', 'aria-haspopup': 'dialog' }, 'Export stems...');
   const bar = h('div', { class: 'bounce-progress', hidden: true, role: 'progressbar', 'aria-label': 'Render progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, h('span', { class: 'bounce-fill' }));
   const status = h('p', { class: 'popover-note bounce-status', role: 'status', 'aria-live': 'polite' });
   const length = h('p', { class: 'bounce-length mono' });
@@ -105,7 +106,9 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
     field('Files', outSeg.el),
     h('div', { class: 'bounce-row' }, h('span', { class: 'bounce-row-text' }, 'Effects', h('span', { class: 'setting-hint' }, 'Delay, reverb, chorus and warmth')), fxToggle.el),
     length, bar, status,
-    h('div', { class: 'bounce-actions' }, midiBtn, go));
+    h('div', { class: 'bounce-actions' }, midiBtn, go),
+    // v2.12 stems, returns, MIDI and a README in one zip (loaded on demand)
+    h('div', { class: 'bounce-actions' }, stemsBtn));
 
   const renderLength = () => {
     const bars = Number(barsSel.value);
@@ -133,6 +136,14 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
     setText(status, `Rendering... ${Math.round((p.done / p.total) * 100)}%`);
   }));
 
+  scope.on(stemsBtn, 'click', async () => {
+    if (busy) return;
+    try {
+      const { openStemsDialog } = await import('./stems-dialog.js');
+      pop.close('stems');
+      openStemsDialog(ctx);
+    } catch (err) { console.warn('[ui] stems dialog failed to load', err); }
+  });
   scope.on(midiBtn, 'click', () => {
     try { setText(status, saveSessionMidi(store, Number(barsSel.value), music)); } catch (err) { console.warn('[ui] MIDI export failed', err); setText(status, 'The MIDI file could not be made.'); }
   });
@@ -174,5 +185,6 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
     }
   });
 
-  return openPopover(ctx.layers, anchor, body, { className: 'popover--bounce', label: 'Bounce to WAV', placement: 'bottom-end', onClose: () => scope.dispose() });
+  const pop = openPopover(ctx.layers, anchor, body, { className: 'popover--bounce', label: 'Bounce to WAV', placement: 'bottom-end', onClose: () => scope.dispose() });
+  return pop;
 }

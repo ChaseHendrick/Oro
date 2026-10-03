@@ -19,6 +19,7 @@ const { updateCapability, createUpdateController } = require('./updates.cjs');
 const { createUpdatePreferencesFile, fetchLatestRelease, installUpdateIpc } = require('./updates-host.cjs');
 const { createMacInstaller } = require('./mac-update.cjs');
 const { createCloseGuard } = require('./close-guard.cjs');
+const { installFileIpc } = require('./files-host.cjs');
 
 const isMac = process.platform === 'darwin';
 // Same colours index.html paints before the app loads, so there is no flash.
@@ -275,8 +276,9 @@ function start() {
     });
     const removeUpdateIpc = installUpdateIpc({ ipcMain, getContents: () => mainWindow?.webContents, controller: updates });
     const removeCloseIpc = closeGuard.install({ ipcMain, getContents: () => mainWindow?.webContents });
+    const removeFileIpc = installFileIpc({ ipcMain, dialog, fs, getWindow: () => mainWindow, getContents: () => mainWindow?.webContents });
     app.on('before-quit', () => closeGuard.beforeQuit());
-    app.once('will-quit', () => { updates.installOnQuit(); removeUpdateIpc(); removeCloseIpc(); updates.dispose(); });
+    app.once('will-quit', () => { updates.installOnQuit(); removeUpdateIpc(); removeCloseIpc(); removeFileIpc(); updates.dispose(); });
 
     app.setAboutPanelOptions({
       applicationName: 'Oro',

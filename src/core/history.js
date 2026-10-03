@@ -11,7 +11,7 @@
 import { deepClone } from './store.js';
 import { PART_PARAM_MAP, GLOBAL_PARAM_MAP } from './params.js';
 
-const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock']);
+const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock', 'version']);
 const SHARED = ['userTerrain', 'noiseRecording'];
 
 /** A drum kit with each pad's sample string shared (strings are immutable). */
@@ -47,6 +47,7 @@ export function describeEdit(path, meta = {}) {
   if (meta.source === 'import') return 'Import';
   if (meta.source === 'capture') return 'Capture';
   if (meta.source === 'imprint') return 'Imprint';
+  if (meta.source === 'restore') return 'Restore version';
   const k = String(path || '').split('.');
   if (k[0] === 'global' && k[1]) return GLOBAL_PARAM_MAP[k[1]]?.label || 'Global setting';
   if (k[0] === 'parts' && k.length >= 2) {
