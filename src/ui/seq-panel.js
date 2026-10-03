@@ -202,14 +202,14 @@ export function createSeqPanel(ctx) {
     scope.on(b, 'click', fn);
     return b;
   };
-  const lockGlide = createMiniSlider(ctx, P('seq.lockGlide', { id: 'lockGlide', label: 'Dot glide', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How long the dot takes to reach a step\'s locked spot (0 jumps)' }), {
+  const lockGlide = createMiniSlider(ctx, PAT('lockGlide', { id: 'lockGlide', label: 'Dot glide', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How long the dot takes to reach a step\'s locked spot (0 jumps)' }), {
     ariaLabel: 'Dot lock glide time', format: v => (v < 0.005 ? 'Jump' : Math.round(v * 100) + '% of a step'),
   });
   // v2.6 humanize
-  const humanTime = createMiniSlider(ctx, P('seq.humanTime', { id: 'humanTime', label: 'Humanize time', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Play each note up to 20 ms late, a little differently every pass' }), {
+  const humanTime = createMiniSlider(ctx, PAT('humanTime', { id: 'humanTime', label: 'Humanize time', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Play each note up to 20 ms late, a little differently every pass' }), {
     ariaLabel: 'Humanize timing', format: v => (v < 0.005 ? 'Off' : `${Math.round(v * 20)} ms`),
   });
-  const humanVel = createMiniSlider(ctx, P('seq.humanVel', { id: 'humanVel', label: 'Humanize velocity', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Vary each note\'s velocity by up to 30% either way' }), {
+  const humanVel = createMiniSlider(ctx, PAT('humanVel', { id: 'humanVel', label: 'Humanize velocity', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Vary each note\'s velocity by up to 30% either way' }), {
     ariaLabel: 'Humanize velocity', format: v => (v < 0.005 ? 'Off' : `±${Math.round(v * 30)}%`),
   });
   // Lock Record goes through the music module when it has one (it owns the

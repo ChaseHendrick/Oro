@@ -243,3 +243,23 @@ describe('v2.9 song mode, Lock row and Capture in the Seq tab', () => {
     seq.dispose();
   });
 });
+
+describe('pattern feel sliders (regression: they used to write parts.N.seq.*, which nothing reads)', () => {
+  it('Dot glide and Humanize show and follow the active pattern', () => {
+    const { ctx, store } = makeCtx();
+    store.set('ui.selectedPart', 1);
+    store.set('parts.1.patterns.0.lockGlide', 0.2);
+    store.set('parts.1.patterns.0.humanTime', 0.75);
+    store.set('parts.1.patterns.0.humanVel', 0.4);
+    const seq = createSeqPanel(ctx);
+    dom.flush();
+    const now = (label) => Number(seq.el.querySelectorAll('[role="slider"]').find(e => e.getAttribute('aria-label') === label).getAttribute('aria-valuenow'));
+    expect(now('Humanize timing')).toBeCloseTo(0.75, 3);
+    expect(now('Humanize velocity')).toBeCloseTo(0.4, 3);
+    expect(now('Dot lock glide time')).toBeCloseTo(0.2, 3);
+    store.set('parts.1.patterns.0.humanTime', 0.25);
+    dom.flush();
+    expect(now('Humanize timing')).toBeCloseTo(0.25, 3);
+    expect(store.get('parts.1.seq')).toBeUndefined();
+  });
+});
