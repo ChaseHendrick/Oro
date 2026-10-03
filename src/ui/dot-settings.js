@@ -26,6 +26,9 @@ export const DOT_DEFS = {
   exploreRate: { id: 'exploreRate', label: 'Density', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How often Explore plays a note at a peak or a valley' },
   exploreRange: { id: 'exploreRange', label: 'Range', curve: 'int', min: 1, max: 4, default: 2, hint: 'How many octaves the height of the land spans' },
   exploreNotes: { id: 'exploreNotes', label: 'Play notes', curve: 'bool', min: 0, max: 1, default: 1, hint: 'Play in-key notes at peaks and valleys' },
+  pendEnergy: { id: 'pendEnergy', label: 'Energy', curve: 'lin', min: -2.95, max: 4, default: 0.5, hint: 'Low swings gently; above -1 the lower arm can flip over; above 1 both arms can, and the path turns chaotic' },
+  pendReach: { id: 'pendReach', label: 'Reach', curve: 'lin', min: 0, max: 1, default: 0.4, hint: 'How long the arms are on the map' },
+  pendRate: { id: 'pendRate', label: 'Speed', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How fast the pendulum swings' },
   tourMode: { id: 'tourMode', label: 'Tour', curve: 'enum', min: 0, max: TOUR_MODES.length - 1, default: 0, options: TOUR_MODES },
 };
 
@@ -35,6 +38,7 @@ const MODE_NOTES = [
   'Drift lets the dot wander smoothly on its own.',
   'Explore lets the marble roam under slowly turning gravity and play in-key notes at peaks and valleys.',
   'Tour moves the dot through your waypoints in time with the tempo.',
+  'Pendulum hangs a double pendulum where you put the dot; the dot rides the tip of the lower arm. Raise the energy for chaos.',
 ];
 export const BEAT_CHOICES = [0.25, 0.5, 1, 2, 4, 8, 16];
 
@@ -54,6 +58,9 @@ export function openDotSettings(ctx, anchor) {
     h('div', { class: 'mini-label' }, 'Marble'),
     h('div', { class: 'knob-row' }, knob('gravity', { format: pct }), knob('friction', { format: pct }), knob('bounce', { format: pct }), knob('flick', { format: pct })),
     h('div', { class: 'knob-row' }, knob('tiltX'), knob('tiltY')));
+  const pendulum = h('div', { class: 'dot-group', dataset: { modes: '5' } },
+    h('div', { class: 'mini-label' }, 'Pendulum'),
+    h('div', { class: 'knob-row' }, knob('pendEnergy', { format: v => v.toFixed(2) }), knob('pendReach', { format: pct }), knob('pendRate', { format: pct })));
   const drift = h('div', { class: 'dot-group', dataset: { modes: '2' } },
     h('div', { class: 'mini-label' }, 'Drift'),
     h('div', { class: 'knob-row' }, knob('driftSpeed', { format: pct })));
@@ -87,7 +94,7 @@ export function openDotSettings(ctx, anchor) {
     list,
     h('div', { class: 'dot-line dot-line--end' }, h('span', { class: 'waypoint-count' }), clearBtn));
 
-  const body = h('div', { class: 'dot-pop' }, title, note, physics, drift, explore, tour);
+  const body = h('div', { class: 'dot-pop' }, title, note, physics, drift, explore, tour, pendulum);
   const wpPath = () => `parts.${binder.selected()}.dot.waypoints`;
 
   function renderWaypoints() {

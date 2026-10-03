@@ -1673,6 +1673,25 @@ export async function createVisuals(container, { store, engine = null, quality, 
     },
 
     captureCameraView() { return rig.capture(); },
+    /**
+     * The camera for "remember where I was" (v2.1). The land repeats every W
+     * world units and a saved session keeps the dot in the home copy, so the
+     * view is moved by whole copies to look at that copy (it looks the same).
+     */
+    captureLastCamera() {
+      const c = rig.capture();
+      if (!c || !Array.isArray(c.target) || !Array.isArray(c.position)) return c;
+      const dx = -W * Math.round(c.target[0] / W), dz = -W * Math.round(c.target[2] / W);
+      c.target = [c.target[0] + dx, c.target[1], c.target[2] + dz];
+      c.position = [c.position[0] + dx, c.position[1], c.position[2] + dz];
+      return c;
+    },
+    /** Put the camera back on launch without switching auto-rotate off for good. */
+    restoreLastCamera(saved) {
+      if (!rig.restore(saved)) return false;
+      if (store.get('ui.view') !== rig.view) store.set('ui.view', rig.view, META);
+      return true;
+    },
     restoreCameraView(saved) {
       if (!rig.restore(saved)) return false;
       api.setAutoRotate(false);

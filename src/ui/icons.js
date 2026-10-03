@@ -50,6 +50,7 @@ const P = {
   heat: '<rect x="4.2" y="4.2" width="15.6" height="15.6" rx="3"/><path d="M4.2 9.4h15.6M4.2 14.6h15.6"/><path d="M4.4 4.6h15.2v4.8H4.4z" fill="currentColor" fill-opacity=".85" stroke="none"/><path d="M4.4 9.4h15.2v5.2H4.4z" fill="currentColor" fill-opacity=".4" stroke="none"/>',
   pin: '<path d="M12 20.6s-6.2-5.6-6.2-10.2a6.2 6.2 0 0 1 12.4 0c0 4.6-6.2 10.2-6.2 10.2z"/><circle cx="12" cy="10.4" r="2.2"/>',
   roll: '<circle cx="14.2" cy="11.8" r="5.4"/><path d="M11.4 9.6a3.4 3.4 0 0 1 2.4-1.3"/><path d="M2.8 9.4h4M2.2 13h4.6M3.6 16.6h5"/><path d="M3 20h18"/>',
+  pendulum: '<circle cx="12" cy="3.6" r="1.1" fill="currentColor" stroke="none"/><path d="M12 3.6l-4.2 7.6 6.4 5.2"/><circle cx="7.8" cy="11.2" r="1.5"/><circle cx="14.6" cy="16.8" r="2.4" fill="currentColor" stroke="none"/><path d="M5 20.4c3 .9 6.3 1 9.6.2" stroke-dasharray="1.6 2"/>',
   drift: '<path d="M3 15.4c2.4-4.4 5-4.4 7.2 0s5 4.4 7.2 0c.9-1.8 2-2.6 3.6-2.2"/><circle cx="20.4" cy="9.4" r="1.6" fill="currentColor" stroke="none"/>',
   sliders: '<path d="M4.5 7.5h8.6M17.4 7.5h2.1M4.5 16.5h2.6M11.4 16.5h8.1"/><circle cx="15.2" cy="7.5" r="2.1"/><circle cx="9.2" cy="16.5" r="2.1"/>',
   import: '<path d="M12 15.2V4.6M7.6 8.8L12 4.4l4.4 4.4"/><path d="M4.8 14.6v4a1.2 1.2 0 0 0 1.2 1.2h12a1.2 1.2 0 0 0 1.2-1.2v-4"/>',

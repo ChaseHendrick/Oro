@@ -4,7 +4,7 @@
 // The theme preference is stored separately by theme.js (its own key is part
 // of the cross-module theme contract) but is mirrored here as well.
 
-import { CAMERA_VIEWS, sanitizeSavedCameraViews } from '../visual/camera-view.js';
+import { CAMERA_VIEWS, sanitizeSavedCameraViews, sanitizeCameraView } from '../visual/camera-view.js';
 
 export const SETTINGS_KEY = 'orograph.settings';
 
@@ -22,6 +22,8 @@ export const PREF_DEFAULTS = Object.freeze({
   keysOpen: 1,
   mapCollapsed: 0,
   audioQuality: 'standard',
+  lastTrack: '',      // id of the track that was selected (v2.1)
+  lastCamera: null,   // the camera when the app was last closed (v2.1)
 });
 
 const VALID = {
@@ -38,6 +40,8 @@ const VALID = {
   keysOpen: v => v === 0 || v === 1,
   mapCollapsed: v => v === 0 || v === 1,
   audioQuality: v => ['eco', 'standard', 'high', 'pristine', 'raw'].includes(v),
+  lastTrack: v => typeof v === 'string' && v.length <= 64,
+  lastCamera: v => v === null || !!sanitizeCameraView(v),
 };
 
 /** Keep only known keys with valid values; fill the rest from defaults. */
@@ -45,7 +49,7 @@ export function sanitizePrefs(src) {
   const out = { ...PREF_DEFAULTS };
   if (!src || typeof src !== 'object') return out;
   for (const key of Object.keys(PREF_DEFAULTS)) {
-    let v = key === 'savedCameraViews' ? sanitizeSavedCameraViews(src[key]) : src[key];
+    let v = key === 'savedCameraViews' ? sanitizeSavedCameraViews(src[key]) : key === 'lastCamera' ? sanitizeCameraView(src[key]) : src[key];
     if (typeof PREF_DEFAULTS[key] === 'number' && typeof v === 'boolean') v = v ? 1 : 0;
     if (VALID[key](v)) out[key] = v;
   }
@@ -97,7 +101,7 @@ export function createPrefs({ store }) {
     set(key, value) {
       if (!(key in PREF_DEFAULTS) || !VALID[key](value)) return;
       if (UI_PREF_KEYS.includes(key)) { store.set('ui.' + key, value, { source: 'ui' }); return; }
-      prefs[key] = key === 'savedCameraViews' ? sanitizeSavedCameraViews(value) : value;
+      prefs[key] = key === 'savedCameraViews' ? sanitizeSavedCameraViews(value) : key === 'lastCamera' ? sanitizeCameraView(value) : value;
       persistSoon();
       for (const fn of listeners) fn(key, value);
     },

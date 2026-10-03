@@ -48,6 +48,7 @@ import { subWave, PROFILE_PARTIALS, profileRatio, ColourNoise, noiseTextures, fa
 import { AnalogFilter } from './analog-filters.js';
 import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.js';
 import { TrackEffects } from './track-effects.js';
+import { ScienceBank } from './science-sources.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
@@ -133,10 +134,15 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 // for the whole part (folded into the part's shared modulation, so they also
 // show in idle telemetry) rather than per voice.
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
-  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19;
+  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19,
+  L_SCIENCE = 20, L_SCIENCE_END = 26, L_SWIRLX = 27, L_SWIRLY = 28;   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
 for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE, L_EXPRESSION, L_SUSTAIN, L_BREATH]) if (s < NSRC) PART_SOURCE[s] = 1;
+for (let s = L_SCIENCE; s <= L_SCIENCE_END && s < NSRC; s++) PART_SOURCE[s] = 1;
+const SCIENCE_KEYS = { sciNeuronCurrent: 'neuronCurrent', sciNeuronKick: 'neuronKick', sciNeuronTemp: 'neuronTemp', sciNeuronRate: 'neuronRate',
+  sciLorenzRate: 'lorenzRate', sciPendEnergy: 'pendEnergy', sciPendRate: 'pendRate', sciSmoothTime: 'smoothTime', sciSmoothness: 'smoothness',
+  sciCollapseShape: 'collapseShape', sciCollapseBars: 'collapseBars', sciCollapseDir: 'collapseDir' };
 const NCURVES = LINK_CURVES.length;
 const DEFAULT_LINKS = defaultLinks();
 
@@ -777,7 +783,7 @@ class Part {
   }
 
   /** Recompute the summed contribution of the part-wide Link sources. */
-  updatePartLinks(macros, guitar = 0, voice = 0) {
+  updatePartLinks(macros, guitar = 0, voice = 0, science = null) {
     const pl = this.partLink;
     pl.fill(0);
     for (let i = 0; i < this.nLinks; i++) {
@@ -792,6 +798,7 @@ class Part {
       else if (s === L_EXPRESSION) x=this.expression;
       else if (s === L_SUSTAIN) x=this.sustainLevel;
       else if (s === L_BREATH) x=this.breath;
+      else if (s >= L_SCIENCE) x = science ? science[s - L_SCIENCE] : 0;
       else x = macros[s - L_MACRO];
       pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], x);
     }
@@ -897,6 +904,8 @@ export class OrographDSP {
 
     this.tempo = 112;
     this.macros = new Float64Array(4);
+    this.science = new ScienceBank(1);   // v2.1 science Link sources, stepped once per control block
+    this.swirlOut = { x: 0, y: 0 };
     this.vectorMix=0; this.vectorX=this.vectorY=0.5; this.vectorBank=0; this.vectorWeights=new Float64Array(4).fill(1);
     // v1.1 pedal loop: the host says when the pedal send really leaves the
     // computer (outputs 3/4); until then the send bus stays silent and Insert
@@ -1234,6 +1243,7 @@ export class OrographDSP {
     if (s === L_EXPRESSION) return P.expression;
     if (s === L_SUSTAIN) return P.sustainLevel;
     if (s === L_BREATH) return P.breath;
+    if (s >= L_SCIENCE && s <= L_SCIENCE_END) return this.science.out[s - L_SCIENCE];
     return 0;
   }
 
@@ -1342,6 +1352,9 @@ export class OrographDSP {
 
   setGlobal(p) {
     if (!p || typeof p !== 'object') return;
+    let sci = null;
+    for (const k in SCIENCE_KEYS) if (p[k] !== undefined && Number.isFinite(+p[k])) (sci || (sci = {}))[SCIENCE_KEYS[k]] = +p[k];
+    if (sci) this.science.configure(sci);
     if (p.tempo !== undefined) this.tempo = Math.max(20, Math.min(400, finiteOr(p.tempo, this.tempo)));
     for (const id of ['vectorMix','vectorX','vectorY']) if (p[id] !== undefined) this[id]=clamp01(finiteOr(p[id],this[id]));
     if (p.vectorBank !== undefined) this.vectorBank=Math.max(0,Math.min(3,Math.round(finiteOr(p.vectorBank,0))));
@@ -1391,7 +1404,7 @@ export class OrographDSP {
     }
     P.nLinks = n;
     this.updateLinkFlags(P);
-    P.updatePartLinks(this.macros, this.sGuitar, this.sVoice);
+    P.updatePartLinks(this.macros, this.sGuitar, this.sVoice, this.science.out);
   }
 
   /** Which slots need per-voice evaluation, and whether the orbit is modulated per voice. */
@@ -1741,6 +1754,7 @@ export class OrographDSP {
   noteOn(P, note, vel) {
     if (vel > 1) vel /= 127;
     if (!(vel > 0)) { this.noteOff(P, note); return; }
+    this.science.noteOn();
     if (this.heldCount(P) === 0) this.retrigLfos(P);
     const glideOn = P.params[PI.glide] > 0.0005;
     if (P.mode === 0) {
@@ -2006,7 +2020,7 @@ export class OrographDSP {
   }
 
   partMods(P) {
-    P.updatePartLinks(this.macros, this.sGuitar, this.sVoice);
+    P.updatePartLinks(this.macros, this.sGuitar, this.sVoice, this.science.out);
     const PL = P.partLink;
     for (let m = 0; m < NMOD; m++) {
       let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m];
@@ -2051,6 +2065,8 @@ export class OrographDSP {
       case L_ENV2: return v.env2Lvl;
       case L_RAND: return v.rand;
       case L_TERRAIN: return clampPM1(v.terrH);
+      case L_SWIRLX: return this.science.swirl(v.index, this.swirlOut).x;
+      case L_SWIRLY: return this.science.swirl(v.index, this.swirlOut).y;
       default: return 0;
     }
   }
@@ -2554,6 +2570,7 @@ export class OrographDSP {
 
   controlUpdate(elapsed) {
     this.tabBudget = TABLE_BUDGET;
+    this.science.step(elapsed / this.sr, this.transport.playing ? this.currentBeats() : null, 60 / this.tempo);
     let anySolo = false;
     const count = this.count;
     for (let i = 0; i < count; i++) if (this.parts[i].params[PI.solo] >= 0.5) anySolo = true;

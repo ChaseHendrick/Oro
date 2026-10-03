@@ -3,6 +3,23 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.1.0 (October 2026)
+
+* **Science sources.** Nine new Link sources driven by real dynamical systems from the
+  author's research, set up in a new **Science sources** card (Mod > Links + Macros):
+  **Neuron** and **Neuron Spike** (the Hodgkin-Huxley equations at the 1952 constants, which
+  rest, or fire once a note kicks them, or fire on their own, depending on Current),
+  **Lorenz**, **Pendulum 1** and **2** (a double pendulum held at a set energy),
+  **Smooth Random** (Matérn-type random wandering, Rough to Silky), **Collapse** and the
+  per-voice **Swirl X** and **Swirl Y** (point vortices spiralling to a collapse in time
+  with the tempo, one vortex per voice). They also work as sources for each parameter's own
+  controller slots. Each model is checked against its paper's numbers in the tests.
+* **Pendulum dot mode.** The dot rides the tip of a double pendulum hung where you put it:
+  gentle at low Energy, chaotic above it. Settings: Energy, Reach and Speed.
+* **Remembers where you were.** The selected track and the camera now come back when you
+  reopen Orograph, along with everything it already kept (every track's sound, patterns
+  and dot, and your settings).
+
 ## 2.0.2 (October 2026)
 
 * **The map has no edge.** The land repeats in every direction, and now it looks and plays

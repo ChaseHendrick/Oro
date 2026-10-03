@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.0.2, including the guitar pedal features
+going on under the hood. It describes version 2.1.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -237,6 +237,12 @@ button next to them opens the settings for the current behaviour.
   waypoints (the dashed route on the map), slows into each one and lands on it on the beat.
   The tour can **Loop**, go back and forth (**Ping-pong**) or play **Once** and stop at the
   last waypoint.
+* **Pendulum** (2.1) hangs a double pendulum (two equal arms, seen from above) from the
+  spot where you put the dot, and the dot rides the tip of the lower arm. At low **Energy**
+  it swings gently and regularly; above −1 the lower arm can flip over, and above 1 both
+  arms can, so the path turns chaotic and never repeats. Settings: **Energy** (−2.95 to 4),
+  **Reach** (how long the arms are on the map) and **Speed**. Move the dot to hang the
+  pendulum somewhere else; it starts again from rest there.
 
 While the marble moves, its speed and the height under it are sent to the sound engine,
 where they are available as modulation sources (**Marble Speed** and **Marble Height**, see
@@ -535,6 +541,13 @@ controls, with an amount and a response curve. Each part can have up to 8.
 | **Terrain Height** | −1 to +1, the height of the land under the dot |
 | **Guitar Level** | 0 to 1, how loud the guitar on the pedal return's second channel is (see [Guitar pedals](#15-guitar-pedals)) |
 | **Voice Level** | 0 to 1, how loud you sing or speak into the microphone (see [Voice](#voice-14)) |
+| **Neuron** | 0 to 1, the voltage of a Hodgkin-Huxley neuron (rests near 0.1, spikes reach near 1); see [Science sources](#science-sources) |
+| **Neuron Spike** | 0 to 1: jumps to 1 at each spike of the neuron and fades in about 40 ms |
+| **Lorenz** | −1 to +1, the x coordinate of the Lorenz attractor |
+| **Pendulum 1**, **Pendulum 2** | −1 to +1, the sine of each arm's angle of a double pendulum |
+| **Smooth Random** | −1 to +1, a random wander, as smooth as you set it |
+| **Collapse** | 0 to 1, how far a set of point vortices has spiralled in (0 = wide) |
+| **Swirl X**, **Swirl Y** | −1 to +1, per voice: each voice rides its own vortex of the collapse |
 
 **Curve** shapes the response: **Linear**, **Soft** (squared: gentle at first, strong at the
 end) or **Hard** (square root: strong at first). **Amount** runs from −100% to +100%. Links
@@ -550,6 +563,35 @@ button in the top bar (always one click away while you play) and the Links + Mac
 On their own they do nothing; use them as Link sources to build one-knob gestures that move
 several controls in several parts at once. They are MIDI-learnable, which makes them ideal
 for an MPC Q-Link or a hardware fader.
+
+### Science sources
+
+Version 2.1 adds modulation sources built from real dynamical systems, taken from the
+author's own research (see [Credits](#18-credits-and-clean-room-statement)). They are shared
+by every track and set up in the **Science sources** card under Links + Macros; pick one as
+a Link source to let it move any knob.
+
+* **Neuron**: the Hodgkin-Huxley equations of the squid giant axon at their 1952
+  constants. **Current** is the steady current in µA/cm². Below about 6.3 the neuron rests;
+  from about 6.3 to 9.8 it can either rest or fire, so it stays quiet until a note start
+  **Kick**s it, then keeps firing (about every 16 ms of model time at 8); above about 9.8
+  it fires on its own. **Temp** warms the membrane (three times faster per 10 °C) and
+  **Speed** sets how much model time passes per second (1 is real time). Use **Neuron** for
+  the smooth voltage and **Neuron Spike** for a sharp pulse at each spike.
+* **Lorenz**: the classic chaotic system (σ = 10, ρ = 28, β = 8/3). It swings between two
+  lobes and never repeats. **Speed** sets how fast.
+* **Pendulum**: the equal double pendulum of the Pendulum dot mode, with its own **Energy**
+  and **Speed**. **Pendulum 1** and **Pendulum 2** follow the two arms. The energy is held
+  constant as it runs, so the motion keeps its character.
+* **Smooth random**: random wandering with a set smoothness. **Time** is roughly how long it
+  takes to change its mind; **Smooth** picks Rough (jittery), Smooth or Silky (very gentle
+  curves). Technically these are Matérn processes with ν = 1/2, 3/2 and 5/2.
+* **Collapse**: a few point vortices (tiny whirlpools) that spiral inward together and
+  shrink to a point, then start again, in time with the tempo: one collapse every **Cycle**
+  (half a bar to 16 bars), or the reverse with **Direction** set to Expand. **Shape** picks
+  one of four configurations, each turning at its own rate. **Collapse** is how far in the
+  vortices are; **Swirl X** and **Swirl Y** put each voice of a chord on its own vortex,
+  which is a natural way to spread a chord in stereo or across the terrain.
 
 ---
 
@@ -1358,6 +1400,20 @@ Roads, Stuart James and others. The [research brief](RESEARCH.md) lists the sour
 [Rapier](https://rapier.rs) (marble physics, Apache 2.0 licence), Web Audio and Web MIDI,
 and [Electron](https://www.electronjs.org) for the desktop app. The full list of libraries
 and their licences is in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
+**Science sources** (2.1) come from the author's own research, each with its paper and
+code: the Hodgkin-Huxley neuron from *Hopf Bifurcations and Bistability in the
+Hodgkin-Huxley Equations at the 1952 Parameters* ([doi:10.5281/zenodo.23096223](https://doi.org/10.5281/zenodo.23096223))
+and *The Propagated Action Potential of Hodgkin and Huxley at Their 1952 Constants*
+([doi:10.5281/zenodo.23096253](https://doi.org/10.5281/zenodo.23096253)); the double pendulum
+from *Chaos and Analytic Non-Integrability of the Classical Double Pendulum*
+([doi:10.5281/zenodo.23096228](https://doi.org/10.5281/zenodo.23096228)); the vortex collapse
+from *Minimal Winding in the Self-Similar Collapse of Point Vortices*
+([doi:10.5281/zenodo.23096146](https://doi.org/10.5281/zenodo.23096146)); and the smoothness
+idea behind Smooth random from *A Finite Rank Window Cannot Show That a Neural Population
+Code Satisfies the Eigenspectrum Smoothness Bound* ([doi:10.5281/zenodo.23096200](https://doi.org/10.5281/zenodo.23096200)).
+The Lorenz system is from E. N. Lorenz, "Deterministic Nonperiodic Flow" (1963), and the
+neuron model from A. L. Hodgkin and A. F. Huxley (1952).
 
 **Made by** Chase ([Hendrick Research](https://www.hendrickresearch.com)), written with the
 help of Claude Code. Orograph is free and open source under the [MIT licence](../LICENSE).

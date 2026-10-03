@@ -66,6 +66,35 @@ const MOBILE_TABS = [
   { id: 'keys', label: 'Keys', icon: 'keyboard' },
 ];
 
+/**
+ * Remember the selected track and the camera between launches (v2.1): put
+ * them back now, and note them while the app runs and when it closes.
+ */
+function rememberPlace(store, prefs, visuals, scope) {
+  const parts = () => (Array.isArray(store.get('parts')) ? store.get('parts') : []);
+  const i = parts().findIndex(p => p && p.id === prefs.get('lastTrack'));
+  if (i >= 0 && i !== store.get('ui.selectedPart')) store.set('ui.selectedPart', i, { source: 'prefs' });
+  const cam = prefs.get('lastCamera');
+  if (cam && visuals && typeof visuals.restoreLastCamera === 'function') {
+    try { visuals.restoreLastCamera(cam); } catch { /* keep the default view */ }
+  }
+  const noteTrack = () => {
+    const p = parts()[Math.round(Number(store.get('ui.selectedPart')) || 0)];
+    if (p && typeof p.id === 'string') prefs.set('lastTrack', p.id);
+  };
+  scope.add(store.subscribe('ui.selectedPart', noteTrack));
+  const noteCamera = () => {
+    if (visuals && typeof visuals.captureLastCamera === 'function') {
+      try { const c = visuals.captureLastCamera(); if (c) prefs.set('lastCamera', c); } catch { /* ignore */ }
+    }
+    prefs.flush();
+  };
+  const onHidden = () => { if (document.visibilityState === 'hidden') noteCamera(); };
+  window.addEventListener('pagehide', noteCamera);
+  document.addEventListener('visibilitychange', onHidden);
+  scope.add(() => { window.removeEventListener('pagehide', noteCamera); document.removeEventListener('visibilitychange', onHidden); });
+}
+
 export function createUI(root, modules = {}) {
   const { store } = modules;
   if (!root || !store) throw new Error('createUI needs a root element and a store');
@@ -109,6 +138,7 @@ export function createUI(root, modules = {}) {
   scope.add(layers.dispose);
   const prefs = createPrefs({ store });
   scope.add(prefs.dispose);
+  rememberPlace(store, prefs, visuals, scope);
   const bus = emitter();
   const binder = createBinder(store);
   const tele = createTele(engine);
