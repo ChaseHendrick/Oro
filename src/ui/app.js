@@ -29,11 +29,10 @@ import { createMapPanel } from './map-panel.js';
 import { createDock, DOCK_TABS } from './dock.js';
 import { createPiano } from './piano.js';
 import { openModPopover } from './mod-popover.js';
-import { openSettings } from './settings.js';
 import { createPedalRig } from './pedal-rig.js';
 import { createVoiceRig } from './voice-rig.js';
 import { createLooperControl } from './looper-control.js';
-import { openHelp } from './help.js';
+import { chunks, deferredDialog, prefetchWhenIdle } from './lazy.js';
 import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
 import { icon } from './icons.js';
@@ -467,7 +466,8 @@ export function createUI(root, modules = {}) {
     if (settingsModal && settingsModal.isOpen()) { if (tab) settingsModal.select(tab); return settingsModal; }
     if (helpModal && helpModal.isOpen()) helpModal.close();
     layers.closeAll('dialog');
-    settingsModal = openSettings(ctx, tab || 'general', { onClose: () => store.set('ui.settingsOpen', 0, { source: 'ui' }) });
+    // Settings and Help load on first use (2.11, src/ui/lazy.js).
+    settingsModal = deferredDialog(chunks.settings, (m) => m.openSettings(ctx, tab || 'general', { onClose: () => store.set('ui.settingsOpen', 0, { source: 'ui' }) }), 'Settings');
     store.set('ui.settingsOpen', 1, { source: 'ui' });
     return settingsModal;
   }
@@ -475,7 +475,7 @@ export function createUI(root, modules = {}) {
     if (helpModal && helpModal.isOpen()) return helpModal;
     if (settingsModal && settingsModal.isOpen()) settingsModal.close();
     layers.closeAll('dialog');
-    helpModal = openHelp(ctx, { onClose: () => store.set('ui.helpOpen', 0, { source: 'ui' }) });
+    helpModal = deferredDialog(chunks.help, (m) => m.openHelp(ctx, { onClose: () => store.set('ui.helpOpen', 0, { source: 'ui' }) }), 'Help');
     store.set('ui.helpOpen', 1, { source: 'ui' });
     return helpModal;
   }
@@ -563,6 +563,8 @@ export function createUI(root, modules = {}) {
 
   root.classList.add('is-ready');
   applyPartColours();
+  // Warm the lazy panels once start-up has settled.
+  prefetchWhenIdle(Object.values(chunks));
 
   const api = {
     ctx,

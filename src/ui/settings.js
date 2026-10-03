@@ -71,6 +71,10 @@ function generalTab(ctx, scope) {
   const fps = createSegmented(ctx, binder.uiValue('fpsCap', [0, 30, 60, 120], 0), {
     label: 'Frame rate', options: [{ value: 0, label: 'Uncapped' }, { value: 30, label: '30' }, { value: 60, label: '60' }, { value: 120, label: '120' }],
   });
+  // v2.11: Auto caps the map's drawing buffer and lowers it while frames run slow.
+  const resolution = createSegmented(ctx, binder.uiValue('renderScale', ['auto', 'full'], 'auto'), {
+    label: 'Map resolution', options: [{ value: 'auto', label: 'Auto' }, { value: 'full', label: 'Full' }],
+  });
   const style = createSegmented(ctx, via(binder.uiValue('renderStyle', STYLES.map(s => s.value), 'relief'), 'setRenderStyle'), { label: 'Map style', options: STYLES.map(s => ({ ...s, label: s.label.replace('Wireframe', 'Wire').replace('Contours', 'Contour').replace('Heat map', 'Heat') })) });
   const camera = createSegmented(ctx, via(binder.uiValue('view', VIEWS.map(v => v.value), 'orbit'), 'setView'), { label: 'Camera view', options: VIEWS.map(v => ({ ...v, label: v.label.replace(' view', '') })) });
   const palette = createPalettePicker(ctx);
@@ -99,6 +103,7 @@ function generalTab(ctx, scope) {
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
       row('Frame rate', 'Uncapped draws the map as often as the screen refreshes. A cap saves battery and heat; the sound is never affected.', fps.el),
+      row('Map resolution', 'Auto keeps the 3D map under about 4.5 million pixels and lowers its detail while frames run slow, which helps large and Retina screens. Full always draws every device pixel.', resolution.el),
       row('Camera view', 'Six angles. Save your own from the map toolbar.', camera.el),
       row('Map style', null, style.el),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),
