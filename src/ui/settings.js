@@ -25,7 +25,7 @@ export const SETTINGS_TABS = [
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '2.0.1';
+export const VERSION = '2.0.2';
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
@@ -47,6 +47,9 @@ function generalTab(ctx, scope) {
   const quality = createSegmented(ctx, via(binder.uiValue('quality', ['high', 'medium', 'low'], 'high'), 'setQuality'), {
     label: 'Visual quality', options: [{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }],
   });
+  const fps = createSegmented(ctx, binder.uiValue('fpsCap', [0, 30, 60, 120], 0), {
+    label: 'Frame rate', options: [{ value: 0, label: 'Uncapped' }, { value: 30, label: '30' }, { value: 60, label: '60' }, { value: 120, label: '120' }],
+  });
   const style = createSegmented(ctx, via(binder.uiValue('renderStyle', STYLES.map(s => s.value), 'relief'), 'setRenderStyle'), { label: 'Map style', options: STYLES.map(s => ({ ...s, label: s.label.replace('Wireframe', 'Wire').replace('Contours', 'Contour').replace('Heat map', 'Heat') })) });
   const camera = createSegmented(ctx, via(binder.uiValue('view', VIEWS.map(v => v.value), 'orbit'), 'setView'), { label: 'Camera view', options: VIEWS.map(v => ({ ...v, label: v.label.replace(' view', '') })) });
   const palette = createPalettePicker(ctx);
@@ -55,9 +58,9 @@ function generalTab(ctx, scope) {
     label: 'Reduce motion', options: [{ value: 'system', label: 'System' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
   });
   const tips = createToggle(ctx, { ...prefBinding(ctx, 'showTips', 1), def: { id: 'showTips', label: 'Show tips', default: 1 } }, { label: 'Show tips', className: 'toggle--switch' });
-  for (const c of [theme, quality, camera, style, palette, rotate, motion, tips]) scope.add(c.dispose);
+  for (const c of [theme, quality, fps, camera, style, palette, rotate, motion, tips]) scope.add(c.dispose);
   if (!visuals) {
-    for (const c of [quality, camera, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
+    for (const c of [quality, fps, camera, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
   }
 
   return h('div', { class: 'settings-pane' },
@@ -67,6 +70,7 @@ function generalTab(ctx, scope) {
       row('Show tips', 'Hover hints and the map hint', tips.el)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
+      row('Frame rate', 'Uncapped draws the map as often as the screen refreshes. A cap saves battery and heat; the sound is never affected.', fps.el),
       row('Camera view', 'Six angles. Save your own from the map toolbar.', camera.el),
       row('Map style', null, style.el),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),

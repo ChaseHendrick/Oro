@@ -344,7 +344,8 @@ export function createMarkersLayer() {
       for (let i = 0; i < wpCount; i++) {
         const s = pins[i];
         if (!s.visible) continue;
-        projV.copy(s.position).project(camera);
+        // the group follows the camera in whole tiles (endless map)
+        projV.copy(s.position).add(group.position).project(camera);
         if (projV.z > 1) continue;
         const sx = rect.left + (projV.x * 0.5 + 0.5) * rect.width;
         const sy = rect.top + (-projV.y * 0.5 + 0.5) * rect.height;

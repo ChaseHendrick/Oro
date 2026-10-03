@@ -12,7 +12,10 @@ import { sampleBilinear, warpPoint, wrap01, wrapDelta } from '../dsp/terrain-mat
 
 export const W = 10;
 export const H = 1.6;
-export const TILES = 3;
+// The displayed land: 11 x 11 copies of the tile (the terrain wraps), kept
+// centred under the camera in whole-tile steps, so it never runs out. Five
+// tiles each way covers a wide window looking straight down at full zoom-out.
+export const TILES = 11;
 export const EXTENT = (W * TILES) / 2;
 export const MAX_LIFT = 2.5;
 
@@ -158,8 +161,9 @@ function clipAxis(o, d, lo, hi) {
 }
 
 /**
- * First intersection of a ray with the displayed surface (all 3 x 3 tiles).
- * The ray is clipped to the slab |y| <= bound and the square |x|, |z| <= extent,
+ * First intersection of a ray with the displayed surface (all TILES x TILES tiles).
+ * The ray is clipped to the slab |y| <= bound and the square |x - cx|, |z - cz| <= extent
+ * (cx, cz: the centre of the displayed plane, which follows the camera),
  * marched in steps of under half a texel of horizontal travel (the surface is
  * bilinear per texel, so no feature is narrower than that), then the sign
  * change is refined by bisection.
@@ -167,15 +171,15 @@ function clipAxis(o, d, lo, hi) {
  * Writes out.x, out.y, out.z, out.t, out.u, out.v (u, v unwrapped) and returns
  * true on a hit. `d` need not be normalised.
  */
-export function intersectRay(hf, ox, oy, oz, dx, dy, dz, out, extent = EXTENT) {
+export function intersectRay(hf, ox, oy, oz, dx, dy, dz, out, extent = EXTENT, cx = 0, cz = 0) {
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (!(len > 0)) return false;
   dx /= len; dy /= len; dz /= len;
   const top = hf.bound() + 1e-3;
   _clip.t0 = 0; _clip.t1 = Infinity;
   if (!clipAxis(oy, dy, -top, top)) return false;
-  if (!clipAxis(ox, dx, -extent, extent)) return false;
-  if (!clipAxis(oz, dz, -extent, extent)) return false;
+  if (!clipAxis(ox, dx, cx - extent, cx + extent)) return false;
+  if (!clipAxis(oz, dz, cz - extent, cz + extent)) return false;
   const t0 = _clip.t0, t1 = _clip.t1;
   if (!(t1 > t0) || !Number.isFinite(t1)) return false;
 

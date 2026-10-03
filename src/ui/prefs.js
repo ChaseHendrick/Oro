@@ -11,6 +11,7 @@ export const SETTINGS_KEY = 'orograph.settings';
 export const PREF_DEFAULTS = Object.freeze({
   theme: 'system',
   quality: 'high',
+  fpsCap: 0,
   renderStyle: 'relief',
   view: 'orbit',
   savedCameraViews: [],
@@ -26,6 +27,7 @@ export const PREF_DEFAULTS = Object.freeze({
 const VALID = {
   theme: v => ['system', 'dark', 'light'].includes(v),
   quality: v => ['high', 'medium', 'low'].includes(v),
+  fpsCap: v => [0, 30, 60, 120].includes(v),
   renderStyle: v => ['relief', 'wire', 'contour', 'heat', 'points', 'normals'].includes(v),
   view: v => CAMERA_VIEWS.includes(v),
   savedCameraViews: v => Array.isArray(v),
@@ -64,7 +66,7 @@ export function savePrefs(prefs, storage = globalThis.localStorage) {
 }
 
 // Store-backed keys (live in store.ui so visuals and other modules can react).
-export const UI_PREF_KEYS = ['view', 'quality', 'renderStyle', 'palette', 'autoRotate', 'audioQuality'];
+export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderStyle', 'palette', 'autoRotate', 'audioQuality'];
 
 /**
  * Restore preferences into the store and keep them persisted. Returns an

@@ -1,5 +1,7 @@
-// The land: one displaced plane covering 3 x 3 tiles so the wrap-around is
-// visible. Heights come from the two terrain tables (A, B) as float textures,
+// The land: one displaced plane covering TILES x TILES copies of the tile
+// (the terrain wraps). visuals.js keeps it centred under the camera in
+// whole-tile steps, which changes nothing on screen (every copy is the same
+// land), so there is no edge to reach and no seam to see. Heights come from the two terrain tables (A, B) as float textures,
 // with exactly the warp and morph of the audio; normals, contours, the dot's
 // glow ring, its contact shadow and the orbit footprint are all computed per
 // pixel from the same function, so they hug the surface at any zoom.
@@ -11,26 +13,35 @@ import * as THREE from 'three';
 import { W, EXTENT } from './heightfield.js';
 
 export const MESH_RES = {
-  // segments across the centre tile / across each neighbour tile
-  high: [256, 64],
-  medium: [160, 44],
-  low: [96, 28],
+  // segments across the centre tile, then across each ring of tiles outwards
+  high: [256, 64, 32, 16, 8, 4],
+  medium: [160, 44, 22, 12, 6, 4],
+  low: [96, 28, 14, 8, 4, 4],
 };
 
-// Vertex positions on a tensor grid: dense over the centre tile, coarser over
-// the faded neighbours. One regular topology, so no T-junction cracks.
-function axisCoords(center, outer) {
+// Vertex positions on a tensor grid: dense over the centre tile, coarser ring
+// by ring towards the edge (which sits in the distance fog). One regular
+// topology, so no T-junction cracks.
+export function axisCoords(res) {
+  const [center, ...rings] = res;
   const out = [];
   const half = W / 2;
-  for (let i = 0; i < outer; i++) out.push(-EXTENT + (i / outer) * W);
+  // outermost ring first, from -EXTENT inwards
+  for (let r = rings.length - 1; r >= 0; r--) {
+    const start = -half - (r + 1) * W;
+    for (let i = 0; i < rings[r]; i++) out.push(start + (i / rings[r]) * W);
+  }
   for (let i = 0; i < center; i++) out.push(-half + (i / center) * W);
-  for (let i = 0; i <= outer; i++) out.push(half + (i / outer) * W);
+  for (let r = 0; r < rings.length; r++) {
+    const start = half + r * W;
+    for (let i = 0; i < rings[r]; i++) out.push(start + (i / rings[r]) * W);
+  }
+  out.push(EXTENT);
   return out;
 }
 
 export function buildTerrainGeometry(level = 'high') {
-  const [c, o] = MESH_RES[level] || MESH_RES.high;
-  const xs = axisCoords(c, o);
+  const xs = axisCoords(MESH_RES[level] || MESH_RES.high);
   const n = xs.length;
   const pos = new Float32Array(n * n * 3);
   let k = 0;
@@ -164,6 +175,7 @@ uniform vec4 uFootInv;       // inverse path transform (a b; c d)
 uniform float uFootA;
 uniform float uTime;
 uniform float uLevel;
+uniform vec2 uOrigin;   // world centre of the displayed plane (it follows the camera)
 
 varying vec3 vWorld;
 
@@ -362,9 +374,9 @@ void main() {
 
   // Faint coordinate grid (eighths of a tile) and the tile seams.
   {
+    // the tile edges are ordinary grid lines: the map has no seams to show
     float g = gridLine(uv * 8.0, 1.0) * uGridA * (uStyle == 5 ? 0.0 : 1.0);
-    float seam = gridLine(uv, 1.6) * uGridA * 2.2 * (uStyle == 5 ? 0.0 : 1.0);
-    col = mix(col, uGrid, clamp(g + seam, 0.0, 0.6));
+    col = mix(col, uGrid, clamp(g, 0.0, 0.6));
   }
 
   // Orbit footprint: the ellipse the path's outer radius sweeps.
@@ -427,38 +439,23 @@ void main() {
     }
   }
 
-  // Neighbour tiles: the same land (it wraps), shown as a quieter echo that
-  // fades out towards the edges of the 3 x 3 plane.
-  float out_ = max(abs(vWorld.x), abs(vWorld.z)) - TILE * 0.5;
-  float edge = clamp(out_ / TILE, 0.0, 1.0);
-  float lum = luma(col);
-  // The whole 3 x 3 plane is playable (the dot can roam over every copy), so
-  // the neighbour tiles are only lightly quieted, and the haze only gathers
-  // at the outer edge.
-  float echoK = smoothstep(0.0, 0.06, edge);
-  vec3 echoCol = mix(vec3(lum), col, 0.7);
-  // night: the copies dim a little; day: they lean towards the haze
-  echoCol = mix(echoCol * 0.78, mix(echoCol, uEdge, 0.25), uThemeT);
-  col = mix(col, echoCol, echoK * 0.6);
-  col = mix(col, uEdge, smoothstep(0.82, 1.0, edge) * 0.55);
-  // Faint seams around the centre tile (where the land repeats), and a fine
-  // frame at the outer edge of the play area.
-  {
-    float fw = max(fwidth(out_), 1e-4);
-    float seam = 1.0 - smoothstep(0.5 * fw, 1.8 * fw, abs(out_));
-    float outer = 1.0 - smoothstep(0.5 * fw, 1.8 * fw, abs(out_ - TILE));
-    vec3 fc = mix(mix(uGrid, uPart, 0.35) * 1.6, mix(uContour, uPart, 0.3), uThemeT);
-    col = mix(col, fc, seam * mix(0.18, 0.2, uThemeT) + outer * mix(0.42, 0.45, uThemeT));
-  }
+  // Every copy of the tile is the same land and all of it is playable, so
+  // there are no quieter neighbours, seams or frames. The plane is kept
+  // centred under the camera (uOrigin); only its far edge, five tiles out,
+  // melts into the fog and the sky.
+  vec2 rel = vWorld.xz - uOrigin;
+  float out_ = max(abs(rel.x), abs(rel.y)) / TILE;          // 0.5 at the centre tile's edge, 5.5 at the plane's
+  float farK = smoothstep(4.2, 5.4, out_);
+  col = mix(col, uEdge, farK * 0.55);
 
   // Distance fog, matched to the sky's horizon.
-  // Starts a little short of the orbit target, so the playable tile stays
-  // crisp at any zoom and only the far echoes melt into the sky.
+  // Starts a little short of the orbit target, so the land near the view
+  // stays crisp at any zoom and only the distance melts into the sky.
   float dist = max(camDist - uFogStart, 0.0);
   float fogF = 1.0 - exp(-pow(dist * uFogDensity * 1.6, 2.0));
-  col = mix(col, uFog, clamp(fogF, 0.0, 1.0));
+  col = mix(col, uFog, clamp(max(fogF, farK), 0.0, 1.0));
 
-  float alpha = 1.0 - smoothstep(0.35, 0.95, edge);
+  float alpha = 1.0 - smoothstep(4.9, 5.45, out_);
   gl_FragColor = vec4(col, alpha);
 }
 `;
@@ -493,7 +490,7 @@ export function createTerrainLayer(renderer, quality = 'high') {
     uContour: { value: new THREE.Vector3() }, uContourA: { value: 0.2 },
     uGrid: { value: new THREE.Vector3() }, uGridA: { value: 0.1 },
     uFog: { value: new THREE.Vector3() }, uFogDensity: { value: 0.02 }, uFogStart: { value: 12 },
-    uEdge: { value: new THREE.Vector3() }, uThemeT: { value: 0 }, uGlow: { value: 1 },
+    uEdge: { value: new THREE.Vector3() }, uThemeT: { value: 0 }, uGlow: { value: 1 }, uOrigin: { value: new THREE.Vector2() },
     uDot: { value: new THREE.Vector4(0.5, 0.5, 0, 1) },
     uGhost: { value: new THREE.Vector3(0.5, 0.5, 0) },
     uFootInv: { value: new THREE.Vector4(1, 0, 0, 1) }, uFootA: { value: 0 },
