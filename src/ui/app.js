@@ -44,6 +44,9 @@ import { installPostcards } from './postcard.js';
 
 import { createFunFeatures } from './fun-features.js';
 import { initWeather } from './weather-panel.js';
+import { createStrainSuggestion, watchEngineStrain } from './audio-strain.js';
+import { installBounceReminder } from './bounce-reminder.js';
+import { openBounce, suggestedBounceBars } from './bounce.js';
 
 function emitter() {
   const map = new Map();
@@ -290,6 +293,22 @@ export function createUI(root, modules = {}) {
   } catch (err) {
     console.warn('[ui] the looper is unavailable', err);
     ctx.looper = null;
+  }
+
+  // 2.12: the Pristine, 96 kHz safety net and bounce reminders, both fed by the DSP load meter.
+  ctx.bounceReminder = null;
+  try {
+    const strain = createStrainSuggestion({ store, engine, toast });
+    const openBounceNow = () => {
+      const anchor = root.querySelector('.bounce-btn') || root;
+      openBounce(ctx, anchor, { bars: suggestedBounceBars(store.get('')) });
+    };
+    ctx.bounceReminder = installBounceReminder(ctx, { openBounce: openBounceNow });
+    scope.add(ctx.bounceReminder.dispose);
+    // One toast at a time: the quality suggestion first, a bounce reminder for dropouts otherwise.
+    scope.add(watchEngineStrain(engine, (reason) => { if (!strain.offer(reason) && reason === 'dropouts') ctx.bounceReminder.dropout(); }));
+  } catch (err) {
+    console.warn('[ui] audio strain and bounce reminders are unavailable', err);
   }
 
   // v2.9 secrets, badges and the coin slot (Free Play off).

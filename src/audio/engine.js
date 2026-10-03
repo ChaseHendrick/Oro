@@ -76,7 +76,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     try {
       ctx = new AC(sampleRate ? { latencyHint: 'interactive', sampleRate } : { latencyHint: 'interactive' });
     } catch {
-      try { ctx = new AC(); } catch (err) { console.warn('[audio] Web Audio is unavailable', err); ctx = null; }
+      // A rate the browser or device refuses (96 kHz on some hardware): run at the device's own rate.
+      try { ctx = new AC({ latencyHint: 'interactive' }); } catch {
+        try { ctx = new AC(); } catch (err) { console.warn('[audio] Web Audio is unavailable', err); ctx = null; }
+      }
     }
   }
 

@@ -13,17 +13,21 @@ export function createUpdatesTab(ctx, { version, api = globalThis.orographDeskto
   const description = h('p', { class: 'setting-hint' }, api ? '' : 'To update this browser or offline copy, download the latest release.');
   const error = h('p', { class: 'setting-hint is-bad', role: 'alert' });
   const progress = h('progress', { max: 100, value: 0, hidden: true, 'aria-label': 'Update download progress', style: 'width:100%' });
-  const checks = {};
+  const checks = {}, rows = {};
   function option(key, label, hint) {
     const input = h('input', { type: 'checkbox', 'aria-label': label });
     checks[key] = input;
     scope.on(input, 'change', () => { const selected = !!input.checked; void run(() => api.setPreferences({ [key]: selected })); });
-    return h('label', { class: 'setting-row' }, h('span', { class: 'setting-text' }, h('span', { class: 'setting-label' }, label), h('span', { class: 'setting-hint', style: 'display:block' }, hint)), input);
+    return (rows[key] = h('label', { class: 'setting-row' }, h('span', { class: 'setting-text' }, h('span', { class: 'setting-label' }, label), h('span', { class: 'setting-hint', style: 'display:block' }, hint)), input));
   }
+  const macProblem = h('p', { class: 'setting-hint is-bad', hidden: true });
   const preferences = h('section', { class: 'settings-group', hidden: !api }, h('h3', { class: 'group-title' }, 'Your choices'),
     option('checkOnLaunch', 'Check on launch', 'After launch, check for a newer release. Off by default.'),
     option('periodicChecks', 'Check periodically', 'Check every six hours while the app is open. Off by default.'),
-    option('autoDownload', 'Download updates automatically', 'Windows installer and Linux AppImage only. Never restarts or installs automatically. Off by default.'));
+    option('autoDownload', 'Download updates automatically', 'Windows installer and Linux AppImage only. Never restarts or installs automatically. Off by default.'),
+    option('autoInstall', 'Install updates automatically', 'Mac only. Off by default. When a check finds a new release, Oro downloads it in the background, checks it against the checksum published with the release, and replaces the app when you quit (or when you choose Restart now). It never restarts on its own or while you play. Oro must be in your Applications folder. New in 2.12, not yet tested on every macOS version.'),
+    macProblem);
+  rows.autoInstall.hidden = true;
   const check = h('button', { type: 'button', class: 'btn btn--primary btn--sm', hidden: !api }, 'Check now');
   const download = h('button', { type: 'button', class: 'btn btn--sm', hidden: true }, 'Download update');
   const install = h('button', { type: 'button', class: 'btn btn--primary btn--sm', hidden: true }, 'Restart and install');
@@ -47,10 +51,11 @@ export function createUpdatesTab(ctx, { version, api = globalThis.orographDeskto
   }));
   function render() {
     if (disposed) return;
+    const macMode = !!(state?.capability.macAutoInstall && state?.preferences.autoInstall);
     const messages = {
       idle: 'No update check has been made.', checking: 'Checking for updates...', current: 'Oro is up to date.',
       available: `Oro ${state?.availableVersion || ''} is available.`, downloading: `Downloading update${state?.progress ? `: ${Math.round(state.progress.percent)}%` : '...'}`,
-      downloaded: `Oro ${state?.availableVersion || ''} is downloaded. Save and restart when you are ready.`,
+      downloaded: macMode ? `Oro ${state?.availableVersion || ''} is ready. It installs when you quit Oro, or choose Restart now.` : `Oro ${state?.availableVersion || ''} is downloaded. Save and restart when you are ready.`,
       installing: 'Restarting to install the update...', error: 'The update did not complete. You can try again.', disabled: 'Update checks are unavailable in this development build.',
     };
     if (state) {
@@ -60,11 +65,14 @@ export function createUpdatesTab(ctx, { version, api = globalThis.orographDeskto
         input.checked = !!state.preferences[key];
         input.disabled = busy || !state.capability.supportsCheck || (key === 'autoDownload' && !state.capability.supportsInstall);
       }
+      rows.autoInstall.hidden = !state.capability.macAutoInstall;
+      macProblem.hidden = !(macMode && state.installProblem); setText(macProblem, macMode ? state.installProblem || '' : '');
     }
     check.disabled = busy || !state?.capability.supportsCheck || ['checking', 'downloading', 'installing', 'downloaded'].includes(state?.status);
-    download.hidden = !state?.capability.supportsInstall;
+    download.hidden = !(state?.capability.supportsInstall || macMode);
     download.disabled = busy || !state?.canDownload;
     install.hidden = !state?.canInstall;
+    setText(install, macMode ? 'Restart now' : 'Restart and install');
     install.disabled = busy;
     progress.hidden = state?.status !== 'downloading';
     progress.value = state?.progress?.percent || 0;

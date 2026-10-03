@@ -33,6 +33,8 @@ export const SAMPLE_RATE_OPTIONS = Object.freeze([
   Object.freeze({ value: 'auto', label: 'Auto' }),
   Object.freeze({ value: 44100, label: '44.1 kHz' }),
   Object.freeze({ value: 48000, label: '48 kHz' }),
+  // 2.12: the default for new installs (src/core/first-run.js); existing choices are kept.
+  Object.freeze({ value: 96000, label: '96 kHz' }),
 ]);
 /** Manual latency offset range (ms), added to the measured round trip. */
 export const COMP_OFFSET_RANGE = Object.freeze({ min: -200, max: 200 });
@@ -214,7 +216,7 @@ export function saveRig(rig, storage = globalThis.localStorage) {
 /** The sampleRate to ask createEngine for: undefined for 'auto' (the browser's choice). */
 export function contextSampleRate(rig) {
   const v = rig && rig.sampleRate;
-  return v === 44100 || v === 48000 ? v : undefined;
+  return v === 44100 || v === 48000 || v === 96000 ? v : undefined;
 }
 
 /**

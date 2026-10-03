@@ -59,11 +59,11 @@ describe('latency compensation helpers', () => {
 describe('rig settings: compensation and sample rate', () => {
   it('defaults to off, no offset, Auto', () => {
     expect(defaultRig()).toMatchObject({ compensate: 0, compOffsetMs: 0, sampleRate: 'auto', lastLatencyMs: null });
-    expect(SAMPLE_RATE_OPTIONS.map(o => o.value)).toEqual(['auto', 44100, 48000]);
+    expect(SAMPLE_RATE_OPTIONS.map(o => o.value)).toEqual(['auto', 44100, 48000, 96000]);
   });
 
   it('sanitizes the new fields', () => {
-    const s = sanitizeRig({ compensate: true, compOffsetMs: 999, sampleRate: 96000 });
+    const s = sanitizeRig({ compensate: true, compOffsetMs: 999, sampleRate: 88200 });
     expect(s.compensate).toBe(1);
     expect(s.compOffsetMs).toBe(200);
     expect(s.sampleRate).toBe('auto');
@@ -85,6 +85,7 @@ describe('rig settings: compensation and sample rate', () => {
     expect(contextSampleRate({ sampleRate: 'auto' })).toBe(undefined);
     expect(contextSampleRate({ sampleRate: 44100 })).toBe(44100);
     expect(contextSampleRate({ sampleRate: 48000 })).toBe(48000);
+    expect(contextSampleRate({ sampleRate: 96000 })).toBe(96000);
     expect(contextSampleRate(null)).toBe(undefined);
     const st = createMemoryStorage();
     expect(savedContextSampleRate(st)).toBe(undefined);

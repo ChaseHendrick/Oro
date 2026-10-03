@@ -14,4 +14,14 @@ contextBridge.exposeInMainWorld('orographDesktop', Object.freeze({ updates: Obje
     ipcRenderer.on('orograph:updates:status-changed', listener);
     return () => ipcRenderer.removeListener('orograph:updates:status-changed', listener);
   },
+}),
+// 2.12 bounce reminder: report unbounced changes for the close prompt, and open Bounce when asked.
+session: Object.freeze({
+  setUnbounced: value => ipcRenderer.send('orograph:session:unbounced', value === true),
+  onOpenBounce: callback => {
+    if (typeof callback !== 'function') throw new TypeError('Expected a callback.');
+    const listener = () => callback();
+    ipcRenderer.on('orograph:session:open-bounce', listener);
+    return () => ipcRenderer.removeListener('orograph:session:open-bounce', listener);
+  },
 }) }));
