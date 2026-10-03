@@ -349,7 +349,9 @@ export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide'
   // v2.1 science sources (global; Swirl X and Y are per voice)
   'Neuron', 'Neuron Spike', 'Lorenz', 'Pendulum 1', 'Pendulum 2', 'Smooth Random', 'Collapse', 'Swirl X', 'Swirl Y',
   // v2.4: the Turing looping random source (global) and the track's Function (per voice)
-  'Turing', 'Function'];
+  'Turing', 'Function',
+  // v2.10 live weather (global, src/dsp/weather-sources.js): Wind, Rain and Clouds 0..1, Temp -1..1
+  'Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {

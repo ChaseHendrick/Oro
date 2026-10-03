@@ -4,6 +4,7 @@ import { h, setText } from './dom.js';
 import { openPopover } from './layers.js';
 import { TERRAIN_LIBRARY, TERRAIN_LIBRARY_CATEGORIES, searchTerrainLibrary, terrainLibraryPng } from '../dsp/terrain-library.js';
 import { bytesToBase64, readTerrainFile, addUserTerrain } from '../audio/importers.js';
+import { openRealPlaces } from './real-places.js';
 
 const thumbnails = new Map();
 const PAGE_SIZE = 16;
@@ -27,10 +28,13 @@ export function openTerrainLibrary(ctx, anchor, slot) {
   const previous = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Previous');
   const next = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Next');
   const detail = h('p', { class: 'popover-note', 'aria-live': 'polite' }, 'Select an image to load terrain ' + slot + '.');
+  // v2.10: real elevation data and stars live in their own section
+  const realPlaces = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Real places: Earth, Moon, Mars and the night sky');
+  realPlaces.addEventListener('click', () => { pop.close('switch'); openRealPlaces(ctx, anchor, slot); });
   const body = h('div', { class: 'picker-pop' }, h('div', { class: 'popover-title' }, 'Original image terrains'),
     h('p', { class: 'popover-note' }, `${TERRAIN_LIBRARY.length} original procedural images. Each generates a real 512 × 512 PNG. All work offline.`),
     h('div', { class: 'import-row', style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' } }, search, category), grid,
-    h('div', { class: 'import-actions' }, previous, status, next), detail);
+    h('div', { class: 'import-actions' }, previous, status, next), detail, realPlaces);
 
   async function choose(entry, button) {
     if (busy) return;
