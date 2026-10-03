@@ -10,10 +10,17 @@
 // Per-track state lives in MAX_PARTS slots that follow their tracks when the
 // track list is reordered (src/core/tracks.js). A removed track's state is
 // dropped here; the engine releases and fades out its sound itself.
+//
+// v2.8 Chord trigger (src/music/chord-trigger.js): with a track's chord on,
+// each key it receives (keyboard, MIDI, and so the arpeggiator's input) and
+// each sequencer note plays the chord built on it. The notes a key or step
+// started are remembered, so its release stops exactly those even if the
+// chord changes in between. Arp output is not expanded again.
 
 import { MAX_PARTS, SEQ_RATES, ARP_RHYTHMS, clamp } from '../core/params.js';
 import { partCount, watchTracks, permute, inversePerm } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
+import { sanitizeChord, chordNotes } from './chord-trigger.js';
 
 export const ARP = { OFF: 0, UP: 1, DOWN: 2, UPDOWN: 3, RANDOM: 4, PLAYED: 5, CHORD: 6 };
 export const MIN_GAP = 0.003;      // seconds kept between a note-off and the next note-on of the same voice
@@ -44,6 +51,9 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     sustained: new Map(),  // released while the pedal is down: note -> { note, vel, order }
     latched: [],           // arp hold: [{ note, vel, order }]
     sounding: new Map(),   // notes this router started directly (arp off): note -> vel
+    raw: new Map(),        // v2.8 keys physically down before the chord trigger: note -> vel (Learn)
+    chordKeys: new Map(),  // v2.8 `${source}:${note}` -> chord notes that key pressed
+    seqChords: new Map(),  // v2.8 note -> queue of chord note lists started by sequencer notes
     cfgOn: false,
     cfgHold: false,
     arp: freshArp(),
@@ -59,6 +69,19 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   // ---------------------------------------------------------------- helpers
 
   const validPart = (p) => Number.isInteger(p) && p >= 0 && p < count();
+
+  /** The track's chord trigger setting when it is on, else null (the default: nothing changes). */
+  function chordOf(p) {
+    const c = store.get(`parts.${p}.chord`);
+    if (!c || !c.on) return null;
+    if (store.get(`parts.${p}.drum.on`)) return null;   // a drum kit plays pads, not chords
+    return sanitizeChord(c);
+  }
+  function chordFor(p, note) {
+    const c = chordOf(p);
+    if (!c) return null;
+    return chordNotes(note, c, { root: Number(store.get('global.scaleRoot')) || 0, scaleType: Number(store.get('global.scaleType')) || 0 });
+  }
 
   function resolve(target) {
     if (target === 'sel' || target == null) {
@@ -131,6 +154,25 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     announce({ part, note, vel: 0, on: false, source }, time);
   }
 
+  // v2.8 sequencer notes with the chord trigger: each note-on queues the
+  // chord it started and the matching note-off (they always come in order)
+  // stops that chord.
+  function seqOn(part, note, vel, time, source, lead = 0) {
+    const notes = source === 'seq' && validPart(part) ? chordFor(part, note) : null;
+    if (!notes) { engineOn(part, note, vel, time, source, lead); return; }
+    const q = parts[part].seqChords;
+    if (!q.has(note)) q.set(note, []);
+    q.get(note).push(notes);
+    for (const n of notes) engineOn(part, n, vel, time, source, lead);
+  }
+  function seqOff(part, note, time, source, lead = 0) {
+    const q = source === 'seq' && validPart(part) ? parts[part].seqChords.get(note) : null;
+    if (!q || !q.length) { engineOff(part, note, time, source, lead); return; }
+    const notes = q.shift();
+    if (!q.length) parts[part].seqChords.delete(note);
+    for (const n of notes) engineOff(part, n, time, source, lead);
+  }
+
   function playDirect(p, note, vel, source) {
     const ps = parts[p];
     if (ps.sounding.has(note)) engineOff(p, note, 0, source);
@@ -167,16 +209,16 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   // ------------------------------------------------------------- key input
 
-  function pressKey(p, note, vel, source) {
+  function pressKey(p, note, vel, source, tag = source) {
     const ps = parts[p];
     syncArpCfg(p);
     const othersDown = [...ps.down.keys()].some(n => n !== note);
     let entry = ps.down.get(note);
     if (entry) {
-      entry.sources.add(source);
+      entry.sources.add(tag);
       entry.vel = vel;
     } else {
-      entry = { note, vel, order: ++order, sources: new Set([source]) };
+      entry = { note, vel, order: ++order, sources: new Set([tag]) };
       ps.down.set(note, entry);
     }
     ps.sustained.delete(note);
@@ -192,7 +234,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     }
   }
 
-  function releaseKey(p, note, source) {
+  function releaseKey(p, note, source, tag = source) {
     const ps = parts[p];
     const entry = ps.down.get(note);
     if (!entry) {
@@ -200,7 +242,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       if (!ps.sustainOn && !ps.cfgOn) releaseDirect(p, note, source);
       return;
     }
-    if (entry.sources.has(source)) entry.sources.delete(source);
+    if (entry.sources.has(tag)) entry.sources.delete(tag);
     else entry.sources.clear();
     if (entry.sources.size) return;
     ps.down.delete(note);
@@ -226,7 +268,18 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       const prev = routes.get(key);
       routes.set(key, prev ? [...new Set([...prev, ...list])] : list);
     }
-    for (const p of list) pressKey(p, note, vel, source);
+    for (const p of list) {
+      const ps = parts[p];
+      ps.raw.set(note, vel);
+      const notes = chordFor(p, note);
+      if (!notes) { pressKey(p, note, vel, source); continue; }
+      // one held-source tag per key, so two keys sharing a chord note each hold it
+      const key = source + ':' + note;
+      const prev = ps.chordKeys.get(key);
+      if (prev) for (const n of prev) releaseKey(p, n, source, key);
+      ps.chordKeys.set(key, notes);
+      for (const n of notes) pressKey(p, n, vel, source, key);
+    }
   }
 
   function noteOff(target, note, source = 'ui') {
@@ -235,7 +288,14 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     const key = source + ':' + note;
     const list = routes.get(key) || resolve(target);
     routes.delete(key);
-    for (const p of list) releaseKey(p, note, source);
+    for (const p of list) {
+      const ps = parts[p];
+      ps.raw.delete(note);
+      const notes = ps.chordKeys.get(key);
+      if (!notes) { releaseKey(p, note, source); continue; }
+      ps.chordKeys.delete(key);
+      for (const n of notes) releaseKey(p, n, source, key);
+    }
   }
 
   function sustain(target, on) {
@@ -266,6 +326,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       ps.sustained.clear();
       ps.sustainOn = false;
       ps.latched = [];
+      ps.raw.clear(); ps.chordKeys.clear(); ps.seqChords.clear();
       stopArp(p);
       for (const n of [...ps.sounding.keys()]) releaseDirect(p, n, 'panic');
       try { if (engine) engine.allNotesOff(p); } catch { /* engine not ready */ }
@@ -509,8 +570,14 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       try { if (engine && typeof engine.cancelNotes === 'function') engine.cancelNotes(after, source); } catch { /* engine not ready */ }
       emitter.emit('cancel', { after, source });
     },
-    _engineOn: engineOn,
-    _engineOff: engineOff,
+    // The transport's sequencer notes go through the chord trigger here.
+    _engineOn: seqOn,
+    _engineOff: seqOff,
+    /** v2.8 keys physically held on track `part` (before the chord trigger), lowest first: what Learn captures. */
+    rawHeld(part) {
+      const p = resolve(part)[0];
+      return p == null ? [] : [...parts[p].raw.keys()].sort((a, b) => a - b);
+    },
     dispose() { for (const u of unsubs) u(); },
   };
 }

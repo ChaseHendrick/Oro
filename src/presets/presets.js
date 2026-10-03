@@ -5,10 +5,11 @@
 import { readDurable, writeDurable, LARGE_STORAGE_MARKER } from '../core/durable-storage.js';
 import { isTrack, REPLACE_TRACKS } from '../core/tracks.js';
 import {
-  PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, defaultPart,
+  PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, SEND_PARAM_IDS, defaultPart,
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
+import { sanitizeSmart } from '../core/smart.js';
 import { createEmitter } from '../music/emitter.js';
 import { FACTORY_PATCHES, CATEGORIES } from './factory-patches.js';
 import { FACTORY_SCENES } from './factory-scenes.js';
@@ -41,7 +42,7 @@ function sanitizePatchParams(src) {
   if (!src || typeof src !== 'object') return {};
   const full = sanitizeParams(PART_PARAMS, src);
   const out = {};
-  for (const id of Object.keys(src)) if (PART_PARAM_MAP[id] && id !== 'mute' && id !== 'solo' && !PEDAL_PARAM_IDS.includes(id)) out[id] = full[id];
+  for (const id of Object.keys(src)) if (PART_PARAM_MAP[id] && id !== 'mute' && id !== 'solo' && !PEDAL_PARAM_IDS.includes(id) && !SEND_PARAM_IDS.includes(id)) out[id] = full[id];
   return out;
 }
 
@@ -71,6 +72,9 @@ export function sanitizePatch(src) {
   if (Array.isArray(src.links)) patch.links = sanitizeLinks(src.links);
   if (src.dot) patch.dot = clean.dot;
   if (clean.userTerrain.A || clean.userTerrain.B) patch.userTerrain = clean.userTerrain;
+  // v2.8 smart controls travel with the patch when it has any.
+  const smart = sanitizeSmart(src.smart);
+  if (smart) patch.smart = smart;
   // Optional pedal presets (v1.1), sent on load only when the rig allows it.
   const pedalPresets = sanitizePedalPresets(src.pedalPresets);
   if (pedalPresets) patch.pedalPresets = pedalPresets;
@@ -242,6 +246,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     delete params.mute;
     delete params.solo;
     for (const id of PEDAL_PARAM_IDS) delete params[id];
+    for (const id of SEND_PARAM_IDS) delete params[id];
     const patch = {
       id: existing ? existing.id : newId(),
       name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),
@@ -258,6 +263,8 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       dot: JSON.parse(JSON.stringify(cur.dot || {})),
     };
     if (cur.userTerrain && (cur.userTerrain.A || cur.userTerrain.B)) patch.userTerrain = { ...cur.userTerrain };
+    const smart = sanitizeSmart(cur.smart);
+    if (smart) patch.smart = smart;
     const pp = pedalPresets === undefined ? sanitizePedalPresets(existing && existing.pedalPresets) : sanitizePedalPresets(pedalPresets);
     if (pp) patch.pedalPresets = pp;
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;

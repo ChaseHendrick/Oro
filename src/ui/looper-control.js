@@ -7,18 +7,28 @@
 // Resample: the current loop, or (when the looper is empty) a few bars
 // captured from the master output, becomes a wavetable user terrain in the
 // selected part's slot A or B (src/audio/resample.js), named "Resample N".
+//
+// Follow tempo (v2.8): when the tempo changes, a loop recorded in bars is
+// time-stretched (src/dsp/time-stretch.js, pitch kept) to the same number of
+// bars at the new tempo, from an untouched copy of the loop as it was
+// recorded so repeated changes do not pile up artefacts. Fit to tempo does it
+// once on demand, and also snaps a free-length loop to whole bars.
 
 import { createEmitter } from '../audio/emitter.js';
 import { resampleToWavetable, nextResampleName, noteName, SLICE_MODES } from '../audio/resample.js';
 import { addUserTerrain } from '../audio/importers.js';
-import { LOOP_BARS, DEFAULT_BARS } from '../audio/looper-core.js';
+import { LOOP_BARS, DEFAULT_BARS, MAX_LOOP_SECONDS, loopFrames } from '../audio/looper-core.js';
+import { stretchToLength } from '../dsp/time-stretch.js';
 import { recordingName } from './record.js';
 
 export const LOOPER_PREFS_KEY = 'orograph.looper';
 export const EXPORT_FORMATS = Object.freeze(['pcm24', 'float32']);
 export const LOOPER_PREF_DEFAULTS = Object.freeze({
-  bars: DEFAULT_BARS, volume: 1, feedback: 1, slot: 'A', slice: 'auto', root: 48, format: 'pcm24',
+  bars: DEFAULT_BARS, volume: 1, feedback: 1, slot: 'A', slice: 'auto', root: 48, format: 'pcm24', follow: 0,
 });
+/** Relative tempo difference below which a loop counts as already in time. */
+const FIT_TOLERANCE = 0.001;
+const FIT_DELAY_MS = 350;
 
 const unit = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
 const VALID = {
@@ -29,6 +39,7 @@ const VALID = {
   slice: v => SLICE_MODES.includes(v),
   root: v => Number.isInteger(v) && v >= 24 && v <= 84,
   format: v => EXPORT_FORMATS.includes(v),
+  follow: v => v === 0 || v === 1,
 };
 
 export function sanitizeLooperPrefs(src) {
@@ -98,13 +109,27 @@ export function createLooperControl({ store, engine = null, music = null, toast 
   const reason = available ? '' : (looper && looper.reason) || 'The looper needs the audio engine, which is not available here.';
   let prefs = loadLooperPrefs(storage);
   let st = looper ? { ...looper.status(), posAt: 0 } : { state: 'empty', len: 0 };
-  let busy = '';            // '' | 'resample' | 'capture' | 'export'
+  let busy = '';            // '' | 'resample' | 'capture' | 'export' | 'stretch'
   const offs = [];
+  // Follow tempo: the loop as recorded ({L, R, sampleRate, spb, bars, edit});
+  // valid while the looper's `edit` still matches (nothing else changed it).
+  let source = null;
+  let fitting = false, fitAgain = false, fitTimer = 0, lastPosCheck = 0;
 
   const changed = () => events.emit('change', api.status());
   if (looper) {
-    offs.push(looper.on('change', (s) => { st = { ...st, ...s, posAt: performance.now() }; changed(); }));
-    offs.push(looper.on('pos', (s) => { st = { ...st, ...s, posAt: performance.now() }; events.emit('pos', st); }));
+    offs.push(looper.on('change', (s) => {
+      st = { ...st, ...s, posAt: performance.now() };
+      if (st.state === 'empty') source = null;
+      changed();
+      if (prefs.follow) scheduleFit();
+    }));
+    offs.push(looper.on('pos', (s) => {
+      st = { ...st, ...s, posAt: performance.now() };
+      events.emit('pos', st);
+      // An external clock moves the tempo without a store change: look about once a second.
+      if (prefs.follow && st.posAt - lastPosCheck > 1000) { lastPosCheck = st.posAt; if (needsFit()) scheduleFit(); }
+    }));
     offs.push(looper.on('error', (e) => { if (e && e.reason === 'memory') toast('The looper ran out of memory', { kind: 'error', detail: 'Try a shorter loop, or Clear to free the undo layers.' }); }));
     offs.push(looper.on('info', (e) => { if (e && e.reason === 'nothing-to-undo') toast('Nothing to undo', { kind: 'info', timeout: 1600 }); }));
     // Settings travel to the worklet once at start.
@@ -122,6 +147,78 @@ export function createLooperControl({ store, engine = null, music = null, toast 
   const playing = () => !!store.get('ui.playing');
 
   function setBusy(v) { busy = v; changed(); }
+
+  // ---------------------------------------------------------------- follow tempo
+  const targetSpb = () => 60 / tempo();
+  const barLoop = () => st.len > 0 && st.loopBars > 0 && st.loopSpb > 0;
+  function needsFit() {
+    return available && !!prefs.follow && barLoop() && (st.state === 'play' || st.state === 'paused')
+      && Math.abs(st.loopSpb - targetSpb()) / st.loopSpb > FIT_TOLERANCE;
+  }
+  function scheduleFit() {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(() => { if (needsFit()) fitToTempo(); }, FIT_DELAY_MS);
+  }
+
+  /**
+   * Stretch the loop (pitch kept) to its bars at the current tempo. A loop
+   * without bars is fitted to the nearest whole number of bars. Resolves to
+   * {ok, bars, reason}.
+   */
+  async function fitToTempo({ manual = false } = {}) {
+    if (!available) { if (manual) guard(); return { ok: false, reason: reason }; }
+    if (fitting) { fitAgain = true; return { ok: false, reason: 'busy' }; }
+    if (!(st.len > 0)) { if (manual) toast('The loop is empty', { kind: 'info', detail: 'Record a loop first.' }); return { ok: false, reason: 'empty' }; }
+    if (st.state !== 'play' && st.state !== 'paused') {
+      if (manual) toast('Finish recording or overdubbing first', { kind: 'info' });
+      return { ok: false, reason: 'state' };
+    }
+    if (busy) return { ok: false, reason: 'busy' };
+    fitting = true;
+    setBusy('stretch');
+    try {
+      let src = source && source.edit === st.edit ? source : null;
+      if (!src) {
+        const loop = await looper.getLoop();
+        if (!loop) return { ok: false, reason: 'empty' };
+        src = { L: loop.L, R: loop.R, sampleRate: loop.sampleRate, spb: loop.loopSpb || 0, bars: loop.loopSpb > 0 ? loop.loopBars || 0 : 0, edit: loop.edit };
+      }
+      const spb = targetSpb();
+      const sr = src.sampleRate || st.sampleRate || 48000;
+      let bars = src.bars;
+      if (!(bars > 0)) bars = Math.max(1, Math.round(src.L.length / sr / (4 * spb)));
+      const length = loopFrames(bars, spb, sr);
+      if (length > MAX_LOOP_SECONDS * sr) {
+        if (manual) toast('The loop would be too long at this tempo', { kind: 'info', detail: `Loops can last up to ${MAX_LOOP_SECONDS} seconds.` });
+        return { ok: false, reason: 'too-long' };
+      }
+      if (length === st.len && Math.abs(st.loopSpb - spb) / spb <= FIT_TOLERANCE) {
+        source = { ...src, bars };
+        return { ok: true, bars, unchanged: true };
+      }
+      // Let the busy state paint before the stretch takes the main thread.
+      await new Promise(r => setTimeout(r, 0));
+      const out = stretchToLength(src.L, src.R, length, { sampleRate: sr, loop: true });
+      const res = await looper.replaceLoop({ L: out.L, R: out.R, base: src.edit, spb, bars });
+      if (!res || !res.ok) {
+        if (manual) toast('The loop changed while it was being stretched', { kind: 'info', detail: 'Try Fit to tempo again.' });
+        return { ok: false, reason: 'changed' };
+      }
+      source = { ...src, bars, edit: res.edit };
+      st = { ...st, edit: res.edit, loopSpb: spb, loopBars: bars };
+      if (manual) toast(`Loop fitted to ${bars} bar${bars > 1 ? 's' : ''} at ${Math.round(tempo() * 10) / 10} BPM`, { kind: 'success', timeout: 2200 });
+      return { ok: true, bars };
+    } catch (err) {
+      if (manual) toast('The loop could not be stretched', { kind: 'error', detail: String((err && err.message) || err) });
+      return { ok: false, reason: String((err && err.message) || err) };
+    } finally {
+      fitting = false;
+      setBusy('');
+      if (fitAgain) { fitAgain = false; if (prefs.follow) scheduleFit(); }
+    }
+  }
+  if (looper && available) offs.push(store.subscribe('global.tempo', () => { if (prefs.follow) scheduleFit(); }));
+  offs.push(() => clearTimeout(fitTimer));
 
   function guard() {
     if (!available) { toast('The looper is not available', { kind: 'info', detail: reason }); return false; }
@@ -144,6 +241,7 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       if (key === 'bars') looper.setBars(prefs.bars);
       else if (key === 'volume') looper.setVolume(prefs.volume);
       else if (key === 'feedback') looper.setFeedback(prefs.feedback);
+      else if (key === 'follow' && prefs.follow) scheduleFit();
     }
     events.emit('prefs', { ...prefs });
     changed();
@@ -223,6 +321,8 @@ export function createLooperControl({ store, engine = null, music = null, toast 
     toggleMute() { if (guard()) looper.setMute(!st.muted); },
     resample: resampleNow,
     exportWav: exportNow,
+    /** v2.8: stretch the loop to the current tempo now (pitch kept). */
+    fitToTempo: () => fitToTempo({ manual: true }),
     /** MIDI-learned buttons ('looper.main' ...). */
     action(id) {
       switch (id) {

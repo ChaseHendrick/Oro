@@ -28,6 +28,13 @@
 // linear ramps for everything that could zipper. Events (notes and timed
 // parameter changes) split the block at their exact sample.
 //
+// v2.8: the summed post-fader Send A / Send B of every part feed two shared
+// return buses (send-fx.js) that run once per render call and add into the
+// dry mix; they never run while every send is 0 and the buses are silent. A
+// frozen part ({t:'freeze'}) plays a pre-rendered loop of its own output
+// (after its track effects, before the fader) in step with the transport
+// instead of running its voices; {t:'capture'} renders that output alone.
+//
 // With every Round D control at its default (Natural, Forward, no Air, no
 // Key>Size, a state variable filter, the default Links, standard quality) the
 // engine takes exactly the code paths it had before those controls existed and
@@ -50,10 +57,12 @@ import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
 import { Filter2 } from './filter2.js';
-import { KitPlayer, synthDrum } from './drum-kit.js';
+import { KitPlayer } from './drum-kit.js';
+import { renderLibraryDrum } from './drum-library.js';
 import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.js';
 import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
+import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -73,6 +82,8 @@ const SNAP = 1e-5;
 const QUALITY_FADE = 0.012;             // crossfade when the quality changes rate or mips (s)
 const FILTER_FADE = 0.008;              // crossfade when the filter type changes (s)
 const TRACK_FADE_TIME = 0.08;           // fade-out of a track removed from the list (s)
+const FREEZE_FADE_TIME = 0.015;         // crossfade between a part's voices and its frozen loop (s)
+const FREEZE_GATE_TIME = 0.03;          // frozen loop fade when the transport stops or starts (s)
 const TRAVEL_FADE = 0.012;              // crossfade when Direction / Travel change (s)
 const TABLE_FADE = 0.006;               // Pristine: table <-> direct rendering crossfade (s)
 const TABLE_DRIFT = 0.01;               // Pristine: orbit travel (knob units) that earns a new table
@@ -755,6 +766,12 @@ class Part {
     this.paceShapeI = 0; this.subT = 0;
     this.airT = 0; this.airTone = 0; this.noteSize = 0; this.travBits = 0;
     this.gainS = 0; this.dlyS = 0; this.revS = 0; this.pedS = 0;
+    // v2.8 Send A / Send B (post-fader, to the shared return buses)
+    this.sA = 0; this.dSA = 0; this.sAS = 0; this.sB = 0; this.dSB = 0; this.sBS = 0;
+    // v2.8 freeze: { L, R, len (frames, fractional), beats } or null; fzX is
+    // the frozen loop's share (0 voices .. 1 loop), fzTarget where it heads,
+    // fzGate the transport fade (0 stopped .. 1 playing)
+    this.frozen = null; this.fzX = 0; this.fzTarget = 0; this.fzGate = 0;
     this.updateDerived();
   }
 
@@ -1004,6 +1021,16 @@ export class OroDSP {
     this.guitar = 0; this.sGuitar = 0;  // Guitar Level link source (0..1), smoothed like the marble
     this.voice = 0; this.sVoice = 0;    // Voice Level link source (0..1, v1.4 microphone envelope), smoothed the same way
     this.transport = { playing: false, beatTime: 0, beat: 0 };
+    // v2.8 send buses: built the first time a part sends to them
+    this.sendFx = null;
+    this.sendCfg = { tempo: 112 };
+    this.sendBufs = null;          // [aL, aR, bL, bR] summed sends of one render call
+    this.sendFedA = false; this.sendFedB = false; this.sendDirty = false;
+    // v2.8 freeze
+    this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
+    this.segTime = 0;              // context time of the segment being rendered
+    this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
+    this.kGate = 1 / (this.sr * FREEZE_GATE_TIME);
     this.watch = 0;
     this.voiceCounter = 0;
 
@@ -1116,8 +1143,11 @@ export class OroDSP {
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
       case 'kit': this.setKit(msg.part, msg); break;
+      case 'kitPreview': this.previewKit(msg.part, msg); break;
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
+      case 'freeze': this.setFrozen(msg); break;
+      case 'capture': { const i = Math.round(finiteOr(msg.part, -1)); this.capture = i >= 0 && i < MAX_PARTS ? i : -1; break; }
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
@@ -1183,7 +1213,7 @@ export class OroDSP {
     }
     for (let i = count; i < MAX_PARTS; i++) {
       const P = this.parts[i];
-      if (wasIn.has(P)) this.releasePart(P);
+      if (wasIn.has(P)) { this.releasePart(P); if (P.frozen !== null) P.fzTarget = 0; }
     }
     // queued notes and parameter changes of parts that left the list go with them
     if (this.events.some(e => e.part >= count)) this.events = this.events.filter(e => e.part < count);
@@ -1197,8 +1227,9 @@ export class OroDSP {
    */
   resetPart(i) {
     const old = this.parts[i];
-    if (old && (old.activeCount() > 0 || old.tail > 0 || (old.ghost !== null && old.ghost.left > 0))) {
+    if (old && (old.activeCount() > 0 || old.tail > 0 || (old.ghost !== null && old.ghost.left > 0) || (old.frozen !== null && old.fzGate > 0))) {
       this.releasePart(old);
+      if (old.frozen !== null) old.fzTarget = 0;
       old.exit = 1;
       return;
     }
@@ -1213,7 +1244,7 @@ export class OroDSP {
 
   /** A part past the track count that has gone quiet: nothing to do for it. */
   dormant(P) {
-    return P.index >= this.count && P.tail <= 0 && (P.ghost === null || P.ghost.left <= 0) && P.activeCount() === 0;
+    return P.index >= this.count && P.tail <= 0 && (P.ghost === null || P.ghost.left <= 0) && P.frozen === null && P.activeCount() === 0;
   }
 
   setParams(part, p) {
@@ -1454,6 +1485,11 @@ export class OroDSP {
     for (const k in SCIENCE_KEYS) if (p[k] !== undefined && Number.isFinite(+p[k])) (sci || (sci = {}))[SCIENCE_KEYS[k]] = +p[k];
     if (sci) this.science.configure(sci);
     if (p.tempo !== undefined) this.tempo = Math.max(20, Math.min(400, finiteOr(p.tempo, this.tempo)));
+    // v2.8 send buses: remember their settings; configure them if they exist
+    let sendDirty = false;
+    if (p.tempo !== undefined && this.sendCfg.tempo !== this.tempo) { this.sendCfg.tempo = this.tempo; sendDirty = true; }
+    for (const id of SEND_GLOBAL_IDS) if (p[id] !== undefined && Number.isFinite(+p[id])) { this.sendCfg[id] = +p[id]; sendDirty = true; }
+    if (sendDirty && this.sendFx !== null) this.sendFx.configure(this.sendCfg);
     for (const id of ['vectorMix','vectorX','vectorY']) if (p[id] !== undefined) this[id]=clamp01(finiteOr(p[id],this[id]));
     if (p.vectorBank !== undefined) this.vectorBank=Math.max(0,Math.min(3,Math.round(finiteOr(p.vectorBank,0))));
     const x=this.vectorX,y=this.vectorY,m=this.vectorMix;
@@ -1699,6 +1735,7 @@ export class OroDSP {
 
   panic() {
     this.events.length = 0;
+    if (this.sendFx !== null) this.sendFx.reset();
     for (const P of this.parts) {
       for (const v of P.voices) { v.active = false; v.gate = false; v.resetState(); }
       P.stackLen = 0;
@@ -1853,6 +1890,29 @@ export class OroDSP {
   }
 
   /** v2.7: switch a track's drum kit on or off and load its pads ({synth: i} or {pcm, rate}). */
+  /**
+   * v2.8 {t:'freeze', part, L, R, frames, beats}: play the loop L/R (the
+   * part's own output, `frames` long, fractional, covering `beats` beats at
+   * the tempo it was rendered at) instead of the part's voices, in step with
+   * the transport. Without L/R the part goes back to its voices. Both ways the
+   * change is a short crossfade.
+   */
+  setFrozen(msg) {
+    const P = this.partAt(msg.part);
+    if (!P) return;
+    const L = msg.L, R = msg.R, len = +msg.frames, beats = +msg.beats;
+    if (L instanceof Float32Array && R instanceof Float32Array && len > 1 && beats > 0
+      && L.length >= Math.ceil(len) && R.length >= Math.ceil(len)) {
+      const was = P.frozen !== null && P.fzTarget >= 1;
+      P.frozen = { L, R, len, beats };
+      P.fzTarget = 1;
+      if (!was) P.fzGate = this.transport.playing ? 1 : 0;
+    } else if (P.frozen !== null) {
+      P.fzTarget = 0;
+      if (P.fzX <= 0) P.frozen = null;
+    }
+  }
+
   setKit(part, msg) {
     const P = this.partAt(part);
     if (!P) return;
@@ -1867,17 +1927,41 @@ export class OroDSP {
       if (!pd.keep) {
         if (pd.pcm instanceof Float32Array) { set.data = pd.pcm; set.rate = pd.rate; }
         else if (Number.isInteger(pd.synth) && pd.synth >= 0) {
-          // synthesized once per engine and shared, never on every knob move
-          if (!this.drumCache) this.drumCache = new Map();
-          if (!this.drumCache.has(pd.synth)) this.drumCache.set(pd.synth, synthDrum(pd.synth, this.sr));
-          set.data = this.drumCache.get(pd.synth); set.rate = this.sr;
+          set.data = this.drumSound(pd.synth); set.rate = this.sr;
         } else set.data = null;
       }
       P.kit.setPad(i, set);
     });
   }
 
+  /**
+   * Drum library sound i (v2.8; 0..7 are the 2.7 synth drums), synthesized
+   * once per engine and shared, never on every knob move. Past 64 sounds the
+   * oldest leaves the cache (pads holding it keep playing).
+   */
+  drumSound(i) {
+    if (!this.drumCache) this.drumCache = new Map();
+    let d = this.drumCache.get(i);
+    if (!d) {
+      d = renderLibraryDrum(i, this.sr);
+      if (!d) return null;
+      if (this.drumCache.size >= 64) this.drumCache.delete(this.drumCache.keys().next().value);
+      this.drumCache.set(i, d);
+    }
+    return d;
+  }
+
+  /** v2.8: audition a sound ({synth: i} or {pcm, rate}) on a track whose drum kit is on, without changing its pads. */
+  previewKit(part, msg) {
+    const P = this.partAt(part);
+    if (!P || !P.kitOn || !P.kit || !msg) return;
+    const data = msg.pcm instanceof Float32Array ? msg.pcm : Number.isInteger(msg.synth) && msg.synth >= 0 ? this.drumSound(msg.synth) : null;
+    if (!data) return;
+    P.kit.preview(data, msg.pcm ? finiteOr(msg.rate, this.sr) : this.sr, clamp01(finiteOr(msg.vel, 0.9)), clamp01(finiteOr(msg.gain, 0.8)), Math.max(-24, Math.min(24, finiteOr(msg.pitch, 0))));
+  }
+
   noteOn(P, note, vel) {
+    if (P.frozen !== null && P.fzTarget >= 1) return;   // v2.8 a frozen part plays its loop, not notes
     if (vel > 1) vel /= 127;
     if (P.kitOn && P.kit) { if (vel > 0) { P.kit.trigger(note, vel); this.science.noteOn(); } return; }
     if (!(vel > 0)) { this.noteOff(P, note); return; }
@@ -2765,6 +2849,10 @@ export class OroDSP {
       P.dlyS = Math.abs(dT - P.dlyS) < 1e-4 ? dT : P.dlyS + (dT - P.dlyS) * k;
       P.revS = Math.abs(rT - P.revS) < 1e-4 ? rT : P.revS + (rT - P.revS) * k;
       P.pedS = Math.abs(pT - P.pedS) < 1e-4 ? pT : P.pedS + (pT - P.pedS) * k;
+      // v2.8 Send A / Send B: post-fader like the delay and reverb sends
+      const aT = gT * clamp01(P.params[PI.sendA]), bT = gT * clamp01(P.params[PI.sendB]);
+      P.sAS = Math.abs(aT - P.sAS) < 1e-4 ? aT : P.sAS + (aT - P.sAS) * k;
+      P.sBS = Math.abs(bT - P.sBS) < 1e-4 ? bT : P.sBS + (bT - P.sBS) * k;
       const bank=P.index-this.vectorBank*4;
       const vectorTarget=bank >= 0 && bank < 4 ? this.vectorWeights[bank] : 1;
       P.vectorSmooth=Math.abs(vectorTarget-P.vectorSmooth) < 1e-5 ? vectorTarget : P.vectorSmooth+(vectorTarget-P.vectorSmooth)*k;
@@ -2774,9 +2862,13 @@ export class OroDSP {
       P.dRev = (P.revS - P.rev) / CTRL;
       if (P.pedS === 0 && Math.abs(P.ped) < 1e-9) P.ped = 0;  // exact zero, so the send loop is skipped
       P.dPed = (P.pedS - P.ped) / CTRL;
+      if (P.sAS === 0 && Math.abs(P.sA) < 1e-9) P.sA = 0;  // exact zero, so the send loop is skipped
+      if (P.sBS === 0 && Math.abs(P.sB) < 1e-9) P.sB = 0;
+      P.dSA = (P.sAS - P.sA) / CTRL;
+      P.dSB = (P.sBS - P.sB) / CTRL;
       // Send mode with compensation: the dry sound waits for the pedal return.
       P.setDryDelay(pedalOn && this.dryDelayN > 0 && P.params[PI.pedalInsert] < 0.5 && P.params[PI.pedalSend] > 0 ? this.dryDelayN : 0);
-      if (!inList && P.gainS === 0 && P.dlyS === 0 && P.revS === 0 && P.pedS === 0 && Math.abs(P.gain) < 1e-9) {
+      if (!inList && P.gainS === 0 && P.dlyS === 0 && P.revS === 0 && P.pedS === 0 && P.sAS === 0 && P.sBS === 0 && Math.abs(P.gain) < 1e-9) {
         // faded out: the rest of its release would be inaudible, end it now
         for (const v of P.voices) if (v.active) { v.active = false; v.gate = false; v.pending = false; v.resetState(); }
       }
@@ -4167,6 +4259,7 @@ export class OroDSP {
 
   renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR, pedL, pedR) {
     const count = this.count, parts = this.parts, liveN = this.liveN;
+    const capture = this.capture;
     // song position at this segment's first sample, for tempo-synced track effects
     const T = this.transport, fxBeat = T.playing ? T.beat + (this.blockTime + this.sinceCtrl / this.sr - T.beatTime) * this.tempo / 60 : NaN;
     for (let i = 0; i < liveN; i++) {
@@ -4176,58 +4269,64 @@ export class OroDSP {
       const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
       const kitBusy = P.kitOn && P.kit !== null && P.kit.busy;
-      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy) {
+      const fz = P.frozen;
+      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy && fz === null) {
         P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg; P.vectorGain+=P.dVector*seg;
+        P.sA += P.dSA * seg; P.sB += P.dSB * seg;
         continue;
       }
-      if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
-      const rc = P.rc, os = rc.os;
-      const n2 = os * seg, off2 = os * pos;
-      for (const v of P.voices) {
-        if (!v.active) continue;
-        this.renderVoice(P, v, off2, n2, rc);
-        if (v.stealFade > 0 && (v.stealGain <= 0 || v.envStage === IDLE)) {
-          const pend = v.pending, note = v.pendNote, vel = v.pendVel;
-          v.active = false;
-          v.resetState();
-          if (pend) this.startVoice(P, v, note, vel, P.params[PI.glide] > 0.0005 && P.lastPitch >= 0 ? P.lastPitch : -1);
-        } else if (v.envStage === IDLE) {
-          v.active = false;
-          v.gate = false;
-          v.resetState();
-        }
-      }
+      // v2.8 a frozen part plays its loop instead of its voices (both while they crossfade)
+      const live = fz === null || P.fzX < 1 || P.fzTarget < 1;
       const oL = P.outL, oR = P.outR;
-      this.decimateTo(os, P.busL, P.busR, P.midL, P.midR, oL, oR, pos, seg);
-      if (kitBusy) P.kit.render(oL, oR, pos, seg);
-      if (ghostOn) {
-        // the outgoing quality: frozen voices into their own buses, then a
-        // raised-cosine crossfade (the new path's decimator has just started
-        // from silence, so it comes in after a short hold)
-        const grc = g.rc, gos = grc.os;
-        for (const gv of g.voices) {
-          if (!gv.active) continue;
-          this.renderVoice(P, gv, gos * pos, gos * seg, grc);
-          if (gv.envStage === IDLE || (gv.stealFade > 0 && gv.stealGain <= 0)) gv.active = false;
+      if (live) {
+        if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
+        const rc = P.rc, os = rc.os;
+        const n2 = os * seg, off2 = os * pos;
+        for (const v of P.voices) {
+          if (!v.active) continue;
+          this.renderVoice(P, v, off2, n2, rc);
+          if (v.stealFade > 0 && (v.stealGain <= 0 || v.envStage === IDLE)) {
+            const pend = v.pending, note = v.pendNote, vel = v.pendVel;
+            v.active = false;
+            v.resetState();
+            if (pend) this.startVoice(P, v, note, vel, P.params[PI.glide] > 0.0005 && P.lastPitch >= 0 ? P.lastPitch : -1);
+          } else if (v.envStage === IDLE) {
+            v.active = false;
+            v.gate = false;
+            v.resetState();
+          }
         }
-        this.decimateTo(gos, g.busL, g.busR, g.midL, g.midR, g.outL, g.outR, pos, seg);
-        const total = g.total, hold = Math.min(HB_N, total >> 2);
-        let left = g.left;
-        for (let n = pos; n < pos + seg; n++) {
-          left--;
-          const x = (total - left - hold) / (total - hold);
-          const w = x <= 0 ? 0 : x >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * x);
-          oL[n] = g.outL[n] + w * (oL[n] - g.outL[n]);
-          oR[n] = g.outR[n] + w * (oR[n] - g.outR[n]);
+        this.decimateTo(os, P.busL, P.busR, P.midL, P.midR, oL, oR, pos, seg);
+        if (kitBusy) P.kit.render(oL, oR, pos, seg);
+        if (ghostOn) {
+          // the outgoing quality: frozen voices into their own buses, then a
+          // raised-cosine crossfade (the new path's decimator has just started
+          // from silence, so it comes in after a short hold)
+          const grc = g.rc, gos = grc.os;
+          for (const gv of g.voices) {
+            if (!gv.active) continue;
+            this.renderVoice(P, gv, gos * pos, gos * seg, grc);
+            if (gv.envStage === IDLE || (gv.stealFade > 0 && gv.stealGain <= 0)) gv.active = false;
+          }
+          this.decimateTo(gos, g.busL, g.busR, g.midL, g.midR, g.outL, g.outR, pos, seg);
+          const total = g.total, hold = Math.min(HB_N, total >> 2);
+          let left = g.left;
+          for (let n = pos; n < pos + seg; n++) {
+            left--;
+            const x = (total - left - hold) / (total - hold);
+            const w = x <= 0 ? 0 : x >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * x);
+            oL[n] = g.outL[n] + w * (oL[n] - g.outL[n]);
+            oR[n] = g.outR[n] + w * (oR[n] - g.outR[n]);
+          }
+          g.left = left;
         }
-        g.left = left;
-      }
-      if (P.oldA) { P.fadeACur += P.dFadeA * n2; if (P.fadeACur < 0) P.fadeACur = 0; }
-      if (P.oldB) { P.fadeBCur += P.dFadeB * n2; if (P.fadeBCur < 0) P.fadeBCur = 0; }
+      } else this.frozenFill(P, oL, oR, pos, seg);
+      if (P.oldA) { P.fadeACur += P.dFadeA * (P.rc.os * seg); if (P.fadeACur < 0) P.fadeACur = 0; }
+      if (P.oldB) { P.fadeBCur += P.dFadeB * (P.rc.os * seg); if (P.fadeBCur < 0) P.fadeBCur = 0; }
       let rawPeak=0;
       for (let n=pos;n<pos+seg;n++) rawPeak=Math.max(rawPeak,Math.abs(oL[n]),Math.abs(oR[n]));
       P.rawPeak=Math.max(P.rawPeak,rawPeak);
-      if (P.effects.active) {
+      if (live && P.effects.active) {
         P.effects.setTransport(this.tempo, fxBeat);
         const src=P.sidechainIndex;
         let level=0;
@@ -4237,6 +4336,16 @@ export class OroDSP {
           const side=src === -1 ? Math.max(Math.abs(oL[n]),Math.abs(oR[n])) : level;
           const fx=P.effects.processSample(oL[n],oR[n],side); oL[n]=fx.L; oR[n]=fx.R;
         }
+      }
+      if (fz !== null && live) this.frozenBlend(P, oL, oR, pos, seg);
+      if (capture >= 0) {
+        // offline freeze: only the captured part's own output, before the fader and the sends
+        if (i === capture) for (let n = pos; n < pos + seg; n++) { outL[n] += oL[n]; outR[n] += oR[n]; }
+        if (live && active === 0 && !ghostOn) {
+          P.tail -= seg;
+          if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0); }
+        }
+        continue;
       }
       // pedal send (skipped while it is and stays silent, the usual case),
       // taken before the dry delay: the pedals get the part on time
@@ -4263,6 +4372,7 @@ export class OroDSP {
       let gn = P.gain, dl = P.dly, rv = P.rev;
       const dgn = P.dGain, ddl = P.dDly, drv = P.dRev;
       let vectorGain=P.vectorGain; const dv=P.dVector;
+      const vg0 = vectorGain;
       for (let n = pos; n < pos + seg; n++) {
         gn += dgn; dl += ddl; rv += drv;
         vectorGain+=dv;
@@ -4272,11 +4382,88 @@ export class OroDSP {
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }
       P.gain = gn; P.dly = dl; P.rev = rv; P.vectorGain=vectorGain;
-      if (active === 0 && !ghostOn) {
+      // v2.8 Send A / Send B (skipped while both are and stay at 0, the default)
+      if (P.sA !== 0 || P.dSA !== 0 || P.sB !== 0 || P.dSB !== 0) this.feedSends(P, oL, oR, pos, seg, vg0, dv);
+      if (live && active === 0 && !ghostOn) {
         P.tail -= seg;
         if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0); }
       }
     }
+  }
+
+  /** v2.8: add one part's post-fader Send A / Send B to the bus inputs. */
+  feedSends(P, oL, oR, pos, seg, vectorGain, dv) {
+    const B = this.sendBufs;
+    const aL = B[0], aR = B[1], bL = B[2], bR = B[3];
+    let a = P.sA, b = P.sB;
+    const da = P.dSA, db = P.dSB;
+    if (a !== 0 || da !== 0) this.sendFedA = true;
+    if (b !== 0 || db !== 0) this.sendFedB = true;
+    for (let n = pos; n < pos + seg; n++) {
+      a += da; b += db;
+      vectorGain += dv;
+      const l = oL[n] * vectorGain, r = oR[n] * vectorGain;
+      aL[n] += l * a; aR[n] += r * a;
+      bL[n] += l * b; bR[n] += r * b;
+    }
+    P.sA = a; P.sB = b;
+    this.sendDirty = true;
+  }
+
+  /**
+   * v2.8: the frozen loop for one segment into dstL/dstR at [pos, pos+seg),
+   * in step with the transport (beat 0 of the loop on a multiple of its
+   * length in beats), faded in and out as the transport starts and stops.
+   * The part's dry delay (pedal compensation) is read ahead, so after it the
+   * loop is heard on the beat.
+   */
+  frozenFill(P, dstL, dstR, pos, seg) {
+    const F = P.frozen, T = this.transport, sr = this.sr, len = F.len, FL = F.L, FR = F.R;
+    const target = T.playing ? 1 : 0;
+    let gate = P.fzGate;
+    if (gate === 0 && target === 0) {
+      for (let n = pos; n < pos + seg; n++) { dstL[n] = 0; dstR[n] = 0; }
+      return;
+    }
+    const kg = this.kGate;
+    // rounded like note events are (dsp.process), so a loop rendered from the
+    // same events lines up with them to the sample
+    let f = Math.round(T.beat * (len / F.beats) + (this.segTime + P.ddN / sr - T.beatTime) * sr);
+    if (f >= 0) f -= Math.floor(f / len) * len;
+    for (let n = pos; n < pos + seg; n++) {
+      if (gate !== target) gate = target > gate ? (gate + kg >= 1 ? 1 : gate + kg) : (gate - kg <= 0 ? 0 : gate - kg);
+      if (f >= 0) {
+        const k = f | 0;
+        dstL[n] = FL[k] * gate; dstR[n] = FR[k] * gate;
+      } else { dstL[n] = 0; dstR[n] = 0; }
+      f += 1;
+      if (f >= len) f -= len;
+    }
+    P.fzGate = gate;
+  }
+
+  /** v2.8: crossfade the part's live output with its frozen loop (freezing or unfreezing). */
+  frozenBlend(P, oL, oR, pos, seg) {
+    const zL = this.fzL, zR = this.fzR;
+    this.frozenFill(P, zL, zR, pos, seg);
+    const tgt = P.fzTarget, step = this.kFreeze / CTRL;
+    let x = P.fzX;
+    for (let n = pos; n < pos + seg; n++) {
+      if (x !== tgt) x = tgt > x ? (x + step >= 1 ? 1 : x + step) : (x - step <= 0 ? 0 : x - step);
+      oL[n] += (zL[n] - oL[n]) * x;
+      oR[n] += (zR[n] - oR[n]) * x;
+    }
+    P.fzX = x;
+    if (x >= 1 && tgt >= 1) {
+      // fully frozen: the voices, the kit and the rack stop here (the loop has them)
+      for (const v of P.voices) { v.active = false; v.gate = false; v.pending = false; v.resetState(); }
+      if (P.kit) for (const kv of P.kit.voices) kv.on = false;
+      if (P.ghost) P.ghost.left = 0;
+      P.stackLen = 0;
+      P.effects.reset();
+      P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0);
+      P.tail = 0;
+    } else if (x <= 0 && tgt <= 0) P.frozen = null;
   }
 
   /**
@@ -4296,6 +4483,16 @@ export class OroDSP {
     if (dlyL) { dlyL.fill(0, 0, n); dlyR.fill(0, 0, n); }
     if (revL) { revL.fill(0, 0, n); revR.fill(0, 0, n); }
     if (pedL) { pedL.fill(0, 0, n); pedR.fill(0, 0, n); }
+    // v2.8 send bus inputs: sized for this call, cleared only after use
+    if (this.sendBufs === null || this.sendBufs[0].length < n) {
+      this.sendBufs = [0, 1, 2, 3].map(() => new Float64Array(Math.max(256, n)));
+      this.fzL = new Float64Array(Math.max(256, n)); this.fzR = new Float64Array(Math.max(256, n));
+      this.sendDirty = false;
+    } else if (this.sendDirty) {
+      for (const b of this.sendBufs) b.fill(0);
+      this.sendDirty = false;
+    }
+    this.sendFedA = false; this.sendFedB = false;
     // Parts past the last one that can sound are never touched in this call
     // (a part past the count cannot start a note, so it cannot wake up).
     let liveN = this.count;
@@ -4342,12 +4539,19 @@ export class OroDSP {
         const off = Math.round((E[0].time - now) * sr);
         if (off > pos && off - pos < seg) seg = off - pos;
       }
+      this.segTime = now + pos / sr;
       this.renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR, pedL, pedR);
       pos += seg;
       this.ctrlRemain -= seg;
       this.sinceCtrl += seg;
     }
     this.nextTime = now + n / sr;
+    // v2.8 the shared send buses (only while something is sent to them or still rings)
+    if (this.sendFedA || this.sendFedB || (this.sendFx !== null && this.sendFx.active)) {
+      if (this.sendFx === null) { this.sendFx = new SendReturns(sr); this.sendFx.configure(this.sendCfg); }
+      const B = this.sendBufs;
+      this.sendFx.process(B[0], B[1], B[2], B[3], outL, outR, n, this.sendFedA, this.sendFedB);
+    }
 
     for (let i = 0; i < liveN; i++) {
       const P = this.parts[i];

@@ -30,7 +30,7 @@ export function createTrackTabs(ctx) {
     const tab = h('button', {
       type: 'button', class: 'part-tab', role: 'radio', 'aria-checked': 'false', tabindex: '-1', draggable: 'true',
       dataset: { part: String(i), tip: i < 9 ? `Select track ${i + 1} (key ${i + 1}). Drag to reorder` : `Select track ${i + 1}. Drag to reorder` },
-    }, led, h('span', { class: 'part-num', 'aria-hidden': 'true' }, String(i + 1)), h('span', { class: 'part-texts' }, name, patch), h('span', { class: 'part-mute', 'aria-hidden': 'true' }, 'M'));
+    }, led, h('span', { class: 'part-num', 'aria-hidden': 'true' }, String(i + 1)), h('span', { class: 'part-texts' }, name, patch), h('span', { class: 'part-frozen', 'aria-hidden': 'true', html: icon('freeze') }), h('span', { class: 'part-mute', 'aria-hidden': 'true' }, 'M'));
     scope.on(tab, 'click', () => store.set('ui.selectedPart', i, { source: 'ui' }));
     scope.on(tab, 'dblclick', () => openRenameTrack(ctx, tab, i));
     scope.on(tab, 'contextmenu', (e) => { e.preventDefault(); store.set('ui.selectedPart', i, { source: 'ui' }); openTrackMenu(ctx, tab, i); });
@@ -122,7 +122,9 @@ export function createTrackTabs(ctx) {
       const pn = store.get(`parts.${i}.patchName`) || 'Init';
       setText(name, nm);
       setText(patch, pn);
-      setAttr(tab, 'aria-label', `${nm}, ${pn}`);
+      const frozen = !!(ctx.freeze && ctx.freeze.isFrozen(i));
+      setAttr(tab, 'aria-label', `${nm}, ${pn}${frozen ? ', frozen' : ''}`);
+      tab.classList.toggle('is-frozen', frozen);
       tab.classList.toggle('is-muted', !!store.get(`parts.${i}.params.mute`));
       applyVars(tab, partVars(store.get(`parts.${i}.color`) || PART_COLORS[i % PART_COLORS.length], theme, ctx.panelBg()));
     });
@@ -140,6 +142,7 @@ export function createTrackTabs(ctx) {
   scope.add(store.subscribe('', (path) => { if (path === '') { lastSel = -1; invalidate(); } }));
   scope.on(window, 'orograph:theme', invalidate);
   scope.on(window, 'resize', invalidate);
+  if (ctx.freeze) scope.add(ctx.freeze.on('change', invalidate));
 
   // ---------------------------------------------------------------- note LEDs
   // Lit while notes sound on a track, with a flash on each new note.

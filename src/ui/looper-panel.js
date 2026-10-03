@@ -5,7 +5,7 @@
 
 import { h, s, createScope, setText, setAttr } from './dom.js';
 import { schedule, addLoop } from './frame.js';
-import { createSegmented, createMiniSlider } from './controls.js';
+import { createSegmented, createMiniSlider, createToggle } from './controls.js';
 import { openMenu } from './menu.js';
 import { icon } from './icons.js';
 import { noteName } from '../audio/resample.js';
@@ -30,6 +30,7 @@ export function looperStatusText(st) {
   if (st.busy === 'capture') return 'Recording the output for Resample...';
   if (st.busy === 'resample') return 'Making a terrain from the loop...';
   if (st.busy === 'export') return 'Saving the loop...';
+  if (st.busy === 'stretch') return 'Stretching the loop to the tempo...';
   switch (st.state) {
     case 'armed': return 'Waiting for the next bar to start recording.';
     case 'record': {
@@ -185,6 +186,13 @@ export function createLooperPanel(ctx) {
   const fbBinding = localBinding({ id: 'loopFeedback', label: 'Overdub feedback', min: 0, max: 1, default: 1, curve: 'lin', hint: 'How much of the loop each overdub pass keeps (100% keeps it all)' }, () => lp.prefs().feedback, (v) => lp.setPref('feedback', v), prefSub);
   const fb = createMiniSlider(ctx, fbBinding, { ariaLabel: 'Overdub feedback', format: pct, className: 'loop-slider' });
   scope.add(fb.dispose);
+  // v2.8 Follow tempo and Fit to tempo (time stretch, pitch kept)
+  const followBinding = localBinding({ id: 'loopFollow', label: 'Follow tempo', default: 0, hint: 'When the tempo changes, stretch a loop recorded in bars so it keeps its bars and its pitch' },
+    () => lp.prefs().follow, (v) => lp.setPref('follow', v ? 1 : 0), prefSub);
+  const follow = createToggle(ctx, followBinding, { label: 'Follow tempo', className: 'toggle--sm' });
+  scope.add(follow.dispose);
+  const fitBtn = h('button', { type: 'button', class: 'btn btn--sm loop-action', dataset: { tip: 'Stretch the loop to the current tempo now, keeping its pitch. A loop recorded without the transport is fitted to whole bars' } }, 'Fit to tempo');
+  scope.on(fitBtn, 'click', () => lp.fitToTempo());
   const volVal = h('span', { class: 'loop-value mono' });
   const fbVal = h('span', { class: 'loop-value mono' });
 
@@ -225,7 +233,8 @@ export function createLooperPanel(ctx) {
       h('div', { class: 'loop-grid' },
         field('Bars', bars.el),
         field('Volume', h('div', { class: 'loop-slider-row' }, vol.el, volVal)),
-        field('Feedback', h('div', { class: 'loop-slider-row' }, fb.el, fbVal)))),
+        field('Feedback', h('div', { class: 'loop-slider-row' }, fb.el, fbVal)),
+        h('div', { class: 'loop-field loop-field--wide' }, h('span', { class: 'mini-label' }, 'Tempo'), h('div', { class: 'loop-tempo-row' }, follow.el, fitBtn)))),
     h('section', { class: 'loop-card', 'aria-labelledby': 'sec-resample' },
       h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-resample' }, 'Resample')),
       h('p', { class: 'loop-note' }, 'Makes a wavetable terrain from the loop, or from the chosen bars of the output when the looper is empty. With no steady pitch it cuts the audio at a period from the tempo or a root note.'),
@@ -250,6 +259,7 @@ export function createLooperPanel(ctx) {
     resampleBtn.disabled = !lp.available || !!st.busy || st.state === 'record' || st.state === 'armed';
     resampleText.textContent = st.busy === 'capture' ? 'Recording...' : st.busy === 'resample' ? 'Working...' : 'Resample';
     exportBtn.disabled = !lp.available || !has || !!st.busy;
+    fitBtn.disabled = !lp.available || !has || !!st.busy || st.state === 'record' || st.state === 'armed' || st.state === 'overdub';
     setText(volVal, pct(st.prefs.volume));
     setText(fbVal, pct(st.prefs.feedback));
     if (sliceSel.value !== sliceVal()) sliceSel.value = sliceVal();
@@ -258,7 +268,7 @@ export function createLooperPanel(ctx) {
   scope.add(statusSub(() => schedule(render)));
   scope.add(prefSub(() => schedule(render)));
   if (!lp.available) {
-    for (const c of [bars, vol, fb, slot]) c.setDisabled(true, lp.reason);
+    for (const c of [bars, vol, fb, slot, follow]) c.setDisabled(true, lp.reason);
     sliceSel.disabled = true; fmtSel.disabled = true;
   }
   render();

@@ -16,6 +16,7 @@ import { schedule } from './frame.js';
 import { createToggle, createSelect, createStepper, createMiniSlider, createSegmented } from './controls.js';
 import { icon } from './icons.js';
 import { createDrumPanel } from './drum-panel.js';
+import { CHORD_PRESET_NAMES, CHORD_LEARNED, sanitizeChord, chordNotes, learnChord } from '../music/chord-trigger.js';
 
 export function midiName(m) {
   return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
@@ -141,10 +142,40 @@ export function createSeqPanel(ctx) {
   const arpGate = createMiniSlider(ctx, P('arp.gate', { id: 'arpGate', label: 'Gate', curve: 'lin', min: 0.05, max: 1, default: 0.6 }), { ariaLabel: 'Arpeggiator gate length', format: v => Math.round(v * 100) + '%' });
   const arpHold = createToggle(ctx, P('arp.hold', { id: 'arpHold', label: 'Hold', curve: 'bool', min: 0, max: 1, default: 0, hint: 'Latch: notes keep arpeggiating after you let go' }), { label: 'Hold', iconName: 'hold', className: 'toggle--sm' });
 
+  // v2.8 chord trigger (src/music/chord-trigger.js), stored in parts.N.chord
+  const chordOn = createToggle(ctx, P('chord.on', { id: 'chordOn', label: 'Chord', curve: 'bool', min: 0, max: 1, default: 0, hint: 'Chord trigger: every note this track gets (keys, MIDI, the sequencer, the arp\'s input) plays a chord built on it' }), { label: 'Chord', iconName: 'chord', className: 'toggle--sm' });
+  const chordPreset = createSelect(ctx, P('chord.preset', { id: 'chordPreset', label: 'Chord type', curve: 'enum', min: 0, max: CHORD_LEARNED, default: 0, options: CHORD_PRESET_NAMES }), { label: 'Chord type', className: 'select--sm' });
+  const chordKey = createToggle(ctx, P('chord.inKey', { id: 'chordInKey', label: 'In key', curve: 'bool', min: 0, max: 1, default: 0, hint: 'Build the chord from the global key and scale, so it changes with the note (in C major, D plays D minor)' }), { label: 'In key', className: 'toggle--sm' });
+  const learnBtn = h('button', { type: 'button', class: 'toggle toggle--sm has-icon', 'aria-label': 'Learn a chord from the keys held now', dataset: { tip: 'Hold a chord on the keyboard or a MIDI controller, then press Learn' }, html: icon('learn') + '<span class="toggle-text">Learn</span>' });
+  const chordShow = h('span', { class: 'chord-readout', 'aria-live': 'polite' });
+  scope.on(learnBtn, 'click', () => {
+    const p = sel();
+    const held = music && music.router && typeof music.router.rawHeld === 'function' ? music.router.rawHeld(p) : [];
+    const notes = learnChord(held);
+    if (!notes || notes.length < 2) { if (ctx.toast) ctx.toast('Hold two or more keys, then press Learn', { kind: 'info' }); return; }
+    store.batch(() => {
+      const cur = sanitizeChord(store.get(`parts.${p}.chord`));
+      store.set(`parts.${p}.chord`, { ...cur, on: 1, preset: CHORD_LEARNED, notes }, { source: 'ui' });
+    });
+    if (ctx.toast) ctx.toast(`Learned ${notes.map(n => midiName(held[0] + n)).join(' ')}`, { kind: 'success' });
+  });
+  function renderChord() {
+    const c = sanitizeChord(store.get(`parts.${sel()}.chord`));
+    const root = store.get('global.scaleRoot') ?? 9, scaleType = store.get('global.scaleType') ?? 1;
+    const from = 60 + root;
+    const names = chordNotes(from, c, { root, scaleType }).map(midiName).join(' ');
+    setText(chordShow, `${c.on ? '' : 'Off. '}${midiName(from).replace(/-?\d+$/, '')} plays ${names}`);
+  }
+  scope.add(store.subscribe('parts', (path) => { if (path === '' || path === 'parts' || /^parts\.\d+(\.chord.*)?$/.test(path)) schedule(renderChord); }));
+  scope.add(store.subscribe('ui.selectedPart', () => schedule(renderChord)));
+  scope.add(store.subscribe('global', () => schedule(renderChord)));
+  renderChord();
+
   const key = createSelect(ctx, binder.globalParam('scaleRoot'), { label: 'Key', className: 'select--sm' });
   const scale = createSelect(ctx, binder.globalParam('scaleType'), { label: 'Scale', className: 'select--sm' });
   const swing = createMiniSlider(ctx, binder.globalParam('swing'), { ariaLabel: 'Swing', format: v => Math.round(v * 100) + '%' });
   const keyMode = createSegmented(ctx, binder.globalParam('keyMode'), { label: 'Keyboard plays', size: 'sm' });
+  for (const c of [chordOn, chordPreset, chordKey]) scope.add(c.dispose);
   for (const c of [seqOn, seqRate, seqLen, seqOct, arpMode, arpRate, arpRhythm, arpOct, arpGate, arpHold, key, scale, swing, keyMode, lockGlide, lockRec, humanTime, humanVel]) scope.add(c.dispose);
 
   const field = (label, control, cls = '') => h('div', { class: ['field-row', cls] }, h('span', { class: 'mini-label' }, label), control);
@@ -168,6 +199,8 @@ export function createSeqPanel(ctx) {
     h('span', { class: 'seq-global-note' }, 'All tracks'));
   const arpBar = h('div', { class: 'seq-arp', role: 'group', 'aria-label': 'Arpeggiator for this track' },
     h('span', { class: 'section-title' }, 'Arp'), arpMode.el, arpRate.el, arpRhythm.el, field('Octaves', arpOct.el), field('Gate', arpGate.el, 'field-row--gate'), arpHold.el);
+  const chordBar = h('div', { class: 'seq-arp seq-chord', role: 'group', 'aria-label': 'Chord trigger for this track' },
+    h('span', { class: 'section-title' }, 'Chord'), chordOn.el, chordPreset.el, chordKey.el, learnBtn, chordShow);
 
   // ---------------------------------------------------------------- grid
   const cells = {};
@@ -211,7 +244,7 @@ export function createSeqPanel(ctx) {
   scope.add(store.subscribe('parts', (p) => { if (!/^parts\.\d+\.(params|mods|dot)\./.test(p)) syncDrum(); }));
   scope.add(store.subscribe('ui.selectedPart', syncDrum));
   syncDrum();
-  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, arpBar, playNote);
+  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, arpBar, chordBar, playNote);
   const el = h('div', { class: 'dock-pane dock-pane--seq' }, side, main);
   if (!hasMusic) {
     playNote.textContent = 'Playback is unavailable here (the music engine did not start). You can still edit patterns.';

@@ -138,12 +138,13 @@ describe('saved data', () => {
   it('clamps settings, marks sampled pads and drops oversized samples', () => {
     const data = pcmToBase64(new Float32Array(480).fill(0.25));
     const d = sanitizeDrum({ on: 5, pads: [
-      { name: '  ', pitch: 99, decay: 0, level: 4, pan: -3, choke: 9, synth: 42 },
+      { name: '  ', pitch: 99, decay: 0, level: 4, pan: -3, choke: 9, synth: 420 },
       { name: 'Desk knock', sample: { rate: 1, data } },
       { sample: { rate: 48000, data: 'A'.repeat(600000) } },
     ] });
     expect(d.on).toBe(1);
-    expect(d.pads[0]).toMatchObject({ name: 'Kick', pitch: 24, decay: 0.02, level: 1, pan: -1, choke: 4, synth: 7 });
+    // v2.8: synth indexes the 128-sound drum library (was clamped to 7 in 2.7)
+    expect(d.pads[0]).toMatchObject({ name: 'Kick', pitch: 24, decay: 0.02, level: 1, pan: -1, choke: 4, synth: 127 });
     expect(d.pads[1]).toMatchObject({ name: 'Desk knock', synth: -1, sample: { rate: 8000, data } });
     expect(d.pads[2].sample).toBeNull();
     expect(d.pads[2].synth).toBe(2);

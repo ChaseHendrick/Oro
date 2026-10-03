@@ -48,7 +48,9 @@ function coefficients(c, at, kind, hz, q, gain, sr) {
   c[at] = b0 / a0; c[at + 1] = b1 / a0; c[at + 2] = b2 / a0; c[at + 3] = a1 / a0; c[at + 4] = a2 / a0;
 }
 
-class EffectSlot {
+// One effect processor. Exported (v2.8) so the shared send buses
+// (src/dsp/send-fx.js) can run the same reverb and delay DSP once for the mix.
+export class EffectSlot {
   constructor(sr, index) {
     this.sr = sr;
     this.size = Math.ceil(sr * 2.05) + 8;

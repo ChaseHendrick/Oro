@@ -17,7 +17,8 @@ import {
 } from '../core/params.js';
 import { sanitizeLinks } from '../core/migrate.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
-import { sanitizeDrum, base64ToPcm } from '../dsp/drum-kit.js';
+import { sanitizeDrum, base64ToPcm, SYNTH_DRUMS } from '../dsp/drum-kit.js';
+import { libraryPcm, LIBRARY_PCM_RATE } from '../dsp/drum-library.js';
 import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { decodeNoiseRecording } from '../dsp/noise-recording.js';
@@ -126,6 +127,11 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         let pcm = pcmCache.get(p.sample.data);
         if (!pcm) { pcm = base64ToPcm(p.sample.data); if (pcmCache.size > 64) pcmCache.clear(); pcmCache.set(p.sample.data, pcm); }
         return { ...base, pcm, rate: p.sample.rate };
+      }
+      // v2.8 library sounds past the original eight are rendered here, not on the audio thread
+      if (p.synth >= SYNTH_DRUMS.length) {
+        const pcm = libraryPcm(p.synth);
+        if (pcm) return { ...base, pcm, rate: LIBRARY_PCM_RATE };
       }
       return { ...base, synth: p.synth };
     });

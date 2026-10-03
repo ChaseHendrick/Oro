@@ -452,6 +452,41 @@ one voice is: oscillator (path over terrain, then Lift and Fold) → plus Sub an
 Drive → filter → amp envelope → pan. Because Sub and Air go in before the filter, the
 filter and the amp envelope shape them too.
 
+### Smart controls (2.8)
+
+The **Smart controls** card at the top of the Sound tab holds eight knobs for the selected
+track. Each smart knob can move up to four of the track's modulatable controls at once (the
+same ones Links can reach), each across its own range, so one knob can open the filter,
+lower the resonance and add some Fold together.
+
+* **Choose a knob** by clicking it or tabbing to it. The editor beside the knobs shows its
+  targets. A knob with no targets is dimmed and does nothing yet.
+* **Learn**: press Learn, then move any sound knob on the track (or drag the dot on the map
+  for Dot X and Y). Where that control was when you pressed Learn becomes the smart knob's
+  start, and where you leave it becomes its end. Move more controls to add them, up to
+  four, then press **Done** (or Esc). Controls that cannot be modulated, such as the
+  envelope times, cannot be targets.
+* **Add a target...** adds a control from a list instead, from its current value to the
+  far end of its range.
+* For each target, **Start** and **End** set its value at the knob's two ends. Set Start
+  above End to make the knob turn that control down (the **Invert** button swaps them).
+  The curve menu sets how the knob travels through the range: **Linear**, **Slow start**,
+  **Fast start** or **S-curve**. Ranges follow each control's own scale, so a cutoff range
+  moves evenly in octaves.
+* Type a **name** for the knob, or leave it empty to show its first target's name.
+  **Clear** removes the knob's targets and name.
+
+Turning a smart knob sets its targets directly, like turning them yourself: the values are
+saved with the session, and Undo takes back a turn in one step. If you move a target
+yourself afterwards, the smart knob takes it over again the next time you turn it.
+Right-click a smart knob to **MIDI Learn** it; a mapped knob always works on the track you
+have selected.
+
+Smart controls are saved with the track, in scenes and with patches you save. Loading a
+patch replaces the track's smart controls with the patch's own, or clears them for a patch
+that has none (including the factory patches). Tracks that never use smart controls are
+saved exactly as before.
+
 ### Voice
 
 | Control | What it does |
@@ -802,6 +837,61 @@ back; the kit and lanes are kept.
 Sliced sounds are saved with the session as 16-bit audio, so a session with a recorded
 kit is larger than one without.
 
+### Sound map (2.8)
+
+With a track's drum kit on, **Sound map** (next to **Synth kit**) opens a map of drum
+sounds. Each dot is a sound, and sounds that sound alike sit close together: darker sounds
+to the left, brighter ones to the right, longer ones higher up. The colour shows the kind
+of sound (Kick, Snare, Hat, Open hat, Clap, Tom, Rim, Perc); squares are your samples.
+
+* **The library.** 128 sounds made by Oro, none of them recordings: the eight of the
+  synth kit plus 120 variations (18 kicks, 16 snares, 14 closed hats, 10 open hats, 10
+  claps, 14 toms, 10 rims and 28 percussion sounds: cowbells, shakers, congas, zaps,
+  blocks, cymbals and noise bursts). Each is built from a few settings worked out from
+  its number, so the same number always gives the same sound.
+* **Your samples.** Sounds sliced onto the pads of any track in the session appear as
+  squares, placed by the same measurements.
+* **Choosing a pad.** The numbered buttons above the map pick the pad to fill. Each
+  pad's sound is marked on the map with its number; the chosen pad's ring is in the
+  track colour.
+* **Hearing sounds.** Hover over a dot, or move with the arrow keys (each press jumps to
+  the nearest sound in that direction), to hear it at the pad's level and pitch. Space
+  or **Play** plays it again, and Home goes back to the pad's own sound.
+* **Using a sound.** Click a dot, press Enter or press **Use on pad N**. The pad keeps its
+  pitch, decay, level, pan and choke settings.
+* **Similar** swaps the pad's sound for the closest sound of the same kind. Press it
+  again for the next closest.
+* **Shuffle kit** fills all eight pads with sounds that belong together: one kick, snare,
+  closed hat, open hat, clap, tom, percussion sound (pad 7) and rim, each among the
+  closest of its kind to one sound picked at random. Every shuffle has a number, shown
+  under the map, and the same number always gives the same kit.
+
+The map measures each sound's brightness, length, low end, noisiness, main pitch and
+attack the first time it opens, which takes a moment, then lays them out with principal
+component analysis. A library sound is saved in the session as its number, so it does
+not make the session bigger. Every change can be undone, and kits from earlier versions
+sound the same.
+
+### Fills and groove pad (2.8)
+
+Below the pad settings of a drum kit track are two ways to write lanes for you. Every
+change they make is one step in Undo.
+
+* **Euclid** fills the selected pad's lane with **Hits** spread as evenly as possible
+  over the pattern length (Bjorklund's method: 3 hits over 8 steps gives a hit on steps
+  1, 4 and 7). **Rotate** moves them later by whole steps. Each change rewrites that lane
+  at 80% velocity. A lane you have not set here shows how many hits it has now.
+* **Groove** writes all eight lanes at once, laid out for the synth kit's pad order (kick,
+  snare, closed hat, open hat, clap, low tom, high tom, rim). Drag in the square, or
+  focus it and use the arrow keys (Shift for bigger steps): left to right raises
+  complexity, bottom to top raises loudness. More complexity only adds hits (extra
+  kicks, ghost snares, sixteenth hats, toms and rim), so the core beat stays.
+  * **Style**: Straight, Half-time, Broken or Four on the floor.
+  * **Fill** replaces the last four steps (fewer on patterns under 8 steps) with a snare
+    and tom run that builds to the end.
+  * **Vary** gives the optional hits a different order, so the same settings make a new
+    pattern. The same settings and Vary count always give the same pattern.
+
 ### Dot locks in the sequencer
 
 The **Dot** row lets the sequencer move the dot, so each step can sit on a different patch
@@ -831,6 +921,33 @@ plays the notes one at a time.
 * **Gate**: 5% to 100% of each step.
 * **Hold**: latches the chord so it keeps playing after you let go. Playing a new chord
   replaces it.
+
+### Chord trigger (2.8)
+
+The **Chord** row in the Seq tab turns every note a track receives into a whole chord built
+on that note: keys on the on-screen and computer keyboard, MIDI, the track's sequencer steps
+and the keys going into its arpeggiator (so the arp plays the chord's notes one at a time).
+Preview phrases and Explore notes still play single notes. It is off until you switch it on,
+and a track with it off plays exactly as before.
+
+* **Chord**: on or off for this track.
+* **Type**: **Triad**, **7th**, **Sus2**, **Sus4**, **Power** (root, fifth and octave),
+  **Octaves** (root and octave) or **Learned**.
+* **In key**: off, the chord keeps its shape on every note (Triad is a major triad, 7th a
+  dominant seventh). On, it is built from the steps of the global key and scale instead, so
+  its quality follows the note: in C major, D plays D minor, G plays G7 with 7th, and B plays
+  B diminished. A note outside the scale plays the chord of the scale note below it, moved up
+  to the note. With a scale of other than seven notes the chord still steps through that
+  scale.
+* **Learn**: hold two or more keys (on screen, on the computer keyboard or on a MIDI
+  controller) and press Learn. The chord is kept as its notes above the lowest one (up to 8
+  notes within three octaves), Type switches to **Learned** and the chord trigger turns on.
+  With In key on, a learned chord moves by scale steps too.
+* The line at the end shows what the key's root note plays with the current settings.
+
+Each key or step releases exactly the notes it started, even if you change the chord while
+it sounds. Drum kit tracks ignore the chord trigger. The setting belongs to the track: it is
+saved with the session, copied when you duplicate the track and kept when you load a patch.
 
 ### Preview
 
@@ -895,7 +1012,8 @@ The **Mix** tab has a channel strip for each part:
 
 * **Level** fader with an activity meter.
 * **Pan**, **Delay** send and **Reverb** send.
-* **M** (mute) and **S** (solo).
+* **Send A** and **Send B**: sends to the two shared send effects (2.8, below).
+* **M** (mute), **S** (solo) and the **Freeze** button (the snowflake, 2.8, below).
 * **Pedal** send with **Pre** and **Ins**, shown only while the pedal send is switched on
   (see [Guitar pedals](#15-guitar-pedals)).
 * Click the part's name to select it, double-click (or press F2) to rename it, and click the
@@ -913,6 +1031,62 @@ The **Master** section:
 
 The chain is: parts → sends into delay and reverb → chorus → warmth → volume → limiter →
 output. The limiter is always on, so the output never goes above the ceiling.
+
+### Send effects (2.8)
+
+Two more effects that every track can share, each running once for the whole mix: **Send
+A** is a reverb and **Send B** a delay. Turn up a track's **Send A** or **Send B** knob on
+its strip to send it there. The sends are taken after the level fader, so they follow the
+fader, mute, solo and the vector mix. Both start at 0.
+
+Their settings are in the **Send effects** section at the end of the Mix tab:
+
+| Effect | Controls |
+|---|---|
+| **Send A reverb** | **Size**, **Decay** (0.3 s to 12 s: the time the reverb takes to fall by 60 dB, before Damping takes the highs away sooner), **Damping**, **Pre-delay** (0 to 250 ms of silence before the reverb starts) and **Return** (its level in the mix). |
+| **Send B delay** | **Sync** on: **Time** is a note value (1/2 down to 1/32, with dotted and triplet values) at the tempo. Sync off: **Time** in milliseconds (20 ms to 2 s). Times longer than 2 s are held at 2 s. **Feedback**, **Tone** (dark to bright echoes), **Ping-pong** (echoes alternate left and right; off, they stay where the sound was) and **Return**. |
+
+The returns join the mix before chorus, warmth, volume and the limiter, so recordings,
+bounces and stems include them (a stem carries that track's own sends). They are separate
+from the **Delay** and **Reverb** sends and the master Delay and Reverb, which work as
+before. When no track sends to one of them and it has been silent for 2.5 seconds, it stops
+running and costs nothing, so a session that never uses them sounds exactly as it did.
+Loading a patch keeps a track's Send A and Send B amounts, and saved patches do not store
+them.
+
+### Freeze (2.8)
+
+Freezing a track renders its pattern into an audio loop and plays that loop in time with
+the transport instead of running its voices, which saves processing for other tracks.
+Press the snowflake on the track's strip (or choose **Freeze** in the track menu); the
+button shows a dashed outline while the loop renders, then lights up, and the track's tab
+and strip show the snowflake and "Frozen". Press it again to unfreeze.
+
+* The track needs its pattern on (**Seq on**) with notes in it, and its dot set to **Pin**
+  (a moving dot cannot be captured in a loop). Oro tells you if one of these is missing.
+* The loop holds the track's sound after its track effects. Its **level** fader, **mute**,
+  **solo**, the **Delay**, **Reverb**, **Send A** and **Send B** sends, the vector mix and the
+  pedal send still apply live. **Pan** is part of the loop.
+* **Loop length** (Mix > Send effects > Freeze) applies to the next freeze: **Auto** uses
+  whole passes of the pattern that fill whole bars (up to 8 passes), or choose 1, 2, 4 or 8
+  bars (rounded up to whole passes of the pattern). The render plays a few seconds of the
+  pattern first, so release and effect tails that cross the end of the loop come back round
+  at its start, as they do live.
+* A frozen track plays only while the transport runs. Keys and MIDI do not play it (Oro
+  says so the first time); unfreeze it to play it live.
+* **Editing a frozen track unfreezes it.** Changing anything that shapes its sound (any
+  sound or path setting, Pan, modulation, Links, the Function, track effects, terrains, the
+  pattern, the dot, the chord trigger, or the global tempo, swing, key or scale) makes the
+  track live again at once with a short crossfade, and a message tells you. Mixer moves
+  (level, sends, mute, solo) and renaming do not. Moving a macro or a science source does
+  not unfreeze a track; its loop keeps the values they had when you froze it.
+* The loop repeats one pass of the pattern, so steps with probability or humanize play the
+  same way every time while the track is frozen.
+* Freezing is not saved: a session always opens with every track live, and a bounce plays
+  frozen tracks from their patterns as usual.
+
+In the built-in test (one track with two unison copies), rendering a frozen track took
+about 90% less processing than the same track live.
 
 ---
 
@@ -1005,6 +1179,30 @@ limit keeps the loop under control instead of clipping it.
 keeps quiet tails clean) or **32-bit float** (every sample exactly as stored).
 
 Loops are not saved with your session: export the ones you want to keep.
+
+### Time stretch (2.8)
+
+Time stretch changes how long a recording lasts without changing its pitch. Oro does it
+offline (the audio is rewritten once, not processed live) with a waveform-similarity
+overlap-add method: it rebuilds the sound from short overlapping pieces of the original,
+each placed where it best continues the one before. Steady tones, voices and textures
+stretch cleanly; sharp drum hits can soften or double slightly, especially at large
+changes. It is used in two places:
+
+* **Looper: Follow tempo and Fit to tempo** (Loop tab, Tempo row). With **Follow tempo**
+  on, a loop recorded in bars (with the transport playing) is stretched to the same number
+  of bars whenever the tempo changes, so it stays in time and in tune. Oro keeps the loop
+  as it was recorded and always stretches from that copy, so moving the tempo back and
+  forth does not wear the sound down. The stretch waits until an overdub ends. **Fit to
+  tempo** does the same once, on demand; a loop recorded without the transport is fitted
+  to the nearest whole number of bars and follows the tempo from then on. Stretching
+  clears the loop's undo layers, and a loop can last at most 120 seconds. Follow tempo is a
+  setting of this computer, off until you turn it on.
+* **Noise recordings** (Sound tab, Noise card): **Stretch...** makes the imported
+  recording half as long, 75%, 150% or twice as long, keeping its pitch. Recordings keep at
+  most 16 seconds, so a longer result is cut. Undo takes it back.
+
+Drum kit pads, imported terrains and live input are not time-stretched.
 
 ### Resample (1.2)
 

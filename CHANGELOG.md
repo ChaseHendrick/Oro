@@ -3,6 +3,30 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.8.0 (October 2026)
+
+* **Sound map** for drum kits: 128 drum sounds made by Oro, plus your sliced samples, laid
+  out so similar sounds sit together. Hover or use the arrow keys to hear them, click to
+  put one on a pad. **Similar** finds a close alternative and **Shuffle kit** picks eight
+  that belong together.
+* **Euclid fills and the groove pad.** Euclid spreads a number of hits evenly along a
+  lane. The groove pad writes a whole beat from complexity and loudness, in four styles,
+  with an optional fill at the end.
+* **Smart controls.** Eight knobs at the top of the Sound tab for each track. Each knob
+  moves up to four settings at once, each over its own range (reversed ranges work), with
+  a choice of curve. Add settings with **Learn** or from a list. Saved with the track,
+  scenes and patches, undoable, and MIDI-learnable.
+* **Time stretch** that keeps pitch: the looper's **Follow tempo** and **Fit to tempo**
+  keep a loop in time when the tempo changes, and noise recordings get **Stretch...**.
+* **Send effects.** Two shared effects every track can send to: **Send A**, a reverb with
+  size, decay time, damping and pre-delay, and **Send B**, a delay that can follow the
+  tempo, with feedback, tone and ping-pong. They sit alongside each track's existing
+  Delay and Reverb sends, which are unchanged.
+* **Freeze.** The snowflake on a track renders its pattern to audio and plays that
+  instead, which uses far less processing. Editing the sound unfreezes it.
+* **Chord trigger.** One key plays a whole chord: learn your own or pick a preset, and
+  optionally keep it in the song's key.
+
 ## 2.7.0 (October 2026)
 
 * **Drum kit mode.** Any track can become an eight-pad drum kit with eight sequencer
