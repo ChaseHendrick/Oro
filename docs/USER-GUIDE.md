@@ -248,6 +248,40 @@ While the marble moves, its speed and the height under it are sent to the sound 
 where they are available as modulation sources (**Marble Speed** and **Marble Height**, see
 [Links](#links)).
 
+### Golf (2.9)
+
+A mini-game with the marble. Open the dot settings (the dot button on the map toolbar)
+and click **Golf**, then choose **9 holes** (the front nine, the default), **18 holes**
+(the full 18) or the **Driving range**. Golf plays on the selected track, whatever its
+dot behaviour.
+
+* Each hole has a tee and a hole (a white ring with a small flag, in a dip of the land)
+  with some land between them. The course has 18 holes and is the same every time on the
+  same land; the front nine are its first nine holes. **Par** (shown at the bottom of the
+  map) comes from the distance and how hilly the way is.
+* **Aim with the pointer**: drag from the marble towards where you want it to go. The line
+  shows the direction, and its length shows the power. Let go to shoot. Dragging anywhere
+  else still turns the camera.
+* **Aim with the keyboard**: Left and Right turn the aim (Shift for finer steps), Up and
+  Down turn it in bigger steps. Hold **Space** to charge and let go to shoot.
+* The marble is held still while you aim. After a shot it rolls until it stops. It drops
+  when it stops in the hole or rolls slowly over it; a fast ball skips across. Each hole
+  ends after 10 strokes at most.
+* A sunk ball plays a short chord in the current key on the selected track and shows the
+  result, for example "Hole 3: 4 strokes (par 3)". The next hole starts after a moment, or
+  press **Next hole** (or Enter).
+* At the end a scorecard ("Front nine" or "Full 18") shows each hole, your total and your
+  bests. Your best 9-hole round, your best 18-hole round and your best score on each hole
+  are kept on this computer.
+* **Driving range**: practice shots from a tee, with no par and no strokes. Yellow flags
+  mark 50, 100, 150 and 200 yards (yards here are a game measure, not real ones). When the
+  ball stops, Golf shows how far it ended from the tee and the height of the land there,
+  plays a note that rises with the distance, and puts the ball back on the tee after a
+  moment (press **R** or **Back to the tee** to do it at once). Your longest shot is kept.
+* **Esc** (or **Quit**) ends the game at any time and puts the dot back exactly where it
+  was, with the behaviour it had. Golf never changes your session or adds undo steps: the
+  golf marble's settings are its own, and its moves count like any rolling marble's.
+
 ### Dot locks
 
 The sequencer can also move the dot: each step can carry a **dot lock**, a spot the dot
@@ -1149,6 +1183,15 @@ browser also clears them. Export them to a file if you want a backup.
 
 ---
 
+### Seed from a word (2.9)
+
+At the bottom of the patch browser, type any word in **Seed from a word** and press **Go**
+(or Enter). The word picks the terrain seed and a whole patch: land, orbit, envelopes and
+modulation. The same word always gives the same land and the same sound, on any computer
+(capitals, accents written either way and extra spaces do not matter). It loads like any
+patch, as one undo step, on the selected track, and Oro confirms it, for example Seeded from "tide". The
+patch is named after the word; save it if you want to keep it.
+
 ## 11. Mixing and effects
 
 The **Mix** tab has a channel strip for each part:
@@ -1422,6 +1465,24 @@ Open **Settings** with the gear button or the **,** key.
   sound is never affected.
 * **Map style**, **Palette** (the colours of the land from valleys to peaks, shown as
   swatches) and **Auto-rotate**.
+* **Day and night**, **Pet** and **Pet name** (see below).
+
+### Day and night (2.9)
+
+Turn on **Day and night** under **3D map** in **Settings > General** and the colours of
+the land slowly follow the time where you are: warm at dawn, plain through the day,
+orange at dusk and a deep blue at night. Oro checks the clock once a minute and fades to
+the new colours over a few seconds, so the map never flickers. It only changes the map
+colours (and the small map), never the sound. It is off by default.
+
+### The pet (2.9)
+
+Turn on **Pet** under **3D map** in **Settings > General** and a small creature called
+Moss comes to live on the map, near the dot. It wanders slowly, keeps off steep slopes,
+falls asleep (a small "z" appears) after about 20 seconds without notes, and wakes up
+with a little hop when a note plays. With Reduce motion on it walks more slowly and does
+not hop. Give it another name in **Pet name**; the name is kept on this computer. The pet
+only lives on the map and never changes the sound. It is off by default.
 
 ### Audio
 

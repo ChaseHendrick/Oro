@@ -9,6 +9,8 @@ import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 import { createPedalPresetFields, openPedalPresetEditor } from './pedal-presets-form.js';
 import { describePedalPresets } from '../pedals/pedal-presets.js';
+import { wordPatch, normalizeWord, MAX_WORD } from '../presets/word-seed.js';
+import { found } from '../core/fun.js';
 
 export function matchesQuery(item, q) {
   if (!q) return true;
@@ -110,6 +112,30 @@ export function createPatchBrowser(ctx) {
   return { el, step, openBrowser: () => { if (ok) pop = openBrowser(ctx, open); }, dispose: scope.dispose };
 }
 
+/**
+ * Seed from a word (v2.9): the word picks the land and the sound, the same on
+ * any computer. Loading it is one patch load (one undo step).
+ */
+function wordSeedForm(ctx, part) {
+  const { presets } = ctx;
+  const id = uniqueId('word-seed');
+  const input = h('input', { id, class: 'field field--sm', type: 'text', maxlength: String(MAX_WORD), placeholder: 'Any word', autocomplete: 'off', spellcheck: 'false' });
+  const go = h('button', { type: 'submit', class: 'btn btn--ghost btn--xs' }, 'Go');
+  const ok = has(presets, 'loadPatch');
+  if (!ok) { input.disabled = true; go.disabled = true; }
+  const form = h('form', { class: 'word-seed' }, h('label', { class: 'word-seed-label', for: id }, 'Seed from a word'), h('div', { class: 'word-seed-row' }, input, go));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const word = normalizeWord(input.value);
+    const patch = word ? wordPatch(word) : null;
+    if (!ok || !patch) { input.focus(); return; }
+    if (call(presets, 'loadPatch', part, patch) === false) return;
+    found('badge', 'seed-word');
+    ctx.toast(`Seeded from "${word}"`, { kind: 'info' });
+  });
+  return form;
+}
+
 /** Your own scene or patch called `name`, as listed (with its pedal presets), or null. */
 function userItem(presets, kind, name) {
   const list = (kind === 'patch' ? call(presets, 'patches') : call(presets, 'scenes')) || [];
@@ -206,6 +232,7 @@ function openBrowser(ctx, anchor) {
       h('div', { class: 'tabs tabs--sm', role: 'tablist', 'aria-label': 'Preset type' }, tabPatches, tabScenes, tabFavorites)),
     folder,
     list,
+    wordSeedForm(ctx, part),
     h('footer', { class: 'browser-foot' }, saveScene, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
 
   function items() {

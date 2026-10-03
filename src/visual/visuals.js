@@ -42,6 +42,8 @@ import { PALETTES, PALETTE_INFO, HEAT_RAMP, makeAtmosphere, blendAtmosphere, ble
 import { LiveParams, TELE_STALE_MS, isModulated, voiceLive, orbitDifference, ORBIT_IDS } from './modstate.js';
 import { BALL_RADIUS, MODE_PIN, MODE_TOUR } from './physics.js';
 import { createDotSim, USER_META } from './dot-sim.js';
+import { createFunLayer } from './fun-layer.js';
+import { stepTint } from './day-night.js';
 import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { makePlan, buildPlan, sampleRoute } from './tour.js';
 import { createTerrainLayer } from './terrain-layer.js';
@@ -222,8 +224,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
   const orbit = createOrbitLayer(qualityName);
   const dot = createDotLayer();
   const markers = createMarkersLayer();
+  const fun = createFunLayer();
   const env = createEnvironment(renderer);
-  scene.add(sky.sky, terrain.mesh, sky.points, orbit.group, dot.group, markers.group);
+  scene.add(sky.sky, terrain.mesh, sky.points, orbit.group, dot.group, markers.group, fun.group);
   for (let i = 0; i < 6; i++) terrain.uniforms.uHeat.value[i].fromArray(HEAT_RAMP[i]);
 
   // Lights for the physical materials (marble, ghost); the terrain shader
@@ -303,6 +306,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
   let themeT = document.documentElement.dataset.theme === 'light' ? 1 : 0;
   let themeTarget = themeT;
   let themeDirty = true;
+  // Day and night tint over the palette (v2.9): 1, 1, 1 when off.
+  const DAY_STEP_MS = 200, DAY_STEP = 0.012;
+  const dayTint = [1, 1, 1], dayTarget = [1, 1, 1];
+  let dayMoving = false, dayAt = -Infinity;
+  // Golf (v2.9): while set, pointer presses on the ball go here.
+  let funInput = null;
   // Animation clock (ms): advances with every frame (and the off-screen
   // physics timer). Glides, camera moves and write throttles run on it, so
   // test stepping (debug.advance) and real frames behave identically.
@@ -463,6 +472,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   const minimap = createMinimap(container, {
     onPick(u, v, phase) {
       rig.poke();
+      if (funInput) return;           // Golf: the ball only moves by a shot
       if (editing()) { minimapWaypoint(u, v, phase); return; }
       cancelGlide();
       // the minimap shows one copy of the land: use the copy nearest the dot
@@ -723,6 +733,20 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (!isTouch && e.button !== 0) return; // right / middle: camera
     if (!isTouch) { try { canvas.focus({ preventScroll: true }); } catch { /* old browsers */ } }
 
+    if (funInput) {
+      // Golf: a drag from the ball aims, anywhere else turns the camera
+      if (overDot(e.clientX, e.clientY, isTouch) && funInput('down', e.clientX, e.clientY)) {
+        blockCamera();
+        press = { id: e.pointerId, kind: 'fun', sx: e.clientX, sy: e.clientY, moved: false };
+        canvas.style.cursor = 'crosshair';
+        overlay.hide();
+        return;
+      }
+      controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+      controls.touches.ONE = THREE.TOUCH.ROTATE;
+      return;
+    }
+
     if (edit) {
       let i = markers.pickWaypoint(camera, rect, e.clientX, e.clientY, isTouch);
       if (i < 0 && pickTerrain(e.clientX, e.clientY, hit)) {
@@ -856,6 +880,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
       case 'dot': case 'terrain':
         if (press.kind === 'dot' || press.moved) dragTo(e.clientX, e.clientY);
         break;
+      case 'fun':
+        if (funInput) funInput('move', e.clientX, e.clientY);
+        break;
       default: break;
     }
   }
@@ -866,6 +893,11 @@ export async function createVisuals(container, { store, engine = null, quality, 
     clearLongPress();
     if (!p) return;
     if (p.kind === 'wp') markers.setActive(-1);
+    if (p.kind === 'fun') {
+      if (funInput) funInput(commit ? 'up' : 'cancel', 0, 0);
+      canvas.style.cursor = '';
+      return;
+    }
     if (ctl.mode === 'drag') {
       ctl.mode = 'idle';
       settleTile(sel);
@@ -889,7 +921,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   function onWheel(e) {
     rig.poke();
-    if (editing()) return;
+    if (editing() || funInput) return;
     rect = canvas.getBoundingClientRect();
     if (!overDot(e.clientX, e.clientY, false)) return;
     // over the dot the wheel sets Size instead of zooming
@@ -1132,6 +1164,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
       bloom.threshold = atm.bloomThreshold;
     }
     blendRamp(paletteIndex, themeT, ramp);
+    if (dayTint[0] !== 1 || dayTint[1] !== 1 || dayTint[2] !== 1) {
+      for (let i = 0; i < 6; i++) for (let c = 0; c < 3; c++) ramp[i][c] *= dayTint[c];
+    }
     for (let i = 0; i < 6; i++) u.uRamp.value[i].fromArray(ramp[i]);
     u.uTint.value = PALETTES[paletteIndex].tint;
     // Reflections: rebuild at the start, midway and end of a theme change.
@@ -1411,6 +1446,13 @@ export async function createVisuals(container, { store, engine = null, quality, 
       themeT += Math.sign(themeTarget - themeT) * Math.min(Math.abs(themeTarget - themeT), step);
       themeDirty = true;
     }
+    // Day and night (v2.9): small steps a fifth of a second apart, so a change
+    // of tint takes several seconds and never flickers.
+    if (dayMoving && clock - dayAt >= DAY_STEP_MS) {
+      dayAt = clock;
+      dayMoving = stepTint(dayTint, dayTarget, DAY_STEP);
+      themeDirty = true;
+    }
     if (themeDirty) { applyAtmosphere(); themeDirty = false; }
 
     // ---- terrain crossfades
@@ -1574,6 +1616,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (showWp && routeN > 1) markers.setRoute(routeUV, routeN, view);
     else markers.setRoute(routeUV, 0, view);
     markers.update(view, dt, showWp, time, reduced);
+    fun.update(view, dotPos, controls.target, dt, clock / 1000, reduced);
 
     // ---- terrain uniforms
     const u = terrain.uniforms;
@@ -1744,12 +1787,74 @@ export async function createVisuals(container, { store, engine = null, quality, 
     /** Follow the sequencer (dot-lock flashes, Tour on the beat). */
     setMusic(m) { musicGiven = !!m; setMusic(m); },
 
+    /** Day and night (v2.9): tint the palette by [r, g, b] (linear), eased slowly; null for none. */
+    setDayTint(rgb) {
+      for (let c = 0; c < 3; c++) dayTarget[c] = Array.isArray(rgb) && Number.isFinite(rgb[c]) ? Math.min(1.5, Math.max(0.3, rgb[c])) : 1;
+      dayMoving = dayTarget[0] !== dayTint[0] || dayTarget[1] !== dayTint[1] || dayTarget[2] !== dayTint[2];
+    },
+    dayTint: () => dayTint.slice(),
+
+    /**
+     * Hooks for the v2.9 extras (Golf and the pet). Nothing here
+     * writes the session: the ball moves like a Roll marble (source
+     * 'physics') and the golf dot settings are an override in the sim.
+     */
+    fun: {
+      part: () => sel,
+      setOverride: (p, dotSettings) => sim.setOverride(p, dotSettings),
+      /** The selected part's ball: u, v (wrapped), speed (world units / s). */
+      ball(out = {}) {
+        const s = sim.state(sel);
+        out.u = s.u; out.v = s.v; out.speed = Math.hypot(s.vx || 0, s.vz || 0);
+        return out;
+      },
+      /** Put the ball at (u, v) and keep it there until shoot() (a simulated move, not an edit). */
+      place(u, v) {
+        cancelGlide();
+        if (!sim.isActive(sel)) return;
+        sim.teleport(sel, wrap01(u), wrap01(v));
+        sim.hold(sel, wrap01(u), wrap01(v));
+        sim.simWrite(sel, u, v, clock);
+      },
+      /** Let the ball go with velocity (vx, vz) in world units / s. */
+      shoot(vx, vz) { if (sim.isActive(sel)) sim.release(sel, vx, vz); },
+      /** Normalised land height (-1..1) at (u, v). */
+      height: (u, v) => view.norm(u, v),
+      ready: () => view.A.data !== null && view.A.data !== undefined,
+      /** World offset from the drawn ball to the land under the pointer; false off the land. */
+      aimAt(clientX, clientY, out) {
+        rect = canvas.getBoundingClientRect();
+        if (!pickTerrain(clientX, clientY, hit)) return false;
+        out.dx = hit.x - dotPos.x; out.dz = hit.z - dotPos.z;
+        return true;
+      },
+      /** Screen position of the drawn ball (client pixels). */
+      ballScreen(out = {}) {
+        rect = canvas.getBoundingClientRect();
+        projV.set(dotPos.x, dotPos.y, dotPos.z).project(camera);
+        out.x = rect.left + (projV.x * 0.5 + 0.5) * rect.width;
+        out.y = rect.top + (-projV.y * 0.5 + 0.5) * rect.height;
+        return out;
+      },
+      /** Angle (radians, world x towards z) the camera looks along, flattened. */
+      viewAngle: () => Math.atan2(controls.target.z - camera.position.z, controls.target.x - camera.position.x),
+      setInput(fn) { funInput = typeof fn === 'function' ? fn : null; if (!funInput && press && press.kind === 'fun') press = null; },
+      setHole: (u, v) => fun.setHole(u, v),
+      setFlags: (list, u, v) => fun.setFlags(list, u, v),
+      setAim: (angle, power) => fun.setAim(angle, power),
+      setPet(on) { fun.setPet(on, wrap01(dotPos.u + 0.04), wrap01(dotPos.v + 0.03), clock / 1000); },
+      petNote() { fun.petNote(clock / 1000, reduced); },
+      petState: () => fun.petState(),
+    },
+
     dispose() {
       if (disposed) return;
       disposed = true;
       running = false;
       cancelAnimationFrame(raf);
       if (physicsTimer) clearInterval(physicsTimer);
+      funInput = null;
+      fun.dispose();
       offStore();
       engineOffs.forEach(f => f());
       window.removeEventListener('orograph:theme', onTheme);
