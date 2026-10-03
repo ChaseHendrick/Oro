@@ -46,6 +46,7 @@ export function describeEdit(path, meta = {}) {
   if (meta.source === 'preset') return 'Load patch';
   if (meta.source === 'import') return 'Import';
   if (meta.source === 'capture') return 'Capture';
+  if (meta.source === 'imprint') return 'Imprint';
   const k = String(path || '').split('.');
   if (k[0] === 'global' && k[1]) return GLOBAL_PARAM_MAP[k[1]]?.label || 'Global setting';
   if (k[0] === 'parts' && k.length >= 2) {

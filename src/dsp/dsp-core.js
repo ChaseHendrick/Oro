@@ -64,6 +64,7 @@ import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
 import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
 import { MasterOperator, OPERATOR_ACTIONS } from './damage.js';
+import { Resonator } from './resonator.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -448,6 +449,7 @@ class Voice {
     this.index = index;
     this.active = false;
     this.gate = false;
+    this.hz = 0;                        // the note's frequency at the last control update (2.10 Resonator)
     this.note = 60;
     this.vel = 0.8;
     this.velGain = 1;
@@ -773,6 +775,9 @@ class Part {
     // the frozen loop's share (0 voices .. 1 loop), fzTarget where it heads,
     // fzGate the transport fade (0 stopped .. 1 playing)
     this.frozen = null; this.fzX = 0; this.fzTarget = 0; this.fzGate = 0;
+    // 2.10 Resonator (src/dsp/resonator.js): built the first time it is
+    // switched on; while resoMode is 0 nothing about it runs
+    this.reso = null; this.resoMode = 0; this.resoMorph = 0; this.resoAt = 0;
     this.updateDerived();
   }
 
@@ -1308,7 +1313,62 @@ export class OroDSP {
     }
     P.updateDerived();
     this.prepareFeatures(P);
+    this.resoParams(P);
     if (P.mode !== oldMode) this.releasePart(P);
+  }
+
+  /**
+   * 2.10 Resonator settings from the part's parameters. The membrane is only
+   * built (message time, not in process()) once Resonator is first switched on.
+   */
+  resoParams(P) {
+    const prm = P.params;
+    const mode = Math.round(prm[PI.resoOn]) || 0;
+    if (P.reso === null) {
+      if (mode === 0) return;
+      P.reso = new Resonator(this.sr, this.quality);
+      P.resoMorph = prm[PI.morph];
+    }
+    P.reso.configure(mode, prm[PI.resoMix], prm[PI.resoDecay], prm[PI.resoTone], prm[PI.resoSize], prm[PI.resoListen]);
+    P.resoMode = P.reso.mode;
+    if (Math.abs(prm[PI.morph] - P.resoMorph) > 0.01) { P.resoMorph = prm[PI.morph]; P.reso.dirty = true; }
+  }
+
+  /** Stiffness and lowest mode of the part's membrane from its terrains (about 1 ms at the standard grid). */
+  resoDerive(P) {
+    P.resoMorph = P.params[PI.morph];
+    P.reso.derive(P.terrA, P.terrB, clamp01(P.resoMorph));
+    P.resoAt = this.blockTime + 0.05;
+  }
+
+  /** Note pitch (Hz) as the voice computes it, without modulation. */
+  resoNoteHz(P, pitch) {
+    const prm = P.params;
+    const semis = this.tuneSemis === null
+      ? pitch + prm[PI.octave] * 12 + prm[PI.tune] + prm[PI.fine] / 100 + P.bend * prm[PI.bendRange]
+      : this.tunedPitch(pitch + prm[PI.tune] + P.bend * prm[PI.bendRange]) + prm[PI.octave] * 12 + prm[PI.fine] / 100;
+    return 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
+  }
+
+  /** Strike mode: a note (re)starting on voice v hits the membrane at the dot. */
+  resoStrike(P, v) {
+    const R = P.reso;
+    if (R === null || P.resoMode !== 1) return;
+    if (!R.ready) this.resoDerive(P);
+    R.setNote(this.resoNoteHz(P, v.pitch), true);
+    R.setDot(v.sCx, v.sCy);
+    R.strike(v.sCx, v.sCy, v.velGain);
+  }
+
+  /** The membrane for one host-rate segment of the part's output (in place). */
+  resoBlock(P, oL, oR, pos, seg) {
+    const R = P.reso;
+    if (!R.ready || (R.dirty && this.blockTime >= P.resoAt)) this.resoDerive(P);
+    let nv = null;
+    for (const v of P.voices) if (v.active && v.gate && (nv === null || v.order > nv.order)) nv = v;
+    if (nv !== null) { R.setNote(nv.hz, false); R.setDot(nv.cx, nv.cy); }
+    R.control(seg);
+    R.process(oL, oR, pos, seg);
   }
 
   writeParam(P, idx, val) {
@@ -1631,6 +1691,7 @@ export class OroDSP {
     if (!chain.length) return;
     extendChain(chain);
     P.terrGen++;
+    if (P.reso !== null) P.reso.dirty = true;
     const isB = slot === 1 || slot === 'B' || slot === 'b';
     const live = P.activeCount() > 0 || (P.ghost !== null && P.ghost.left > 0);
     if (isB) {
@@ -1738,6 +1799,7 @@ export class OroDSP {
       }
     }
     P.updateDerived();
+    this.resoParams(P);
     if (P.mode !== oldMode) this.releasePart(P);
     if (force) this.ctrlRemain = 0;
   }
@@ -1758,7 +1820,7 @@ export class OroDSP {
       this.writeParam(P, idx, val);
       touched = true;
     }
-    if (touched) P.updateDerived();
+    if (touched) { P.updateDerived(); this.resoParams(P); }
   }
 
   allOff(part) {
@@ -1817,6 +1879,7 @@ export class OroDSP {
     for (const P of this.parts) {
       P.os = q.os;
       P.updateDerived();
+      if (P.reso !== null) P.reso.setQuality(mode);
       if (osChanged) {
         P.hist = q.os === 4 ? HB1_HIST : HB_HIST;
         P.rc.hist = P.hist;
@@ -2074,6 +2137,7 @@ export class OroDSP {
       }
       // Mono glides on every note, Legato only between overlapping notes.
       if (!glideOn || (P.mode === 2 && !legato)) v.pitch = note;
+      if (!legato && P.resoMode === 1) this.resoStrike(P, v);
     }
     P.lastPitch = note;
   }
@@ -2125,6 +2189,7 @@ export class OroDSP {
     v.rand = this.linkRng() * 2 - 1;
     this.triggerExtraEnvelopes(P,v,true);
     v.stringOn=false;
+    if (P.resoMode === 1) this.resoStrike(P, v);
   }
 
   startVoice(P, v, note, vel, glideFrom) {
@@ -2175,6 +2240,7 @@ export class OroDSP {
       v.dcMeanR = mean * gr;
     }
     v.dcInit = true;
+    if (P.resoMode === 1) this.resoStrike(P, v);
   }
 
   /** Map a path phase through a travel setting (ping-pong, even). */
@@ -2506,6 +2572,7 @@ export class OroDSP {
       : this.tunedPitch(v.pitch + prm[PI.tune] + P.bend * prm[PI.bendRange]) + prm[PI.octave] * 12 + MP[M_FINE] / 100;
     let f = 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
     if (!(f > 0)) f = 1;
+    v.hz = f;
 
     // mip level from traversal speed (terrain units per second); Laps traces
     // the path `laps` times per cycle, so it scales the speed, and Ping-pong
@@ -4323,7 +4390,7 @@ export class OroDSP {
       const active = P.activeCount();
       const kitBusy = P.kitOn && P.kit !== null && P.kit.busy;
       const fz = P.frozen;
-      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy && fz === null) {
+      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy && fz === null && (P.resoMode === 0 || !P.reso.busy)) {
         P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg; P.vectorGain+=P.dVector*seg;
         P.sA += P.dSA * seg; P.sB += P.dSB * seg;
         continue;
@@ -4377,6 +4444,7 @@ export class OroDSP {
           g.left = left;
         }
       } else this.frozenFill(P, oL, oR, pos, seg);
+      if (live && P.resoMode !== 0) this.resoBlock(P, oL, oR, pos, seg);
       if (P.oldA) { P.fadeACur += P.dFadeA * (P.rc.os * seg); if (P.fadeACur < 0) P.fadeACur = 0; }
       if (P.oldB) { P.fadeBCur += P.dFadeB * (P.rc.os * seg); if (P.fadeBCur < 0) P.fadeBCur = 0; }
       let rawPeak=0;
