@@ -1,0 +1,98 @@
+// Persisted four-slot track rack. Parameters are normalized; the catalogue
+// defines each effect's interpretation, labels and musical starting values.
+export const FX_SLOT_COUNT = 4;
+const effect = (id, name, params, defaults, hint) => ({ id, name, params, defaults, hint });
+export const FX_TYPES = Object.freeze([
+  effect('bypass', 'Bypass', ['Amount', 'Shape', 'Tone', 'Level'], [0.5, 0.5, 0.5, 0.5], 'Pass the signal through unchanged.'),
+  effect('delay', 'Stereo delay', ['Time', 'Feedback', 'Tone', 'Crossfeed'], [0.45, 0.35, 0.65, 0.1], 'Independent stereo echoes with filtered feedback.'),
+  effect('pingpong', 'Ping-pong delay', ['Time', 'Feedback', 'Tone', 'Spread'], [0.45, 0.4, 0.6, 0.8], 'Echoes alternate between the left and right channels.'),
+  effect('reverb', 'Reverb', ['Size', 'Decay', 'Damping', 'Diffusion'], [0.55, 0.4, 0.45, 0.7], 'An eight-line feedback delay network creates a diffuse stereo room.'),
+  effect('shimmer', 'Shimmer reverb', ['Size', 'Decay', 'Damping', 'Shimmer'], [0.65, 0.55, 0.45, 0.6], 'An octave-up granular signal recirculates through the reverb.'),
+  effect('chorus', 'Chorus', ['Rate', 'Depth', 'Feedback', 'Spread'], [0.35, 0.5, 0.15, 0.75], 'Long modulated delays create a stereo ensemble.'),
+  effect('flanger', 'Flanger', ['Rate', 'Depth', 'Feedback', 'Manual'], [0.3, 0.65, 0.65, 0.3], 'Short modulated delay and signed feedback sweep comb notches.'),
+  effect('phaser', 'Phaser', ['Rate', 'Depth', 'Feedback', 'Stages'], [0.3, 0.65, 0.55, 0.5], 'Four to eight all-pass stages sweep spectral notches.'),
+  effect('overdrive', 'Overdrive', ['Drive', 'Tone', 'Bias', 'Level'], [0.4, 0.65, 0.5, 0.6], 'Asymmetric soft clipping with a variable tone filter.'),
+  effect('distortion', 'Distortion', ['Drive', 'Threshold', 'Fold', 'Tone'], [0.4, 0.55, 0.25, 0.7], 'Hard clipping blends into triangular wave folding.'),
+  effect('decimator', 'Decimator', ['Bits', 'Rate', 'Dither', 'Smooth'], [0.5, 0.25, 0.1, 0], 'Independent bit-depth and sample-rate reduction.'),
+  effect('granular', 'Granular pitch shift', ['Pitch', 'Grain size', 'Feedback', 'Scatter'], [0.75, 0.45, 0.1, 0], 'Two overlapping windowed grains transpose buffered audio.'),
+  effect('eq4', 'Four-band EQ', ['Low shelf', 'Low mid', 'High mid', 'High shelf'], [0.5, 0.5, 0.5, 0.5], 'Four independent bands at 100 Hz, 500 Hz, 3 kHz and 10 kHz.'),
+  effect('duck', 'Sidechain ducking', ['Depth', 'Threshold', 'Attack', 'Release'], [0.75, 0.65, 0.1, 0.4], 'The chosen sidechain reduces this track when it gets loud.'),
+  effect('ott', 'Multiband compression', ['Depth', 'Time', 'Gain', 'Upward'], [0.65, 0.4, 0.5, 0.6], 'Three bands apply upward and downward compression independently.'),
+  effect('compressor', 'Compressor', ['Threshold', 'Ratio', 'Attack', 'Release'], [0.7, 0.25, 0.15, 0.4], 'Stereo-linked downward compression controls dynamics.'),
+  effect('limiter', 'Limiter', ['Ceiling', 'Release', 'Lookahead', 'Knee'], [0.8, 0.35, 0.5, 0.3], 'Lookahead peak limiting with a soft or hard knee.'),
+  effect('tremolo', 'Tremolo', ['Rate', 'Depth', 'Shape', 'Stereo'], [0.4, 0.65, 0.1, 0], 'Amplitude modulation blends smooth and square pulses.'),
+  effect('autopan', 'Auto pan', ['Rate', 'Depth', 'Shape', 'Offset'], [0.4, 0.75, 0.1, 0.5], 'Opposing gain curves move the signal across the stereo field.'),
+  effect('ringmod', 'Ring modulation', ['Frequency', 'Depth', 'Phase', 'Stereo'], [0.45, 1, 0, 0.5], 'Audio-rate multiplication creates sum and difference sidebands.'),
+  effect('wah', 'Envelope wah', ['Sensitivity', 'Resonance', 'Range', 'Position'], [0.5, 0.55, 0.6, 0.35], 'An input envelope sweeps a resonant band-pass filter.'),
+  effect('lowpass', 'Low-pass filter', ['Cutoff', 'Resonance', 'Drive', 'Slope'], [0.7, 0.2, 0, 0.5], 'A driven resonant filter blends 12 and 24 dB slopes.'),
+  effect('highpass', 'High-pass filter', ['Cutoff', 'Resonance', 'Drive', 'Slope'], [0.3, 0.2, 0, 0.5], 'A driven resonant high-pass blends 12 and 24 dB slopes.'),
+  effect('comb', 'Comb resonator', ['Frequency', 'Feedback', 'Tone', 'Drive'], [0.45, 0.7, 0.65, 0.1], 'A tuned short delay adds resonant harmonic peaks.'),
+  effect('stereo', 'Stereo width', ['Width', 'Balance', 'Haas', 'Crossfeed'], [0.75, 0.5, 0.1, 0], 'Mid-side width, balance and a short right-channel delay.'),
+  effect('warmth', 'Warmth', ['Drive', 'Body', 'Tone', 'Bias'], [0.35, 0.55, 0.65, 0.5], 'A rounded cubic saturator adds low-order harmonics and body.'),
+  effect('gate', 'Noise gate', ['Threshold', 'Hold', 'Release', 'Floor'], [0.4, 0.25, 0.35, 0], 'Stereo-linked gating with hold, release and a finite floor.'),
+  effect('tape', 'Tape colour', ['Drive', 'Wow', 'Tone', 'Noise'], [0.35, 0.3, 0.6, 0.1], 'Saturation, wow, flutter, high-frequency loss and tape noise.'),
+]);
+export const FX_TYPE_MAP = Object.freeze(Object.fromEntries(FX_TYPES.map((type, index) => [type.id, { ...type, index }])));
+export const FX_ROUTINGS = Object.freeze([
+  { id: 0, name: 'Serial', diagram: 'A → B → C → D' },
+  { id: 1, name: 'Four parallel', diagram: '(A + B + C + D) / 4' },
+  { id: 2, name: 'Parallel pairs', diagram: '(A → B) + (C → D)' },
+  { id: 3, name: 'Middle split', diagram: 'A → (B + C) → D' },
+  { id: 4, name: 'Input split', diagram: '(A + B) → C → D' },
+  { id: 5, name: 'Output fan', diagram: 'A → (B + C + D)' },
+  { id: 6, name: 'Input fan', diagram: '(A + B + C) → D' },
+  { id: 7, name: 'Mid / side split', diagram: 'Mid → A → B; Side → C → D' },
+  { id: 8, name: 'Low / high split', diagram: 'Below 800 Hz → A → B; above → C → D' },
+  { id: 9, name: 'Left / right split', diagram: 'Left → A → B; Right → C → D' },
+]);
+const finite = (value, fallback) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const clamp01 = (value, fallback) => Math.min(1, Math.max(0, finite(value, fallback)));
+export function defaultFxSlot(type = 'bypass') {
+  const def = FX_TYPE_MAP[type] || FX_TYPE_MAP.bypass;
+  return { type: def.id, mix: def.id === 'bypass' ? 0 : 0.5, p1: def.defaults[0], p2: def.defaults[1], p3: def.defaults[2], p4: def.defaults[3] };
+}
+export function defaultTrackFx() {
+  return { routing: 0, sidechain: 'self', slots: Array.from({ length: FX_SLOT_COUNT }, () => defaultFxSlot()) };
+}
+export function sanitizeTrackFx(value) {
+  const src = value && typeof value === 'object' ? value : {};
+  const routing = Math.max(0, Math.min(FX_ROUTINGS.length - 1, Math.round(finite(src.routing, 0))));
+  const sidechain = typeof src.sidechain === 'string' && (src.sidechain === 'self' || src.sidechain === 'mix' || /^[\w-]{1,24}$/.test(src.sidechain)) ? src.sidechain : 'self';
+  return { routing, sidechain, slots: Array.from({ length: FX_SLOT_COUNT }, (_, index) => {
+    const slot = src.slots?.[index];
+    const def = defaultFxSlot(slot?.type);
+    return { type: def.type, mix: clamp01(slot?.mix, def.mix), p1: clamp01(slot?.p1, def.p1), p2: clamp01(slot?.p2, def.p2), p3: clamp01(slot?.p3, def.p3), p4: clamp01(slot?.p4, def.p4) };
+  }) };
+}
+/** Actual-value scales keep keyboard entry and reset consistent with the
+ * units displayed by the UI while persistence remains normalized. */
+export function fxParamScale(type, parameter) {
+  let min = 0, max = 1, curve = 'lin', unit = '';
+  if (type === 'eq4') { min = -12; max = 12; unit = 'dB'; }
+  else if (type === 'granular' && parameter === 0) { min = -24; max = 24; unit = 'st'; }
+  else if (type === 'decimator' && parameter === 0) { min = 3; max = 16; curve = 'int'; unit = 'bit'; }
+  else if (['delay', 'pingpong'].includes(type) && parameter === 0) { min = .02; max = 2; curve = 'exp'; unit = 's'; }
+  else if (type === 'ringmod' && parameter === 0) { min = 20; max = 2000; curve = 'exp'; unit = 'Hz'; }
+  else if (['lowpass', 'highpass'].includes(type) && parameter === 0) { min = 20; max = 18000; curve = 'exp'; unit = 'Hz'; }
+  else if (type === 'limiter' && parameter === 0) { min = -12; max = 0; unit = 'dB'; }
+  else if (['compressor', 'gate'].includes(type) && parameter === 0) { min = type === 'gate' ? -70 : -48; max = type === 'gate' ? -15 : -3; unit = 'dB'; }
+  else if (type === 'duck' && parameter === 1) { min = -48; max = -6; unit = 'dB'; }
+  else if (['chorus', 'flanger', 'phaser'].includes(type) && parameter === 0) { min = .05; max = 5; curve = 'exp'; unit = 'Hz'; }
+  else if (['tremolo', 'autopan'].includes(type) && parameter === 0) { min = .1; max = 20; curve = 'exp'; unit = 'Hz'; }
+  return { min, max, curve, unit };
+}
+export function formatFxParam(type, parameter, value) {
+  const p = Math.max(0, Math.min(1, Number(value) || 0));
+  if (type === 'eq4') return ((p * 24 - 12) >= 0 ? '+' : '') + (p * 24 - 12).toFixed(1) + ' dB';
+  if (type === 'granular' && parameter === 0) return (p * 48 - 24).toFixed(1) + ' st';
+  if (type === 'decimator' && parameter === 0) return Math.round(3 + p * 13) + ' bit';
+  if (['delay', 'pingpong'].includes(type) && parameter === 0) return Math.round(20 * Math.pow(100, p)) + ' ms';
+  if (type === 'ringmod' && parameter === 0) return Math.round(20 * Math.pow(100, p)) + ' Hz';
+  if (['lowpass', 'highpass'].includes(type) && parameter === 0) return Math.round(20 * Math.pow(900, p)) + ' Hz';
+  if (type === 'limiter' && parameter === 0) return (p * 12 - 12).toFixed(1) + ' dB';
+  if (['compressor', 'duck', 'gate'].includes(type) && parameter === 0 && type !== 'duck') return Math.round((type === 'gate' ? -70 : -48) + p * (type === 'gate' ? 55 : 45)) + ' dB';
+  if (type === 'duck' && parameter === 1) return Math.round(-48 + p * 42) + ' dB';
+  if (['chorus', 'flanger', 'phaser'].includes(type) && parameter === 0) return (0.05 * Math.pow(100, p)).toFixed(2) + ' Hz';
+  if (['tremolo', 'autopan'].includes(type) && parameter === 0) return (0.1 * Math.pow(200, p)).toFixed(2) + ' Hz';
+  return Math.round(p * 100) + '%';
+}

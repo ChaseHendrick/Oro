@@ -3,10 +3,13 @@
 
 import {
   MAX_PARTS, MIN_PARTS, DEFAULT_PARTS, MAX_PATTERNS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
-  LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
+  ARP_RHYTHMS, ENV_MODES, MOD_FIELDS, LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
   DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION,
   defaultState, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
 } from './params.js';
+import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
+import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
+import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 
@@ -30,21 +33,32 @@ export function sanitizeMods(src = {}, base = {}) {
   for (const id of MOD_PARAM_IDS) {
     const s = (src && src[id]) || {};
     const b = (base && base[id]) || MOD_DEFAULT;
-    out[id] = {
-      lfoShape: Math.round(clamp(num(s.lfoShape, b.lfoShape), 0, LFO_SHAPES.length - 1)),
-      lfoRate: clamp(num(s.lfoRate, b.lfoRate), 0.01, 30),
-      lfoSync: num(s.lfoSync, b.lfoSync) ? 1 : 0,
-      lfoDiv: Math.round(clamp(num(s.lfoDiv, b.lfoDiv), 0, 12)),
-      lfoDepth: clamp(num(s.lfoDepth, b.lfoDepth), -1, 1),
-      envDepth: clamp(num(s.envDepth, b.envDepth), -1, 1),
-      retrig: num(s.retrig, b.retrig) ? 1 : 0,
-      steps: sanitizeSteps(s.steps, b.steps),
-    };
+    const m = {};
+    for (const field of MOD_FIELDS) {
+      if (field === 'steps') { m.steps = sanitizeSteps(s.steps, b.steps); continue; }
+      let v = num(s[field], num(b[field], MOD_DEFAULT[field]));
+      let lo = -1, hi = 1, integer = false;
+      if (field === 'lfoShape') { lo = 0; hi = LFO_SHAPES.length - 1; integer = true; }
+      else if (field === 'lfoRate') { lo = 0.01; hi = 30; }
+      else if (field === 'lfoDiv') { lo = 0; hi = 12; integer = true; }
+      else if (['lfoSync', 'retrig', 'envOwn'].includes(field)) { v = v ? 1 : 0; lo = 0; }
+      else if (field === 'lfoCount') { lo = 0; hi = 32; integer = true; }
+      else if (field === 'envMode') { lo = 0; hi = ENV_MODES.length - 1; integer = true; }
+      else if (field.endsWith('Source')) { lo = 0; hi = LINK_SOURCES.length - 1; integer = true; }
+      else if (field.endsWith('Curve')) { lo = 0; hi = LINK_CURVES.length - 1; integer = true; }
+      else if (['lfoDelay','lfoAttack','envDelay','envHold'].includes(field)) { lo = 0; hi = 8; }
+      else if (['envAttack','envDecay','envRelease'].includes(field)) { lo = 0.001; hi = field === 'envRelease' ? 10 : 8; }
+      else if (['envSustain','lfoPhase','stepGlide','stepSmooth'].includes(field)) { lo = 0; }
+      m[field] = integer ? Math.round(clamp(v, lo, hi)) : clamp(v, lo, hi);
+    }
+    out[id] = m;
   }
   return out;
 }
 
 function sanitizeSteps(src, base) {
+  if (Array.isArray(src) && src.length === 16 && LFO_STEP_COUNT === 32) src = src.flatMap(v => [v, v]);
+  if (Array.isArray(base) && base.length === 16 && LFO_STEP_COUNT === 32) base = base.flatMap(v => [v, v]);
   const fallback = Array.isArray(base) && base.length === LFO_STEP_COUNT ? base : DEFAULT_LFO_STEPS;
   const out = [];
   for (let i = 0; i < LFO_STEP_COUNT; i++) out.push(clamp(num(Array.isArray(src) ? src[i] : undefined, fallback[i]), -1, 1));
@@ -128,17 +142,6 @@ function sanitizePatterns(p) {
   return out;
 }
 
-function sanitizeUserTerrain(t) {
-  if (!t || typeof t !== 'object' || typeof t.data !== 'string') return null;
-  const w = Math.round(num(t.w, 0)), h = Math.round(num(t.h, 0));
-  if (w < 2 || h < 2 || w > 1024 || h > 1024) return null;
-  const out = { name: String(t.name || 'Imported').slice(0, 80), kind: t.kind === 'wavetable' ? 'wavetable' : 'image', w, h, mirror: t.mirror ? 1 : 0, data: t.data };
-  // Optional low byte plane of a 16-bit height map (data holds the high bytes).
-  // Kept only when it is a non-empty string; anything else falls back to 8 bits.
-  if (typeof t.lo === 'string' && t.lo.length > 0) out.lo = t.lo;
-  return out;
-}
-
 export function sanitizePart(src, i) {
   const base = defaultPart(i);
   const p = src || {};
@@ -160,6 +163,7 @@ export function sanitizePart(src, i) {
       octaves: Math.round(clamp(num(p.arp?.octaves, base.arp.octaves), 1, 4)),
       gate: clamp(num(p.arp?.gate, base.arp.gate), 0.05, 1),
       hold: num(p.arp?.hold, base.arp.hold) ? 1 : 0,
+      rhythm: Math.round(clamp(num(p.arp?.rhythm, 0), 0, ARP_RHYTHMS.length - 1)),
     },
     dot: {
       mode: Math.round(clamp(num(p.dot?.mode, base.dot.mode), 0, DOT_MODES.length - 1)),
@@ -178,6 +182,8 @@ export function sanitizePart(src, i) {
     },
     links: p.links === undefined ? defaultLinks() : sanitizeLinks(p.links),
     userTerrain: { A: sanitizeUserTerrain(p.userTerrain?.A), B: sanitizeUserTerrain(p.userTerrain?.B) },
+    trackFx: sanitizeTrackFx(p.trackFx),
+    noiseRecording: sanitizeNoiseRecording(p.noiseRecording),
   };
 }
 

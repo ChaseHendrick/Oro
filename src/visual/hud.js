@@ -4,7 +4,8 @@
 // 'og-hud-'; inline styles are minimal and lean on the UI's CSS variables so
 // the UI can restyle everything.
 
-import { sampleRamp, linearToSrgb } from './palettes.js';
+import { sampleRamp } from './palettes.js';
+import { MinimapTerrainSampler, minimapSrgbByte } from './minimap-sampling.js';
 
 const IMG_RES = 112;
 /** Longest cross-fade from the previous terrain image to a new one (ms). */
@@ -41,6 +42,7 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
   const pctx = prev.getContext('2d');
   let imgAt = -Infinity, havePrev = false, fadeMs = TERRAIN_FADE_MS;
   const grid = new Float32Array(IMG_RES * IMG_RES);
+  const terrainSampler = new MinimapTerrainSampler(IMG_RES);
   const col = [0, 0, 0];
   let size = 120, dpr = 1;
   let pressed = false;
@@ -192,12 +194,9 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
       const pl = Math.max(0.04, 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2]);
       const lx = sun[0], lz = sun[2];
       const ll = Math.hypot(lx, lz) || 1;
-      // One height lookup per pixel; slopes come from the neighbouring pixel
-      // (the terrain tiles, so the grid wraps). Cheap enough to run every frame.
-      for (let j = 0; j < n; j++) {
-        const v = (j + 0.5) / n;
-        for (let i = 0; i < n; i++) grid[j * n + i] = hf.ready ? hf.norm((i + 0.5) / n, v) : 0;
-      }
+      // Reuse source/warp samples while morph and table fades move. Shading
+      // remains live for changes to palette, lift, tint and sun direction.
+      terrainSampler.sample(hf, grid);
       const sk = 0.035 / ll * hf.lift / e;
       for (let j = 0; j < n; j++) {
         const jn = j === n - 1 ? 0 : j + 1;
@@ -215,9 +214,9 @@ export function createMinimap(container, { onPick, label = 'Minimap: click or dr
           const shade = Math.max(0.55, Math.min(1.25, 1 - sk * (gx * lx + gz * lz)));
           r *= shade; g *= shade; b *= shade;
           const o = (j * n + i) * 4;
-          d[o] = Math.round(linearToSrgb(r) * 255);
-          d[o + 1] = Math.round(linearToSrgb(g) * 255);
-          d[o + 2] = Math.round(linearToSrgb(b) * 255);
+          d[o] = minimapSrgbByte(r);
+          d[o + 1] = minimapSrgbByte(g);
+          d[o + 2] = minimapSrgbByte(b);
           d[o + 3] = 255;
         }
       }

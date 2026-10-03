@@ -7,6 +7,7 @@
 // Each archetype also gets an expressive Link or two (velocity, key, macro)
 // and sometimes a Steps LFO pattern.
 
+import { LFO_STEP_COUNT } from '../core/params.js';
 import { TERRAINS, PATHS } from '../dsp/catalog.js';
 
 const ADJECTIVES = ['Hidden', 'Distant', 'Silent', 'Northern', 'Sunken', 'Painted', 'Shifting', 'Hollow', 'Amber', 'Iron', 'Salt', 'Upper', 'Faded', 'Lost'];
@@ -108,9 +109,9 @@ const LINKS = {
   bell: (r) => [{ src: 5, dst: 'morph', amt: r.range(0.3, 0.6), curve: 0 }],
 };
 
-/** 16 Steps LFO values: a strong downbeat and a loose, repeatable figure. */
+/** 32 Steps LFO values: a strong downbeat and a loose, repeatable figure. */
 function stepValues(r) {
-  return Array.from({ length: 16 }, (_, i) => (i % 4 === 0 ? tidy(0.6 + 0.4 * r.range(0, 1)) : r.range(-1, 0.8)));
+  return Array.from({ length: LFO_STEP_COUNT }, (_, i) => (i % 4 === 0 ? tidy(0.6 + 0.4 * r.range(0, 1)) : r.range(-1, 0.8)));
 }
 
 export function randomPatch(rng = Math.random) {

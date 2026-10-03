@@ -139,6 +139,7 @@ export function createUI(root, modules = {}) {
   let piano = null;
   const ctx = {
     root, store, engine, visuals, music, presets, midi,
+    prepareUpdate: modules.prepareUpdate || null,
     layers, prefs, bus, binder, tele, toast, tooltips, terrains, notes, live,
     theme: null,
     /** Surfaces a part colour must stay readable on, for the active theme. */
@@ -172,6 +173,7 @@ export function createUI(root, modules = {}) {
       if (music && music.router) call(music.router, 'allNotesOff');
       call(midi, 'panic');
       if (piano) piano.releaseAll();
+      bus.emit('panic');
       toast('All notes stopped', { kind: 'info' });
     },
     openSettings: (tab) => openSettingsDialog(tab),

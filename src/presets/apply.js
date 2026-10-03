@@ -2,6 +2,8 @@
 // preset store and the factory scene builder.
 
 import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT, PART_PARAM_MAP, PEDAL_PARAM_IDS } from '../core/params.js';
+import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
+import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { sanitizeLinks } from '../core/migrate.js';
 
 // Mod settings may hold arrays (the Steps LFO values). Each part gets its own
@@ -25,6 +27,7 @@ export function patchMods(patch) {
   for (const [id, m] of Object.entries((patch && patch.mods) || {})) {
     if (!mods[id] || !m || typeof m !== 'object') continue;
     const merged = { ...mods[id], ...m };
+    if (Array.isArray(merged.steps) && merged.steps.length === 16) merged.steps = merged.steps.flatMap(v => [v, v]);
     for (const k of Object.keys(merged)) merged[k] = copyField(merged[k]);
     mods[id] = merged;
   }
@@ -64,6 +67,8 @@ export function partWithPatch(base, patch) {
     mods: patchMods(patch),
     links: patchLinks(patch),
     dot: patchDot(patch),
+    trackFx: sanitizeTrackFx(patch?.trackFx),
+    noiseRecording: sanitizeNoiseRecording(patch?.noiseRecording),
     userTerrain: {
       A: (patch && patch.userTerrain && patch.userTerrain.A) || null,
       B: (patch && patch.userTerrain && patch.userTerrain.B) || null,

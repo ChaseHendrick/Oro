@@ -124,43 +124,46 @@ function pngValueFn(png, channel) {
  * @param {{channel?: 'luma'|'r'|'g'|'b', size?: number, stats?: object}} [o]
  * @returns {Promise<{heights: Float32Array, n: number, bitDepth: number, colorType: number, width: number, height: number}>}
  */
-export async function heightFromPng(bytes, { channel = 'luma', size = 256, stats } = {}) {
+export async function heightFromPng(bytes, { channel = 'luma', size = 512, stats } = {}) {
   const png = readPngChunks(bytes);
   const { width: W, height: H, bitDepth, colorType } = png.header;
   const crop = centreCrop(W, H);
   const n = Math.max(1, Math.min(size, crop.size));
   const ax = axisWeights(crop.size, n);
-  const { linear, fn } = pngValueFn(png, CHANNELS.includes(channel) ? channel : 'luma');
-  const acc = new Float64Array(n * n);
-  const line = new Float64Array(n);
+  const keys = Array.isArray(channel) ? channel.filter(k => CHANNELS.includes(k)) : [CHANNELS.includes(channel) ? channel : 'luma'];
+  const values = keys.map(k => pngValueFn(png, k));
+  const accumulators = keys.map(() => new Float64Array(n * n));
+  const lines = keys.map(() => new Float64Array(n));
   const x1 = crop.sx + crop.size;
   await decodePngRows(bytes, ({ y, x0, dx, count, row, read }) => {
     const yy = y - crop.sy;
     if (yy < 0 || yy >= crop.size) return;
-    // pixels of this (pass) row that fall inside the crop
     const kStart = Math.max(0, Math.ceil((crop.sx - x0) / dx));
     const kEnd = Math.min(count - 1, Math.floor((x1 - 1 - x0) / dx));
     if (kEnd < kStart) return;
-    line.fill(0);
-    for (let k = kStart; k <= kEnd; k++) {
-      const xx = x0 + k * dx - crop.sx;
-      const v = fn(row, k, read);
-      line[ax.c0[xx]] += v * ax.w0[xx];
-      const c1 = ax.c1[xx];
-      if (c1 >= 0) line[c1] += v * ax.w1[xx];
-    }
-    const r0 = ax.c0[yy] * n, w0 = ax.w0[yy];
-    for (let j = 0; j < n; j++) acc[r0 + j] += line[j] * w0;
-    const c1 = ax.c1[yy];
-    if (c1 >= 0) {
-      const r1 = c1 * n, w1 = ax.w1[yy];
-      for (let j = 0; j < n; j++) acc[r1 + j] += line[j] * w1;
+    for (let c = 0; c < keys.length; c++) {
+      const line = lines[c], acc = accumulators[c], fn = values[c].fn;
+      line.fill(0);
+      for (let k = kStart; k <= kEnd; k++) {
+        const xx = x0 + k * dx - crop.sx, v = fn(row, k, read);
+        line[ax.c0[xx]] += v * ax.w0[xx];
+        if (ax.c1[xx] >= 0) line[ax.c1[xx]] += v * ax.w1[xx];
+      }
+      const r0 = ax.c0[yy] * n;
+      for (let j = 0; j < n; j++) acc[r0 + j] += line[j] * ax.w0[yy];
+      if (ax.c1[yy] >= 0) {
+        const r1 = ax.c1[yy] * n;
+        for (let j = 0; j < n; j++) acc[r1 + j] += line[j] * ax.w1[yy];
+      }
     }
   }, { info: png, stats });
-  const norm = 1 / (ax.s * ax.s);
-  const heights = new Float32Array(n * n);
-  for (let i = 0; i < heights.length; i++) heights[i] = linear ? srgbEncode(acc[i] * norm) : acc[i] * norm;
-  return { heights, n, bitDepth, colorType, width: W, height: H };
+  const norm = 1 / (ax.s * ax.s), channels = {};
+  for (let c = 0; c < keys.length; c++) {
+    const heights = new Float32Array(n * n), acc = accumulators[c];
+    for (let i = 0; i < heights.length; i++) heights[i] = values[c].linear ? srgbEncode(acc[i] * norm) : acc[i] * norm;
+    channels[keys[c]] = heights;
+  }
+  return { heights: channels[keys[0]], ...(Array.isArray(channel) ? { channels } : {}), n, bitDepth, colorType, width: W, height: H };
 }
 
 // ---- smoothing and storage --------------------------------------------------------

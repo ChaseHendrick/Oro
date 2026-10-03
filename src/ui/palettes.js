@@ -60,7 +60,8 @@ export function createPalettePicker(ctx, { className = '' } = {}) {
     });
     const style = store.get('ui.renderStyle');
     note.textContent = !ok ? 'The 3D view is not running, so there are no palettes to pick.'
-      : style === 'heat' ? 'Heat map uses its own colour scale, so the palette shows in the other styles.' : '';
+      : style === 'heat' ? 'Heat map uses its own colour scale, so the palette shows in the other styles.'
+      : style === 'normals' ? 'Normals shows surface direction. Palettes apply to the other map styles.' : '';
     note.hidden = !note.textContent;
   }
   function choose(i, focus) {

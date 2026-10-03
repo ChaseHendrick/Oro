@@ -4,7 +4,7 @@ import { pingPong, buildArcTable, evenPhase } from '../../src/visual/orbit-layer
 import { pathPoint } from '../../src/dsp/paths.js';
 import { PART_PARAM_MAP, toNorm } from '../../src/core/params.js';
 
-const L = { stretch: 0.2, size: 0.2, rotate: 350, centerX: 0.98, centerY: 0.5, pathParam: 0.5 };
+const L = { stretch: 0.2, size: 0.2, rotate: 350, centerX: 0.98, centerY: 0.5, pathParam: 0.5, pathWindow: 0, pathMangle: 0, pathMirror: 0 };
 
 describe('per-voice orbits', () => {
   it('Key>Size scales the orbit by 2^(noteSize (note - 60) / 24), clamped to 0..0.5', () => {

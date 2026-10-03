@@ -18,7 +18,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { pathPoint, paceWarp, syncPhase, paceSpeed, paceMaxSpeed } from '../dsp/paths.js';
+import { pathPoint, shapePathPoint, paceWarp, syncPhase, paceSpeed, paceMaxSpeed } from '../dsp/paths.js';
 import { makeTransform, applyTransform } from '../dsp/terrain-math.js';
 import { W } from './heightfield.js';
 
@@ -74,6 +74,7 @@ export function computeOrbit(hf, shape, order, param, live, spinPhase, n, out, u
   makeTransform(live.stretch, live.size, live.rotate, spinPhase, live.centerX, live.centerY, xf);
   for (let i = 0; i < n; i++) {
     pathPoint(shape, i / n, order, param, tmp);
+    shapePathPoint(tmp.x, tmp.y, i / n, live.pathWindow, live.pathMangle, live.pathMirror, tmp);
     applyTransform(xf, tmp.x, tmp.y, tmp);
     const u = tmp.u, v = tmp.v;
     out[i * 3] = (u - 0.5) * W;
@@ -453,6 +454,7 @@ export function createOrbitLayer(quality = 'high') {
           if (direction === 1) t = pingPong(t);
           if (even && arcOk) t = evenPhase(arc, t);
           pathPoint(shape, t >= 1 ? 0.999999 : t, order, param, tmp);
+          shapePathPoint(tmp.x, tmp.y, t, live.pathWindow, live.pathMangle, live.pathMirror, tmp);
           applyTransform(vxf, tmp.x, tmp.y, tmp);
           bPos[k * 3] = (tmp.u - 0.5) * W;
           bPos[k * 3 + 1] = hf.y(tmp.u, tmp.v) + LIFT_ABOVE * 1.6;

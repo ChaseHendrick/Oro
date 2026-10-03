@@ -56,7 +56,7 @@ describe('session persistence (store x migrate x params)', () => {
     store.batch(() => {
       store.set('parts.2.userTerrain.A', ut);
       store.set('parts.2.links', [{ src: 1, dst: 'morph', amt: 1, curve: 0 }, { src: 5, dst: 'warp', amt: -0.4, curve: 2 }]);
-      store.set('parts.2.mods.size', { ...store.get('parts.2.mods.size'), lfoShape: LFO_SHAPES.indexOf('Steps'), lfoDepth: 0.5, steps: Array.from({ length: 16 }, (_, i) => (i % 2 ? -0.5 : 0.25)) });
+      store.set('parts.2.mods.size', { ...store.get('parts.2.mods.size'), lfoShape: LFO_SHAPES.indexOf('Steps'), lfoDepth: 0.5, steps: Array.from({ length: 32 }, (_, i) => (i % 2 ? -0.5 : 0.25)) });
       store.set('parts.2.dot.waypoints', [{ x: 0.1, y: 0.2, beats: 2 }, { x: 0.8, y: 0.6, beats: 4 }]);
       store.set('parts.2.dot.mode', 4);
       store.set('parts.2.patterns.0.steps.3', { ...store.get('parts.2.patterns.0.steps.3'), lock: 1, lx: 0.25, ly: 0.75 });
@@ -140,7 +140,7 @@ describe('patch library across parts, storage and files', () => {
       store.set('parts.0.params.cutoff', 777);
       store.set('parts.0.params.terrainA', 3);
       store.set('parts.0.params.mute', 1);
-      store.set('parts.0.mods.morph', { ...store.get('parts.0.mods.morph'), lfoShape: LFO_SHAPES.indexOf('Steps'), lfoDepth: 0.6, lfoSync: 1, steps: Array.from({ length: 16 }, (_, i) => Math.sin(i)) });
+      store.set('parts.0.mods.morph', { ...store.get('parts.0.mods.morph'), lfoShape: LFO_SHAPES.indexOf('Steps'), lfoDepth: 0.6, lfoSync: 1, steps: Array.from({ length: 32 }, (_, i) => Math.sin(i)) });
       store.set('parts.0.links', [{ src: 1, dst: 'morph', amt: 1, curve: 0 }, { src: 3, dst: 'cutoff', amt: 0.3, curve: 1 }]);
       store.set('parts.0.dot', { ...store.get('parts.0.dot'), mode: 4, waypoints: [{ x: 0.2, y: 0.3, beats: 1 }, { x: 0.7, y: 0.9, beats: 2 }], tourMode: 1 });
     });
@@ -216,7 +216,7 @@ describe('patch library across parts, storage and files', () => {
         expect(presets.loadPatch(p, patch.id), patch.name).toBe(true);
         const part = store.get(`parts.${p}`);
         expect(sanitizePart(part, p), `${patch.name} on part ${p + 1}`).toEqual(part);
-        for (const id of MOD_PARAM_IDS) expect(part.mods[id].steps, `${patch.name} ${id}`).toHaveLength(16);
+        for (const id of MOD_PARAM_IDS) expect(part.mods[id].steps, `${patch.name} ${id}`).toHaveLength(32);
       }
     }
   });

@@ -6,7 +6,7 @@ import './styles/main.css';
 import { createStore, deepClone } from './core/store.js';
 import { defaultState, MAX_PARTS } from './core/params.js';
 import * as tracks from './core/tracks.js';
-import { loadSession, createAutosave } from './core/session.js';
+import { loadSessionAsync, createAutosave } from './core/session.js';
 import { createEngine } from './audio/engine.js';
 import { createVisuals } from './visual/visuals.js';
 import { createMusic } from './music/music.js';
@@ -17,7 +17,7 @@ import { savedContextSampleRate } from './pedals/rig-settings.js';
 
 async function boot() {
   const root = document.getElementById('app');
-  const saved = loadSession();
+  const saved = await loadSessionAsync();
   const store = createStore(saved || defaultState());
   // Saves a moment after changes, at least every couple of seconds while a dot
   // keeps moving, and at once when the page is hidden or closed.
@@ -34,6 +34,7 @@ async function boot() {
   // applies here, at start-up.
   const engine = await createEngine({ store, sampleRate: savedContextSampleRate() });
   const presets = createPresets({ store });
+  await presets.ready;
   // The preview picks its phrase from the patch category, which the preset library knows.
   const music = createMusic({ store, engine, presets });
   if (!saved) presets.loadScene(0);
@@ -65,7 +66,11 @@ async function boot() {
     console.warn('[orograph] MIDI unavailable', err);
   }
 
-  createUI(root, { store, engine, visuals, music, presets, midi });
+  createUI(root, { store, engine, visuals, music, presets, midi, prepareUpdate: async () => {
+    autosave.schedule(); autosave.flush();
+    const saved = await Promise.all([autosave.settled(), presets.settled()]);
+    return saved.every(Boolean);
+  } });
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };

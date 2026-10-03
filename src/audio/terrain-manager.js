@@ -20,7 +20,7 @@ import { partCount, trackIds, trackChange } from '../core/tracks.js';
 import { jobFor, jobKey } from './terrain-jobs.js';
 
 const SLOT_NAMES = ['A', 'B'];
-const REGEN_KEYS = new Set(['terrainA', 'terrainB', 'seed', 'detail']);
+const REGEN_KEYS = new Set(['terrainA', 'terrainB', 'seed', 'detail', 'imageChannelA', 'imageChannelB', 'imageMappingA', 'imageMappingB']);
 
 function slotIndex(slot) {
   if (slot === 0 || slot === 'A' || slot === 'a') return 0;

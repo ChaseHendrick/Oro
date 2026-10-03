@@ -4,11 +4,11 @@
 
 import { listen } from './dom.js';
 import { TERRAIN_INDEX } from '../dsp/catalog.js';
-import { generateTerrain, decodeUserTerrain } from './dsp-bridge.js';
+import { jobFor, jobKey, buildTerrainData } from '../audio/terrain-jobs.js';
 import { partCount } from '../core/tracks.js';
 
 const SLOTS = ['A', 'B'];
-const FALLBACK_SIZE = 128;
+const FALLBACK_SIZE = 512;
 
 export function createTerrainSource({ store, engine }) {
   const live = new Map();      // `${part}${slot}` -> {size, data} from engine events
@@ -26,7 +26,7 @@ export function createTerrainSource({ store, engine }) {
   // Without engine events, regenerate when the generating parameters change.
   const timers = new Map();
   const offStore = store.subscribe('parts', (path) => {
-    const m = /^parts\.(\d+)(?:\.(params\.(terrainA|terrainB|seed|detail)|userTerrain.*))?$/.exec(path);
+    const m = /^parts\.(\d+)(?:\.(params\.(terrainA|terrainB|seed|detail|imageChannelA|imageChannelB|imageMappingA|imageMappingB)|userTerrain.*))?$/.exec(path);
     if (!m && path !== 'parts') return;
     // The list changed (tracks moved, added or removed): engine tables are
     // looked up by index again, the event copies by index are stale.
@@ -58,12 +58,12 @@ export function createTerrainSource({ store, engine }) {
     const index = params['terrain' + slot];
     const user = index === TERRAIN_INDEX.user;
     const ut = store.get(`parts.${part}.userTerrain.${slot}`);
-    const key = user ? `user|${ut ? ut.data.length + ut.name : 'none'}` : `${index}|${params.seed}|${params.detail}`;
+    const job = jobFor(params, user ? ut : null, slot, FALLBACK_SIZE);
+    const key = jobKey(job);
     const hit = fallback.get(`${part}${slot}`);
     if (hit && hit.key === key) return hit.table;
-    const table = user
-      ? decodeUserTerrain(ut, FALLBACK_SIZE)
-      : generateTerrain(index, { size: FALLBACK_SIZE, seed: params.seed ?? 7, detail: params.detail ?? 0.5 });
+    const data = buildTerrainData(job);
+    const table = { size: job.kind === 'flat' ? job.size : FALLBACK_SIZE, data };
     fallback.set(`${part}${slot}`, { key, table });
     return table;
   }

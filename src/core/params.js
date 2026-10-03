@@ -3,6 +3,7 @@
 // (modulation is applied in normalised 0..1 space, then mapped back through the
 // same curves). Keep this file dependency-free apart from the catalog.
 
+import { defaultTrackFx } from '../dsp/track-fx-config.js';
 import { TERRAIN_NAMES, PATH_NAMES, TERRAIN_INDEX, PATH_INDEX } from '../dsp/catalog.js';
 
 // Tracks (called parts in the code). The store holds a variable-length list
@@ -40,11 +41,40 @@ export const SCALES = {
   Blues:      [0, 3, 5, 6, 7, 10],
   'Harm Min': [0, 2, 3, 5, 7, 8, 11],
   Chromatic:  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  Locrian: [0, 1, 3, 5, 6, 8, 10],
+  'Melodic Minor': [0, 2, 3, 5, 7, 9, 11],
+  'Whole Tone': [0, 2, 4, 6, 8, 10],
+  'Diminished Whole Half': [0, 2, 3, 5, 6, 8, 9, 11],
+  'Diminished Half Whole': [0, 1, 3, 4, 6, 7, 9, 10],
+  Augmented: [0, 3, 4, 7, 8, 11],
+  'Double Harmonic Major': [0, 1, 4, 5, 7, 8, 11],
+  'Hungarian Minor': [0, 2, 3, 6, 7, 8, 11],
+  'Harmonic Major': [0, 2, 4, 5, 7, 8, 11],
+  'Neapolitan Minor': [0, 1, 3, 5, 7, 8, 11],
+  'Neapolitan Major': [0, 1, 3, 5, 7, 9, 11],
+  Persian: [0, 1, 4, 5, 6, 8, 11],
+  Enigmatic: [0, 1, 4, 6, 8, 10, 11],
+  Insen: [0, 1, 5, 7, 10],
+  Hirajoshi: [0, 2, 3, 7, 8],
+  Iwato: [0, 1, 5, 6, 10],
+  Ritusen: [0, 2, 5, 7, 9],
+  Prometheus: [0, 2, 4, 6, 9, 10],
+  'Bebop Dominant': [0, 2, 4, 5, 7, 9, 10, 11],
+  'Bebop Major': [0, 2, 4, 5, 7, 8, 9, 11],
+  'Bebop Minor': [0, 2, 3, 4, 5, 7, 9, 10],
+  Altered: [0, 1, 3, 4, 6, 8, 10],
+  'Lydian Dominant': [0, 2, 4, 6, 7, 9, 10],
+  'Phrygian Dominant': [0, 1, 4, 5, 7, 8, 10],
+  'Lydian Augmented': [0, 2, 4, 6, 8, 9, 11],
+  'Locrian #2': [0, 2, 3, 5, 6, 8, 10],
+  'Dorian b2': [0, 1, 3, 5, 7, 9, 10],
+  Egyptian: [0, 2, 5, 7, 10],
+  'Minor Six Pentatonic': [0, 3, 5, 7, 9],
 };
 export const SCALE_NAMES = Object.keys(SCALES);
 
 export const LFO_SHAPES = ['Sine', 'Triangle', 'Saw', 'Square', 'S&H', 'Drift', 'Steps'];
-export const LFO_STEP_COUNT = 16;
+export const LFO_STEP_COUNT = 32;
 // Tempo-synced LFO / delay divisions, expressed in beats (quarter notes).
 export const SYNC_DIVS = [
   { name: '4 bar', beats: 16 }, { name: '2 bar', beats: 8 }, { name: '1 bar', beats: 4 },
@@ -65,6 +95,11 @@ export const DELAY_DIVS = SYNC_DIVS.slice(3); // 1/2 .. 1/32
 //   bool    v = n >= 0.5 ? 1 : 0
 const P = (id, label, group, curve, min, max, def, extra = {}) =>
   ({ id, label, group, curve, min, max, default: def, ...extra });
+
+export const SUB_WAVES = ['Sine', 'Triangle', 'Saw', 'Pulse 25%', 'Square', 'Organ', 'Soft saw'];
+export const NOISE_TYPES = ['Legacy', 'White', 'Pink', 'Blue', 'Brown', 'Vinyl texture', 'Waves texture', 'City texture', 'Recording'];
+export const INHARMONIC_PROFILES = ['Harmonic', 'Stretched', 'Compressed', 'Odd', 'Metal', 'Glass', 'Bells', 'Golden', 'Cluster', 'Detuned', 'Folded'];
+export const ENV_MODES = ['Gate', 'One-shot', 'Loop', 'Ping-pong', 'Trigger hold', 'Pluck'];
 
 export const PART_PARAMS = [
   // Terrain
@@ -90,19 +125,19 @@ export const PART_PARAMS = [
   P('octave',    'Octave',   'voice', 'int', -3, 3, 0),
   P('tune',      'Tune',     'voice', 'int', -12, 12, 0,  { unit: 'st' }),
   P('fine',      'Fine',     'voice', 'lin', -100, 100, 0, { mod: true, unit: 'ct' }),
-  P('glide',     'Glide',    'voice', 'pow', 0, 2, 0,     { k: 3, unit: 's' }),
+  P('glide',     'Glide',    'voice', 'pow', 0, 2, 0,     { mod: true, k: 3, unit: 's' }),
   P('polyMode',  'Mode',     'voice', 'enum', 0, 2, 0,    { options: ['Poly', 'Mono', 'Legato'] }),
-  P('unison',    'Unison',   'voice', 'int', 1, 4, 1),
-  P('detune',    'Detune',   'voice', 'lin', 0, 50, 12,   { unit: 'ct' }),
-  P('spread',    'Width',    'voice', 'lin', 0, 1, 0.6),
-  P('velSens',   'Velocity', 'voice', 'lin', 0, 1, 0.6),
+  P('unison',    'Unison',   'voice', 'int', 1, 8, 1),
+  P('detune',    'Detune',   'voice', 'lin', 0, 50, 12,   { mod: true, unit: 'ct' }),
+  P('spread',    'Width',    'voice', 'lin', 0, 1, 0.6, { mod: true }),
+  P('velSens',   'Velocity', 'voice', 'lin', 0, 1, 0.6, { mod: true }),
   P('bendRange', 'Bend',     'voice', 'int', 0, 24, 2,    { unit: 'st' }),
   // Filter
-  P('filterType', 'Filter',  'filter', 'enum', 0, 6, 1,   { options: ['Off', 'Low', 'Band', 'High', 'Notch', 'Comb', 'Vowel'] }),
+  P('filterType', 'Filter',  'filter', 'enum', 0, 11, 1,   { options: ['Off', 'Low', 'Band', 'High', 'Notch', 'Comb', 'Vowel', 'Ladder warm', 'Ladder clean', 'Ladder driven', 'SEM', 'Diode'] }),
   P('cutoff',    'Cutoff',   'filter', 'exp', 30, 18000, 9000, { mod: true, unit: 'Hz' }),
   P('resonance', 'Reso',     'filter', 'lin', 0, 1, 0.15, { mod: true }),
-  P('filterEnv', 'Env Amt',  'filter', 'lin', -1, 1, 0.15, { hint: 'Envelope 2 to cutoff, up to ±6 octaves' }),
-  P('keyTrack',  'Key Trk',  'filter', 'lin', 0, 1, 0.5),
+  P('filterEnv', 'Env Amt',  'filter', 'lin', -1, 1, 0.15, { mod: true, hint: 'Envelope 2 to cutoff, up to ±6 octaves' }),
+  P('keyTrack',  'Key Trk',  'filter', 'lin', 0, 1, 0.5, { mod: true }),
   P('drive',     'Drive',    'filter', 'lin', 0, 1, 0,    { mod: true }),
   // Amp envelope (Envelope 1)
   P('attack',    'Attack',   'amp', 'pow', 0.001, 8, 0.005, { k: 3, unit: 's' }),
@@ -125,11 +160,11 @@ export const PART_PARAMS = [
   P('laps',      'Laps',     'path', 'lin', 1, 8, 1,     { mod: true, hint: 'Trace the path this many times per cycle and restart it each cycle (hard sync). In-between values give sync sweeps' }),
   P('pace',      'Pace',     'path', 'lin', -1, 1, 0,    { mod: true, hint: 'Speed up and slow down along the path within each cycle (phase distortion)' }),
   P('paceShape', 'Curve',    'path', 'enum', 0, 2, 0,    { options: ['Bend', 'Skew', 'Pinch'], hint: 'How Pace bends the traversal speed' }),
-  P('sub',       'Sub',      'voice', 'lin', 0, 1, 0,    { hint: 'Clean sine one octave below the note' }),
+  P('sub',       'Sub',      'voice', 'lin', 0, 1, 0,    { mod: true, hint: 'Oscillator one octave below the note' }),
   P('traverse',  'Travel',   'path', 'enum', 0, 1, 0,    { options: ['Natural', 'Even'], hint: 'Natural follows the curve maths (corners speed up and slow down); Even moves at constant speed along the path' }),
   P('direction', 'Direction','path', 'enum', 0, 1, 0,    { options: ['Forward', 'Ping-pong'], hint: 'Ping-pong runs the path forward then backward each cycle, so open paths never jump' }),
   P('noteSize',  'Key>Size', 'path', 'lin', -1, 1, 0,    { hint: 'Higher notes shrink (negative) or grow (positive) the orbit. Negative keeps high notes smooth' }),
-  P('air',       'Air',      'voice', 'lin', 0, 1, 0,    { hint: 'Breathy noise layer that follows the amp envelope' }),
+  P('air',       'Air',      'voice', 'lin', 0, 1, 0,    { mod: true, hint: 'Breathy noise layer that follows the amp envelope' }),
   P('airTone',   'Air Tone', 'voice', 'lin', -1, 1, 0,   { hint: 'Dark to bright noise colour' }),
   P('formant',   'Vowel',    'filter', 'lin', 0, 1, 0.5, { mod: true, hint: 'Vowel filter position A, E, I, O, U (also sets the Comb filter spread)' }),
   // v1.1 pedal loop (docs/PEDALS.md). Only heard when Settings > Pedals has the
@@ -137,6 +172,37 @@ export const PART_PARAMS = [
   P('pedalSend',   'Pedal',  'mix', 'lin', 0, 1, 0,  { hint: 'Send to the guitar pedals on outputs 3 and 4 (set up in Settings > Pedals)' }),
   P('pedalPre',    'Pre',    'mix', 'bool', 0, 1, 0, { hint: 'Pedal send before the level fader (on) or after it (off)' }),
   P('pedalInsert', 'Insert', 'mix', 'bool', 0, 1, 0, { hint: 'Hear this part only through the pedals: its dry sound is muted while the pedal send is running' }),
+
+  // v2 additions are appended to preserve the numeric parameter contract.
+  P('subWave', 'Sub wave', 'voice', 'enum', 0, 6, 0, { options: SUB_WAVES }),
+  P('sub2', 'Sub two', 'voice', 'lin', 0, 1, 0, { mod: true, hint: 'Oscillator two octaves below the note' }),
+  P('sub2Wave', 'Sub two wave', 'voice', 'enum', 0, 6, 0, { options: SUB_WAVES }),
+  P('airType', 'Noise type', 'voice', 'enum', 0, 8, 0, { options: NOISE_TYPES }),
+  P('airTexture', 'Texture position', 'voice', 'lin', 0, 1, 0, { mod: true }),
+  P('inharmProfile', 'Partial profile', 'voice', 'lin', 0, 10, 0, { mod: true, hint: 'Morph continuously between eleven original partial-ratio profiles' }),
+  P('inharmAmount', 'Partials', 'voice', 'lin', 0, 1, 0, { mod: true }),
+  P('phaseMod', 'Phase mod', 'voice', 'lin', 0, 1, 0, { mod: true }),
+  P('phaseRatio', 'PM ratio', 'voice', 'exp', 0.125, 16, 1, { mod: true, unit: 'x' }),
+  P('ringMod', 'Ring mod', 'voice', 'lin', 0, 1, 0, { mod: true }),
+  P('ringRatio', 'Ring ratio', 'voice', 'exp', 0.125, 16, 1, { mod: true, unit: 'x' }),
+  P('pluck', 'Pluck', 'voice', 'lin', 0, 1, 0, { mod: true }),
+  P('pluckDecay', 'Pluck decay', 'voice', 'exp', 0.05, 8, 1, { mod: true, unit: 's' }),
+  P('pluckTone', 'Pluck tone', 'voice', 'lin', 0, 1, 0.5, { mod: true }),
+  P('pluckDispersion', 'Dispersion', 'voice', 'lin', 0, 1, 0, { mod: true }),
+  P('ampDelay', 'Delay', 'amp', 'pow', 0, 8, 0, { k: 3, unit: 's' }),
+  P('ampHold', 'Hold', 'amp', 'pow', 0, 8, 0, { k: 3, unit: 's' }),
+  P('ampMode', 'Mode', 'amp', 'enum', 0, 5, 0, { options: ENV_MODES }),
+  P('env2Delay', 'Delay', 'env2', 'pow', 0, 8, 0, { k: 3, unit: 's' }),
+  P('env2Hold', 'Hold', 'env2', 'pow', 0, 8, 0, { k: 3, unit: 's' }),
+  P('env2Mode', 'Mode', 'env2', 'enum', 0, 5, 0, { options: ENV_MODES }),
+  P('imageChannelA', 'Channel A', 'terrain', 'lin', 0, 3, 0, { regen: true, hint: 'Morph red, green, blue and brightness' }),
+  P('imageChannelB', 'Channel B', 'terrain', 'lin', 0, 3, 0, { regen: true, hint: 'Morph red, green, blue and brightness' }),
+  P('imageMappingA', 'Mapping A', 'terrain', 'enum', 0, 1, 0, { regen: true, options: ['Cartesian', 'Polar'] }),
+  P('imageMappingB', 'Mapping B', 'terrain', 'enum', 0, 1, 0, { regen: true, options: ['Cartesian', 'Polar'] }),
+  P('pathWindow', 'Window', 'path', 'lin', 0, 1, 0, { mod: true, hint: 'Taper the path radius with a Hann window' }),
+  P('pathMangle', 'Mangle', 'path', 'lin', -1, 1, 0, { mod: true, hint: 'Smooth coordinate distortion of the path' }),
+  P('pathMirror', 'Mirror', 'path', 'enum', 0, 3, 0, { options: ['Off', 'X', 'Y', 'Both'] }),
+
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
@@ -164,6 +230,10 @@ export const GLOBAL_PARAMS = [
   P('macro3',       'Macro 3',  'macro', 'lin', 0, 1, 0, { hint: 'Assign with Links in any part' }),
   P('macro4',       'Macro 4',  'macro', 'lin', 0, 1, 0, { hint: 'Assign with Links in any part' }),
   P('ceiling',      'Ceiling',  'master', 'lin', -6, 0, -0.3, { unit: 'dB', hint: 'Output limiter ceiling' }),
+  P('vectorMix', 'Vector mix', 'master', 'lin', 0, 1, 0),
+  P('vectorX', 'Vector X', 'master', 'lin', 0, 1, 0.5),
+  P('vectorY', 'Vector Y', 'master', 'lin', 0, 1, 0.5),
+  P('vectorBank', 'Vector bank', 'master', 'int', 0, 3, 0),
 ];
 
 export const PART_PARAM_MAP = Object.fromEntries(PART_PARAMS.map(p => [p.id, p]));
@@ -182,8 +252,13 @@ export const PART_PARAM_INDEX = Object.fromEntries(PART_PARAMS.map((p, i) => [p.
 //   retrig:   1 = LFO phase resets on each new note when no other notes are held
 //   steps:    LFO_STEP_COUNT values in -1..1 used by the 'Steps' LFO shape (one step per
 //             1/LFO_STEP_COUNT of the LFO period, held, with a 2 ms de-click slew)
-export const DEFAULT_LFO_STEPS = Object.freeze([0.8, -0.4, 0.2, -0.9, 0.6, -0.1, 0.4, -0.7, 0.9, -0.3, 0.1, -0.8, 0.5, 0, 0.3, -0.6]);
-export const MOD_DEFAULT = Object.freeze({ lfoShape: 0, lfoRate: 0.5, lfoSync: 0, lfoDiv: 5, lfoDepth: 0, envDepth: 0, retrig: 0, steps: DEFAULT_LFO_STEPS });
+export const DEFAULT_LFO_STEPS = Object.freeze([0.8, -0.4, 0.2, -0.9, 0.6, -0.1, 0.4, -0.7, 0.9, -0.3, 0.1, -0.8, 0.5, 0, 0.3, -0.6].flatMap(v => [v, v]));
+export const MOD_DEFAULT = Object.freeze({ lfoShape: 0, lfoRate: 0.5, lfoSync: 0, lfoDiv: 5, lfoDepth: 0, envDepth: 0, retrig: 0, steps: DEFAULT_LFO_STEPS,
+  lfoSkew: 0, lfoDelay: 0, lfoAttack: 0, lfoPhase: 0, lfoOffset: 0, lfoCount: 0, stepGlide: 0, stepSmooth: 0,
+  envOwn: 0, envDelay: 0, envAttack: 0.01, envHold: 0, envDecay: 0.6, envSustain: 0.25, envRelease: 0.5, envMode: 0,
+  ctrl1Source: 0, ctrl1Depth: 0, ctrl1Curve: 0, ctrl2Source: 0, ctrl2Depth: 0, ctrl2Curve: 0,
+  ctrl3Source: 0, ctrl3Depth: 0, ctrl3Curve: 0, ctrl4Source: 0, ctrl4Depth: 0, ctrl4Curve: 0,
+});
 export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
 
 // Links: per-part modulation routing (source -> any modulatable parameter), applied
@@ -194,7 +269,7 @@ export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
 // Terrain Height (height under the modulated dot) are -1..1. New sources are only ever appended, so saved
 // links keep their meaning; an older build clamps an index it does not know to its own last source.
 export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
-  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level', 'Voice Level'];
+  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level', 'Voice Level', 'Expression pedal', 'Sustain pedal', 'Breath'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {
@@ -264,6 +339,17 @@ export const SEQ_RATES = [
   { name: '1/4', beats: 1 }, { name: '1/8', beats: 0.5 }, { name: '1/8T', beats: 1 / 3 },
   { name: '1/16', beats: 0.25 }, { name: '1/16T', beats: 1 / 6 }, { name: '1/32', beats: 0.125 },
 ];
+// Original trigger masks, repeated at the selected arp rate. One = note, zero = rest.
+export const ARP_RHYTHMS = Object.freeze([
+  ['Every step', '1'], ['Offbeat', '01'], ['Half time', '10'], ['Quarter time', '1000'],
+  ['Three pulse', '1110'], ['Tresillo', '10010010'], ['Cinquillo', '10110110'], ['Clave', '1001001000101000'],
+  ['Backbeat', '0000100000001000'], ['Four and pickup', '1000100010001010'], ['Disco', '1001100110011001'],
+  ['Skipping', '11011010'], ['Heartbeat', '11000000'], ['Gallop', '1011'], ['Reverse gallop', '1101'],
+  ['Triplet pair', '110'], ['Triplet tail', '011'], ['Seven pulse', '1010101'], ['Five pulse', '10101'],
+  ['Syncopation', '10100101'], ['Broken eighths', '11001010'], ['Double time burst', '11110000'],
+  ['Sparse nine', '100010001'], ['Seven of sixteen', '1010100101010010'], ['Long answer', '1000010001000100'],
+  ['Rising density', '1000101011111111'], ['Falling density', '1111111110101000'], ['Call and response', '1110000010101010'],
+].map(([name, mask]) => Object.freeze({ name, steps: Object.freeze([...mask].map(Number)) })));
 export const ARP_MODES = ['Off', 'Up', 'Down', 'Up/Down', 'Random', 'As Played', 'Chord'];
 
 /**
@@ -305,7 +391,7 @@ export function patternPath(store, p) {
   return `parts.${p}.patterns.${activePatternIndex(store.get(`parts.${p}`))}`;
 }
 export function defaultArp() {
-  return { mode: 0, rate: 3, octaves: 1, gate: 0.6, hold: 0 };
+  return { mode: 0, rate: 3, octaves: 1, gate: 0.6, hold: 0, rhythm: 0 };
 }
 
 // How the dot (orbit centre) behaves on the map.
@@ -340,6 +426,8 @@ export function defaultPart(i = 0, { id, name, color } = {}) {
       exploreRate: 0.5, exploreRange: 2, exploreNotes: 1, waypoints: [], tourMode: 0 },
     links: defaultLinks(),
     userTerrain: { A: null, B: null },
+    trackFx: defaultTrackFx(),
+    noiseRecording: null,
   };
 }
 
@@ -353,7 +441,7 @@ export function defaultPart(i = 0, { id, name, color } = {}) {
 // plus a `seqOn` switch instead of one `seq`. migrateState() turns the four
 // parts of older sessions and scenes into four tracks (ids t1..t4, the old
 // `seq` as pattern 1).
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export function defaultState(count = DEFAULT_PARTS) {
   const n = Math.max(MIN_PARTS, Math.min(MAX_PARTS, Math.round(Number(count) || DEFAULT_PARTS)));

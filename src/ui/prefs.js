@@ -4,12 +4,16 @@
 // The theme preference is stored separately by theme.js (its own key is part
 // of the cross-module theme contract) but is mirrored here as well.
 
+import { CAMERA_VIEWS, sanitizeSavedCameraViews } from '../visual/camera-view.js';
+
 export const SETTINGS_KEY = 'orograph.settings';
 
 export const PREF_DEFAULTS = Object.freeze({
   theme: 'system',
   quality: 'high',
   renderStyle: 'relief',
+  view: 'orbit',
+  savedCameraViews: [],
   palette: 0,
   autoRotate: 1,
   reduceMotion: 'system', // 'system' | 'on' | 'off'
@@ -22,8 +26,10 @@ export const PREF_DEFAULTS = Object.freeze({
 const VALID = {
   theme: v => ['system', 'dark', 'light'].includes(v),
   quality: v => ['high', 'medium', 'low'].includes(v),
-  renderStyle: v => ['relief', 'wire', 'contour', 'heat', 'points'].includes(v),
-  palette: v => Number.isInteger(v) && v >= 0 && v < 32,
+  renderStyle: v => ['relief', 'wire', 'contour', 'heat', 'points', 'normals'].includes(v),
+  view: v => CAMERA_VIEWS.includes(v),
+  savedCameraViews: v => Array.isArray(v),
+  palette: v => Number.isInteger(v) && v >= 0 && v < 24,
   autoRotate: v => v === 0 || v === 1,
   reduceMotion: v => ['system', 'on', 'off'].includes(v),
   showTips: v => v === 0 || v === 1,
@@ -37,7 +43,7 @@ export function sanitizePrefs(src) {
   const out = { ...PREF_DEFAULTS };
   if (!src || typeof src !== 'object') return out;
   for (const key of Object.keys(PREF_DEFAULTS)) {
-    let v = src[key];
+    let v = key === 'savedCameraViews' ? sanitizeSavedCameraViews(src[key]) : src[key];
     if (typeof PREF_DEFAULTS[key] === 'number' && typeof v === 'boolean') v = v ? 1 : 0;
     if (VALID[key](v)) out[key] = v;
   }
@@ -58,7 +64,7 @@ export function savePrefs(prefs, storage = globalThis.localStorage) {
 }
 
 // Store-backed keys (live in store.ui so visuals and other modules can react).
-export const UI_PREF_KEYS = ['quality', 'renderStyle', 'palette', 'autoRotate', 'audioQuality'];
+export const UI_PREF_KEYS = ['view', 'quality', 'renderStyle', 'palette', 'autoRotate', 'audioQuality'];
 
 /**
  * Restore preferences into the store and keep them persisted. Returns an
@@ -89,7 +95,7 @@ export function createPrefs({ store }) {
     set(key, value) {
       if (!(key in PREF_DEFAULTS) || !VALID[key](value)) return;
       if (UI_PREF_KEYS.includes(key)) { store.set('ui.' + key, value, { source: 'ui' }); return; }
-      prefs[key] = value;
+      prefs[key] = key === 'savedCameraViews' ? sanitizeSavedCameraViews(value) : value;
       persistSoon();
       for (const fn of listeners) fn(key, value);
     },

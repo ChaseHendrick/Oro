@@ -7,7 +7,7 @@
 import { PART_PARAM_MAP, fromNorm, toNorm } from '../core/params.js';
 
 // Laps and Pace joined the contract later; follow them when the registry has them.
-export const VIS_IDS = ['morph', 'warp', 'lift', 'fold', 'size', 'stretch', 'rotate', 'centerX', 'centerY', 'pathParam', 'laps', 'pace']
+export const VIS_IDS = ['morph', 'warp', 'lift', 'fold', 'size', 'stretch', 'rotate', 'centerX', 'centerY', 'pathParam', 'laps', 'pace', 'pathWindow', 'pathMangle', 'pathMirror']
   .filter(id => PART_PARAM_MAP[id]);
 const PERIOD = { rotate: 360, centerX: 1, centerY: 1 };
 
@@ -103,7 +103,7 @@ export class LiveParams {
 // note: Key>Size (size x 2^(noteSize (note - 60) / 24), clamped to 0..0.5) and
 // Links whose source is Key ((note - 60) / 48 through the link's curve).
 
-export const ORBIT_IDS = ['stretch', 'size', 'rotate', 'centerX', 'centerY', 'pathParam'];
+export const ORBIT_IDS = ['stretch', 'size', 'rotate', 'centerX', 'centerY', 'pathParam', 'pathWindow', 'pathMangle', 'pathMirror'];
 const KEY_SOURCE = 3;   // index of 'Key' in LINK_SOURCES
 
 /** Key>Size factor for a note (the oscillator applies it per voice). */
@@ -139,7 +139,7 @@ export function keyLinkDelta(links, id, note) {
 export function voiceLive(L, note, refNote, links, noteSize, out) {
   for (let i = 0; i < ORBIT_IDS.length; i++) {
     const id = ORBIT_IDS[i];
-    let v = L[id];
+    let v = Number.isFinite(L[id]) ? L[id] : PART_PARAM_MAP[id].default;
     const d = keyLinkDelta(links, id, note) - (Number.isFinite(refNote) ? keyLinkDelta(links, id, refNote) : 0);
     if (d !== 0) {
       const def = PART_PARAM_MAP[id];
@@ -165,5 +165,8 @@ export function orbitDifference(a, b) {
   const cen = Math.hypot(periodicDelta(a.centerX, b.centerX, 1), periodicDelta(a.centerY, b.centerY, 1)) / 0.006;
   const st = Math.abs(a.stretch - b.stretch) / 0.05;
   const sh = Math.abs(a.pathParam - b.pathParam) / 0.05;
-  return Math.max(size, rot, cen, st, sh);
+  const window = Math.abs((a.pathWindow || 0) - (b.pathWindow || 0)) / 0.05;
+  const mangle = Math.abs((a.pathMangle || 0) - (b.pathMangle || 0)) / 0.05;
+  const mirror = (a.pathMirror || 0) === (b.pathMirror || 0) ? 0 : 2;
+  return Math.max(size, rot, cen, st, sh, window, mangle, mirror);
 }

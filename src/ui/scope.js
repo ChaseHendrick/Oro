@@ -6,9 +6,9 @@
 import { PART_PARAM_MAP, fromNorm, MOD_PARAM_IDS } from '../core/params.js';
 import { h, createScope, watchSize, watchVisibility } from './dom.js';
 import { addLoop } from './frame.js';
-import { pathPoint, makeTransform, applyTransform, terrainHeight, shapeHeight, cyclePhase } from './dsp-bridge.js';
+import { pathPoint, shapePathPoint, makeTransform, applyTransform, terrainHeight, shapeHeight, cyclePhase } from './dsp-bridge.js';
 
-const CYCLE_IDS = ['pathShape', 'pathOrder', 'pathParam', 'size', 'stretch', 'rotate', 'centerX', 'centerY', 'morph', 'warp', 'lift', 'fold', 'laps', 'pace', 'paceShape'];
+const CYCLE_IDS = ['pathShape', 'pathOrder', 'pathParam', 'size', 'stretch', 'rotate', 'centerX', 'centerY', 'morph', 'warp', 'lift', 'fold', 'laps', 'pace', 'paceShape', 'pathWindow', 'pathMangle', 'pathMirror'];
 const MODDED = new Set(MOD_PARAM_IDS);
 
 /**
@@ -22,7 +22,9 @@ export function sampleCycle(p, tableA, tableB, n = 256, spinPhase = 0, out = new
   const B = tableB && tableB.data ? tableB : null;
   const laps = p.laps ?? 1, pace = p.pace ?? 0, curve = p.paceShape ?? 0;
   for (let i = 0; i < n; i++) {
-    pathPoint(p.pathShape, cyclePhase(i / n, laps, pace, curve), p.pathOrder, p.pathParam, pt);
+    const t = cyclePhase(i / n, laps, pace, curve);
+    pathPoint(p.pathShape, t, p.pathOrder, p.pathParam, pt);
+    shapePathPoint(pt.x, pt.y, t, p.pathWindow, p.pathMangle, p.pathMirror, pt);
     applyTransform(xf, pt.x, pt.y, uv);
     const hgt = terrainHeight(tableA.data, tableA.size, B ? B.data : null, B ? B.size : 0, p.morph, p.warp, uv.u, uv.v);
     out[i] = shapeHeight(hgt, p.lift, p.fold);

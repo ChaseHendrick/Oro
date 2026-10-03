@@ -6,6 +6,8 @@
 // send is switched on in Settings > Pedals (v1.1), each strip also shows its
 // Pedal send with Pre and Insert.
 
+import { createVectorMix } from './vector-mix.js';
+import { createTrackFxPanel } from './track-fx-panel.js';
 import { MAX_PARTS, PART_COLORS, GLOBAL_PARAM_MAP, PART_PARAM_MAP, formatValue, clamp } from '../core/params.js';
 import { partCount } from '../core/tracks.js';
 import { h, createScope, setText } from './dom.js';
@@ -86,7 +88,9 @@ export function createMixPanel(ctx) {
         h('div', { class: 'strip-caption' }, h('span', { class: 'mini-label' }, 'Volume'), volVal)),
       h('div', { class: 'master-limit' }, ceilingKnob)));
 
-  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, master);
+  const vector = createVectorMix(ctx), trackFx = createTrackFxPanel(ctx);
+  scope.add(vector.dispose); scope.add(trackFx.dispose);
+  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, vector.el, trackFx.el, master);
 
   // ---- meters (one loop for everything)
   const levels = new Float32Array(MAX_PARTS);

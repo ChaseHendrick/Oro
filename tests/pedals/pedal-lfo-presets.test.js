@@ -241,7 +241,7 @@ describe('pedal preset data and migration', () => {
     expect(sanitizeScene({ ...old, pedalPresets: { nucleo: 3 } }).pedalPresets).toEqual({ nucleo: 3 });
   });
 
-  it('a version 1 library loads unchanged and is saved back as version 2', () => {
+  it('a version 1 library loads unchanged and is saved back in the current format', () => {
     const storage = createMemoryStorage();
     const oldScene = { ...JSON.parse(JSON.stringify(defaultState())), version: 2, name: 'Mine', description: '', id: 'u-1' };
     const oldPatch = { name: 'My pad', category: 'User', tags: [], params: { cutoff: 1200 }, mods: {}, id: 'u-2' };
@@ -255,8 +255,8 @@ describe('pedal preset data and migration', () => {
     expect(presets.getPatch('u-2').params).toEqual({ cutoff: 1200 });
     presets.setPedalPresets('patch', 'u-2', { purrting: 9 });
     const saved = JSON.parse(storage.getItem(STORAGE_KEY));
-    expect(PRESET_VERSION).toBe(2);
-    expect(saved.version).toBe(2);
+    expect(PRESET_VERSION).toBe(3);
+    expect(saved.version).toBe(PRESET_VERSION);
     expect(saved.patches[0].pedalPresets).toEqual({ purrting: 9 });
     expect(saved.scenes[0]).not.toHaveProperty('pedalPresets');
   });
@@ -271,7 +271,7 @@ describe('pedal preset data and migration', () => {
     presets.saveScene('With pedals', { pedalPresets: { lostAndFound: 0 } });
     const text = await presets.exportJSON('scene').text();
     const data = JSON.parse(text);
-    expect(data.version).toBe(2);
+    expect(data.version).toBe(PRESET_VERSION);
     expect(data.scenes.find(s => s.name === 'With pedals').pedalPresets).toEqual({ lostAndFound: 0 });
   });
 });

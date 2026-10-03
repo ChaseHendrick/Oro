@@ -92,7 +92,7 @@ export const QUALITY = {
   medium: { pixelRatio: 1.5, bloom: true, samples: 4 },
   low: { pixelRatio: 1, bloom: false, samples: 0 },
 };
-export const RENDER_STYLES = ['relief', 'wire', 'contour', 'heat', 'points'];
+export const RENDER_STYLES = ['relief', 'wire', 'contour', 'heat', 'points', 'normals'];
 const META = Object.freeze({ source: 'visual' });
 const FADE_SECONDS = 0.3;
 const SWITCH_SECONDS = 0.35;
@@ -266,9 +266,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
   const dotPos = { u: 0.5, v: 0.5, x: 0, y: 0, z: 0 };
   let dotScale = 1;
   // Orbits: the live one (newest voice), the knob-only base and one per voice.
-  const orbitLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5 };
-  const baseLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5 };
-  const voiceLives = Array.from({ length: 8 }, () => ({ stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5 }));
+  const orbitLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5, pathWindow: 0, pathMangle: 0, pathMirror: 0 };
+  const baseLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5, pathWindow: 0, pathMangle: 0, pathMirror: 0 };
+  const voiceLives = Array.from({ length: 8 }, () => ({ stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5, pathWindow: 0, pathMangle: 0, pathMirror: 0 }));
   const voiceSlots = new Array(8).fill(null);
   const voiceAmps = new Float64Array(8);
   const voiceOrder = new Float64Array(8), voiceNote = new Float64Array(8).fill(NaN);
@@ -1430,6 +1430,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const pr0 = r.params;
     baseLive.stretch = num(pr0.stretch, 0); baseLive.size = num(pr0.size, 0.22); baseLive.rotate = num(pr0.rotate, 0);
     baseLive.pathParam = num(pr0.pathParam, 0.5);
+    baseLive.pathWindow = num(pr0.pathWindow, 0); baseLive.pathMangle = num(pr0.pathMangle, 0); baseLive.pathMirror = num(pr0.pathMirror, 0);
     baseCenter(_base);
     // the knob-only orbit sits at the knob centre (a held dot's knob centre is ctl)
     baseLive.centerX = centreMod && !simActive ? (ctl.mode === 'idle' ? _base.u + tile[sel].u : ctl.u) : dotPos.u;
@@ -1558,6 +1559,14 @@ export async function createVisuals(container, { store, engine = null, quality, 
       themeDirty = true;
     },
 
+    captureCameraView() { return rig.capture(); },
+    restoreCameraView(saved) {
+      if (!rig.restore(saved)) return false;
+      api.setAutoRotate(false);
+      if (store.get('ui.view') !== rig.view) store.set('ui.view', rig.view, META);
+      return true;
+    },
+
     setView(name, animate = true) {
       const v = VIEW_NAMES.includes(name) ? name : 'orbit';
       rig.setView(v, animate);
@@ -1631,7 +1640,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       clearLongPress();
       if (offStep) offStep();
       handlers.clear();
-      controls.dispose();
+      rig.dispose(); controls.dispose();
       sim.dispose();
       offTracks();
       cache.dispose();

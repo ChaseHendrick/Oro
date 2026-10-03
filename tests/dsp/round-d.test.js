@@ -393,8 +393,8 @@ describe('Vowel filter', () => {
 });
 
 describe('Steps LFO', () => {
-  it('holds each of the 16 values for 1/16 of the period with a short glide between them', () => {
-    const steps = Array.from({ length: 16 }, (_, i) => ((i * 7) % 16) / 7.5 - 1);
+  it('holds each of the 32 values for 1/32 of the period with a short glide between them', () => {
+    const steps = Array.from({ length: 32 }, (_, i) => ((i * 7) % 32) / 15.5 - 1);
     const dsp = makeDSP({ terrainA: T.swell, params: { pan: 0 }, mods: { pan: { lfoShape: 6, lfoRate: 1, lfoDepth: 0.5, steps } } });
     const slot = MOD_PARAM_IDS.indexOf('pan');
     const P0 = dsp.parts[0];
@@ -406,11 +406,11 @@ describe('Steps LFO', () => {
     }
     let held = 0, gliding = 0;
     for (const [ph, val] of vals) {
-      const i = Math.min(15, Math.floor(ph * 16));
-      const tIn = (ph * 16 - i) / 16;     // seconds into the step at 1 Hz
+      const i = Math.min(31, Math.floor(ph * 32));
+      const tIn = (ph * 32 - i) / 32;     // seconds into the step at 1 Hz
       if (tIn >= 0.002) { expect(val).toBeCloseTo(steps[i], 9); held++; }
       else {
-        const prev = steps[(i + 15) % 16];
+        const prev = steps[(i + 31) % 32];
         expect(val).toBeCloseTo(prev + (steps[i] - prev) * tIn / 0.002, 9);
         gliding++;
       }
@@ -431,7 +431,7 @@ describe('Steps LFO', () => {
     const dsp = makeDSP({ terrainA: T.swell, mods: { morph: { lfoShape: 6, lfoDepth: 0.3, lfoRate: 4 } } });
     const slot = MOD_PARAM_IDS.indexOf('morph');
     expect(dsp.parts[0].lfoShape[slot]).toBe(6);
-    expect(dsp.parts[0].lfoSteps[slot * 16 + 3]).toBeCloseTo(-0.9, 12);
+    expect(dsp.parts[0].lfoSteps[slot * 32 + 6]).toBeCloseTo(-0.9, 12);
     const r = render(dsp, 0.2);
     expect(allFinite(r.L)).toBe(true);
   });

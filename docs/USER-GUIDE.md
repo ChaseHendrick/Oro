@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 1.5.1, including the guitar pedal features
+going on under the hood. It describes version 2.0.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -29,6 +29,7 @@ going on under the hood. It describes version 1.5.1, including the guitar pedal 
 16. [Keyboard shortcuts](#16-keyboard-shortcuts)
 17. [Troubleshooting](#17-troubleshooting)
 18. [Credits and clean-room statement](#18-credits-and-clean-room-statement)
+19. [Expanded 2.0 controls](#19-using-the-expanded-20-controls)
 
 ---
 
@@ -177,10 +178,11 @@ the selected part.
 | Scroll over the dot | Changes the loop's **Size** (elsewhere, scrolling zooms). |
 | **[** and **]** while the map has focus | Shrink and grow the loop (hold Shift for smaller steps). Elsewhere these keys step through patches. |
 
-The **view buttons** at the top left choose a camera (**Orbit**, **Top** and **Low**),
+The **view buttons** at the top left choose a camera (**Orbit**, **Top** and **Low**). The camera menu also offers **Front**, **Side**,
+**Diagonal** and named saved views. The remaining controls
 switch **auto-rotate** on or off (a slow circle round the map in Orbit view), choose a
 **map style** (**Relief** for shaded land, **Wireframe**, **Contours**, **Heat map** to colour
-by height, or **Points**) and open the **palette** of land colours.
+by height, **Points**, or **Normals** for surface orientation) and open the **palette** of land colours.
 
 On the map, a thin line shows the loop as the knobs set it and a bright line shows it as it
 actually moves, with modulation. When notes are playing and their loops differ (for
@@ -292,7 +294,7 @@ load your own land into it.
 * **Edges**: **Mirror** reflects the image so any picture tiles without a seam. **Wrap**
   keeps it as it is, for images that already tile.
 
-Images are centre-cropped to a square and reduced to at most 256 by 256 points.
+Images are centre-cropped to a square and reduced to 512 by 512 points.
 
 **16-bit height maps (DEMs).** Real elevation data, such as a digital elevation model
 exported as a 16-bit greyscale PNG, is read by Orograph's own PNG decoder at full 16-bit
@@ -301,11 +303,13 @@ management). Grey values are treated as heights, not as light. This keeps gentle
 smooth instead of turning them into tiny terraces, so real mountains and coastlines become
 playable land.
 
-**WAV files become wavetables.** Orograph reads the file sample-exact and splits it into
+**Audio imports.** Choose **Recording** to map a complete recording across the terrain,
+or **Wavetable** for single-cycle frames. WAV decoding is sample-exact; other formats use
+the browser audio decoder. In Wavetable mode, Orograph splits a WAV into
 single-cycle frames: it uses the frame size stored in the file if there is one (a `clm`
 chunk, as many wavetable editors write), otherwise multiples of 2048 samples, then 1024,
 512 or 256, and failing all of those it treats the file as one cycle. Each frame is
-band-limited and resampled to 256 points, up to 256 frames. On the map each frame becomes
+band-limited and resampled to 512 points, up to 512 frames. On the map each frame becomes
 one row, so the **Scan** path plays one frame and **Dot Y** moves through the table, just
 like Spectra.
 
@@ -412,8 +416,8 @@ filter and the amp envelope shape them too.
 | **Fine** | ±100 cents. Can be modulated (for vibrato). |
 | **Glide** | Portamento time, 0 to 2 seconds. |
 | **Bend** | Pitch bend range, 0 to 24 semitones. |
-| **Sub** | A clean sine one octave below each note, added before the filter. |
-| **Unison** | Stacks 1 to 4 copies of each voice. |
+| **Sub**, **Sub two** | Oscillators one and two octaves below each note, added before the filter. Each has seven waveforms in the Sub oscillators card. |
+| **Unison** | Stacks 1 to 8 copies of each voice. |
 | **Detune** | How far apart the unison copies are, 0 to 50 cents. |
 | **Width** | How far the unison copies spread across the stereo field. |
 | **Velocity** | How much playing harder makes the note louder. |
@@ -444,11 +448,16 @@ The **Vowel** knob is dimmed unless the filter type is Comb or Vowel.
 * **Amp envelope** (Envelope 1) shapes the volume of each note: Attack (1 ms to 8 s),
   Decay (to 8 s), Sustain level, Release (to 10 s). The attack aims a little past full
   level and stops there, the way analogue envelopes do, which gives a snappier start.
-* **Envelope 2** has the same four stages. It drives the filter's **Env Amt** and every
-  **Env 2** depth in the Mod tab, so one envelope can open the filter, grow the loop and
+* **Envelope 2** has the same attack, decay, sustain and release controls. Both envelopes
+  also have **Delay**, **Hold** and six selectable modes, described below. It drives the filter's **Env Amt** and every
+  **Envelope** depth in the Mod tab, so one envelope can open the filter, grow the loop and
   morph the land at the same time.
 
-The graphs above each envelope show its shape as you turn the knobs.
+The graphs include the delay and hold stages. **Gate** follows the keys;
+**One-shot** runs through attack, hold, decay and release after a trigger;
+**Loop** repeats while held; **Ping-pong** reverses the attack/decay contour;
+**Trigger hold** keeps its sustain until retriggered or Panic; **Pluck** jumps to its
+peak after the delay and decays to silence. Panic always releases latched modes.
 
 ---
 
@@ -458,10 +467,10 @@ The graphs above each envelope show its shape as you turn the knobs.
 
 ### A modulator for every knob
 
-Eighteen controls can move on their own: **Morph**, **Warp**, **Lift**, **Fold**, **Shape**,
-**Size**, **Stretch**, **Rotate**, **Dot X**, **Dot Y**, **Fine**, **Cutoff**, **Reso**,
-**Drive**, **Pan**, **Laps**, **Pace** and **Vowel**. Each one has its own LFO and its own
-Envelope 2 depth, per part.
+Forty sound controls can move on their own, including the terrain blend, path, position,
+filter, pan and expanded oscillator controls. Each has its own LFO, optional six-stage
+envelope and four controller slots per part. With **Own envelope** off, its envelope
+depth uses the shared Envelope 2, preserving older patches.
 
 Right-click a knob and choose **Modulate...** to open its editor:
 
@@ -470,13 +479,13 @@ Right-click a knob and choose **Modulate...** to open its editor:
 * **Speed**: a free rate from 0.01 to 30 Hz, or **Sync** to lock it to the tempo with
   divisions from 4 bars down to 1/32, including dotted and triplet values.
 * **Retrig** restarts the LFO with each new note (when no other notes are held).
-* **Amount**: **LFO** depth and **Env 2** depth, each from −100% to +100% of the knob's full
+* **Amount**: **LFO** depth and **Envelope** depth, each from −100% to +100% of the knob's full
   travel.
 
 The animated preview shows the knob's base position, the LFO swinging round it and, while
 notes play, the live value.
 
-The **Mod** tab shows all eighteen at once in a table: shape, rate, depth, Env 2 depth,
+The **Mod** tab shows all forty at once in a table: shape, rate, depth, Env 2 depth,
 retrigger and a live bar for each, with **Clear all** to start again.
 
 **The maths.** Modulation is added in "knob space", where 0 is the knob fully left and 1
@@ -492,15 +501,15 @@ stopping at the ends.
 
 ### Steps LFO
 
-The **Steps** shape is a 16-step sequence of values instead of a waveform. Pick Steps and a
+The **Steps** shape is a 32-step sequence of values instead of a waveform. Pick Steps and a
 row of bars appears: draw on it with the mouse or a finger, or focus a bar and use the arrow
-keys. Double-click resets it. Each step holds its value for one sixteenth of the LFO's
+keys. Double-click resets it. Each step holds its value for one thirty-second of the LFO's
 period, with a 2 ms slew so the steps do not click. Synced to 1 bar, that is a classic
-16-step modulation sequence.
+32-step modulation sequence, with optional glide and smooth interpolation.
 
 ### Links
 
-**Links** (Mod tab, **Links + Macros**) route a source to any of the eighteen modulatable
+**Links** (Mod tab, **Links + Macros**) route a source to any of the forty modulatable
 controls, with an amount and a response curve. Each part can have up to 8.
 
 | Source | Range |
@@ -995,7 +1004,8 @@ not need to ask.
   **polyphonic aftertouch** (both available as the **Pressure** link source).
 * **All notes off** and **all sound off** (CC 123 and 120), and **reset controllers**
   (CC 121).
-* **Program change**, if you turn it on: program 0 (shown as 1 on many devices) loads the
+* **Program change**, if you turn it on: values 0 to 35 recall favourite slots 1 to 36.
+  An empty slot ignores the message. With no favourites assigned, program 0 loads the
   first patch in the patch list, program 1 the second, and so on.
 * **MIDI clock**: follow an external clock, or send one.
 * **MPE** (lower zone): each note on its own channel (2 to 16) with its own pitch bend
@@ -1013,8 +1023,9 @@ not need to ask.
 
 ### MIDI Learn
 
-Right-click any knob, including the Macros and the master controls, and choose **MIDI
-Learn**, then move a knob or fader on your controller. **Remove MIDI mapping** undoes it.
+Right-click a sound, Macro or master knob and choose **MIDI Learn**, then move a knob
+or fader on your controller. Rack and modulation-editor knobs do not offer MIDI Learn;
+use a target's four controller slots to route MIDI sources into its modulation. **Remove MIDI mapping** undoes it.
 The **Mappings** table in Settings lists everything with its CC and channel, and lets you
 remove any of them.
 
@@ -1338,3 +1349,150 @@ and their licences is in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 **Made by** Chase ([Hendrick Research](https://www.hendrickresearch.com)), written with the
 help of Claude Code. Orograph is free and open source under the [MIT licence](../LICENSE).
+
+
+## 19. Using the expanded 2.0 controls
+
+### Oscillators and filters
+
+**Sub oscillators** choose Sine, Triangle, Saw, Pulse 25%, Square, Organ or Soft saw for
+one and two octaves down. Their levels are independent. **Noise** chooses White, Pink,
+Blue or Brown, the original Air sound, three synthesized loop textures (Vinyl, Waves,
+City), or **Recording**. Import noise recording decodes a supported audio file, mixes it
+to mono and keeps its first 16 seconds. Noise level remains controlled by Air; Texture
+position moves the loop's offset. The supplied textures are synthesized, not field
+recordings. Your imported recordings are kept in patches, scenes and session saves.
+
+**Partial profiles** continuously morphs eleven original sets of oscillator frequency
+ratios. Turn up Partials to hear them: Harmonic, Stretched, Compressed, Odd, Metal, Glass,
+Bells, Golden, Cluster, Detuned and Folded. The labels describe colours rather than
+physical instrument models. **Phase mod** and **Ring mod** each have an amount and a
+frequency ratio relative to the played note. **Karplus-Strong pluck** excites a tuned
+feedback delay with noise, then lets it decay; Pluck decay, Pluck tone and Dispersion
+change the damping and stiffness colour.
+
+The Filter menu adds **Ladder warm**, **Ladder clean**, **Ladder driven**, **SEM** and
+**Diode**. They are original digital nonlinear filter algorithms with different responses,
+not circuit replicas. The existing Vowel filter remains the formant option.
+
+### Images, recordings and paths
+
+The **Image library** buttons beside terrain A and B browse 320 original procedural
+images in ten categories, with search and thumbnails. Each selection creates an actual
+512 by 512 RGBA source image. The library is generated locally and works offline.
+
+Imported images preserve red, green, blue and brightness. **Image channel** moves through
+these channels continuously: 0 = red, 1 = green, 2 = blue, 3 = brightness. Intermediate
+values blend adjacent channels and update the map and audio together. **Mapping** chooses
+Cartesian or Polar. Wavetables and audio terrains also support Polar mapping. Audio import
+offers **Full recording** to map the whole timeline across the terrain, or **Wavetable**
+for frame-based single-cycle files. WAV works without browser codecs; other formats depend
+on the browser's decoder. Source files are never uploaded.
+
+**Window** tapers the path's radius through its cycle, **Mangle** distorts the coordinates,
+and **Mirror** folds the path along X, Y or both. These combine with Laps, Pace and natural
+or even traversal. New paths include Line, Square, Raster, Triangle, Hypocycloid, Butterfly,
+Heart and Lemniscate.
+
+### Per-parameter movement
+
+Click a parameter's modulation button or its name in **Mod**. Each of the 40 targets has
+its own LFO, its own envelope and four controller slots. The Mod table is the overview of
+all targets and their live values.
+
+Expand **LFO timing and shape** for Skew, Phase, Offset, Delay seconds, Fade seconds and
+Loops. Zero loops means continuous; 1 to 32 stops after that many cycles. Steps contains
+32 drawable values. Step glide interpolates between cells; Step smooth rounds the ramp.
+Rate still supports free Hz or tempo divisions.
+
+Expand **Parameter envelope**, enable **Own envelope**, and set its Delay, Attack, Hold,
+Decay, Sustain, Release and mode. Otherwise the envelope depth uses the shared Envelope 2,
+which preserves the behaviour of older patches. Expand **Four controller slots** to choose
+four sources, signed depths and response curves independently. Velocity, pressure, MPE,
+macros, guitar/voice levels and MIDI pedals are available. Expression pedal is MIDI CC11,
+Sustain pedal is CC64, and Breath is CC2. CC64 also sustains notes when it is not being
+learned or assigned to a knob through MIDI Learn.
+
+### Track racks and vector mixing
+
+**Mix > Track effects** edits the selected track's four slots, A to D. Each slot has an
+effect menu, Mix amount and four controls named for that algorithm. Bypass or Mix zero
+passes dry audio through. Effects are applied after voice pan and before the track's level and sends,
+and their tails continue after notes release. Patches include the rack.
+
+The 27 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
+Phaser, Overdrive, Distortion, Decimator, Granular pitch shift, Four-band EQ, Sidechain
+ducking, Multiband compression, Compressor, Limiter, Tremolo, Auto pan, Ring modulation,
+Envelope wah, Low-pass filter, High-pass filter, Comb resonator, Stereo width, Warmth,
+Noise gate and Tape colour. Multiband compression uses three bands with upward and downward
+compression; it is not a copy of any branded compressor.
+
+Routing offers Serial, Four parallel, Parallel pairs, Middle split, Input split, Output
+fan, Input fan, Mid/side, Low/high and Left/right splits. Parallel branches are averaged.
+Sidechain can use Self, the Mix or a named track. Self reads the current input; Mix and
+named tracks read the preceding raw audio block. A removed source returns to self detection.
+
+**Vector mix** crossfades banks of four tracks between four corners. Drag the point or
+use arrows with the pad focused; Shift moves faster. The amount blends from the usual
+mixer at zero to equal-power corner weights at 100%. Tracks outside the bank retain their
+usual level. Choose **Layer** keys to play the four sounds together.
+
+### Arps, favourites and views
+
+The global scale list has 40 distinct scales. **Seq > Arp > Rhythm** offers 28 trigger
+patterns. A rest advances the rhythm clock without consuming the next pitch in the arp.
+The scale interval names follow common conventions; the
+[Tonal scale catalogue](https://github.com/tonaljs/tonal/tree/main/packages/scale-type)
+is a reference for their interval sets.
+
+Save patch offers Category, Author and Folder. Search matches these fields; the browser
+also filters folders. **Favourites (36)** assigns ordered slots, with numbered recall
+buttons. When MIDI Program Change is enabled in Settings, transmitted program values
+0 to 35 select displayed slots 1 to 36. With at least one favourite assigned, an empty
+slot ignores the message. An entirely empty bank preserves the original patch-order
+recall. Favourite assignments survive library export/import.
+
+The map offers 24 palettes and six render styles, including a true surface **Normals**
+view. **Camera views and saved views** offers six angles and lets you name, restore and
+delete camera captures. These view settings are per computer, while sounds remain portable.
+
+Large sessions and libraries use IndexedDB when they outgrow localStorage. Let a save
+finish before closing the app, and export your library or scene for a portable backup.
+Dense 16-track sessions with four active effects per track and high unison depend on the
+computer; lower audio quality, unison or simultaneous notes if playback struggles.
+
+### Updating downloaded copies
+
+**Settings > Updates** offers **Check now**, **Check on launch**, and **Check periodically**
+(every six hours while open). Automatic checks and downloads are off until you enable
+them. Older releases need one manual upgrade to a copy that contains this updater.
+
+The Windows installer and Linux AppImage can download an update inside the app. Choose
+**Download update**, or enable **Download updates automatically**. Installation waits for
+**Restart and install**; Orograph first waits for the current session and preset library
+to be saved. A failed save keeps the app open. It never restarts in the middle of playing
+or installs an update simply because you quit.
+
+Current Mac builds use ad hoc signing, so they show a release notice and **Download latest
+release** for manual replacement. Windows portable copies and Linux archives use the same
+manual path. Browser users get the hosted version when they reload the site; an offline
+HTML copy is updated by downloading the new file. Saved patches and scenes remain in
+their existing storage. Export your library if you also move to another browser or computer.
+
+Updates come from the public Orograph GitHub releases. The supported desktop installer
+verifies downloaded artifact checksums. Release publishing includes the update metadata
+and hashes; bumping the version and completing the release routine makes the next release
+available to existing copies with checks enabled. This does not require an account.
+
+
+### Browser performance
+
+Orograph reuses minimap sampling work while terrains morph and uses a fast colour
+conversion lookup. This reduces rendering overhead while keeping the source resolution,
+audio settings and uncapped animation. In one measured Chrome scene, render-loop
+JavaScript time fell from 3.51 ms to 1.39 ms per frame at about 60 fps. Results depend on
+the computer and patch; see `EXPANSION-VALIDATION.md` for the exact fixture.
+
+**Settings > Audio** reports worklet load. If a dense patch struggles, reduce simultaneous
+notes, unison or expensive track effects, or select a lower audio quality. These controls
+change synthesis cost and remain your choice.

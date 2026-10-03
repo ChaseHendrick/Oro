@@ -7,6 +7,8 @@ import { TERRAIN_INDEX } from '../dsp/catalog.js';
 import { generateTerrain, decodeUserTerrain, buildMipChain } from '../dsp/terrains.js';
 import { generateImpulse } from './reverb-ir.js';
 import { decodeUserTerrainPrecise, hasLowPlane } from './heightmap.js';
+import { IMAGE_CHANNELS } from '../dsp/user-terrain.js';
+import { sampleBilinear } from '../dsp/terrain-math.js';
 
 export const FLAT_SIZE = 32;
 export const MIP_MIN = 32;
@@ -54,10 +56,13 @@ export function jobFor(params, userTerrain, slot, size) {
     if (!ut || typeof ut.data !== 'string' || !(ut.w >= 2) || !(ut.h >= 2)) return { kind: 'flat', size: FLAT_SIZE };
     const job = {
       kind: 'user', size,
-      ut: { kind: ut.kind === 'wavetable' ? 'wavetable' : 'image', w: Math.round(ut.w), h: Math.round(ut.h), mirror: ut.mirror ? 1 : 0, data: ut.data },
+      ut: { kind: ['wavetable', 'audio'].includes(ut.kind) ? ut.kind : 'image', w: Math.round(ut.w), h: Math.round(ut.h), mirror: ut.mirror ? 1 : 0, data: ut.data },
     };
     // 16-bit imports carry their low bytes separately (see heightmap.js).
     if (hasLowPlane(ut)) job.ut.lo = ut.lo;
+    if (ut.channels && IMAGE_CHANNELS.every(k => ut.channels[k]?.data)) job.ut.channels = ut.channels;
+    job.channel = Math.round(Math.max(0, Math.min(3, finite(p['imageChannel' + slot], 0))) * 100) / 100;
+    job.mapping = p['imageMapping' + slot] === 1 ? 1 : 0;
     return job;
   }
   // Detail is rounded to 0.01 for the cache key, so build with the same value.
@@ -70,7 +75,8 @@ export function jobKey(job) {
   if (job.kind === 'flat') return 'flat';
   if (job.kind === 'user') {
     const u = job.ut;
-    return `u:${memoHash(u.data)}${u.lo ? '+' + memoHash(u.lo) : ''}:${u.kind}:${u.w}x${u.h}:${u.mirror}:${job.size}`;
+    const channels = u.channels ? IMAGE_CHANNELS.map(k => memoHash(u.channels[k].data) + (u.channels[k].lo ? memoHash(u.channels[k].lo) : '')).join(':') : '';
+    return `u:${memoHash(u.data)}${u.lo ? '+' + memoHash(u.lo) : ''}:${u.kind}:${u.w}x${u.h}:${u.mirror}:${job.size}:${channels}:${job.channel || 0}:${job.mapping || 0}`;
   }
   return `p:${job.index}:${job.seed}:${Math.round(job.detail * 100)}:${job.size}`;
 }
@@ -79,9 +85,40 @@ export function jobKey(job) {
 export function buildTerrainData(job) {
   if (job.kind === 'flat') return new Float32Array(FLAT_SIZE * FLAT_SIZE);
   let data = null;
-  if (job.kind === 'user') data = hasLowPlane(job.ut) ? decodeUserTerrainPrecise(job.ut, job.size) : decodeUserTerrain(job.ut, job.size);
+  if (job.kind === 'user') data = decodeImportedTerrain(job.ut, job.size, job.channel, job.mapping);
   else data = generateTerrain(job.index, { size: job.size, seed: job.seed, detail: job.detail });
   return data || new Float32Array(job.size * job.size);
+}
+
+/** Decode and blend stored image channels without dropping the original planes.
+ * Legacy imports have no channels and keep their original chosen-channel sound.
+ */
+export function decodeImportedTerrain(ut, size = 512, channel = 0, mapping = 0) {
+  const decode = p => hasLowPlane(p) ? decodeUserTerrainPrecise(p, size) : decodeUserTerrain(p, size);
+  let data;
+  if (ut.channels && IMAGE_CHANNELS.every(k => ut.channels[k]?.data)) {
+    const c = Math.max(0, Math.min(3, channel || 0)), a = Math.floor(c), b = Math.min(3, a + 1), f = c - a;
+    data = decode({ ...ut, ...ut.channels[IMAGE_CHANNELS[a]], lo: ut.channels[IMAGE_CHANNELS[a]].lo });
+    if (f > 0) {
+      const other = decode({ ...ut, ...ut.channels[IMAGE_CHANNELS[b]], lo: ut.channels[IMAGE_CHANNELS[b]].lo });
+      for (let i = 0; i < data.length; i++) data[i] += f * (other[i] - data[i]);
+    }
+  } else data = decode(ut);
+  if (mapping !== 1) return data;
+  // Source x is angle; source y is radius. Sine coordinates repeat smoothly at
+  // the Cartesian edges, so a polar image is still a seamless torus terrain.
+  const out = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const xx = Math.sin(Math.PI * (2 * x / size - 1)), yy = Math.sin(Math.PI * (2 * y / size - 1));
+    const angle = Math.atan2(yy, xx) / (2 * Math.PI) + 0.5;
+    const radius = Math.sqrt((xx * xx + yy * yy) * 0.5);
+    // The origin averages the angular axis, avoiding an angle singularity.
+    const fade = Math.min(1, radius * size / 3);
+    let centre = 0;
+    if (fade < 1) for (let k = 0; k < 16; k++) centre += sampleBilinear(data, size, k / 16, 0) / 16;
+    out[y * size + x] = fade * sampleBilinear(data, size, angle, radius) + (1 - fade) * centre;
+  }
+  return out;
 }
 
 /** Mip chain for a table built by buildTerrainData. */

@@ -23,6 +23,8 @@ import { createTerrainGenerator } from './terrain-generator.js';
 import { createTerrainManager } from './terrain-manager.js';
 import { createRecorder, MAX_RECORD_SECONDS } from './recorder.js';
 import { createLooper } from './looper.js';
+import { decodeNoiseRecording } from '../dsp/noise-recording.js';
+import { importNoiseRecording } from './noise-import.js';
 import { importTerrainFile as importIntoStore, importStats } from './importers.js';
 import { wavHeader } from './wav.js';
 import { loadWorkletModule, withTimeout } from './worklet-loader.js';
@@ -96,7 +98,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let node = null;                // AudioWorkletNode or ScriptProcessorNode
   let scriptParts = [];           // extra nodes of the script host
   let recoveries = 0;
-  let lastTele = null;
+  let lastTele = null, lastLoad = null;
   let disposed = false;
 
   const onTele = (m) => { lastTele = m; events.emit('tele', m); };
@@ -105,7 +107,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   // quality mode (device setting), the channel controllers and the transport
   // anchor. snapshot() replays it, so a rebuilt DSP keeps playing the same way.
   let quality = QUALITY_MODES.includes(store.get('ui.audioQuality')) ? store.get('ui.audioQuality') : 'standard';
-  let controllers = Array.from({ length: MAX_PARTS }, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0 }));
+  let controllers = Array.from({ length: MAX_PARTS }, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }));
   let marbles = Array.from({ length: MAX_PARTS }, () => null);
   let transportMsg = null;
   // v1.1 pedal loop state the DSP needs back after a rebuild.
@@ -123,6 +125,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       if (c.wheel) out.push({ t: 'wheel', part, v: c.wheel });
       if (c.pressure) out.push({ t: 'pressure', part, v: c.pressure });
       if (c.slide) out.push({ t: 'slide', part, v: c.slide });
+      for (const source of ['expression','sustainLevel','breath']) if (c[source]) out.push({ t: source, part, v: c[source] });
     });
     marbles.forEach((m) => { if (m) out.push({ ...m }); });
     if (transportMsg && transportMsg.playing) out.push({ ...transportMsg });
@@ -131,6 +134,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
 
   const sync = createStoreSync({
     store,
+    sampleRate: () => ctx?.sampleRate || 48000,
     post: (msgs) => send(msgs),
     onGlobal: (g, changed) => { if (fx) fx.set(g, changed); },
     extra: hostState,
@@ -139,9 +143,9 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   // track list is reordered; a new track starts at rest. (The sync above has
   // already told the DSP, which moves its parts the same way.)
   const offTracks = watchTracks(store, ({ perm, fresh }) => {
-    controllers = permute(controllers, perm, fresh, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0 }));
+    controllers = permute(controllers, perm, fresh, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }));
     marbles = permute(marbles, perm, fresh, () => null);
-    for (let p = partCount(store); p < MAX_PARTS; p++) { controllers[p] = { bend: 0, wheel: 0, pressure: 0, slide: 0 }; marbles[p] = null; }
+    for (let p = partCount(store); p < MAX_PARTS; p++) { controllers[p] = { bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }; marbles[p] = null; }
     marbles.forEach((m, p) => { if (m) marbles[p] = { ...m, part: p }; });
   });
 
@@ -151,11 +155,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       numberOfInputs: 0,
       numberOfOutputs: 4,
       outputChannelCount: [2, 2, 2, 2],
-      processorOptions: { sampleRate: ctx.sampleRate, init },
+      processorOptions: { sampleRate: ctx.sampleRate, init, measureLoad: true },
     });
     n.port.onmessage = (e) => {
       const m = e.data;
       if (m && m.t === 'tele') onTele(m);
+      else if (m?.t === 'load') { lastLoad = m; events.emit('load', m); }
     };
     n.onprocessorerror = (e) => recover(e);
     n.connect(fx.dryIn, 0);
@@ -506,6 +511,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       controllers[part].wheel = clamp(v, 0, 1);
       post({ t: 'wheel', part, v: controllers[part].wheel });
     },
+    controlSource(part, source, v) {
+      if (!validPart(part) || !['expression','sustainLevel','breath'].includes(source) || !Number.isFinite(v)) return;
+      controllers[part][source] = clamp(v, 0, 1); post({ t: source, part, v: controllers[part][source] });
+    },
     /** Anchor tempo-synced LFOs to the sequencer: beat `beat` sounds at audio time `beatTime`. */
     setTransport({ playing = false, beatTime = 0, beat = 0, spb } = {}) {
       const msgs = [];
@@ -561,7 +570,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     /** Resolves when every part's terrain tables match the store (tests, loading screens). */
     whenTerrainsReady() { return terrain.whenIdle(); },
     /** Image or WAV -> userTerrain + terrain enum 'user'. Image options: { channel: 'luma'|'r'|'g'|'b', smooth: 0..1, tile: 'mirror'|'wrap' }. */
-    importTerrainFile(part, slot, file, options) { return importIntoStore(store, part, slot, file, options); },
+    importTerrainFile(part, slot, file, options) { return importIntoStore(store, part, slot, file, { decodeAudioData: ctx ? b => ctx.decodeAudioData(b) : undefined, ...options }); },
+    async importNoiseFile(part, file) {
+      return importNoiseRecording(store, ctx, part, file);
+    },
 
     /**
      * Offline render of `events` (music.renderEvents; a plain sequencer
@@ -586,7 +598,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         // render starts its bar at 0 (events from music.renderEvents say so too).
         // The pedals are hardware and cannot take part in an offline render:
         // the bounce plays every part dry (Insert ignored, no pedal send).
-        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay');
+        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay').map(m => m.t === 'noiseRecording' ? { ...m, data: decodeNoiseRecording(store.get(`parts.${m.part}.noiseRecording`), sr) } : m);
         snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
         if (opts.quality && QUALITY_MODES.includes(opts.quality)) snapshot.push({ t: 'quality', mode: opts.quality });
         const terrains = terrain.messages();
@@ -665,6 +677,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     },
     /** Latest telemetry message (or null). */
     telemetry() { return lastTele; },
+    dspLoad() { return lastLoad; },
 
     async listOutputDevices() {
       if (!ctx || typeof ctx.setSinkId !== 'function') return [];

@@ -11,17 +11,18 @@ import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 import { drawTerrain, downsample, previewTable, prewarmPreviews } from './terrain-art.js';
 import { pathOutline } from './dsp-bridge.js';
+import { openTerrainLibrary } from './terrain-library.js';
 
 const TERRAIN_KNOBS = ['morph', 'warp', 'lift', 'fold', 'seed', 'detail'];
-const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY'];
-const ACCEPT = 'image/*,.wav,audio/wav,audio/x-wav,audio/wave';
+const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror'];
+const ACCEPT = 'image/*,audio/*,.wav,.mp3,.m4a,.aac,.ogg,.flac,.aif,.aiff';
 
 export function friendlyImportError(err) {
   const msg = String((err && err.message) || err || '');
-  if (/decode|unsupported|format|invalid|corrupt/i.test(msg)) return 'That file could not be read as a terrain. Try a PNG or JPEG image, or a WAV file.';
-  if (/large|size|too big/i.test(msg)) return 'That file is too large to import. Try a smaller image or a shorter WAV.';
+  if (/decode|unsupported|format|invalid|corrupt/i.test(msg)) return 'That file could not be read as a terrain. Try a PNG or JPEG image, or an audio file.';
+  if (/large|size|too big/i.test(msg)) return 'That file is too large to import. Try a smaller image or a shorter recording.';
   if (msg && msg.length < 140 && !/^\w+Error\b/.test(msg) && !/undefined|null|cannot read/i.test(msg)) return msg;
-  return 'That file could not be used as a terrain. Try a PNG or JPEG image, or a WAV file.';
+  return 'That file could not be used as a terrain. Try a PNG or JPEG image, or an audio file.';
 }
 
 export function createMapPanel(ctx, container) {
@@ -127,7 +128,7 @@ export function createMapPanel(ctx, container) {
   // Warm the picker previews a few seconds after start, while the user looks around.
   const warm = setTimeout(() => {
     const p = store.get(`parts.${binder.selected()}.params`) || {};
-    prewarmPreviews(TERRAINS.length - 1, { seed: p.seed ?? 7, detail: p.detail ?? 0.5, size: 64 });
+    prewarmPreviews(TERRAINS.length, { seed: p.seed ?? 7, detail: p.detail ?? 0.5, size: 64 });
   }, 2500);
   scope.add(() => clearTimeout(warm));
 
@@ -146,10 +147,18 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
   const fileInput = h('input', { type: 'file', accept: ACCEPT, class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
   const importBtn = h('button', {
     type: 'button', class: 'icon-btn icon-btn--sm terrain-import', disabled: !canImport,
-    dataset: { tip: canImport ? 'Import your own image (height map) or WAV (wavetable). You can also drop a file here.' : 'Importing needs the audio engine, which is not available' },
-    html: icon('import'), 'aria-label': `Import an image or WAV into terrain ${slot}`,
+    dataset: { tip: canImport ? 'Import your own image (height map) or audio recording. You can also drop a file here.' : 'Importing needs the audio engine, which is not available' },
+    html: icon('import'), 'aria-label': `Import an image or audio into terrain ${slot}`,
   });
-  const el = h('div', { class: 'terrain-slot', dataset: { slot } }, pick, importBtn, fileInput);
+  const libraryBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Browse original image library for terrain ${slot}` }, 'Image library');
+  parentScope.on(libraryBtn, 'click', () => openTerrainLibrary(ctx, libraryBtn, slot));
+  const channel = createKnob(ctx, binder.partParam('imageChannel' + slot), { size: 'sm', label: 'Channel', ariaLabel: () => 'Image channel' });
+  const mapping = createKnob(ctx, binder.partParam('imageMapping' + slot), { size: 'sm', label: 'Mapping', ariaLabel: () => 'Image mapping' });
+  parentScope.add(channel.dispose); parentScope.add(mapping.dispose);
+  const imageControls = h('div', { class: 'knob-grid knob-grid--2 knob-grid--tight' }, channel.el, mapping.el);
+  const card = h('div', { class: 'terrain-card', style: { position: 'relative' } }, pick, importBtn);
+  pick.style.width = '100%';
+  const el = h('div', { class: 'terrain-slot', dataset: { slot } }, card, fileInput, libraryBtn, imageControls);
 
   function render() {
     const part = binder.selected();
@@ -157,9 +166,11 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
     const t = TERRAINS[idx] || TERRAINS[0];
     const user = idx === TERRAIN_INDEX.user;
     const ut = store.get(`parts.${part}.userTerrain.${slot}`);
+    imageControls.hidden = !user || !ut;
+    channel.el.hidden = !ut?.channels;
     setText(name, user ? (ut ? ut.name : 'Imported') : t.name);
-    setText(sub, user ? (ut ? (ut.kind === 'wavetable' ? 'Your wavetable' : 'Your image') : 'Nothing imported yet') : t.desc);
-    pick.dataset.tip = user && !ut ? 'Import an image or WAV to use this slot' : t.desc;
+    setText(sub, user ? (ut ? (ut.libraryId ? 'Original procedural image' : ut.kind === 'wavetable' ? 'Your wavetable' : ut.kind === 'audio' ? 'Your audio recording' : 'Your image') : 'Nothing imported yet') : t.desc);
+    pick.dataset.tip = user && !ut ? 'Import an image or audio to use this slot' : t.desc;
     const table = ctx.terrains ? ctx.terrains.get(part, slot) : null;
     drawTerrain(canvas, downsample(table, 112), { color: store.get(`parts.${part}.color`), theme: document.documentElement.dataset.theme });
     el.classList.toggle('is-empty', !table);
@@ -179,7 +190,9 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
 
   async function doImport(file, opts) {
     if (!file || !canImport) return;
-    const isImage = /^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name);
+    const isImage = /^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(file.name);
+    const isAudio = /^audio\//.test(file.type) || /\.(wav|mp3|m4a|aac|ogg|flac|aiff?)$/i.test(file.name);
+    if (isAudio && !opts) { openAudioImportOptions(ctx, importBtn, file, o => doImport(file, o)); return; }
     if (isImage && !opts) { openImportOptions(ctx, importBtn, file, (o) => doImport(file, o)); return; }
     const part = binder.selected();
     el.classList.add('is-busy');
@@ -207,7 +220,7 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
 
 /** Options for turning an image into a height map, then Import. */
 function openImportOptions(ctx, anchor, file, onImport) {
-  const opts = { channel: 'luma', smooth: 0.3, tile: 'mirror' };
+  const opts = { channel: 'r', smooth: 0.3, tile: 'mirror' };
   const seg = (label, key, options) => {
     const btns = options.map(([value, text]) => {
       const b = h('button', { type: 'button', class: ['seg-btn', opts[key] === value && 'is-on'], role: 'radio', 'aria-checked': String(opts[key] === value) }, text);
@@ -226,15 +239,30 @@ function openImportOptions(ctx, anchor, file, onImport) {
   const body = h('div', { class: 'import-pop' },
     h('div', { class: 'popover-title' }, 'Import height map'),
     h('p', { class: 'popover-note import-file' }, file.name),
-    seg('Height from', 'channel', [['luma', 'Brightness'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']]),
+    seg('Start channel', 'channel', [['r', 'Red'], ['g', 'Green'], ['b', 'Blue'], ['luma', 'Brightness']]),
     h('div', { class: 'import-row' }, h('span', { class: 'mini-label' }, 'Smoothing'), smooth),
     seg('Edges', 'tile', [['mirror', 'Mirror'], ['wrap', 'Wrap']]),
-    h('p', { class: 'popover-note' }, 'Mirror makes any image tile without seams. Wrap suits images that already tile. 16-bit PNG height maps keep their full detail.'),
+    h('p', { class: 'popover-note' }, 'Mirror makes any image tile without seams. Wrap suits images that already tile. All color channels remain available to morph live. 16-bit PNG height maps keep their full detail.'),
     h('div', { class: 'import-actions' }, cancel, go));
   let pop;
   go.addEventListener('click', () => { pop.close('import'); onImport({ ...opts }); });
   cancel.addEventListener('click', () => pop.close('cancel'));
   pop = openPopover(ctx.layers, anchor, body, { className: 'popover--import', label: 'Import height map', placement: 'bottom-start', focus: '.btn--primary' });
+  return pop;
+}
+
+/** Audio import supports full recordings as well as explicit single-cycle frames. */
+function openAudioImportOptions(ctx, anchor, file, onImport) {
+  const recording = h('button', { type: 'button', class: 'btn btn--primary btn--sm' }, 'Entire recording');
+  const wavetable = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Wavetable frames');
+  const body = h('div', { class: 'import-pop' }, h('div', { class: 'popover-title' }, 'Import audio terrain'),
+    h('p', { class: 'popover-note import-file' }, file.name),
+    h('p', { class: 'popover-note' }, 'Entire recording lays consecutive waveform samples across a 512 × 512 terrain. Wavetable frames suits files made of single-cycle waves. Both support polar mapping.'),
+    h('div', { class: 'import-actions' }, wavetable, recording));
+  let pop;
+  recording.addEventListener('click', () => { pop.close('import'); onImport({ audioMode: 'recording' }); });
+  wavetable.addEventListener('click', () => { pop.close('import'); onImport({ audioMode: 'wavetable' }); });
+  pop = openPopover(ctx.layers, anchor, body, { className: 'popover--import', label: 'Import audio terrain', placement: 'bottom-start', focus: '.btn--primary' });
   return pop;
 }
 
@@ -327,4 +355,3 @@ export function gridKeys(grid, items, cols) {
     items[n].focus();
   });
 }
-

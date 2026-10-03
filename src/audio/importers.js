@@ -3,10 +3,10 @@
 //   PNG: decoded by our own reader (png.js) at the file's full bit depth, so a
 //     16-bit height map (DEM) keeps all of its levels; grey values are heights
 //     as they are (data, not light). Centre-cropped and area-averaged to at
-//     most 256 x 256 (never upsampled). If our reader cannot open the file the
+//     most 512 x 512 (never upsampled). If our reader cannot open the file the
 //     browser's decoder below gets a try.
 //   other images (JPEG, WebP, GIF, BMP, SVG, and PNG as a fallback): drawn by
-//     the browser, centre-cropped, reduced to 256 x 256 by area-averaging in
+//     the browser, centre-cropped, reduced to 512 x 512 by area-averaging in
 //     linear light, converted to luminance with the sRGB/Rec.709 weights and
 //     re-encoded to sRGB, so a grey image keeps its grey levels and colour
 //     images get perceptually right brightness.
@@ -18,14 +18,15 @@
 //   WAV: read sample-exact (decodeAudioData only as a fallback, because it
 //     resamples), split into single-cycle frames (a 'clm ' chunk's frame size,
 //     else multiples of 2048, else 1024/512/256, else one cycle), each frame
-//     band-limited and resampled to 256 samples through its spectrum, at most
-//     256 frames, stored at 16 bits the same way.
-//     UserTerrain {kind: 'wavetable', w: 256, h: frames, mirror: 1}.
+//     band-limited and resampled to 512 samples through its spectrum, at most
+//     512 frames, stored at 16 bits the same way.
+//     UserTerrain {kind: 'wavetable', w: 512, h: frames, mirror: 1}.
 //
 // The pure helpers are exported for the Node unit tests; importTerrainFile is
 // the browser entry used by the engine.
 
-import { partCount } from '../core/tracks.js';
+import { sanitizeUserTerrain, IMAGE_CHANNELS } from '../dsp/user-terrain.js';
+import { partCount, REPLACE_TRACKS } from '../core/tracks.js';
 import { TERRAIN_INDEX } from '../dsp/catalog.js';
 import { wavInfo } from './wav.js';
 import { isPng } from './png.js';
@@ -36,8 +37,8 @@ import {
 export { centreCrop };
 
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
-export const TABLE_SIZE = 256;
-export const MAX_FRAMES = 256;
+export const TABLE_SIZE = 512;
+export const MAX_FRAMES = 512;
 const SINGLE_CYCLE_MAX = 4096;
 const YIELD_MS = 8;
 
@@ -207,7 +208,7 @@ function extOf(name) {
 
 /**
  * Decide how to read a file from its first bytes, falling back to name/MIME.
- * @returns {'image'|'svg'|'wav'|null}
+ * @returns {'image'|'svg'|'wav'|'audio'|null}
  */
 export function sniffType(head, name = '', mime = '') {
   const b = head || new Uint8Array(0);
@@ -225,6 +226,7 @@ export function sniffType(head, name = '', mime = '') {
   if (ext === 'svg' || type === 'image/svg+xml' || /^<svg[\s>]/i.test(text) || (/^<\?xml/i.test(text) && /<svg/i.test(text))) return 'svg';
   if (ext === 'wav' || ext === 'wave' || /^audio\/(x-)?(wav|wave|vnd\.wave)$/.test(type)) return 'wav';
   if (IMAGE_EXT.has(ext) || (type.startsWith('image/') && type !== 'image/svg+xml')) return 'image';
+  if (/^audio\//i.test(mime) || /\.(mp3|m4a|aac|ogg|oga|opus|flac|aiff?|aif|caf)$/i.test(name)) return 'audio';
   return null;
 }
 
@@ -384,7 +386,7 @@ const yieldTask = () => new Promise(r => setTimeout(r, 0));
 
 /**
  * Wavetable UserTerrain from any sample source. Only the frames that end up in
- * the table are read, so a long file costs no more than 256 frames' work.
+ * the table are read, so a long file costs no more than 512 frames' work.
  * @param {{length: number, clm?: number, read(start: number, n: number): ArrayLike<number>}} source
  * @param {{name?: string, yieldToUI?: boolean}} [o]
  */
@@ -461,27 +463,27 @@ function readFmtSampleRate(bytes) {
 }
 
 /** A lazily-read sample source for a WAV file (exact samples, no resampling). */
-async function audioSource(buffer) {
+export async function audioSource(buffer, { decodeAudioData } = {}) {
   let firstError = null;
   try {
     const info = wavInfo(new Uint8Array(buffer));
-    return { length: info.frames, clm: info.clm, read: (start, n) => info.readMono(start, n) };
+    return { length: info.frames, sampleRate: info.sampleRate, clm: info.clm, read: (start, n) => info.readMono(start, n) };
   } catch (err) {
     firstError = err;
   }
   const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
-  if (!OAC) throw firstError;
+  if (!OAC && !decodeAudioData) throw new Error('This audio format needs a browser audio decoder');
   // Decode at the file's own rate so frame sizes are not resampled.
   const rate = Math.min(384000, Math.max(8000, readFmtSampleRate(buffer) || 44100));
   try {
-    const oc = new OAC(1, 1, rate);
-    const audio = await oc.decodeAudioData(buffer.slice(0));
+    const oc = decodeAudioData ? null : new OAC(1, 1, rate);
+    const audio = await (decodeAudioData ? decodeAudioData(buffer.slice(0)) : oc.decodeAudioData(buffer.slice(0)));
     const ch = [];
     for (let c = 0; c < audio.numberOfChannels; c++) ch.push(audio.getChannelData(c));
     const mono = mixToMono(ch);
-    return { length: mono.length, clm: 0, read: (start, n) => mono.subarray(start, start + n) };
+    return { length: mono.length, sampleRate: audio.sampleRate || rate, clm: 0, read: (start, n) => mono.subarray(start, start + n) };
   } catch {
-    throw firstError || new Error('This WAV file could not be decoded');
+    throw new Error('This audio file could not be decoded by the browser');
   }
 }
 
@@ -528,7 +530,7 @@ async function sizedSvgBlob(file) {
   return new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' });
 }
 
-/** Browser: image file -> 256 x 256 luminance bytes (8-bit form of imageFileToHeightF). */
+/** Browser: image file -> 512 x 512 luminance bytes (8-bit form of imageFileToHeightF). */
 export async function imageFileToHeight(file, kind = 'image') {
   const { heights } = await imageFileToHeightF(file, kind, 'luma');
   const bytes = new Uint8Array(heights.length);
@@ -536,7 +538,7 @@ export async function imageFileToHeight(file, kind = 'image') {
   return bytes;
 }
 
-/** Browser: image file drawn by the browser -> {heights: Float32Array 0..1, n: 256}. */
+/** Browser: image file drawn by the browser -> {heights: Float32Array 0..1, n: 512}. */
 export async function imageFileToHeightF(file, kind = 'image', channel = 'luma') {
   let src = null, w = 0, h = 0;
   const owned = [];
@@ -576,6 +578,11 @@ export async function imageFileToHeightF(file, kind = 'image', channel = 'luma')
       return g.getImageData(0, 0, T, T).data;
     }, 'canvas');
     await yieldTask();
+    if (Array.isArray(channel)) {
+      const channels = {};
+      for (const key of channel) { channels[key] = timedBlock(() => rgbaToHeightF(rgba, T, T, TABLE_SIZE, key), 'reduce'); await yieldTask(); }
+      return { heights: channels[channel[0]], channels, n: TABLE_SIZE };
+    }
     return { heights: timedBlock(() => rgbaToHeightF(rgba, T, T, TABLE_SIZE, channel), 'reduce'), n: TABLE_SIZE };
   } finally {
     for (const b of owned) { try { b.close(); } catch { /* ignore */ } }
@@ -595,7 +602,7 @@ export function importOptions(o) {
   const src = o && typeof o === 'object' ? o : {};
   const smooth = typeof src.smooth === 'number' && Number.isFinite(src.smooth) ? Math.max(0, Math.min(1, src.smooth)) : DEFAULT_SMOOTH;
   return {
-    channel: CHANNELS.includes(src.channel) ? src.channel : 'luma',
+    channel: CHANNELS.includes(src.channel) ? src.channel : 'r',
     smooth,
     tile: src.tile === 'wrap' ? 'wrap' : 'mirror',
   };
@@ -613,7 +620,7 @@ export function importOptions(o) {
 async function imageHeights(file, kind, head, channel) {
   if (kind === 'image' && isPng(head) && typeof DecompressionStream === 'function') {
     const r = await heightFromPng(new Uint8Array(await file.arrayBuffer()), { channel, size: TABLE_SIZE, stats: importStats });
-    return { heights: r.heights, n: r.n, via: 'png', bits: r.bitDepth };
+    return { ...r, via: 'png', bits: r.bitDepth };
   }
   const r = await imageFileToHeightF(file, kind, channel);
   return { ...r, via: 'canvas', bits: 8 };
@@ -634,9 +641,16 @@ async function commitInOrder(store, part, slot, produce, source) {
   if (!(p >= 0 && p < partCount(store))) throw new Error(`There is no track ${part}`);
   const S = slotName(slot);
   if (!S) throw new Error(`Terrain slot must be A or B, not ${slot}`);
+  const target = store.get(`parts.${p}`), id = target?.id;
+  const findTarget = (parts = store.get('parts') || []) => parts.findIndex(t => typeof id === 'string' && id ? t?.id === id : t === target);
+  let removed = false;
+  const off = store.subscribe('parts', (path, value, meta) => {
+    const parts = path === 'parts' && Array.isArray(value) ? value : undefined;
+    if (path === '' || meta?.[REPLACE_TRACKS] || findTarget(parts) < 0) removed = true;
+  });
   let slotQueue = slotQueues.get(store);
   if (!slotQueue) { slotQueue = new Map(); slotQueues.set(store, slotQueue); }
-  const key = `${p}${S}`;
+  const key = typeof id === 'string' && id ? `${id}:${S}` : target;
   const prev = slotQueue.get(key) || Promise.resolve();
   let release;
   const mine = new Promise((r) => { release = r; });
@@ -645,13 +659,18 @@ async function commitInOrder(store, part, slot, produce, source) {
   try {
     const ut = await produce();
     await prev;
+    const at = findTarget();
+    if (removed || at < 0) throw new Error('The track for this terrain import was removed or replaced');
     importStats.imports++;
     timedBlock(() => store.batch(() => {
-      store.set(`parts.${p}.userTerrain.${S}`, ut, { source });
-      store.set(`parts.${p}.params.terrain${S}`, TERRAIN_INDEX.user, { source });
+      store.set(`parts.${at}.userTerrain.${S}`, ut, { source });
+      store.set(`parts.${at}.params.terrain${S}`, TERRAIN_INDEX.user, { source });
+      store.set(`parts.${at}.params.imageChannel${S}`, ut.channels ? (ut.initialChannel ?? 0) : 0, { source });
+      store.set(`parts.${at}.params.imageMapping${S}`, 0, { source });
     }), 'store');
     return ut;
   } finally {
+    off();
     release();
     if (slotQueue.get(key) === chain) slotQueue.delete(key);
   }
@@ -684,34 +703,63 @@ export async function importTerrainFile(store, part, slot, file, options) {
  * @returns {Promise<object>} the stored UserTerrain
  */
 export function addUserTerrain(store, part, slot, userTerrain, { source = 'import' } = {}) {
-  const t = userTerrain || {};
-  const w = Math.round(Number(t.w)), h = Math.round(Number(t.h));
-  if (typeof t.data !== 'string' || !(w >= 2 && h >= 2 && w <= 1024 && h <= 1024)) {
-    return Promise.reject(new Error('That terrain is empty or damaged'));
-  }
-  const ut = { name: cleanName(t.name || 'Imported'), kind: t.kind === 'wavetable' ? 'wavetable' : 'image', w, h, mirror: t.mirror ? 1 : 0, data: t.data };
-  if (typeof t.lo === 'string' && t.lo.length > 0) ut.lo = t.lo;
+  const ut = sanitizeUserTerrain(userTerrain);
+  if (!ut) return Promise.reject(new Error('That terrain is empty or damaged'));
+  ut.name = cleanName(ut.name);
   return commitInOrder(store, part, slot, async () => ut, source);
 }
 
 /** File -> UserTerrain (no store involved). */
+/** A complete recording laid out as consecutive waveform rows, without requiring cycles. */
+export async function audioTerrainFromSource(source, { name = 'Audio', size = TABLE_SIZE, yieldToUI = true } = {}) {
+  const n = Math.max(2, Math.min(1024, Math.round(size)));
+  if (!(source.length >= 2)) throw new Error('This audio file has too few samples');
+  const heights = new Float32Array(n * n), scale = (source.length - 1) / (heights.length - 1);
+  for (let row = 0; row < n; row++) {
+    const start = row * n, a = Math.floor(start * scale), b = Math.min(source.length, Math.ceil((start + n - 1) * scale) + 2);
+    const raw = source.read(a, b - a);
+    for (let x = 0; x < n; x++) {
+      const pos = (start + x) * scale - a, i = Math.floor(pos), f = pos - i;
+      const v0 = Number.isFinite(raw[i]) ? raw[i] : 0, v1 = Number.isFinite(raw[i + 1]) ? raw[i + 1] : v0;
+      heights[start + x] = v0 + f * (v1 - v0);
+    }
+    if (yieldToUI && row % 16 === 15) await yieldTask();
+  }
+  const planes = heightsToPlanes(heights), sampleRate = source.sampleRate || 44100;
+  return { name: cleanName(name), kind: 'audio', w: n, h: n, mirror: 1, data: bytesToBase64(planes.hi), lo: bytesToBase64(planes.lo), audio: { sampleRate, duration: source.length / sampleRate } };
+}
+
+/** File -> UserTerrain (no store involved). PNG channels share a single decode. */
 export async function readTerrainFile(file, label = 'That file', options) {
   const head = new Uint8Array(await file.slice(0, 512).arrayBuffer());
   const kind = sniffType(head, file.name, file.type);
-  if (!kind) throw new Error(`${label} is not an image or a WAV file. Use PNG, JPEG, WebP, GIF, BMP or SVG, or a WAV wavetable`);
-  if (kind === 'wav') {
-    const source = await audioSource(await file.arrayBuffer());
+  if (!kind) throw new Error(`${label} is not an image or audio file. Use an image or a browser-supported audio format`);
+  if (kind === 'wav' || kind === 'audio') {
+    const source = await audioSource(await file.arrayBuffer(), options || {});
+    const useFrames = options?.audioMode === 'wavetable' || (options?.audioMode !== 'recording' && kind === 'wav' && (source.clm || source.length <= SINGLE_CYCLE_MAX));
+    if (!useFrames) {
+      const result = await audioTerrainFromSource(source, { name: file.name || 'Audio' });
+      importStats.last = { via: kind, mode: 'recording', n: result.w };
+      return result;
+    }
     const { frameSize, frameMode, frameCount, ...rest } = await wavetableFromSource(source, { name: file.name || 'Wavetable' });
-    importStats.last = { via: 'wav', frameSize, frameMode, frameCount, h: rest.h };
+    importStats.last = { via: kind, frameSize, frameMode, frameCount, h: rest.h };
     return rest;
   }
   const opts = importOptions(options);
-  let { heights, n, via, bits } = await imageHeights(file, kind, head, opts.channel);
-  if (n < 2) { heights = new Float32Array(4).fill(heights[0] || 0); n = 2; }
-  const smoothed = timedBlock(() => smoothHeights(heights, n, opts.smooth, opts.tile), 'smooth');
-  const planes = timedBlock(() => heightsToPlanes(smoothed), 'planes');
-  const data = timedBlock(() => bytesToBase64(planes.hi), 'base64');
-  const lo = timedBlock(() => bytesToBase64(planes.lo), 'base64');
-  importStats.last = { via, bits, n, ...opts };
-  return { name: cleanName(file.name || 'Image'), kind: 'image', w: n, h: n, mirror: opts.tile === 'wrap' ? 0 : 1, data, lo };
+  const r = await imageHeights(file, kind, head, IMAGE_CHANNELS);
+  let n = r.n;
+  const channels = {};
+  for (const key of IMAGE_CHANNELS) {
+    let heights = r.channels[key];
+    if (n < 2) heights = new Float32Array(4).fill(heights[0] || 0);
+    const side = Math.max(2, n);
+    const smoothed = timedBlock(() => smoothHeights(heights, side, opts.smooth, opts.tile), 'smooth');
+    const planes = timedBlock(() => heightsToPlanes(smoothed), 'planes');
+    channels[key] = { data: bytesToBase64(planes.hi), lo: bytesToBase64(planes.lo) };
+    await yieldTask();
+  }
+  n = Math.max(2, n);
+  importStats.last = { via: r.via, bits: r.bits, n, ...opts };
+  return { name: cleanName(file.name || 'Image'), kind: 'image', w: n, h: n, mirror: opts.tile === 'wrap' ? 0 : 1, ...channels[opts.channel], channels, initialChannel: IMAGE_CHANNELS.indexOf(opts.channel) };
 }
