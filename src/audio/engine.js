@@ -706,6 +706,49 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     get bouncing() { return bouncing; },
 
     /**
+     * v2.12 stems export (src/audio/stems.js): render `passes` one at a time,
+     * handing each AudioBuffer to `onPass(buffer, pass, index)` before the
+     * next starts, so only one is held. A pass is { solo, extra, events }
+     * (see passInit); `frames(index)` gives each pass its length. Stops
+     * between passes when isCancelled() says so (resolves false).
+     */
+    async renderPasses({ sampleRate, frames, passes = [], onPass, onFrames = () => {}, isCancelled = () => false } = {}) {
+      if (disposed) throw new Error('The audio engine was shut down');
+      if (bouncing) throw new Error('A bounce is already running');
+      bouncing = true;
+      try {
+        const sr = Math.round(finiteOr(sampleRate, ctx ? ctx.sampleRate : 48000));
+        await terrain.whenIdle();
+        sync.flush();
+        const snapshot = offlineSnapshot(sr);
+        const terrains = terrain.messages();
+        const global = { ...(store.get('global') || {}) };
+        const irs = new Map();
+        const computeIR = (irOpts) => {
+          const key = JSON.stringify(irOpts);
+          if (!irs.has(key)) irs.set(key, genPromise.then(g => g.run({ kind: 'ir', ...irOpts })));
+          return irs.get(key);
+        };
+        for (let i = 0; i < passes.length; i++) {
+          if (isCancelled()) return false;
+          const pass = passes[i];
+          const { init, late } = passInit({ snapshot, terrains, events: pass.events || [], solo: pass.solo ?? null, extra: pass.extra || [] });
+          const r = await renderPass({
+            sampleRate: sr, frames: Math.max(QUANTUM_FRAMES, Math.round(typeof frames === 'function' ? frames(i) : frames)),
+            init, late, global, fx: true, workletCode, computeIR,
+            forceMainThread: dspMode !== 'worklet',
+            onFrames: (f) => onFrames(i, f),
+          });
+          if (disposed) throw new Error('The audio engine was shut down');
+          await onPass(r.buffer, pass, i);
+        }
+        return true;
+      } finally {
+        bouncing = false;
+      }
+    },
+
+    /**
      * v2.8 Freeze: render track `part`'s loop offline (src/audio/freeze.js):
      * `events` from music.renderEvents starting at beat 0, `beats` the loop
      * length at `tempo`, `warmLoops` passes before the one kept, `others`

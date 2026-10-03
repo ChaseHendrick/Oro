@@ -1043,6 +1043,7 @@ export class OroDSP {
     // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
     this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
+    this.dryOut = 1;               // v2.12 stems export: 0 renders only the sends (a send-return stem)
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
     this.kGate = 1 / (this.sr * FREEZE_GATE_TIME);
@@ -1209,6 +1210,7 @@ export class OroDSP {
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
+      case 'stemTap': this.dryOut = msg.dry === 0 ? 0 : 1; break;
       case 'tracks': this.setTracks(msg); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
@@ -4504,13 +4506,14 @@ export class OroDSP {
       }
       let gn = P.gain, dl = P.dly, rv = P.rev;
       const dgn = P.dGain, ddl = P.dDly, drv = P.dRev;
+      const dm = this.dryOut;
       let vectorGain=P.vectorGain; const dv=P.dVector;
       const vg0 = vectorGain;
       for (let n = pos; n < pos + seg; n++) {
         gn += dgn; dl += ddl; rv += drv;
         vectorGain+=dv;
         const l = oL[n]*vectorGain, r = oR[n]*vectorGain;
-        outL[n] += l * gn; outR[n] += r * gn;
+        outL[n] += l * gn * dm; outR[n] += r * gn * dm;
         if (dlyL) { dlyL[n] += l * dl; dlyR[n] += r * dl; }
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }
