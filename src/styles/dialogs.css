@@ -295,3 +295,31 @@
   .settings-voice .toggle--switch { height: 26px; }
   .settings-voice .toggle--switch::before { content: ''; position: absolute; inset: -10px -6px; }
 }
+
+/* v2.9 Operator panel (Settings > Operator) */
+.settings-operator .op-intro { margin: 0 0 4px; }
+.settings-operator .op-controls { margin-top: 0; justify-content: flex-end; }
+.settings-operator .op-slider { width: 180px; max-width: 100%; }
+.op-meter-row { display: flex; align-items: center; gap: 10px; min-width: 180px; }
+.op-meter { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--panel-3); border: 1px solid var(--border); overflow: hidden; }
+.op-meter-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--warn); transition: width var(--dur-slow) var(--ease); }
+.op-meter-text { min-width: 3.5em; text-align: right; font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.op-warn { margin: 4px 0 0; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); color: var(--text); font-size: var(--fs-sm); }
+.op-tones .op-tone.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.op-subtitle { margin: 16px 0 6px; font-size: var(--fs-sm); color: var(--text-2); font-weight: 600; }
+.op-monitor { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; font-size: var(--fs-xs); border: 1px solid var(--divider); border-radius: var(--r-sm); }
+.op-monitor:empty { display: none; }
+.op-monitor li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 10px; }
+.op-monitor li + li { border-top: 1px solid var(--divider); }
+.op-mon-hex { font-family: var(--font-mono); color: var(--text-3); white-space: nowrap; }
+.settings-operator .btn:focus-visible, .settings-operator .toggle:focus-visible, .settings-operator .mslider:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* the on-screen damage hint: static shapes, slow fades only */
+.op-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 30; }
+.op-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity 2.5s linear; }
+.op-overlay .op-cracks { opacity: var(--op-crack, 0); fill: none; stroke: var(--text); stroke-width: 1.5px; stroke-linejoin: bevel; }
+.op-overlay .op-drops { opacity: var(--op-wet, 0); fill: var(--accent-soft); stroke: var(--text-3); stroke-width: 1px; }
+@media (pointer: coarse) {
+  .settings-operator .btn, .settings-operator .seg-btn, .settings-operator .mslider { min-height: 44px; }
+  .settings-operator .toggle--switch { height: 26px; }
+  .settings-operator .toggle--switch::before { content: ''; position: absolute; inset: -10px -6px; }
+}

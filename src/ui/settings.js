@@ -1,4 +1,4 @@
-// Settings dialog: General, Audio, MIDI & MPC, Shortcuts, About. An accessible
+// Settings dialog: General, Audio, MIDI & MPC, Voice, Pedals, Operator, Shortcuts, Updates, About. An accessible
 // modal with a vertical tab list (horizontal on narrow screens).
 
 import { h, createScope, call, has, listen } from './dom.js';
@@ -14,6 +14,7 @@ import { openBounce, bounceSupported } from './bounce.js';
 import { createPalettePicker } from './palettes.js';
 import { createTuningSettings } from './tuning-settings.js';
 import { icon } from './icons.js';
+import { createOperatorSettings } from './operator.js';
 
 export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -21,6 +22,7 @@ export const SETTINGS_TABS = [
   { id: 'midi', label: 'MIDI & MPC', icon: 'midi' },
   { id: 'voice', label: 'Voice', icon: 'mic' },
   { id: 'pedals', label: 'Pedals', icon: 'pedal' },
+  { id: 'operator', label: 'Operator', icon: 'bolt' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard' },
   { id: 'updates', label: 'Updates', icon: 'save' },
   { id: 'about', label: 'About', icon: 'info' },
@@ -217,6 +219,7 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     midi: () => { const m = createMidiSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     voice: () => { const m = createVoiceSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     pedals: () => { const m = createPedalSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
+    operator: () => { const m = createOperatorSettings(ctx); scope.add(m.dispose); return m.el; },
     shortcuts: () => h('div', { class: 'settings-pane' }, shortcutsList()),
     updates: () => { const m = createUpdatesTab(ctx, { version: VERSION }); scope.add(m.dispose); return m.el; },
     about: () => aboutTab(),
