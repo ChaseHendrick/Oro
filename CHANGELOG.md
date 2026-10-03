@@ -3,6 +3,16 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.5.0 (October 2026)
+
+* **Probability and ratchets.** Each sequencer step has a chance to play (0 to 100%) and
+  can play 1 to 4 times within its length, each repeat a little softer. Existing patterns
+  are unchanged.
+* **Three new track effects:** a **Frequency shifter** (single-sideband, up, down or both
+  sides, with feedback), **Hyper dimension** (six detuned voices spread wide, plus short
+  reflections) and a **Filter sequencer** (eight patterns stepping the cutoff in
+  sixteenths, synced to the tempo). The rack now has 30 effects.
+
 ## 2.4.0 (October 2026)
 
 * **Via for Links.** Each link can be scaled by a second source (for example Mod Wheel →
