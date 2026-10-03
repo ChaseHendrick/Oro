@@ -50,6 +50,7 @@ import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
 import { Filter2 } from './filter2.js';
+import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.js';
 import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
 
@@ -140,14 +141,18 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 // show in idle telemetry) rather than per voice.
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
   L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19,
-  L_SCIENCE = 20, L_SCIENCE_END = 26, L_SWIRLX = 27, L_SWIRLY = 28;   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
+  L_SCIENCE = 20, L_SCIENCE_END = 26, L_SWIRLX = 27, L_SWIRLY = 28,
+  L_TURING = 29, L_FUNC = 30;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
 for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE, L_EXPRESSION, L_SUSTAIN, L_BREATH]) if (s < NSRC) PART_SOURCE[s] = 1;
 for (let s = L_SCIENCE; s <= L_SCIENCE_END && s < NSRC; s++) PART_SOURCE[s] = 1;
+if (L_TURING < NSRC) PART_SOURCE[L_TURING] = 1;
+const SCI_TURING = 7;
 const SCIENCE_KEYS = { sciNeuronCurrent: 'neuronCurrent', sciNeuronKick: 'neuronKick', sciNeuronTemp: 'neuronTemp', sciNeuronRate: 'neuronRate',
   sciLorenzRate: 'lorenzRate', sciPendEnergy: 'pendEnergy', sciPendRate: 'pendRate', sciSmoothTime: 'smoothTime', sciSmoothness: 'smoothness',
-  sciCollapseShape: 'collapseShape', sciCollapseBars: 'collapseBars', sciCollapseDir: 'collapseDir' };
+  sciCollapseShape: 'collapseShape', sciCollapseBars: 'collapseBars', sciCollapseDir: 'collapseDir',
+  sciTuringChance: 'turingChance', sciTuringLength: 'turingLength', sciTuringDiv: 'turingDiv' };
 const NCURVES = LINK_CURVES.length;
 const DEFAULT_LINKS = defaultLinks();
 
@@ -468,6 +473,7 @@ class Voice {
     this.f2 = new Filter2(); this.f2On = false; this.f2Mix = 1; this.df2Mix = 0;
     this.ms = 0; this.dms = 0;
     this.uPos = new Float64Array(MAX_UNISON);
+    this.fnPh = 0;            // v2.4 Function phase
 
     // pending note when this voice is being stolen
     this.stealFade = 0; this.stealStep = 0; this.stealGain = 1;
@@ -654,6 +660,12 @@ class Part {
     this.nLinks = 0;
     this.lkSrc = new Int32Array(MAX_LINKS); this.lkDst = new Int32Array(MAX_LINKS);
     this.lkAmt = new Float64Array(MAX_LINKS); this.lkCurve = new Int32Array(MAX_LINKS);
+    this.lkVia = new Int32Array(MAX_LINKS).fill(-1);   // v2.4: a second source scaling the link, -1 = none
+    this.lkPart = new Uint8Array(MAX_LINKS);           // 1 = the link (source and Via) is the same for every voice
+    // v2.4 Function: its points (x rising 0..1, y -1..1) and settings
+    this.fnXs = new Float64Array(FUNC_MAX_POINTS); this.fnYs = new Float64Array(FUNC_MAX_POINTS); this.fnN = 0;
+    this.fnMode = 0; this.fnRate = 1; this.fnSync = 0; this.fnDiv = 2; this.fnSmooth = 0;
+    this.setFunc(sanitizeFuncPoints(null));
     this.partLink = new Float64Array(NMOD);
     this.vLinked = new Uint8Array(NMOD);
     this.voiceModSlots=new Uint16Array(NMOD); this.voiceModCount=0;
@@ -667,6 +679,7 @@ class Part {
       if (m === undefined || this.nLinks >= MAX_LINKS) continue;
       this.lkSrc[this.nLinks] = l.src; this.lkDst[this.nLinks] = m;
       this.lkAmt[this.nLinks] = l.amt; this.lkCurve[this.nLinks] = l.curve;
+      this.lkVia[this.nLinks] = -1; this.lkPart[this.nLinks] = PART_SOURCE[l.src] ? 1 : 0;
       this.nLinks++;
     }
     this.marbleSpeed = 0; this.marbleHeight = 0; this.sMarbleSpeed = 0; this.sMarbleHeight = 0;
@@ -773,6 +786,11 @@ class Part {
     this.uniStack = Math.max(0, Math.min(UNISON_STACKS.length - 1, Math.round(P[PI.unisonStack]) || 0));
     this.f2Type = Math.max(0, Math.min(11, Math.round(P[PI.filter2Type]) || 0));
     this.warpMode = Math.max(0, Math.min(4, Math.round(P[PI.warpMode]) || 0));
+    this.fnMode = Math.round(P[PI.funcMode]) === 1 ? 1 : 0;
+    this.fnRate = Math.max(0.01, P[PI.funcRate] || 1);
+    this.fnSync = P[PI.funcSync] >= 0.5 ? 1 : 0;
+    this.fnDiv = Math.max(0, Math.min(SYNC_DIVS.length - 1, Math.round(P[PI.funcDiv]) || 0));
+    this.fnSmooth = clamp01(P[PI.funcSmooth]);
     this.f2Route = Math.max(0, Math.min(2, Math.round(P[PI.filterRoute]) || 0));
     unisonLayout(this, U, P[PI.detune], clamp01(P[PI.spread]), clamp01(P[PI.unisonBlend]));
     // Env 1 at the oversampled rate
@@ -832,13 +850,28 @@ class Part {
     this.ddN = n;
   }
 
+  /** v2.4: load the Function's points (already sanitized). */
+  setFunc(points) {
+    const n = Math.min(FUNC_MAX_POINTS, points.length);
+    for (let i = 0; i < n; i++) { this.fnXs[i] = points[i][0]; this.fnYs[i] = points[i][1]; }
+    this.fnN = n;
+  }
+
   /** Recompute the summed contribution of the part-wide Link sources. */
   updatePartLinks(macros, guitar = 0, voice = 0, science = null) {
     const pl = this.partLink;
     pl.fill(0);
     for (let i = 0; i < this.nLinks; i++) {
-      const s = this.lkSrc[i];
-      if (!PART_SOURCE[s]) continue;
+      if (!this.lkPart[i]) continue;
+      const via = this.lkVia[i];
+      const g = via >= 0 ? this.partSourceValue(via, macros, guitar, voice, science) : 1;
+      pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], this.partSourceValue(this.lkSrc[i], macros, guitar, voice, science)) * g;
+    }
+  }
+
+  /** Value of a part-wide Link source. */
+  partSourceValue(s, macros, guitar, voice, science) {
+    {
       let x;
       if (s === L_WHEEL) x = this.wheel;
       else if (s === L_MSPEED) x = this.sMarbleSpeed;
@@ -848,9 +881,11 @@ class Part {
       else if (s === L_EXPRESSION) x=this.expression;
       else if (s === L_SUSTAIN) x=this.sustainLevel;
       else if (s === L_BREATH) x=this.breath;
+      else if (s === L_TURING) x = science ? science[SCI_TURING] : 0;
       else if (s >= L_SCIENCE) x = science ? science[s - L_SCIENCE] : 0;
-      else x = macros[s - L_MACRO];
-      pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], x);
+      else if (s >= L_MACRO && s < L_MACRO + 4) x = macros[s - L_MACRO];
+      else x = 0;
+      return x;
     }
   }
 }
@@ -1078,6 +1113,7 @@ export class OroDSP {
         break;
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
+      case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
@@ -1296,6 +1332,7 @@ export class OroDSP {
     if (s === L_SUSTAIN) return P.sustainLevel;
     if (s === L_BREATH) return P.breath;
     if (s >= L_SCIENCE && s <= L_SCIENCE_END) return this.science.out[s - L_SCIENCE];
+    if (s === L_TURING) return this.science.out[SCI_TURING];
     return 0;
   }
 
@@ -1458,6 +1495,9 @@ export class OroDSP {
       P.lkDst[n] = m;
       P.lkAmt[n] = clampPM1(finiteOr(l.amt, 0));
       P.lkCurve[n] = Math.max(0, Math.min(NCURVES - 1, Math.round(finiteOr(l.curve, 0))));
+      const via = Math.round(finiteOr(l.via, -1));
+      P.lkVia[n] = via >= 0 && via < NSRC ? via : -1;
+      P.lkPart[n] = PART_SOURCE[src] && (P.lkVia[n] < 0 || PART_SOURCE[P.lkVia[n]]) ? 1 : 0;
       n++;
     }
     P.nLinks = n;
@@ -1471,8 +1511,8 @@ export class OroDSP {
     P.voiceLinks = false; P.needTerrH = false;
     for (let i = 0; i < P.nLinks; i++) {
       const s = P.lkSrc[i];
-      if (s === L_TERRAIN) P.needTerrH = true;
-      if (PART_SOURCE[s]) continue;
+      if (s === L_TERRAIN || P.lkVia[i] === L_TERRAIN) P.needTerrH = true;
+      if (P.lkPart[i]) continue;
       P.vLinked[P.lkDst[i]] = 1;
       P.voiceLinks = true;
     }
@@ -1937,6 +1977,7 @@ export class OroDSP {
     v.phase[0] = 0;
     for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? this.rng() : k < 8 ? this.extensionRng() : this.unisonRng();
     if (P.uniMode === 3) for (let k = 0; k < MAX_UNISON; k++) v.uPos[k] = this.unisonRng() * 2 - 1;
+    v.fnPh = 0;
     v.uniPrev = 0;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
@@ -2126,6 +2167,7 @@ export class OroDSP {
       case L_TERRAIN: return clampPM1(v.terrH);
       case L_SWIRLX: return this.science.swirl(v.index, this.swirlOut).x;
       case L_SWIRLY: return this.science.swirl(v.index, this.swirlOut).y;
+      case L_FUNC: return funcValue(P.fnXs, P.fnYs, P.fnN, v.fnPh, P.fnSmooth);
       default: return 0;
     }
   }
@@ -2162,6 +2204,14 @@ export class OroDSP {
       v.pitch = v.note;
     }
 
+    // v2.4 Function phase: loops, or runs once from the note start and holds
+    {
+      const rate = P.fnSync ? this.tempo / 60 / SYNC_DIVS[P.fnDiv].beats : P.fnRate;
+      let ph = v.fnPh + rate * CTRL / sr;
+      if (P.fnMode === 1) ph = ph > 1 ? 1 : ph; else ph -= Math.floor(ph);
+      v.fnPh = ph;
+    }
+
     // modulation in normalised space: base + LFO + Env 2 + Links
     const e2 = v.env2Lvl;
     const MN = v.modNorm, MP = v.modPlain;
@@ -2175,9 +2225,11 @@ export class OroDSP {
       }
       for (let m = 0; m < NMOD; m++) VL[m] = 0;
       for (let i = 0; i < P.nLinks; i++) {
-        const s = P.lkSrc[i];
-        if (PART_SOURCE[s]) continue;
-        VL[P.lkDst[i]] += P.lkAmt[i] * linkCurve(P.lkCurve[i], this.voiceSource(P, v, s));
+        if (P.lkPart[i]) continue;
+        const s = P.lkSrc[i], via = P.lkVia[i];
+        const x = PART_SOURCE[s] ? this.partControllerSource(P, s) : this.voiceSource(P, v, s);
+        const g = via < 0 ? 1 : PART_SOURCE[via] ? this.partControllerSource(P, via) : this.voiceSource(P, v, via);
+        VL[P.lkDst[i]] += P.lkAmt[i] * linkCurve(P.lkCurve[i], x) * g;
       }
     }
     const PL = P.partLink;

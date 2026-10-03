@@ -583,7 +583,7 @@
 .links-macros .section-head, .links-list .section-head { margin-bottom: 4px; }
 .knob-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .links-note { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; margin-top: 4px; }
-.links-row { display: grid; grid-template-columns: minmax(96px, 1.2fr) 74px minmax(110px, 1.3fr) 16px minmax(96px, 1.2fr) 22px; align-items: center; gap: 8px; height: 24px; }
+.links-row { display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(76px, 1fr) 74px minmax(110px, 1.3fr) 16px minmax(96px, 1.2fr) 22px; align-items: center; gap: 8px; height: 24px; }
 .links-row--head { height: 16px; font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-3); }
 .links-rows { display: flex; flex-direction: column; gap: 2px; }
 .links-arrow { color: var(--text-3); display: grid; place-items: center; }
@@ -1191,3 +1191,10 @@
 .formula-field { font-family: var(--mono, monospace); font-size: var(--fs-sm, 13px); resize: vertical; min-height: 56px; width: 100%; }
 .formula-examples { display: flex; flex-wrap: wrap; gap: 4px; }
 .formula-both { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-xs); color: var(--text-dim); }
+
+/* v2.4 Function editor */
+.links-function { grid-column: 1 / -1; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 8px 10px; box-shadow: var(--inset-hi); min-width: 0; }
+.func-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.func-canvas { border: 1px solid var(--border); border-radius: var(--r-md, 6px); background: var(--panel); cursor: crosshair; touch-action: none; max-width: 100%; }
+.func-controls { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.func-sync { display: flex; gap: 6px; align-items: center; }

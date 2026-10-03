@@ -98,9 +98,9 @@ describe('vortex collapse', () => {
 describe('science bank and Links', () => {
   it('sources are appended after Breath, in ScienceBank order', () => {
     const at = LINK_SOURCES.indexOf('Breath');
-    expect(LINK_SOURCES.slice(at + 1)).toEqual(['Neuron', 'Neuron Spike', 'Lorenz', 'Pendulum 1', 'Pendulum 2', 'Smooth Random', 'Collapse', 'Swirl X', 'Swirl Y']);
+    expect(LINK_SOURCES.slice(at + 1, at + 10)).toEqual(['Neuron', 'Neuron Spike', 'Lorenz', 'Pendulum 1', 'Pendulum 2', 'Smooth Random', 'Collapse', 'Swirl X', 'Swirl Y']);
     expect(LINK_SOURCES.indexOf('Neuron') + SCI.COLLAPSE).toBe(LINK_SOURCES.indexOf('Collapse'));
-    expect(GLOBAL_PARAMS.filter(p => p.group === 'science')).toHaveLength(12);
+    expect(GLOBAL_PARAMS.filter(p => p.group === 'science')).toHaveLength(15);
   });
 
   it('every output stays in range', () => {
@@ -162,5 +162,37 @@ describe('Pendulum dot mode', () => {
       const du = ((d.u - d.au + 1.5) % 1) - 0.5, dv = ((d.v - d.av + 1.5) % 1) - 0.5;
       expect(Math.hypot(du, dv)).toBeLessThanOrEqual(2 * reach + 1e-9);
     }
+  });
+});
+
+describe('v2.4 Turing, Function and Via', async () => {
+  const { Turing } = await import('../../src/dsp/science-sources.js');
+  const { funcValue, sanitizeFuncPoints } = await import('../../src/dsp/function-gen.js');
+  it('Turing at Chance 0 loops with its Length; at Chance 1 it does not', () => {
+    const t = new Turing(5), a = [];
+    for (let s = 0; s < 24; s++) { t.advance(s, 0, 6); a.push(t.value); }
+    for (let s = 6; s < 24; s++) expect(a[s]).toBe(a[s - 6]);
+    const u = new Turing(5), b = [];
+    for (let s = 0; s < 64; s++) { u.advance(s, 1, 6); b.push(u.value); }
+    expect(b.slice(0, 6)).not.toEqual(b.slice(6, 12));
+  });
+  it('Function points are sanitized and interpolated', () => {
+    const pts = sanitizeFuncPoints([[0.5, 2], [0.2, -1], ['x', 1]]);
+    expect(pts[0][0]).toBe(0); expect(pts.at(-1)[0]).toBe(1); expect(pts.at(-1)[1]).toBe(1);
+    const xs = [0, 0.5, 1], ys = [0, 1, -1];
+    expect(funcValue(xs, ys, 3, 0.25, 0)).toBeCloseTo(0.5, 12);
+    expect(funcValue(xs, ys, 3, 0.75, 0)).toBeCloseTo(0, 12);
+    expect(funcValue(xs, ys, 3, 0.25, 1)).toBeCloseTo(0.5, 12);
+  });
+  it('a Via of zero silences a link; the Function link moves the sound', () => {
+    const params = { terrainA: 0, size: 0.3, attack: 0.001, sustain: 1, filterType: 0 };
+    const play = (links) => { const d = makeDSP({ params }); if (links) d.handleMessage({ t: 'links', part: 0, links }); return render(d, 0.4, (x, t, k) => { if (k === 0) x.handleMessage({ t: 'noteOn', part: 0, note: 50, vel: 1, time: 0 }); }); };
+    const plain = play([]);
+    const viaZero = play([{ src: LINK_SOURCES.indexOf('Function'), dst: 'size', amt: 1, curve: 0, via: LINK_SOURCES.indexOf('Mod Wheel') }]);
+    let same = 0; for (let i = 0; i < plain.L.length; i++) same = Math.max(same, Math.abs(plain.L[i] - viaZero.L[i]));
+    expect(same).toBeLessThan(1e-5);     // the per-voice path, not bit-identical
+    const fn = play([{ src: LINK_SOURCES.indexOf('Function'), dst: 'size', amt: 0.8, curve: 0 }]);
+    let d = 0; for (let i = 0; i < plain.L.length; i++) d += (plain.L[i] - fn.L[i]) ** 2;
+    expect(Math.sqrt(d / plain.L.length)).toBeGreaterThan(0.05 * rms(plain.L));
   });
 });

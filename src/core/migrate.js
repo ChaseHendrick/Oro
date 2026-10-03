@@ -8,6 +8,7 @@ import {
   defaultState, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
 } from './params.js';
 import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
+import { sanitizeFuncPoints } from '../dsp/function-gen.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { uniqueIds } from './tracks.js';
@@ -76,6 +77,8 @@ export function sanitizeLinks(src) {
       dst: l.dst,
       amt: clamp(num(l.amt, 0), -1, 1),
       curve: Math.round(clamp(num(l.curve, 0), 0, LINK_CURVES.length - 1)),
+      // v2.4 Via: a second source that scales the link (absent = none)
+      ...(Number.isFinite(l.via) && l.via >= 0 && l.via < LINK_SOURCES.length ? { via: Math.round(l.via) } : {}),
     });
   }
   return out;
@@ -184,6 +187,7 @@ export function sanitizePart(src, i) {
       pendRate: clamp(num(p.dot?.pendRate, base.dot.pendRate), 0, 1),
     },
     links: p.links === undefined ? defaultLinks() : sanitizeLinks(p.links),
+    funcPoints: sanitizeFuncPoints(p.funcPoints),
     userTerrain: { A: sanitizeUserTerrain(p.userTerrain?.A), B: sanitizeUserTerrain(p.userTerrain?.B) },
     trackFx: sanitizeTrackFx(p.trackFx),
     noiseRecording: sanitizeNoiseRecording(p.noiseRecording),

@@ -380,7 +380,9 @@ function buildPresets() {
 export const COLLAPSE_PRESETS = buildPresets();
 export const COLLAPSE_NAMES = COLLAPSE_PRESETS.map(p => p.name);
 export const COLLAPSE_BARS = [0.5, 1, 2, 4, 8, 16];
-export const COLLAPSE_MIN_SIZE = 0.03;      // lambda at the end of a collapse (total turn P ln(1/lambda^2))
+export const COLLAPSE_MIN_SIZE = 0.03;
+// Turing step lengths in beats, in the order of params SYNC_DIVS (4 bars .. 1/16)
+export const TURING_DIVS = [16, 8, 4, 2, 1.5, 1, 0.75, 2 / 3, 0.5, 0.375, 1 / 3, 0.25];      // lambda at the end of a collapse (total turn P ln(1/lambda^2))
 
 /**
  * Where the configuration is at cycle phase tau (0..1): lambda^2 falls
@@ -400,8 +402,30 @@ export function collapseState(tau, P, expand = false, out = { lambda: 1, phi: 0 
 // ================================================================ Science bank
 
 /** Indices into ScienceBank.out (the order of the Links sources). */
-export const SCI = Object.freeze({ NEURON: 0, SPIKE: 1, LORENZ: 2, PEND1: 3, PEND2: 4, SMOOTH: 5, COLLAPSE: 6 });
-export const SCIENCE_OUTPUTS = 7;
+export const SCI = Object.freeze({ NEURON: 0, SPIKE: 1, LORENZ: 2, PEND1: 3, PEND2: 4, SMOOTH: 5, COLLAPSE: 6, TURING: 7 });
+export const SCIENCE_OUTPUTS = 8;
+
+/**
+ * Turing (v2.4): a looping random sequence, as on a shift-register "Turing
+ * machine". Each step rotates a 16-bit register by one; the bit coming round
+ * flips with probability Chance (0 = a locked loop of Length steps, 1 = always
+ * new). The output is the low Length bits as a number, 0..1.
+ */
+export class Turing {
+  constructor(seed = 7) { this.rand = mulberry32(seed * 7919 + 1); this.reg = (this.rand() * 65536) | 0; this.step = -1; this.value = (this.reg & 255) / 255; }
+  advance(step, chance, length) {
+    if (step === this.step) return;
+    const L = Math.max(2, Math.min(16, Math.round(length)));
+    const n = this.step < 0 || step < this.step || step - this.step > 64 ? 1 : step - this.step;
+    for (let i = 0; i < n; i++) {
+      let bit = (this.reg >>> (L - 1)) & 1;
+      if (this.rand() < chance) bit ^= 1;
+      this.reg = ((this.reg << 1) | bit) & 0xffff;
+    }
+    this.step = step;
+    this.value = (this.reg & ((1 << L) - 1)) / ((1 << L) - 1);
+  }
+}
 
 /**
  * Every science generator for the whole synth, stepped once per control
@@ -419,7 +443,9 @@ export class ScienceBank {
       neuronCurrent: 8, neuronKick: 0.5, neuronTemp: HH.T0, neuronRate: 0.05,
       lorenzRate: 0.5, pendEnergy: 0, pendRate: 1, smoothTime: 1, smoothness: 1,
       collapseShape: 0, collapseBars: 3, collapseDir: 0,
+      turingChance: 0.1, turingLength: 8, turingDiv: 11,
     };
+    this.turing = new Turing(seed);
     this.cs = { lambda: 1, phi: 0 };
     this.freeBeats = 0;
     this.spikeDecay = 0.04;      // seconds
@@ -463,6 +489,10 @@ export class ScienceBank {
     const preset = COLLAPSE_PRESETS[clamp(Math.round(c.collapseShape), 0, COLLAPSE_PRESETS.length - 1)];
     collapseState(beats / (bars * 4), preset.P, Math.round(c.collapseDir) === 1, this.cs);
     o[SCI.COLLAPSE] = 1 - this.cs.lambda;
+    // Turing: one step per tempo division (TURING_DIVS beats), on the same beat clock
+    const div = TURING_DIVS[clamp(Math.round(c.turingDiv), 0, TURING_DIVS.length - 1)];
+    this.turing.advance(Math.floor(beats / div), clamp(c.turingChance, 0, 1), c.turingLength);
+    o[SCI.TURING] = this.turing.value;
   }
 
   /** Swirl X and Y (-1..1) of voice slot v: vortex v mod N of the chosen shape, as it turns and shrinks. */
