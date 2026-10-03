@@ -1,9 +1,15 @@
 // Drum kit (v2.7): turns the track into an eight-pad kit with an eight-lane
 // step grid. The default kit is synthesized; Import or Record turns any
 // recording into a kit by cutting it at its transients (one hit per pad).
+// v2.8: the Sound map (src/ui/sound-map-view.js) picks pad sounds from the
+// drum library by ear, and two generators write lanes: a Euclidean fill for
+// the selected pad and a Groove pad for the whole kit.
 import { h, createScope, setText } from './dom.js';
 import { schedule } from './frame.js';
 import { createKnob } from './knob.js';
+import { createStepper, createSelect } from './controls.js';
+import { openSoundMap } from './sound-map-view.js';
+import { euclidLane, grooveLanes, GROOVE_STYLES } from '../music/drum-gen.js';
 import { SEQ_STEPS, patternPath } from '../core/params.js';
 import { KIT_PADS, KIT_BASE_NOTE, sanitizeDrum, sanitizeLanes, sliceTransients, pcmToBase64, defaultDrum } from '../dsp/drum-kit.js';
 
@@ -53,6 +59,10 @@ export function createDrumPanel(ctx) {
   const importBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Import & slice');
   const recordBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, `Record ${RECORD_SECONDS} s & slice`);
   const synthBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Synth kit');
+  const mapBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-haspopup': 'dialog' }, 'Sound map');
+  scope.on(mapBtn, 'click', () => {
+    openSoundMap(ctx, { part: sel(), pad: padSel, onPad: (k) => { if (k !== padSel) { padSel = k; schedule(renderGrid); } } });
+  });
 
   async function useRecording(mono, label) {
     const slices = sliceTransients(mono, SLICE_RATE, KIT_PADS);
@@ -95,7 +105,7 @@ export function createDrumPanel(ctx) {
     const d = drum(), L = lanes();
     const len = Math.max(1, Math.min(SEQ_STEPS, Number(store.get(`${patternPath(store, sel())}.length`)) || 16));
     toggle.setAttribute('aria-pressed', String(!!d.on)); toggle.classList.toggle('is-on', !!d.on);
-    gridEl.hidden = padEl.hidden = !d.on;
+    gridEl.hidden = padEl.hidden = genEl.hidden = mapBtn.hidden = !d.on;
     gridEl.replaceChildren(...d.pads.map((pad, r) => {
       const name = h('button', { type: 'button', class: ['drum-name', r === padSel && 'is-sel'], 'aria-label': `Pad ${r + 1}: ${pad.name}. Click to hear it and edit it` }, pad.name);
       name.addEventListener('click', () => { padSel = r; audition(r); renderGrid(); });
@@ -112,6 +122,7 @@ export function createDrumPanel(ctx) {
       return h('div', { class: 'drum-row', role: 'row' }, name, ...cells);
     }));
     if (withPad) renderPad(d);
+    refreshGen();
   }
 
   function renderPad(d) {
@@ -128,22 +139,108 @@ export function createDrumPanel(ctx) {
         knob('choke', { label: 'Choke', curve: 'int', min: 0, max: 4, default: 0, hint: 'Pads in the same choke group cut each other off (0 = none), like open and closed hats' })));
   }
 
+  // ---- generators (v2.8)
+  const patLen = () => Math.max(1, Math.min(SEQ_STEPS, Number(store.get(`${patternPath(store, sel())}.length`)) || 16));
+  const putLanes = (L) => store.set(lanesPath(), sanitizeLanes(L, SEQ_STEPS), { source: 'ui' });
+  function localBinding(def, get, set) {
+    const subs = new Set();
+    return { def, get, set, subscribe(fn) { subs.add(fn); return () => subs.delete(fn); }, notify() { for (const fn of subs) fn(); } };
+  }
+  // Euclid: hits and rotation per lane (kept while the panel lives); a lane
+  // never set here shows its current number of hits
+  const euState = new Map();
+  const euKey = () => `${lanesPath()}:${padSel}`;
+  const euGet = () => euState.get(euKey()) || { hits: lanes()[padSel].slice(0, patLen()).filter(v => v > 0).length, rot: 0 };
+  function euPut(next) {
+    const len = patLen(), e = { hits: Math.max(0, Math.min(len, next.hits)), rot: ((next.rot % len) + len) % len };
+    euState.set(euKey(), e);
+    putLanes(euclidLane(lanes(), padSel, e.hits, e.rot, len));
+  }
+  const hitsB = localBinding({ id: 'euHits', label: 'Hits', min: 0, max: SEQ_STEPS }, () => Math.min(euGet().hits, patLen()), (v) => euPut({ ...euGet(), hits: v }));
+  const rotB = localBinding({ id: 'euRot', label: 'Rotate', min: 0, max: SEQ_STEPS - 1 }, () => euGet().rot, (v) => euPut({ ...euGet(), rot: v }));
+  const hitsSt = createStepper(ctx, hitsB, { label: 'Euclidean hits', format: v => String(v) });
+  const rotSt = createStepper(ctx, rotB, { label: 'Euclidean rotation', format: v => String(v) });
+  scope.add(hitsSt.dispose); scope.add(rotSt.dispose);
+  const euLabel = h('span', { class: 'mini-label' }, 'Euclid, pad 1');
+  const euEl = h('div', { class: 'drum-gen-group', role: 'group', 'aria-label': 'Euclidean rhythm for the selected pad' }, euLabel,
+    h('div', { class: 'drum-gen-row' },
+      h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Hits'), hitsSt.el),
+      h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Rotate'), rotSt.el)));
+
+  // Groove pad: complexity left to right, loudness bottom to top
+  const groove = { style: 'straight', complexity: 0.4, loudness: 0.7, fill: false, seed: 0 };
+  const writeGroove = () => putLanes(grooveLanes({ ...groove, length: patLen() }));
+  const styleB = localBinding({ id: 'grooveStyle', label: 'Groove style' }, () => groove.style, (v) => { groove.style = v; styleB.notify(); writeGroove(); });
+  const styleSel = createSelect(ctx, styleB, { label: 'Groove style', options: GROOVE_STYLES.map(s => ({ value: s.id, label: s.label })) });
+  scope.add(styleSel.dispose);
+  const xyDot = h('span', { class: 'groove-dot', 'aria-hidden': 'true' });
+  const xy = h('div', { class: 'groove-xy', role: 'slider', tabindex: '0', 'aria-roledescription': '2D slider',
+    'aria-label': 'Groove pad. Left and right set complexity, up and down set loudness. Moving it writes a new pattern.', 'aria-valuemin': '0', 'aria-valuemax': '100' },
+    h('span', { class: 'groove-axis groove-axis--x', 'aria-hidden': 'true' }, 'Complexity'),
+    h('span', { class: 'groove-axis groove-axis--y', 'aria-hidden': 'true' }, 'Loudness'), xyDot);
+  const fillBtn = h('button', { type: 'button', class: 'toggle toggle--sm', 'aria-pressed': 'false', title: 'End the pattern with a fill' }, 'Fill');
+  const varyBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', title: 'Another pattern with the same settings' }, 'Vary');
+  function showXY() {
+    const c = Math.round(groove.complexity * 100), l = Math.round(groove.loudness * 100);
+    xyDot.style.left = `${c}%`; xyDot.style.top = `${100 - l}%`;
+    xy.setAttribute('aria-valuenow', String(c));
+    xy.setAttribute('aria-valuetext', `Complexity ${c}%, loudness ${l}%`);
+    fillBtn.setAttribute('aria-pressed', String(groove.fill)); fillBtn.classList.toggle('is-on', groove.fill);
+  }
+  let xyQueued = false;
+  function moveXY(c, l) {
+    groove.complexity = Math.max(0, Math.min(1, c)); groove.loudness = Math.max(0, Math.min(1, l));
+    showXY();
+    if (xyQueued) return;
+    xyQueued = true;
+    schedule(() => { xyQueued = false; writeGroove(); });
+  }
+  const fromPointer = (e) => { const r = xy.getBoundingClientRect(); moveXY((e.clientX - r.left) / (r.width || 1), 1 - (e.clientY - r.top) / (r.height || 1)); };
+  let dragId = null;
+  scope.on(xy, 'pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault(); xy.focus(); dragId = e.pointerId;
+    try { xy.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    fromPointer(e);
+  });
+  scope.on(xy, 'pointermove', (e) => { if (dragId === e.pointerId) fromPointer(e); });
+  const endDrag = (e) => { if (dragId === e.pointerId) dragId = null; };
+  scope.on(xy, 'pointerup', endDrag); scope.on(xy, 'pointercancel', endDrag);
+  scope.on(xy, 'keydown', (e) => {
+    const big = e.shiftKey || e.key.startsWith('Page') ? 0.2 : 0.05;
+    const m = { ArrowRight: [big, 0], ArrowLeft: [-big, 0], ArrowUp: [0, big], ArrowDown: [0, -big], PageUp: [0, big], PageDown: [0, -big] }[e.key];
+    if (m) { e.preventDefault(); e.stopPropagation(); moveXY(groove.complexity + m[0], groove.loudness + m[1]); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); writeGroove(); }
+  });
+  scope.on(fillBtn, 'click', () => { groove.fill = !groove.fill; showXY(); writeGroove(); });
+  scope.on(varyBtn, 'click', () => { groove.seed = (groove.seed + 1) % 1000; writeGroove(); });
+  showXY();
+  const grooveEl = h('div', { class: 'drum-gen-group', role: 'group', 'aria-label': 'Groove pad' }, h('span', { class: 'mini-label' }, 'Groove'),
+    h('div', { class: 'drum-gen-row' }, xy, h('div', { class: 'drum-gen-col' }, styleSel.el, h('div', { class: 'drum-gen-row' }, fillBtn, varyBtn))));
+  const genEl = h('div', { class: 'drum-gen' }, euEl, grooveEl);
+  function refreshGen() {
+    setText(euLabel, `Euclid, pad ${padSel + 1}`);
+    hitsB.notify(); rotB.notify();
+  }
+
   // A pad knob edit only redraws the grid, so the knob being dragged survives.
   const gridOnly = () => renderGrid(false);
   const knobEdit = /^parts\.\d+\.drum\.pads\.\d+\.(pitch|decay|level|pan|choke)$/;
+  // lane edits (cells, generators) leave the pad editor and generator controls in place
+  const laneEdit = /^parts\.\d+\.patterns\.\d+\.drumLanes$/;
   // Only kit and pattern edits redraw; the moving dot writes to the track every frame.
   scope.add(store.subscribe('parts', (p) => {
     const pre = `parts.${sel()}`;
     if (p === 'parts' || p === pre) { schedule(renderGrid); return; }
     if (!p.startsWith(pre + '.') || !/^(drum|patterns|activePattern)(\.|$)/.test(p.slice(pre.length + 1))) return;
-    schedule(knobEdit.test(p) ? gridOnly : renderGrid);
+    schedule(knobEdit.test(p) || laneEdit.test(p) ? gridOnly : renderGrid);
   }));
   scope.add(store.subscribe('ui.selectedPart', () => { padSel = 0; schedule(renderGrid); }));
   scope.add(store.subscribe('', (p) => { if (p === '') schedule(renderGrid); }));
   renderGrid();
 
   const el = h('section', { class: 'drum-panel', 'aria-label': 'Drum kit' },
-    h('div', { class: 'drum-bar' }, toggle, synthBtn, importBtn, recordBtn, fileIn, status),
-    gridEl, padEl);
+    h('div', { class: 'drum-bar' }, toggle, synthBtn, mapBtn, importBtn, recordBtn, fileIn, status),
+    gridEl, padEl, genEl);
   return { el, isOn: () => !!drum().on, dispose: scope.dispose };
 }

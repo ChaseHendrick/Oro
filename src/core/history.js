@@ -51,7 +51,7 @@ export function describeEdit(path, meta = {}) {
     const track = `track ${Number(k[1]) + 1}`;
     if (k.length === 2) return `Track ${Number(k[1]) + 1}`;
     if (k[2] === 'params' && k[3]) return `${PART_PARAM_MAP[k[3]]?.label || k[3]}, ${track}`;
-    const names = { mods: 'Modulation', links: 'Links', patterns: 'Sequencer', dot: 'Dot', trackFx: 'Track effects', funcPoints: 'Function', userTerrain: 'Terrain', arp: 'Arpeggiator', name: 'Rename', color: 'Colour' };
+    const names = { mods: 'Modulation', links: 'Links', patterns: 'Sequencer', drum: 'Drum kit', dot: 'Dot', trackFx: 'Track effects', funcPoints: 'Function', userTerrain: 'Terrain', arp: 'Arpeggiator', name: 'Rename', color: 'Colour' };
     return `${names[k[2]] || 'Edit'}, ${track}`;
   }
   if (k[0] === 'parts') return 'Tracks';
