@@ -26,9 +26,10 @@
 
 import { W, xToU, uToX, wrapWorld, wrap01, wrapDelta } from './heightfield.js';
 import { mulberry32, TAU } from '../dsp/terrain-math.js';
+import { DoublePendulum } from '../dsp/science-sources.js';
 
 export const BALL_RADIUS = 0.21;
-export const MODE_PIN = 0, MODE_ROLL = 1, MODE_DRIFT = 2, MODE_EXPLORE = 3, MODE_TOUR = 4;
+export const MODE_PIN = 0, MODE_ROLL = 1, MODE_DRIFT = 2, MODE_EXPLORE = 3, MODE_TOUR = 4, MODE_PENDULUM = 5;
 export const G = 9.81;            // m/s^2, one world unit is a metre
 // A weightless marble would leave the ground at the first bump and never come
 // back, so gravity 0 keeps a twentieth of g to hold it on the land.
@@ -70,6 +71,61 @@ export function bounceFromParam(b) {
 export function dampingFromParam(f) {
   const v = Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0.25;
   return 0.12 + 3.2 * v * v;
+}
+
+/** dot.pendRate 0..1 -> pendulum time units per second (0.25..4, 1 at the middle). */
+export function pendulumRate(r) {
+  const v = Number.isFinite(r) ? Math.min(1, Math.max(0, r)) : 0.5;
+  return 0.25 * Math.pow(16, v);
+}
+
+/** dot.pendReach 0..1 -> length of each arm in tiles (0.03..0.25). */
+export function pendulumReach(r) {
+  const v = Number.isFinite(r) ? Math.min(1, Math.max(0, r)) : 0.4;
+  return 0.03 + 0.22 * v;
+}
+
+/**
+ * Pendulum mode: the dot is the tip of a double pendulum (the v2.1 science
+ * source, src/dsp/science-sources.js) hung from an anchor on the map, seen
+ * from above. At rest the tip hangs two arm lengths "south" (+v) of the
+ * anchor, so the anchor is put there and the dot does not jump.
+ */
+export class PendulumDot {
+  constructor(seed = 1) {
+    this.pend = new DoublePendulum(0, seed);
+    this.seed = seed;
+    this.E = 0; this.reach = pendulumReach(0.4);
+    this.au = 0.5; this.av = 0.5;
+    this.u = 0.5; this.v = 0.5; this.vu = 0; this.vv = 0;
+  }
+  setParams(E, reach) {
+    const e = Number.isFinite(E) ? E : 0;
+    if (Math.abs(e - this.E) > 1e-9) { this.E = e; this.pend.setEnergy(e); }
+    const r = pendulumReach(reach);
+    if (Math.abs(r - this.reach) > 1e-9) {
+      // keep the tip where it is: move the anchor instead
+      this.reach = r;
+      this.au = wrap01(this.u - this.tipU()); this.av = wrap01(this.v - this.tipV());
+    }
+  }
+  // tip offset from the anchor: each arm is `reach` tiles long
+  tipU() { return this.reach * (Math.sin(this.pend.t1) + Math.sin(this.pend.t2)); }
+  tipV() { return this.reach * (Math.cos(this.pend.t1) + Math.cos(this.pend.t2)); }
+  /** Hang the pendulum so its tip is at (u, v), freshly started at this energy. */
+  place(u, v) {
+    this.pend.place(this.E, this.seed++);
+    this.u = wrap01(u); this.v = wrap01(v);
+    this.au = wrap01(u - this.tipU()); this.av = wrap01(v - this.tipV());
+    this.vu = 0; this.vv = 0;
+  }
+  step(dt, rate) {
+    if (!(dt > 0)) { this.vu = 0; this.vv = 0; return; }
+    this.pend.advance(dt * pendulumRate(rate));
+    const u = wrap01(this.au + this.tipU()), v = wrap01(this.av + this.tipV());
+    this.vu = wrapDelta(u, this.u) / dt; this.vv = wrapDelta(v, this.v) / dt;
+    this.u = u; this.v = v;
+  }
 }
 
 /** dot.driftSpeed 0..1 -> wander speed in tiles / s. */
@@ -328,6 +384,8 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       windX: 0, windZ: 0,          // Explore push, world units / s^2
       pushX: 0, pushZ: 0,          // tilt + wind, world units / s^2
       drift: 0.3,
+      pendulum: new PendulumDot(i + 1),
+      pendRate: 0.5,
       fallback: new FallbackBall(),
       rapier: null,
       drifter: new Drifter(i + 1),
@@ -384,11 +442,12 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       s.x = src.x; s.z = src.z; s.vx = src.vx; s.vz = src.vz;
       s.y = s.rapier ? Math.max(s.rapier.y, hf.yAt(s.x, s.z) + BALL_RADIUS) : hf.yAt(s.x, s.z) + BALL_RADIUS;
       s.u = wrap01(xToU(s.x)); s.v = wrap01(xToU(s.z));
-    } else if (s.mode === MODE_DRIFT) {
-      s.u = s.drifter.u; s.v = s.drifter.v;
+    } else if (s.mode === MODE_DRIFT || s.mode === MODE_PENDULUM) {
+      const d = s.mode === MODE_DRIFT ? s.drifter : s.pendulum;
+      s.u = d.u; s.v = d.v;
       s.x = wrapWorld(uToX(s.u)); s.z = wrapWorld(uToX(s.v));
-      s.vx = s.drifter.vu * W; s.vz = s.drifter.vv * W;
-      s.y = hf.yAt(s.x, s.z) + BALL_RADIUS;
+      s.vx = d.vu * W; s.vz = d.vv * W;
+      s.y = hf && hf.ready ? hf.yAt(s.x, s.z) + BALL_RADIUS : BALL_RADIUS;
     } else {
       s.x = wrapWorld(uToX(s.u)); s.z = wrapWorld(uToX(s.v));
       s.vx = 0; s.vz = 0;
@@ -404,6 +463,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
     s.fallback.setVelocity(vx, vz);
     if (s.rapier) s.rapier.place(fieldFor(p), x, z, vx, vz);
     s.drifter.place(u, v);
+    s.pendulum.place(u, v);
     sync(p);
   }
 
@@ -415,6 +475,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       if (s.mode === MODE_EXPLORE) return 'explore';
       if (s.mode === MODE_ROLL) return s.rapier ? 'rapier' : 'fallback';
       if (s.mode === MODE_DRIFT) return 'drift';
+      if (s.mode === MODE_PENDULUM) return 'pendulum';
       return 'pin';
     },
 
@@ -432,7 +493,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
 
     setMode(p, mode, u, v) {
       const s = states[p];
-      const m = mode === MODE_ROLL || mode === MODE_DRIFT || mode === MODE_EXPLORE ? mode : MODE_PIN;
+      const m = mode === MODE_ROLL || mode === MODE_DRIFT || mode === MODE_EXPLORE || mode === MODE_PENDULUM ? mode : MODE_PIN;
       if (m === s.mode) return;
       const wasMarble = isMarbleMode(s.mode);
       s.mode = m;
@@ -455,6 +516,8 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       s.tiltX = dot && Number.isFinite(dot.tiltX) ? dot.tiltX : 0;
       s.tiltY = dot && Number.isFinite(dot.tiltY) ? dot.tiltY : 0;
       s.drift = dot && Number.isFinite(dot.driftSpeed) ? dot.driftSpeed : 0.3;
+      s.pendRate = dot && Number.isFinite(dot.pendRate) ? dot.pendRate : 0.5;
+      s.pendulum.setParams(dot && dot.pendEnergy, dot && dot.pendReach);
       updatePush(s);
       if (s.rapier) { s.rapier.setTuning(s.gravity, s.damping, s.bounce); s.rapier.setPush(s.pushX, s.pushZ); }
     },
@@ -514,6 +577,8 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
           } else {
             s.fallback.step(hf, h, s.gravity, s.damping, s.pushX, s.pushZ);
           }
+        } else if (s.mode === MODE_PENDULUM) {
+          s.pendulum.step(h, s.pendRate);
         } else {
           s.drifter.step(h, s.drift);
         }

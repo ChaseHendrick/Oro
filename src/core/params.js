@@ -5,6 +5,7 @@
 
 import { defaultTrackFx } from '../dsp/track-fx-config.js';
 import { TERRAIN_NAMES, PATH_NAMES, TERRAIN_INDEX, PATH_INDEX } from '../dsp/catalog.js';
+import { COLLAPSE_NAMES, COLLAPSE_BARS } from '../dsp/science-sources.js';
 
 // Tracks (called parts in the code). The store holds a variable-length list
 // of 1..MAX_PARTS tracks, each with a stable `id`; what exists, and in which
@@ -234,6 +235,19 @@ export const GLOBAL_PARAMS = [
   P('vectorX', 'Vector X', 'master', 'lin', 0, 1, 0.5),
   P('vectorY', 'Vector Y', 'master', 'lin', 0, 1, 0.5),
   P('vectorBank', 'Vector bank', 'master', 'int', 0, 3, 0),
+  // v2.1 science sources (src/dsp/science-sources.js): global generators that Links can route anywhere.
+  P('sciNeuronCurrent', 'Current', 'science', 'lin', 0, 20, 8, { unit: 'uA/cm2', hint: 'Steady current into the Hodgkin-Huxley neuron. Below about 6.3 it rests; 6.3 to 9.8 it fires only after a note kicks it; above 9.8 it fires on its own' }),
+  P('sciNeuronKick', 'Kick', 'science', 'lin', 0, 1, 0.5, { hint: 'How hard each note start kicks the neuron (a 1 ms pulse)' }),
+  P('sciNeuronTemp', 'Temp', 'science', 'lin', 0, 30, 6.3, { unit: 'C', hint: 'Membrane temperature. Warmer is faster (3x per 10 C)' }),
+  P('sciNeuronRate', 'Speed', 'science', 'exp', 0.005, 1, 0.05, { hint: 'Neuron time per real time. 1 is real time (about 60 spikes a second at 8)' }),
+  P('sciLorenzRate', 'Speed', 'science', 'exp', 0.02, 5, 0.5, { hint: 'How fast the Lorenz system runs' }),
+  P('sciPendEnergy', 'Energy', 'science', 'lin', -2.95, 4, 0, { hint: 'Double pendulum energy. Low swings gently; above -1 the lower arm can flip; above 1 both can' }),
+  P('sciPendRate', 'Speed', 'science', 'exp', 0.1, 5, 1, { hint: 'How fast the pendulum swings' }),
+  P('sciSmoothTime', 'Time', 'science', 'exp', 0.05, 20, 1, { unit: 's', hint: 'How long the smooth random source takes to wander' }),
+  P('sciSmoothness', 'Smooth', 'science', 'enum', 0, 2, 1, { options: ['Rough', 'Smooth', 'Silky'], hint: 'Rough jitters, Silky glides' }),
+  P('sciCollapseShape', 'Shape', 'science', 'enum', 0, COLLAPSE_NAMES.length - 1, 0, { options: COLLAPSE_NAMES, hint: 'Which vortex collapse: each spirals inward at its own winding' }),
+  P('sciCollapseBars', 'Cycle', 'science', 'enum', 0, COLLAPSE_BARS.length - 1, 3, { options: COLLAPSE_BARS.map(b => `${b} bar${b === 1 ? '' : 's'}`), hint: 'One collapse per this many bars' }),
+  P('sciCollapseDir', 'Direction', 'science', 'enum', 0, 1, 0, { options: ['Collapse', 'Expand'] }),
 ];
 
 export const PART_PARAM_MAP = Object.fromEntries(PART_PARAMS.map(p => [p.id, p]));
@@ -266,10 +280,14 @@ export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
 // Source value ranges: Velocity, Mod Wheel, Pressure, Slide, Macros, Marble Speed,
 // Env 1, Env 2, Guitar Level (envelope of the guitar on the pedal return, v1.1), Voice Level (envelope of the
 // microphone, v1.4) are 0..1; Key ((note - 60) / 48), Marble Height, Random (per note) and
-// Terrain Height (height under the modulated dot) are -1..1. New sources are only ever appended, so saved
+// Terrain Height (height under the modulated dot) are -1..1. Science sources (v2.1): Neuron (membrane potential),
+// Neuron Spike (1 at each spike, decaying) and Collapse (0 = wide, near 1 = collapsed) are 0..1; Lorenz,
+// Pendulum 1/2, Smooth Random and Swirl X/Y are -1..1. New sources are only ever appended, so saved
 // links keep their meaning; an older build clamps an index it does not know to its own last source.
 export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
-  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level', 'Voice Level', 'Expression pedal', 'Sustain pedal', 'Breath'];
+  'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level', 'Voice Level', 'Expression pedal', 'Sustain pedal', 'Breath',
+  // v2.1 science sources (global; Swirl X and Y are per voice)
+  'Neuron', 'Neuron Spike', 'Lorenz', 'Pendulum 1', 'Pendulum 2', 'Smooth Random', 'Collapse', 'Swirl X', 'Swirl Y'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {
@@ -398,7 +416,8 @@ export function defaultArp() {
 //   Pin: stays where you put it. Roll: a marble under gravity. Drift: smooth wander.
 //   Explore: the marble roams under slowly turning gravity and plays in-key notes at peaks/valleys.
 //   Tour: the dot travels through up to MAX_WAYPOINTS waypoints.
-export const DOT_MODES = ['Pin', 'Roll', 'Drift', 'Explore', 'Tour'];
+//   Pendulum (v2.1): the dot is the tip of a chaotic double pendulum hung where you put it.
+export const DOT_MODES = ['Pin', 'Roll', 'Drift', 'Explore', 'Tour', 'Pendulum'];
 export const TOUR_MODES = ['Loop', 'Ping-pong', 'Once'];
 export const MAX_WAYPOINTS = 8;
 
@@ -421,9 +440,11 @@ export function defaultPart(i = 0, { id, name, color } = {}) {
     arp: defaultArp(),
     // gravity 0..1 maps to 0..2 g; tiltX/tiltY lean the world (-1..1); flick scales throws;
     // explore*: Explore mode note density, range in octaves, play notes on/off;
+    // pendEnergy -2.95..4 (pendulum energy, as the science source), pendReach and pendRate 0..1;
     // waypoints [{x, y, beats}] (beats = travel time to the next waypoint, 0.25..16), tourMode index into TOUR_MODES.
     dot: { mode: 0, gravity: 0.5, friction: 0.25, driftSpeed: 0.3, bounce: 0.25, tiltX: 0, tiltY: 0, flick: 0.5,
-      exploreRate: 0.5, exploreRange: 2, exploreNotes: 1, waypoints: [], tourMode: 0 },
+      exploreRate: 0.5, exploreRange: 2, exploreNotes: 1, waypoints: [], tourMode: 0,
+      pendEnergy: 0.5, pendReach: 0.4, pendRate: 0.5 },
     links: defaultLinks(),
     userTerrain: { A: null, B: null },
     trackFx: defaultTrackFx(),

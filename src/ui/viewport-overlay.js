@@ -31,13 +31,14 @@ export const STYLES = [
   { value: 'points', label: 'Points', icon: 'points' },
   { value: 'normals', label: 'Normals', icon: 'relief' },
 ];
-const DOT_ICONS = ['pin', 'roll', 'drift', 'explore', 'tour'];
+const DOT_ICONS = ['pin', 'roll', 'drift', 'explore', 'tour', 'pendulum'];
 const DOT_TIPS = [
   'Pin: the dot stays exactly where you place it',
   'Roll: the dot is a marble that rolls downhill. Flick it to throw it',
   'Drift: the dot wanders slowly on its own',
   'Explore: the marble roams and plays in-key notes at peaks and valleys',
   'Tour: the dot travels through your waypoints in time',
+  'Pendulum: the dot rides the tip of a swinging double pendulum',
 ];
 const DOT_DEF = { id: 'dotMode', label: 'Dot', curve: 'enum', min: 0, max: DOT_MODES.length - 1, default: 0, options: DOT_MODES };
 

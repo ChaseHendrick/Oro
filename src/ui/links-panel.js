@@ -7,10 +7,11 @@ import * as params from '../core/params.js';
 import { h, createScope, setText } from './dom.js';
 import { schedule } from './frame.js';
 import { createMacroKnobs } from './macros.js';
-import { createMiniSlider } from './controls.js';
+import { createMiniSlider, createSelect } from './controls.js';
+import { createKnob } from './knob.js';
 import { icon } from './icons.js';
 
-const { PART_PARAM_MAP, MOD_PARAM_IDS, clamp } = params;
+const { PART_PARAM_MAP, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, clamp } = params;
 export const LINK_SOURCES = params.LINK_SOURCES || ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4', 'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height'];
 export const LINK_CURVES = params.LINK_CURVES || ['Linear', 'Soft', 'Hard'];
 export const MAX_LINKS = params.MAX_LINKS || 8;
@@ -75,6 +76,29 @@ export function createLinksPanel(ctx) {
     h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-macros' }, 'Macros')),
     macros.el,
     h('p', { class: 'links-note' }, 'Shared by all parts. Right-click to MIDI-learn.'));
+
+  // Science sources (global, v2.1): the generators behind the Neuron, Lorenz,
+  // Pendulum, Smooth Random, Collapse and Swirl link sources.
+  const sciGroup = (title, ids, note) => {
+    const cells = ids.map((id) => {
+      const def = GLOBAL_PARAM_MAP[id];
+      const ctl = def.curve === 'enum'
+        ? createSelect(ctx, binder.globalParam(id), { label: `${title} ${def.label}`, className: 'select--sm' })
+        : createKnob(ctx, binder.globalParam(id), { size: 'sm' });
+      scope.add(ctl.dispose);
+      return def.curve === 'enum' ? h('label', { class: 'sci-select' }, h('span', null, def.label), ctl.el) : ctl.el;
+    });
+    return h('div', { class: 'sci-group' }, h('h4', { class: 'sci-title' }, title), h('div', { class: 'sci-controls' }, cells), h('p', { class: 'links-note' }, note));
+  };
+  const sciCard = h('section', { class: 'links-science', 'aria-labelledby': 'sec-science' },
+    h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-science' }, 'Science sources')),
+    h('p', { class: 'links-note' }, 'Shared by all tracks. Pick one as a link source above to let it move any knob.'),
+    h('div', { class: 'sci-groups' },
+      sciGroup('Neuron', ['sciNeuronCurrent', 'sciNeuronKick', 'sciNeuronTemp', 'sciNeuronRate'], 'Hodgkin and Huxley 1952. Neuron is the membrane voltage, Neuron Spike pulses at each spike.'),
+      sciGroup('Lorenz', ['sciLorenzRate'], 'The classic chaotic attractor: never repeats.'),
+      sciGroup('Pendulum', ['sciPendEnergy', 'sciPendRate'], 'A double pendulum: Pendulum 1 and 2 are its two arms.'),
+      sciGroup('Smooth random', ['sciSmoothTime', 'sciSmoothness'], 'Random wandering, as smooth as you like.'),
+      sciGroup('Collapse', ['sciCollapseShape', 'sciCollapseBars', 'sciCollapseDir'], 'Point vortices spiralling to a collapse, in time with the tempo. Collapse is how far in; Swirl X and Y place each voice on its own vortex.')));
 
   const rowsEl = h('div', { class: 'links-rows' });
   const addBtn = h('button', { type: 'button', class: 'btn btn--sm', html: icon('plus') + '<span>Add link</span>' });
@@ -151,6 +175,6 @@ export function createLinksPanel(ctx) {
   scope.add(store.subscribe('', (p) => { if (p === '') onChange(); }));
   render();
 
-  const el = h('div', { class: 'links-pane' }, macroCard, listCard);
+  const el = h('div', { class: 'links-pane' }, macroCard, listCard, sciCard);
   return { el, dispose: scope.dispose };
 }

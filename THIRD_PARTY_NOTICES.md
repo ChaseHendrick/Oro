@@ -5,6 +5,25 @@ implementation; the only third-party code it ships is listed below. Every build 
 Orograph (the web app, the offline HTML file and the desktop apps) contains the first
 two components. The desktop apps additionally contain Electron.
 
+## Science source models (v2.1)
+
+`src/dsp/science-sources.js` re-implements, in JavaScript, equations and constants from the
+author's own research code (Copyright (c) 2026 Chase Hendrick; the programs in each
+repository's `code/` folder are under the Apache License 2.0):
+
+* ChaseHendrick/hh-dynamics (`hh_float.py`: the Hodgkin-Huxley rate functions and constants),
+  doi:10.5281/zenodo.23096223
+* ChaseHendrick/hh-pulse (the temperature factor), doi:10.5281/zenodo.23096253
+* ChaseHendrick/double-pendulum (`code/dp.h`: the double pendulum Hamiltonian and vector field),
+  doi:10.5281/zenodo.23096228
+* ChaseHendrick/minimal-winding (the self-similar collapse, the winding formulas and the
+  four-vortex minimiser), doi:10.5281/zenodo.23096146
+* ChaseHendrick/rank-window (the Matérn smoothness idea), doi:10.5281/zenodo.23096200
+
+The copyright holder of that code is also Orograph's author, who releases this JavaScript
+version with the rest of Orograph under the MIT licence. The papers themselves are not
+included.
+
 ## three.js 0.186.1
 
 3D rendering. https://threejs.org, MIT License.
