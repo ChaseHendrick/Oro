@@ -1,4 +1,4 @@
-// Orograph 2.0 integration: real browser audio, offline image library, channel
+// Oro 2.0 integration: real browser audio, offline image library, channel
 // mapping, saved views, expanded sound/modulation, favorites and large saves.
 // PLAYWRIGHT_MODULE may point to a machine-local install. A separate runtime
 // wrapper can adapt the historical Linux path without changing this test.

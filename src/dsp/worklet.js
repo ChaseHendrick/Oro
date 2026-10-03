@@ -1,4 +1,4 @@
-// AudioWorkletProcessor 'orograph': a thin shell around OrographDSP.
+// AudioWorkletProcessor 'orograph': a thin shell around OroDSP.
 //
 // Bundled into a single classic script by vite.config.js (virtual:worklet:...)
 // and loaded through a Blob URL, so ordinary imports work here.
@@ -13,10 +13,10 @@
 // an OfflineAudioContext does not deliver port messages until it has rendered,
 // and a live host can use it to start with the right patch and terrains.
 
-import { OrographDSP } from './dsp-core.js';
+import { OroDSP } from './dsp-core.js';
 import { DspLoadMeter } from './load-meter.js';
 
-class OrographProcessor extends AudioWorkletProcessor {
+class OroProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     // The global sampleRate is the context's real rate; processorOptions only
@@ -28,7 +28,7 @@ class OrographProcessor extends AudioWorkletProcessor {
     const precise=typeof globalThis.performance?.now === 'function';
     this.loadMeter=measure ? new DspLoadMeter(sr,!precise) : null;
     this.loadClock=measure ? (precise ? globalThis.performance.now.bind(globalThis.performance) : Date.now) : null;
-    this.dsp = new OrographDSP(sr);
+    this.dsp = new OroDSP(sr);
     this.dsp.postMessage = (msg) => this.port.postMessage(msg);
     const init = options && options.processorOptions && options.processorOptions.init;
     if (Array.isArray(init)) for (const m of init) this.dsp.handleMessage(m);
@@ -74,4 +74,4 @@ class OrographProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('orograph', OrographProcessor);
+registerProcessor('orograph', OroProcessor);

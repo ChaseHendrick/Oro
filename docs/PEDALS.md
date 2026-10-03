@@ -1,6 +1,6 @@
-# Real guitar pedals with Orograph (v1.1 design)
+# Real guitar pedals with Oro (v1.1 design)
 
-Design notes for running Orograph through the owner's pedalboard, mostly via an Akai MPC XL over
+Design notes for running Oro through the owner's pedalboard, mostly via an Akai MPC XL over
 USB-C. Facts come from manufacturer manuals, Akai's MPC Live III / MPC XL User Guide v3.9 and the
 Chromium source; anything unconfirmed is marked. Nothing here has been tested on the real hardware.
 
@@ -48,7 +48,7 @@ Program Change through (see below).
 
 These are the ones I have.
 
-| Pedal | MIDI | Notes for Orograph |
+| Pedal | MIDI | Notes for Oro |
 |---|---|---|
 | Origin Effects Cali76 Stacked | none | audio loop only |
 | DigiTech HammerOn | none | audio loop only; max input +5 dBu |
@@ -68,13 +68,13 @@ from the inMusic Software Center if the computer does not list "MPC XL" as an au
 
 1. **Pedal send:** Audio track, Audio Input = **USB Input 3,4**, Monitor = **In**, Audio Output = **Out 3,4** → cable Out 3/4 to the board.
 2. **Pedal return:** board → **Input 3/4** (Phono/Line switch on Line) → Audio track, Audio Input = Input 3,4, Monitor = In, Audio Output = **USB Out 1,2** (must be 1,2: Chrome only captures two input channels).
-3. **Orograph's main mix:** Audio track, Input = USB Input 1,2 → Out 1,2, Monitor = In.
+3. **Oro's main mix:** Audio track, Input = USB Input 1,2 → Out 1,2, Monitor = In.
 4. Set Dir/Main and the headphone Mix knob to **Main** so you do not hear dry, unaligned copies.
-5. Outputs 3/4 can reach +20.4 dBu with no hardware volume, far above pedal headroom: Orograph's send bus is limited to about −18 dBFS by default.
+5. Outputs 3/4 can reach +20.4 dBu with no hardware volume, far above pedal headroom: Oro's send bus is limited to about −18 dBFS by default.
 
 Guitar at the same time as the return: guitar into **Inst 1** (front) → its own track → USB Out 2, and the pedal return as mono on USB Out 1 ("mono return + guitar" mode).
 
-## Orograph features
+## Oro features
 
 * **Pedal send per part** (a fourth send next to Delay and Reverb), Pre/Post, and an **Insert** mode that mutes the part's dry sound so only the pedal return is heard.
 * **Output map:** Settings > Pedals picks the device (`setSinkId`), can set the context to 44.1 kHz for the MPC (after a restart), and sends main mix to outputs 1/2 and the pedal bus to outputs 3/4 (a 4+ channel destination with discrete channel interpretation). Chromium exposes up to 32 output channels; the Windows driver may expose stereo pairs instead (unverified).

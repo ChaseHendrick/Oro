@@ -44,21 +44,21 @@ jobs:
       - name: Package the web downloads
         run: |
           mkdir -p out
-          cp dist-single/index.html out/Orograph.html
-          (cd dist && zip -qr ../out/Orograph-web.zip .)
+          cp dist-single/index.html out/Oro.html
+          (cd dist && zip -qr ../out/Oro-web.zip .)
 
       - name: Upload offline HTML
         uses: actions/upload-artifact@v4
         with:
           name: orograph-offline-html
-          path: out/Orograph.html
+          path: out/Oro.html
           if-no-files-found: error
 
       - name: Upload web zip
         uses: actions/upload-artifact@v4
         with:
           name: orograph-web-zip
-          path: out/Orograph-web.zip
+          path: out/Oro-web.zip
           if-no-files-found: error
 
   desktop:
@@ -107,14 +107,14 @@ jobs:
           name: orograph-${{ matrix.label }}
           # Include updater manifests and differential blockmaps, while skipping NSIS helpers.
           path: |
-            release/Orograph-*.dmg
-            release/Orograph-*.zip
-            release/Orograph-*.exe
-            release/Orograph-*.AppImage
-            release/Orograph-*.tar.gz
-            release/Orograph-*.blockmap
+            release/Oro-*.dmg
+            release/Oro-*.zip
+            release/Oro-*.exe
+            release/Oro-*.AppImage
+            release/Oro-*.tar.gz
+            release/Oro-*.blockmap
             release/latest*.yml
-            release/Orograph-app-update-*.yml
+            release/Oro-app-update-*.yml
           if-no-files-found: error
           compression-level: 0
 
@@ -163,16 +163,16 @@ jobs:
 
           URL="https://github.com/$GH_REPO/releases/download/$TAG"
           cat > notes.md <<EOF
-          Orograph $VERSION, built automatically from commit ${GITHUB_SHA:0:7}.
+          Oro $VERSION, built automatically from commit ${GITHUB_SHA:0:7}.
 
           | Your computer | Download |
           |---|---|
-          | Mac with Apple silicon (M1 or newer) | [Orograph-mac-arm64.dmg]($URL/Orograph-mac-arm64.dmg) |
-          | Mac with an Intel processor | [Orograph-mac-x64.dmg]($URL/Orograph-mac-x64.dmg) |
-          | Windows 10 or 11 (installer) | [Orograph-windows-setup.exe]($URL/Orograph-windows-setup.exe) |
-          | Windows (no installation) | [Orograph-windows-portable.exe]($URL/Orograph-windows-portable.exe) |
-          | Linux | [Orograph-linux-x86_64.AppImage]($URL/Orograph-linux-x86_64.AppImage) |
-          | Any computer, in Chrome or Edge, even offline | [Orograph.html]($URL/Orograph.html) |
+          | Mac with Apple silicon (M1 or newer) | [Oro-mac-arm64.dmg]($URL/Oro-mac-arm64.dmg) |
+          | Mac with an Intel processor | [Oro-mac-x64.dmg]($URL/Oro-mac-x64.dmg) |
+          | Windows 10 or 11 (installer) | [Oro-windows-setup.exe]($URL/Oro-windows-setup.exe) |
+          | Windows (no installation) | [Oro-windows-portable.exe]($URL/Oro-windows-portable.exe) |
+          | Linux | [Oro-linux-x86_64.AppImage]($URL/Oro-linux-x86_64.AppImage) |
+          | Any computer, in Chrome or Edge, even offline | [Oro.html]($URL/Oro.html) |
 
           The apps are not signed with paid Apple or Microsoft certificates, so the first launch
           needs one extra click. The README explains it step by step:
@@ -185,11 +185,11 @@ jobs:
             for name in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
               if [[ ! -e "assets/$name" ]]; then gh release delete-asset "$TAG" "$name" --yes; fi
             done
-            gh release edit "$TAG" --title "Orograph $VERSION" --notes-file notes.md --draft=false --prerelease=false --latest
+            gh release edit "$TAG" --title "Oro $VERSION" --notes-file notes.md --draft=false --prerelease=false --latest
           else
             # Upload every binary and integrity manifest before making the new
             # release visible to installed updaters.
-            gh release create "$TAG" assets/* --verify-tag --title "Orograph $VERSION" --notes-file notes.md --draft
+            gh release create "$TAG" assets/* --verify-tag --title "Oro $VERSION" --notes-file notes.md --draft
             gh release edit "$TAG" --draft=false --prerelease=false --latest
           fi
 

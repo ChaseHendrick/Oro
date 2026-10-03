@@ -15,7 +15,7 @@ const STATUS_TEXT = {
   ready: ['MIDI is ready', 'Devices plugged in now will appear below automatically.'],
   denied: ['MIDI access was blocked', 'Allow MIDI for this site in your browser\'s site settings, then press Connect MIDI again.'],
   error: ['MIDI could not start', 'Something went wrong while opening MIDI. Try Connect MIDI again, or reconnect the device.'],
-  unsupported: ['MIDI is not available here', 'Web MIDI works in Chrome, Edge and Opera, and in the Orograph desktop app. Safari does not support it, and Firefox only with permission.'],
+  unsupported: ['MIDI is not available here', 'Web MIDI works in Chrome, Edge and Opera, and in the Oro desktop app. Safari does not support it, and Firefox only with permission.'],
 };
 
 const CHANNELS = Array.from({ length: 16 }, (_, i) => ({ value: i + 1, label: `Ch ${i + 1}` }));
@@ -199,13 +199,13 @@ export function createMidiSettings(ctx) {
   const outBlock = h('div', { class: 'setting-block' }, h('div', { class: 'setting-hint' }, 'Output channel per track (match your MPC tracks)'), outRow);
   const output = h('section', { class: 'settings-group', 'aria-labelledby': 'midi-output' },
     h('h3', { class: 'group-title', id: 'midi-output' }, 'Output'),
-    row('Send notes', 'Play the MPC (or any synth) from Orograph\'s keyboard, sequencer and arp', sendNotes.el),
+    row('Send notes', 'Play the MPC (or any synth) from Oro\'s keyboard, sequencer and arp', sendNotes.el),
     outBlock);
   const clock = h('section', { class: 'settings-group', 'aria-labelledby': 'midi-clock' },
     h('h3', { class: 'group-title', id: 'midi-clock' }, 'Clock'),
     h('div', { class: 'callout' }, h('span', { html: icon('info') }), h('span', null, 'Only one device should be the clock master. If both send clock, the tempo fights, so turning one of these on turns the other off.')),
-    row('Follow MPC clock', 'The MPC sets the tempo and starts / stops Orograph', follow.el),
-    row('Send clock to MPC', 'Orograph sets the tempo. On the MPC set Sync Receive to MIDI Clock.', sendClock.el),
+    row('Follow MPC clock', 'The MPC sets the tempo and starts / stops Oro', follow.el),
+    row('Send clock to MPC', 'Oro sets the tempo. On the MPC set Sync Receive to MIDI Clock.', sendClock.el),
     clockStatus);
 
   // ------------------------------------------------------------ Q-Link wizard
@@ -213,7 +213,7 @@ export function createMidiSettings(ctx) {
   const wizardBody = h('div', { class: 'wizard' });
   const startWizard = h('button', { type: 'button', class: 'btn btn--primary btn--sm', html: icon('learn') + '<span>Start Q-Link learn</span>' });
   wizard.append(h('h3', { class: 'group-title', id: 'midi-qlink' }, 'Q-Link learn'),
-    h('p', { class: 'setting-hint' }, 'Map the MPC\'s 16 Q-Link knobs to the selected part in one pass. Each step waits for whatever CC arrives. Any other knob in Orograph can be learned too: right-click it and choose MIDI Learn.'),
+    h('p', { class: 'setting-hint' }, 'Map the MPC\'s 16 Q-Link knobs to the selected part in one pass. Each step waits for whatever CC arrives. Any other knob in Oro can be learned too: right-click it and choose MIDI Learn.'),
     startWizard, wizardBody);
   scope.on(startWizard, 'click', () => runWizard());
 
@@ -374,7 +374,7 @@ export function createMidiSettings(ctx) {
     const err = midi && midi.error ? String(midi.error.message || midi.error) : '';
     const moduleText = err && typeof midi.statusText === 'function' ? String(call(midi, 'statusText') || '') : '';
     statusText.textContent = st !== 'ready' && (moduleText || err) ? (moduleText || err).slice(0, 200) : text;
-    if (midi && midi.secure === false) statusText.textContent = 'MIDI needs a secure page. Open Orograph over https, from localhost, or use the desktop app.';
+    if (midi && midi.secure === false) statusText.textContent = 'MIDI needs a secure page. Open Oro over https, from localhost, or use the desktop app.';
     statusWarn.hidden = !(st === 'ready' && err);
     statusWarn.lastChild.textContent = st === 'ready' && err ? (moduleText || err).slice(0, 200) : '';
     statusCard.dataset.status = st;
@@ -397,7 +397,7 @@ export function createMidiSettings(ctx) {
     const clockInfo = midi && midi.externalClock;
     clockStatus.textContent = s.followClock
       ? (clockInfo && clockInfo.active ? `Following external clock at ${Math.round(clockInfo.bpm || 0)} BPM` : 'Waiting for clock from the MPC. Press Play on the MPC.')
-      : s.sendClock ? 'Sending clock to the selected output.' : 'Clock is off. Orograph runs on its own tempo.';
+      : s.sendClock ? 'Sending clock to the selected output.' : 'Clock is off. Oro runs on its own tempo.';
   }
   function renderAll() {
     renderStatus();

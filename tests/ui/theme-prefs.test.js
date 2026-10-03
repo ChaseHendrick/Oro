@@ -76,7 +76,7 @@ describe('device preferences', () => {
 
 describe('site appearance fallback', () => {
   const mem = (o) => ({ getItem: (k) => (k in o ? o[k] : null) });
-  it('follows the hosting site until Orograph has its own choice', async () => {
+  it('follows the hosting site until Oro has its own choice', async () => {
     const { readStoredPref } = await import('../../src/ui/theme.js');
     expect(readStoredPref(mem({ 'hendrick-appearance': 'light' }))).toBe('light');
     expect(readStoredPref(mem({ 'hendrick-appearance': 'light', 'orograph.theme': 'dark' }))).toBe('dark');

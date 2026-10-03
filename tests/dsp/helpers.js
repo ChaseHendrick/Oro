@@ -1,5 +1,5 @@
 // Shared helpers for the DSP tests: offline rendering, WAV writing, spectra.
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { generateTerrain, buildMipChain } from '../../src/dsp/terrains.js';
 
 export const SR = 48000;
@@ -16,7 +16,7 @@ export function terrainChain(index, opts = {}) {
 
 /** New engine with optional terrains for part 0..n and params applied. */
 export function makeDSP({ sr = SR, part = 0, params = {}, mods = null, terrainA = null, terrainB = null } = {}) {
-  const dsp = new OrographDSP(sr);
+  const dsp = new OroDSP(sr);
   if (terrainA !== null) dsp.handleMessage({ t: 'terrain', part, slot: 0, levels: terrainChain(terrainA) });
   if (terrainB !== null) dsp.handleMessage({ t: 'terrain', part, slot: 1, levels: terrainChain(terrainB) });
   if (params) dsp.handleMessage({ t: 'params', part, p: params });

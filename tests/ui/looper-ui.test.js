@@ -92,7 +92,7 @@ describe('looper button view', () => {
   });
 
   it('names exports by date', () => {
-    expect(loopFileName(new Date(2026, 9, 2, 13, 4, 5))).toBe('orograph-loop-20261002-130405.wav');
+    expect(loopFileName(new Date(2026, 9, 2, 13, 4, 5))).toBe('oro-loop-20261002-130405.wav');
   });
 });
 
@@ -139,7 +139,7 @@ describe('looper control', () => {
   it('exports the loop as a dithered 24-bit WAV (or 32-bit float) and names the file', async () => {
     const { ctl, download, looper } = setup({ loop: tone(220, 0.5) });
     let blob = await ctl.exportWav();
-    expect(download).toHaveBeenCalledWith(blob, expect.stringMatching(/^orograph-loop-\d{8}-\d{6}\.wav$/));
+    expect(download).toHaveBeenCalledWith(blob, expect.stringMatching(/^oro-loop-\d{8}-\d{6}\.wav$/));
     expect(wavInfo(new Uint8Array(await blob.arrayBuffer()))).toMatchObject({ bitsPerSample: 24, float: false, sampleRate: SR, channels: 2 });
     ctl.setPref('format', 'float32');
     blob = await ctl.exportWav();

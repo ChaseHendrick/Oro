@@ -1,4 +1,4 @@
-// Exports a blended Orograph terrain (5x5 tiles) and a Rose orbit for the Blender hero render,
+// Exports a blended Oro terrain (5x5 tiles) and a Rose orbit for the Blender hero render,
 // using the app's own terrain, path and transform code (read-only imports from src/dsp).
 // usage: node export.mjs out.json ['{"seedA":11,...}']   (optional JSON overrides)
 import { generateTerrain } from '/home/user/synth/src/dsp/terrains.js';

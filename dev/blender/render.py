@@ -1,4 +1,4 @@
-# Blender (bpy 4.5, Cycles) hero render of an Orograph landscape built from the app's own terrain data.
+# Blender (bpy 4.5, Cycles) hero render of an Oro landscape built from the app's own terrain data.
 # usage: python render.py -- theme out width height samples data.json ['{"camEl":40,...}']
 import bpy, json, sys, math, addon_utils
 from mathutils import Vector

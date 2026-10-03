@@ -155,7 +155,7 @@ function audioTab(ctx, scope) {
     let devices = [];
     try { devices = (await engine.listOutputDevices()) || []; } catch { devices = []; }
     if (!devices.length) {
-      deviceWrap.append(h('p', { class: 'setting-hint' }, 'Choosing an output is not supported here, so Orograph uses the system default.'));
+      deviceWrap.append(h('p', { class: 'setting-hint' }, 'Choosing an output is not supported here, so Oro uses the system default.'));
       return;
     }
     const sel = h('select', { class: 'select-native', 'aria-label': 'Output device' },
@@ -192,7 +192,7 @@ function aboutTab() {
       h('div', { class: 'about-word' }, 'OROGRAPH'),
       h('div', { class: 'about-version' }, `Version ${VERSION}`)),
     h('p', null, 'Wave terrain synthesis traces a closed path across a landscape once per cycle, and the height under the moving point becomes the sound. Pitch is how fast the path is traced; timbre is the shape of the land it crosses.'),
-    h('p', null, 'Orograph is an independent, clean-room implementation inspired by the idea of a terrain synthesizer. Terrain Synth is a trademark of Conductive Labs; Orograph is not affiliated with or endorsed by Conductive Labs.'),
+    h('p', null, 'Oro is an independent, clean-room implementation inspired by the idea of a terrain synthesizer. Terrain Synth is a trademark of Conductive Labs; Oro is not affiliated with or endorsed by Conductive Labs.'),
     h('dl', { class: 'about-facts' },
       h('dt', null, 'License'), h('dd', null, 'MIT'),
       h('dt', null, 'Built with'), h('dd', null, 'three.js (MIT), Rapier physics (Apache-2.0), Web Audio and Web MIDI'),

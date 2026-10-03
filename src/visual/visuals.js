@@ -1,4 +1,4 @@
-// Orograph's 3D map.
+// Oro's 3D map.
 //
 //   const visuals = await createVisuals(containerEl, { store, engine, music? });
 //   visuals.resize(); visuals.setQuality('high' | 'medium' | 'low'); visuals.dispose();
@@ -56,7 +56,7 @@ import { createMinimap, createOverlay } from './hud.js';
 
 /** Replaces NaN / Inf with black and clamps HDR colour before bloom (see buildComposer). */
 export const SANITIZE_SHADER = {
-  name: 'OrographSanitize',
+  name: 'OroSanitize',
   uniforms: { tDiffuse: { value: null } },
   vertexShader: /* glsl */`
     varying vec2 vUv;

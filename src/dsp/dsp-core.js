@@ -1,4 +1,4 @@
-// Orograph's audio engine: up to MAX_PARTS parts (tracks) x 8 voices of wave
+// Oro's audio engine: up to MAX_PARTS parts (tracks) x 8 voices of wave
 // terrain synthesis. All MAX_PARTS parts exist from the start; the host says
 // how many are in use ({t:'tracks', count, perm?, fresh?}, see setTracks) and
 // the rest cost nothing: a part past the count that has finished fading out
@@ -274,7 +274,7 @@ function linkCurve(c, x) {
 }
 
 // --- vowel formants ----------------------------------------------------------
-// Orograph's own vowel set, A E I O U at formant 0, 0.25, 0.5, 0.75, 1:
+// Oro's own vowel set, A E I O U at formant 0, 0.25, 0.5, 0.75, 1:
 // three resonances each (Hz), their bandwidths (Hz) and levels (dB). Values
 // were set by ear on terrain tones, starting from the broad ranges acoustic
 // phonetics gives for an adult voice and leaning towards a clear, slightly
@@ -934,7 +934,7 @@ function airNormTable(sr, fs) {
 
 // ---------------------------------------------------------------------------
 
-export class OrographDSP {
+export class OroDSP {
   constructor(sampleRate) {
     this.sr = sampleRate > 0 ? sampleRate : 48000;
     this.quality = 'standard';

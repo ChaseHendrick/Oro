@@ -1,6 +1,6 @@
-# Orograph handoff
+# Oro handoff
 
-Updated 2026-10-03 for Orograph 2.0.0. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-03 for Oro 2.0.0. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -10,7 +10,7 @@ separate future features; they are outside the 2.0 expansion.
 
 ## 1. What this project is
 
-**Orograph** is a free, original wave terrain synthesizer by Chase Hendrick (GitHub
+**Oro** is a free, original wave terrain synthesizer by Chase Hendrick (GitHub
 `ChaseHendrick`). A closed loop (the "path") is traced over a 2D height map (the "terrain")
 once per oscillator cycle; the height under the moving point is the audio. The player sees
 the land as a 3D map and drags a dot to move the loop. It was inspired by the Conductive
@@ -19,7 +19,7 @@ from that product (or any other) was copied. See section 9.
 
 It ships as:
 
-* a web app: https://hendrickresearch.com/music/orograph/ (served by the owner's website);
+* a web app: https://hendrickresearch.com/music/oro/ (served by the owner's website);
 * desktop apps for Mac, Windows and Linux, plus a single offline HTML file, attached to
   GitHub Releases: https://github.com/ChaseHendrick/synth/releases/latest
 
@@ -47,7 +47,7 @@ The earlier release blocker is resolved. Checked on 2026-10-02:
 * Synth PR #9 is merged as `e47e6b4`; main's CI and Desktop apps workflows passed.
 * GitHub Release **v1.4.0** has Mac ARM64 and x64 DMG/ZIP, Windows installer and
   portable EXE, Linux AppImage/tar.gz, web ZIP and the offline HTML file.
-* Website PR #14 is merged. Its source declares Orograph **1.4.0**.
+* Website PR #14 is merged. Its source declares Oro **1.4.0**.
 * Synth PR #10 is merged as `058e03f`; main's CI and Desktop apps workflows passed.
   GitHub Release **v1.5.0** has all ten platform, web and offline assets uploaded.
   Website PR #15 is merged as `4ca638f`; the public app passed the generated-chord
@@ -94,7 +94,7 @@ node tests/e2e/app-smoke.cjs http://127.0.0.1:5190/   # browser smoke test
 * In the running app, `window.orograph` exposes `store`, `engine`, `visuals`, `music`,
   `midi`, `presets`, `tracks` and `ui` (for example `window.orograph.ui.openSettings('voice')`).
   The tests and the smoke script use these.
-* The synth engine (`src/dsp/dsp-core.js`, class `OrographDSP`) is pure JavaScript with no
+* The synth engine (`src/dsp/dsp-core.js`, class `OroDSP`) is pure JavaScript with no
   Web Audio dependency, so it can render offline in Node or a Worker.
   `tests/dsp/helpers.js` (`makeDSP`, `render`, `spectrum`) shows how.
 
@@ -146,8 +146,8 @@ Electron itself.
 
 ```bash
 git checkout -b claude/orograph-X.Y.Z origin/main
-node scripts/sync-orograph.mjs ../synth   # builds the synth checkout (run npm ci there first) and copies it to public/music/orograph/
-# edit src/music.ts: Orograph's softwareVersion (around line 16), and the feature text if needed
+node scripts/sync-orograph.mjs ../synth   # builds the synth checkout (run npm ci there first) and copies it to public/music/oro/
+# edit src/music.ts: Oro's softwareVersion (around line 16), and the feature text if needed
 npm ci && npm run build
 ```
 
@@ -199,13 +199,13 @@ structured data has `alternateName: "HendrickResearch"`. Do not invent other nam
    stable ids; `activeSeq(part)` and `patternPath(store, p)` in `src/core/params.js`.
 2. **"Cutting edge" feature.** The owner asked for cutting-edge technology. The proposal
    (agreed in principle, not built) is **Sound Match**, automatic inverse synthesis: give it
-   a sound (a file, a looper recording, or a sung note), and it searches Orograph's own
+   a sound (a file, a looper recording, or a sung note), and it searches Oro's own
    parameters for a patch that reproduces that timbre, keeping the result a playable,
    morphable patch (unlike Resample, which copies the sound into a terrain). Design notes:
    * Analyse a steady stretch of the target: pitch with the existing tracker
      (`src/pedals/pitch.js`), then the magnitudes of the first 32 to 64 harmonics in dB.
    * Score a candidate by rendering a short note at that pitch with the real engine
-     (`OrographDSP` in a Web Worker, as in `tests/dsp/helpers.js`), measuring the same
+     (`OroDSP` in a Web Worker, as in `tests/dsp/helpers.js`), measuring the same
      harmonics, and taking a log-spectral distance. Estimated from the CPU benchmark in
      the 1.3.0 PR (about 0.7% of one core per sounding oscillator), rendering 0.1 s of one
      voice costs under a millisecond, so hundreds of candidates per second should be

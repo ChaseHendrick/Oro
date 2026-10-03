@@ -1,6 +1,6 @@
-# Orograph research brief: wave-terrain synthesis and the Conductive Labs Terrain Synth
+# Oro research brief: wave-terrain synthesis and the Conductive Labs Terrain Synth
 
-Consolidated from 8 research sweeps and their fact-check passes. Date: 2026-10-02. Target: Orograph, the original clean-room wave-terrain synth in `/home/user/synth` (`package.json` name `orograph`, productName `Orograph`). It uses three.js visuals, an AudioWorklet engine and an Electron desktop build.
+Consolidated from 8 research sweeps and their fact-check passes. Date: 2026-10-02. Target: Oro, the original clean-room wave-terrain synth in `/home/user/synth` (`package.json` name `orograph`, productName `Oro`). It uses three.js visuals, an AudioWorklet engine and an Electron desktop build.
 
 **Evidence tags**
 - **[C]** Confirmed by an independent fact-check, or verbatim in a source that was read directly.
@@ -10,7 +10,7 @@ Consolidated from 8 research sweeps and their fact-check passes. Date: 2026-10-0
 - **[I]** Inference, either by a sweep or by me.
 - **[X]** Contradicted by a better source.
 - **[U]** Could not be verified.
-- **[R]** A fact about the Orograph repo, cited by file path.
+- **[R]** A fact about the Oro repo, cited by file path.
 - **[STD]** Standard mathematics, not taken from a sweep source.
 - **[REC]** Our design recommendation. This is not a fact about the product.
 
@@ -46,7 +46,7 @@ The WebSearch budget ran out partway through.
    - edges reflect;
    - sync is a phase multiplier, and phase distortion is uneven sample spacing;
    - anti-aliasing is a per-note FFT brick-wall filter recomputed on the fly, at 48 kHz.
-3. **Orograph already takes a different route** [R] (`src/dsp/dsp-core.js`, `docs/ARCHITECTURE.md`):
+3. **Oro already takes a different route** [R] (`src/dsp/dsp-core.js`, `docs/ARCHITECTURE.md`):
    - the terrain wraps as a torus instead of reflecting;
    - mip-mapped tables are chosen by traversal speed;
    - the oscillator runs at 2× oversampling with a 63-tap half-band decimator;
@@ -323,7 +323,7 @@ The WebSearch budget ran out partway through.
 
 - **Mitsuhashi's conditions** on [−1,1]²: (1) the function and its first partial derivatives are continuous; (2) the function is zero on the boundaries; (3) the first partials are zero on the boundaries [S] (https://vbn.aau.dk/ws/files/286179553/thesisReport.pdf). Roads condenses these to continuity plus zero edges [S] (https://doi.org/10.26686/wgtn.22123283).
 - **Why they matter.** Discontinuities "spray" harmonics across the spectrum and may be crossed several times per orbit. Zero edges make wrap-around seamless. These rules are easy with math terrains and hard with arbitrary tables, and continuity is not the same as interesting sound [S] (https://doi.org/10.26686/wgtn.22123283).
-- **Torus alternative.** A terrain that is periodic in both axes and wraps with `x − floor(x)` is also seamless under wrap. Csound does this [S] (https://raw.githubusercontent.com/csound/csound/master/Opcodes/wterrain2.c), and so does SuperCollider's WaveTerrain (inputs wrapped into 0..1) [S] (https://doi.org/sccode/Classes/WaveTerrain.html — see https://doc.sccode.org/Classes/WaveTerrain.html). Orograph's contract: "Terrain space is the unit torus … Every terrain table tiles seamlessly"; images and wavetables are mirror-tiled on their non-periodic axis [R] (`docs/ARCHITECTURE.md`).
+- **Torus alternative.** A terrain that is periodic in both axes and wraps with `x − floor(x)` is also seamless under wrap. Csound does this [S] (https://raw.githubusercontent.com/csound/csound/master/Opcodes/wterrain2.c), and so does SuperCollider's WaveTerrain (inputs wrapped into 0..1) [S] (https://doi.org/sccode/Classes/WaveTerrain.html — see https://doc.sccode.org/Classes/WaveTerrain.html). Oro's contract: "Terrain space is the unit torus … Every terrain table tiles seamlessly"; images and wavetables are mirror-tiled on their non-periodic axis [R] (`docs/ARCHITECTURE.md`).
 
 ### 3.4 Terrain families (with formulas)
 
@@ -343,7 +343,7 @@ The WebSearch budget ran out partway through.
 | Gradient noise / fBm | Perlin: a lattice of random gradients, dot products, smoothstep fade; octaves double frequency and halve amplitude | Tile by wrapping the lattice period. Cap the octave count, because each octave raises spatial bandwidth [I]. tmhglnd bases: perlin, simplex, cell, checker, fbm, multi, hetero, rigid, hybrid. | S https://en.wikipedia.org/wiki/Perlin_noise ; https://github.com/tmhglnd/wave-terrain-synthesis |
 | Images | Luminance or channel value is the height | Raw video/photos sound "buzzy: full of high frequencies and lacking in low harmonics". Dannenberg subtracts a temporally low-passed mean (AGC/DC). Sedes uses "an interpolating filter in order to smooth the terrain". | S https://ndownloader.figshare.com/files/12101831 ; https://www.dafx.de/paper-archive/2004/P_390.PDF |
 | Stacked wavetables | Rows are single cycles. A horizontal orbit gives classic wavetable playback; slow vertical motion scans frames; closed orbits read across frames. Plaits terrains 5–7 are 64 waves × 128 samples; Max `2d.wave~` splits a buffer into rows. | Rows should be phase-aligned (Carswell: non-aligned crossfades click) [I] | S https://docs.cycling74.com/reference/2d.wave~ ; Plaits source ; https://doi.org/10.26686/wgtn.22123283 |
-| Post-lookup shaping | Terrain plugin saturation `tanh(s·k·1.313)`, k = 1–16 | Orograph uses Lift/Fold after the lookup [R] | S https://github.com/aaronaanderson/Terrain/blob/main/Source/DSP/Terrain.h ; R `docs/ARCHITECTURE.md` |
+| Post-lookup shaping | Terrain plugin saturation `tanh(s·k·1.313)`, k = 1–16 | Oro uses Lift/Fold after the lookup [R] | S https://github.com/aaronaanderson/Terrain/blob/main/Source/DSP/Terrain.h ; R `docs/ARCHITECTURE.md` |
 
 **Image pre-processing recipe [I]** (combines Dannenberg, Sedes, James and Carswell above):
 1. Convert to luminance or the chosen channel.
@@ -355,7 +355,7 @@ The WebSearch budget ran out partway through.
 
 ### 3.5 Orbit families (exact parametric equations)
 
-Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale by (rₓ, r_y), translate by (cₓ, c_y). Orograph's transform: `ax = 2^(1.5·stretch)`, `ay = 2^(−1.5·stretch)`, `u = cX + px·cosθ − py·sinθ`, `v = cY + px·sinθ + py·cosθ`, wrapped mod 1 [R] (`docs/ARCHITECTURE.md`).
+Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale by (rₓ, r_y), translate by (cₓ, c_y). Oro's transform: `ax = 2^(1.5·stretch)`, `ay = 2^(−1.5·stretch)`, `u = cX + px·cosθ − py·sinθ`, `v = cY + px·sinθ + py·cosθ`, wrapped mod 1 [R] (`docs/ARCHITECTURE.md`).
 
 | Orbit | Equation | Closure / notes | Tag / source |
 |---|---|---|---|
@@ -392,7 +392,7 @@ Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale 
 - The perceived fundamental is the orbit's **closure period**, not its parameter period. See the rose, superformula and hypotrochoid rows in §3.5 [I].
 - Boundary handling:
   - Reflect (CL) [C].
-  - Wrap/torus: Csound, SuperCollider, Carswell, Orograph [S/R].
+  - Wrap/torus: Csound, SuperCollider, Carswell, Oro [S/R].
   - User choice of wrap or fold (Zabetian) [S].
   - Sigmoid / clip / wrap / fold ("Edges SIGM CLIP WRAP FOLD", Sente) [S] (https://github.com/ngc6720/sente).
   - Plaits keeps the circle inside the map by shrinking it as the offset grows: `x = pathₓ·(1−|o|) + o` [S] (Plaits source).
@@ -407,15 +407,15 @@ Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale 
 1. On a circle `u = cₓ + r cos θ`, a terrain component `cos(2πk·u)` expands as `e^{iz cos θ} = Σ iⁿ Jₙ(z) e^{inθ}` with `z = 2πkr`.
 2. So harmonic n has amplitude proportional to `|Jₙ(2πkr)|`, which is significant up to about `n ≈ 2πkr + 1`. Radius times spatial frequency behaves like an FM index.
 3. In general, the highest harmonic is about the spatial frequency (cycles per unit) times the path length per lap. Equivalently, the highest output frequency is about the spatial frequency times the traversal speed, where speed = f₀·L.
-4. Alias-free condition: `f₀·(K·L + 1) < fs/2`. Orograph's `mipLevel()` implements this: "A table of side S holds up to S/2 cycles per unit; traversed at `speed` units/s that is S/2 * speed Hz" [R] (`src/dsp/dsp-core.js`).
+4. Alias-free condition: `f₀·(K·L + 1) < fs/2`. Oro's `mipLevel()` implements this: "A table of side S holds up to S/2 cycles per unit; traversed at `speed` units/s that is S/2 * speed Hz" [R] (`src/dsp/dsp-core.js`).
 
 **Strategies**
 
 | # | Strategy | Who uses it | Pros | Cons | Source |
 |---|---|---|---|---|---|
 | A | Render one cycle → FFT → zero bins above `(fs/2)/f₀` → iFFT → play as a wavetable, recomputed on the fly | CL ("BW Limit for each note frequency / FFT / Brick-Wall Filter / iFFT … unless you want it!"; "you have to do it on the fly"; a switch turns aliasing off) | Exact band-limit. Terrain lookups are per table point, not per sample, so bicubic or analytic terrains become cheap [I]. | Audio-rate orbit modulation is quantised to the update rate. Fast changes can click from non-phase-aligned crossfades (Carswell's fix: circular cross-correlation alignment). Costs one FFT per voice per update. | C ADC slide 34 ; C https://www.youtube.com/watch?v=lCGDGtab6CE ; S https://doi.org/10.26686/wgtn.22123283 |
-| B | Per-sample oversampling + decimation | Terrain plugin (1/2/4/8/16×, JUCE half-band polyphase IIR; in its worst case 8× removed audible aliasing, 2× was the recommendation); Plaits (2×, decimate by averaging); tmhglnd tiers (2× none → 8× linear); Orograph (2× + 63-tap Kaiser half-band, flat to 0.2·fs₂, < −70 dB above 0.29·fs₂) | Handles audio-rate modulation of everything | Cost scales with the factor; residual aliasing at high f₀ | S https://github.com/aaronaanderson/Terrain ; S Plaits source ; S https://github.com/tmhglnd/wave-terrain-synthesis ; R `src/dsp/dsp-core.js` |
-| C | Terrain mip pyramid with the level chosen from traversal speed (trilinear) | Orograph | A 2D analogue of per-octave wavetables. Costs about 33% extra memory. | Blurs at high speed; needs a seam-aware build | S https://en.wikipedia.org/wiki/Mipmap ; R `src/dsp/dsp-core.js` |
+| B | Per-sample oversampling + decimation | Terrain plugin (1/2/4/8/16×, JUCE half-band polyphase IIR; in its worst case 8× removed audible aliasing, 2× was the recommendation); Plaits (2×, decimate by averaging); tmhglnd tiers (2× none → 8× linear); Oro (2× + 63-tap Kaiser half-band, flat to 0.2·fs₂, < −70 dB above 0.29·fs₂) | Handles audio-rate modulation of everything | Cost scales with the factor; residual aliasing at high f₀ | S https://github.com/aaronaanderson/Terrain ; S Plaits source ; S https://github.com/tmhglnd/wave-terrain-synthesis ; R `src/dsp/dsp-core.js` |
+| C | Terrain mip pyramid with the level chosen from traversal speed (trilinear) | Oro | A 2D analogue of per-octave wavetables. Costs about 33% extra memory. | Blurs at high speed; needs a seam-aware build | S https://en.wikipedia.org/wiki/Mipmap ; R `src/dsp/dsp-core.js` |
 | D | Pitch-dependent orbit shrink | Plaits | Free | Changes timbre with pitch | S Plaits source |
 | E | Intrinsically band-limited terrains (polynomial/Chebyshev on ellipses) | none found in practice | Exactly alias-free | A limited timbre family | I (§3.4) |
 | F | polyBLEP/BLAMP | Polygon oscillators | About 20 dB SNR gain at 25× lower cost than oversampling | Needs known discontinuity positions and sizes, so only for orbit corners or known seams | S https://www.dafx.de/paper-archive/2017/papers/DAFx17_paper_100.pdf |
@@ -440,14 +440,14 @@ Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale 
 - DC blocker: `y[n] = x[n] − x[n−1] + R·y[n−1]`, `H(z) = (1−z⁻¹)/(1−Rz⁻¹)`; "R=0.995 is good" at 44.1 kHz [S] (https://ccrma.stanford.edu/~jos/filters/DC_Blocker.html).
   - −3 dB is at about `(1−R)·fs/2π`, roughly 35 Hz for R = 0.995 at 44.1 kHz.
   - For about 5 Hz at 48 kHz, use `R ≈ 1 − 2π·5/48000 ≈ 0.99935` [I].
-  - Orograph primes the blocker per orbit ("Start the DC blocker as if it had always been running on this orbit") [R] (`src/dsp/dsp-core.js`).
+  - Oro primes the blocker per orbit ("Start the DC blocker as if it had always been running on this orbit") [R] (`src/dsp/dsp-core.js`).
 - Level depends on how wide a range of terrain values is actually read. Roads suggests peak-normalising the output [S] (https://doi.org/10.26686/wgtn.22123283). Plaits applies constant gains and soft clipping [S].
-- Orograph tables are normalised to `max|h| = 1` with mean 0 [R] (`docs/ARCHITECTURE.md`), and a full-scale voice sits at −6 dBFS [R] (`src/dsp/dsp-core.js`). An optional slow RMS compensation, local to the orbit, would even out loudness as the dot moves [I].
+- Oro tables are normalised to `max|h| = 1` with mean 0 [R] (`docs/ARCHITECTURE.md`), and a full-scale voice sits at −6 dBFS [R] (`src/dsp/dsp-core.js`). An optional slow RMS compensation, local to the orbit, would even out loudness as the dot moves [I].
 
 ### 3.9 Interpolation
 
 - **None (truncation).** Csound wterrain does this [S]. Truncating the index adds noise [S] (https://vbn.aau.dk/ws/files/286179553/thesisReport.pdf). Gold's 16×16 terrain gives the lo-fi flavour [S].
-- **Bilinear.** `f ≈ f₀₀(1−x)(1−y) + f₁₀x(1−y) + f₀₁(1−x)y + f₁₁xy`. It is linear along the axes and quadratic along other lines [S] (https://en.wikipedia.org/wiki/Bilinear_interpolation). Users: SuperCollider WaveTerrain, Carswell, Plaits user terrain (64×64 int8), deermichel, Image-In, Orograph [S/R]. The slope breaks at cell edges add HF content on coarse tables [I].
+- **Bilinear.** `f ≈ f₀₀(1−x)(1−y) + f₁₀x(1−y) + f₀₁(1−x)y + f₁₁xy`. It is linear along the axes and quadratic along other lines [S] (https://en.wikipedia.org/wiki/Bilinear_interpolation). Users: SuperCollider WaveTerrain, Carswell, Plaits user terrain (64×64 int8), deermichel, Image-In, Oro [S/R]. The slope breaks at cell edges add HF content on coarse tables [I].
 - **Bicubic (C¹), Keys kernel.** `W(x) = (a+2)|x|³ − (a+3)|x|² + 1` for |x| ≤ 1, and `a|x|³ − 5a|x|² + 8a|x| − 4a` for 1 < |x| < 2, with a = −0.5 (Catmull-Rom) [S] (https://en.wikipedia.org/wiki/Bicubic_interpolation). Sente appears to use a 4×4 Hermite kernel [I].
 - **Analytic, no table.** CL procedural terrains [C], the Terrain plugin, naogit and Zabetian gen~ [S].
 - **Table sizes in the field:**
@@ -457,15 +457,15 @@ Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale 
   - CL: 512×512 [C].
   - Carswell: 1024×1024 int16 (2 MB).
   - tmhglnd: 128–1024, default 512.
-  - Orograph: level 0 = 512 plus a mip chain [R].
+  - Oro: level 0 = 512 plus a mip chain [R].
 
   [S] https://doi.org/10.26686/wgtn.22123283 ; Plaits source ; https://github.com/tmhglnd/wave-terrain-synthesis.
 - **Memory.** 512² × float32 = 1 MiB, plus about 33% for mips. Two slots × 4 parts is about 10.7 MiB [I].
 
 ### 3.10 Smoothing and dynamic terrains
 
-- Smooth every orbit and terrain parameter per sample (Plaits ParameterInterpolator; exponential smoothing in the krj course) [S] (Plaits source ; https://mu.krj.st/assignments/osc_s.html). Orograph uses one-pole smoothing (4 ms) plus per-sample ramps, with wrap-aware smoothing for rotation and the dot [R] (`src/dsp/dsp-core.js`).
-- Frame-by-frame terrain updates cause a "stepped-like artifact". The fix is to buffer and interpolate frames [S] (http://speech.di.uoa.gr/ICMC-SMC-2014/images/VOL_2/1437.pdf). Orograph crossfades a new terrain over 30 ms [R].
+- Smooth every orbit and terrain parameter per sample (Plaits ParameterInterpolator; exponential smoothing in the krj course) [S] (Plaits source ; https://mu.krj.st/assignments/osc_s.html). Oro uses one-pole smoothing (4 ms) plus per-sample ramps, with wrap-aware smoothing for rotation and the dot [R] (`src/dsp/dsp-core.js`).
+- Frame-by-frame terrain updates cause a "stepped-like artifact". The fix is to buffer and interpolate frames [S] (http://speech.di.uoa.gr/ICMC-SMC-2014/images/VOL_2/1437.pdf). Oro crossfades a new terrain over 30 ms [R].
 - Moving the terrain under a fixed orbit can be "perceptually equivalent to parallel dynamic waveshaping and amplitude/frequency modulation" [S] (https://vbn.aau.dk/ws/files/286179553/thesisReport.pdf).
 
 ### 3.11 Polyphony patterns
@@ -507,7 +507,7 @@ Use φ ∈ [0,1) per note period. Then apply the transform: rotate by α, scale 
 ### 4.2 UX patterns (with prior art)
 
 1. **3D mesh with the orbit draped on its surface.** Terrain plugin history points, deermichel spheres, naogit ring, CL path and dot [S/C].
-2. **One source of truth for height.** The GPU shader evaluates the same terrain as the audio (Terrain plugin), or a shared JS module is used by both (naogit) [S]. Orograph shares the transform and warp formulas between audio and visuals [R] (`docs/ARCHITECTURE.md`).
+2. **One source of truth for height.** The GPU shader evaluates the same terrain as the audio (Terrain plugin), or a shared JS module is used by both (naogit) [S]. Oro shares the transform and warp formulas between audio and visuals [R] (`docs/ARCHITECTURE.md`).
 3. **Direct placement.**
    - Raycast a click onto the terrain to set the centre (three.js `webgl_geometry_terrain_raycast` pattern) [S] (https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/webgl_geometry_terrain_raycast.html).
    - Drag handles for centre, radii and angle (Image-In); drag a circle (dbRack); XY pads (deermichel).
@@ -546,9 +546,9 @@ Source: https://github.com/aaronaanderson/Terrain ; https://github.com/docb/dbRa
 | Physics: Rapier | @dimforge/rapier3d-compat 0.21.0 (2026-09-25) | The three.js manual calls it "Actively maintained". The `-compat` build embeds WASM as base64 (about 4.34 MB); call `await init()`. `ColliderDesc.heightfield(nrows, ncols, heights /* column-major */, scale)`. Not cross-platform deterministic by default. Do **not** use the three.js `RapierPhysics.js` addon: it loads from `cdn.skypack.dev` at runtime. | https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/README.md ; https://raw.githubusercontent.com/mrdoob/three.js/dev/manual/pages/physics.html ; https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/physics/RapierPhysics.js |
 | Other physics | jolt-physics 1.1.0; cannon-es 0.20.0 (2022); ammo.js unmaintained | cannon-es: "Apparently no longer maintained". Jolt multithread builds need SharedArrayBuffer [I]. | https://registry.npmjs.org/jolt-physics ; physics manual |
 | AudioWorklet | Chrome 66 / Firefox 76 / Safari 14.1 | 128-frame quanta. Parameters default to a-rate. Return `true` from `process()` (Chrome). `processorOptions` is structured-cloned. Use `port.postMessage` with transfer lists. About a 3 ms budget; avoid garbage. There is **no built-in oversampling** except WaveShaperNode's 2×/4× (1D only). | https://raw.githubusercontent.com/mdn/content/main/files/en-us/web/api/web_audio_api/using_audioworklet/index.md ; https://developer.chrome.com/blog/audio-worklet-design-pattern ; https://raw.githubusercontent.com/mdn/content/main/files/en-us/web/api/waveshapernode/oversample/index.md |
-| SharedArrayBuffer | n/a | Needs a secure context and cross-origin isolation (COOP + COEP). Orograph's worklet protocol uses `postMessage` plus transfers, so it does not need SAB [R]. | https://raw.githubusercontent.com/mdn/content/main/files/en-us/web/javascript/reference/global_objects/sharedarraybuffer/index.md ; R `docs/ARCHITECTURE.md` |
+| SharedArrayBuffer | n/a | Needs a secure context and cross-origin isolation (COOP + COEP). Oro's worklet protocol uses `postMessage` plus transfers, so it does not need SAB [R]. | https://raw.githubusercontent.com/mdn/content/main/files/en-us/web/javascript/reference/global_objects/sharedarraybuffer/index.md ; R `docs/ARCHITECTURE.md` |
 | Worklet from file:// | tested | **Chromium 153:** Blob URL and relative-path `addModule` FAIL; a `data:` URL WORKS; the context stays suspended until a gesture. **Firefox 155:** all three work. **Electron 44.5.1:** all three work, and the context auto-runs. Chromium will not run an external `<script type=module src>` from file://; inline module scripts do run. | [E] /tmp/claude-0/-home-user-synth/6c571a55-a472-58a0-beeb-17dd4aa9ae64/scratchpad/stack/wtest/ |
-| Tone.js | stable 15.1.22 (2025-04-27); `next` 15.5.44 | Stable is about 18 months old and adds a dependency (standardized-audio-context). Only useful for transport; Orograph has its own (`src/music/transport.js`) [R]. | https://registry.npmjs.org/tone |
+| Tone.js | stable 15.1.22 (2025-04-27); `next` 15.5.44 | Stable is about 18 months old and adds a dependency (standardized-audio-context). Only useful for transport; Oro has its own (`src/music/transport.js`) [R]. | https://registry.npmjs.org/tone |
 | Web MIDI | Chrome 43, Edge 79; Firefox 108+ via a site-permission add-on; **no Safari** | Electron permission strings are `'midi'` and `'midiSysex'`; Electron auto-approves permissions unless a handler is set. WEBMIDI.js 3.3.1. | BCD data.json ; https://raw.githubusercontent.com/electron/electron/main/docs/api/session.md ; https://registry.npmjs.org/webmidi |
 | Vite | 8.3.2 (2026-10-01) | Rolldown + Oxc. Node `^20.19.0 \|\| >=22.12.0`. `base: './'` for file:// and sub-paths. `?raw`, `?url`, `?worker&inline`. Default target Chrome 111 / Firefox 114 / Safari 16.4. | https://registry.npmjs.org/vite ; https://raw.githubusercontent.com/vitejs/vite/main/docs/guide/migration.md |
 | vite-plugin-singlefile | 2.3.3 | README: "Worklets … not currently supported". Workaround: import the worklet `?raw` and load it as `data:text/javascript;base64,…` (tested OK in Chromium 153 and Firefox 155 from file://) [E]. Files in `public/` are not inlined. | https://cdn.jsdelivr.net/npm/vite-plugin-singlefile@2.3.3/README.md |
@@ -568,15 +568,15 @@ Source: https://github.com/aaronaanderson/Terrain ; https://github.com/docb/dbRa
 
 ---
 
-## 6. Recommended original feature spec (Orograph)
+## 6. Recommended original feature spec (Oro)
 
 All rows in this section are [REC] unless tagged [R]. Existing values come from `src/core/params.js` and `docs/ARCHITECTURE.md`.
 
 ### 6.1 Deliberate differences, to stay original
 
-| Area | Conductive Labs fact | Orograph choice | Status |
+| Area | Conductive Labs fact | Oro choice | Status |
 |---|---|---|---|
-| Name and trade dress | "Terrain Synth" / "WTS"; contour-line faceplate artwork [C/S] | "Orograph"; own icon (contour mountain, orbit, glowing dot) | R `package.json`, `README.md` |
+| Name and trade dress | "Terrain Synth" / "WTS"; contour-line faceplate artwork [C/S] | "Oro"; own icon (contour mountain, orbit, glowing dot) | R `package.json`, `README.md` |
 | Terrain names | Egg Crate, Drip Drop, Catmull-Rom, Checkered, Harmonic, Wav Sweep, Warp Check, Spines, Cris-Cross [C] | Swell, Ripple, Bessel, Dunes, Ridge, Massif, Craters, Terraces, Cells, Canyon, Spectra, Lattice, Vortex, Imported. Do not add CL names. | R `src/dsp/catalog.js` |
 | Path names and controls | "Rose 3 Petals", "Cardioid x2"; SIZE, W:H, ROTATE, POS X/Y, MANGLE, O SYNC, WIN & MIR, PD TYPE [C] | Ellipse, Lissajous, Rose, Polygon, Star, Spiral, Scan, Spirograph, Figure 8, Epicycloid, Superformula, Scribble, each with generic Order + Shape controls; Size, Stretch, Rotate, Spin, Dot X/Y. New controls get our own names (Laps, Pace, below). | R `src/dsp/catalog.js`, `params.js` |
 | Library counts | "17 math terrains", "18 paths" [C] | Never market matching counts | REC |
@@ -766,7 +766,7 @@ All rows in this section are [REC] unless tagged [R]. Existing values come from 
 2. **CL details** that are only in the blocked Manual and User Guide PDFs: full names of the 17 terrains and 18 paths; exact ranges (SIZE span, ROTATE span, envelope maxima, LFO shape list); mirror/window semantics; PD algorithms; sequencer step count. None of these are needed for clean-room work. Do not try to obtain them by bypassing protections.
 3. **CL band-limiting specifics.** Does the FFT update per block or per cycle? How does it handle audio-rate path modulation? What DC handling and image pre-filtering does it use? [U]
 4. **Is 48 kHz fixed** on CL hardware? It is confirmed only from the talk [C]. For us: support whatever rate the AudioContext runs at (44.1/48/96 kHz) and validate the DC-blocker R and mip bias per rate [REC].
-5. **Orograph-specific checks:**
+5. **Oro-specific checks:**
    - Does `src/dsp/paths.js` already use arc-length traversal for all shapes?
    - Is rose closure handled for odd orders (risk of an octave error, §3.5)?
    - Does the superformula path close for odd symmetry?

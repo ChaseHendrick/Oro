@@ -1,4 +1,4 @@
-// Deep end-to-end bug hunt for the whole Orograph app, driven like a demanding
+// Deep end-to-end bug hunt for the whole Oro app, driven like a demanding
 // player would drive it, in headless Chromium.
 //
 //   node tests/e2e/app-deep.cjs                  starts `npx vite --port 5197 --strictPort` itself

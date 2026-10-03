@@ -349,7 +349,7 @@ function openBrowser(ctx, anchor) {
   scope.on(exportBtn, 'click', () => {
     try {
       const blob = presets.exportJSON('all');
-      downloadBlob(blob, 'orograph-presets.json');
+      downloadBlob(blob, 'oro-presets.json');
       ctx.toast('Exported your patches and scenes', { kind: 'success' });
     } catch (err) {
       console.warn('[ui] export failed', err);
@@ -369,7 +369,7 @@ function openBrowser(ctx, anchor) {
     } catch (err) {
       console.warn('[ui] import failed', err);
       const msg = String((err && err.message) || '');
-      const friendly = msg && msg.length < 140 && !/JSON|Unexpected|undefined|null|cannot read/i.test(msg) ? msg : 'That file does not look like an Orograph preset file.';
+      const friendly = msg && msg.length < 140 && !/JSON|Unexpected|undefined|null|cannot read/i.test(msg) ? msg : 'That file does not look like an Oro preset file.';
       ctx.toast('Import did not work', { kind: 'error', detail: friendly });
     }
   });

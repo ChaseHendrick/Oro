@@ -20,7 +20,7 @@ const ISSUES_URL = `${REPO_URL}/issues`;
 //               requestMIDIAccess() fail with NotAllowedError). So SysEx must be
 //               granted for MIDI to work at all. That is acceptable because only our
 //               own bundled code runs on this origin (the CSP blocks foreign script),
-//               and Orograph itself never sends SysEx.
+//               and Oro itself never sends SysEx.
 //   fullscreen  the HTML Fullscreen API, in case the UI offers a full-screen view;
 //               denying it would make such a button silently fail.
 //   pointerLock lets knob drags keep going past the screen edge.

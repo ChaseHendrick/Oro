@@ -48,7 +48,7 @@ export function createVoiceSettings(ctx) {
   root.appendChild(h('div', { class: 'callout' }, h('span', { html: icon('info') }), h('span', null, MIC_WHY)));
 
   if (!rig || !rig.supported) {
-    root.appendChild(h('p', { class: 'settings-note' }, 'Voice input needs Web Audio, which is not running in this browser. Everything else in Orograph works as usual.'));
+    root.appendChild(h('p', { class: 'settings-note' }, 'Voice input needs Web Audio, which is not running in this browser. Everything else in Oro works as usual.'));
     return { el: root, dispose };
   }
 

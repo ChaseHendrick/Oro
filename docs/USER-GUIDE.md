@@ -1,13 +1,13 @@
-# Orograph user guide
+# Oro user guide
 
-Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
+Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
 going on under the hood. It describes version 2.3.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
 
-![Orograph in the dark theme: the 3D map with the dot and its orbit, the Map panel on the right, the Sound tab below](screenshots/orograph-dark.webp)
+![Oro in the dark theme: the 3D map with the dot and its orbit, the Map panel on the right, the Sound tab below](screenshots/orograph-dark.webp)
 
 **Contents**
 
@@ -64,7 +64,7 @@ sample     s(t)  = shape( height(u, v) )               shape = Lift and Fold
   wavetable, except that the "table" is two-dimensional and you can wander through it in
   any direction.
 
-A few facts about Orograph's version of the technique:
+A few facts about Oro's version of the technique:
 
 * **The map wraps.** The landscape is a torus: walk off the right edge and you come back
   on the left, walk off the top and you come back at the bottom. Every terrain is built
@@ -76,7 +76,7 @@ A few facts about Orograph's version of the technique:
 * **Two terrains at once.** Each part holds Terrain A and Terrain B and blends them with
   Morph: `h = (1 − morph) · A + morph · B`.
 * **Aliasing is handled.** A loop that crosses a lot of detail at a high pitch can produce
-  harmonics above what the sample rate can carry, which fold back as harsh tones. Orograph
+  harmonics above what the sample rate can carry, which fold back as harsh tones. Oro
   runs its oscillator at twice the output sample rate by default, reads each terrain from
   a pre-smoothed copy (a "mip level") chosen from how fast the point is travelling, and
   filters the result back down. The [quality modes](#audio-quality) let you trade
@@ -85,15 +85,15 @@ A few facts about Orograph's version of the technique:
 The technique comes from computer music research around 1978 to 1986 (Rich Gold, Yasuhiro
 Mitsuhashi, Alberto Borgonovo and Goffredo Haus). The [research brief](RESEARCH.md) has
 the history, the maths of every terrain and path family, and the reasoning behind
-Orograph's design.
+Oro's design.
 
 ---
 
 ## 2. Your first five minutes
 
-1. **Open Orograph.** In a browser you will see a **Start** button: browsers only let a
+1. **Open Oro.** In a browser you will see a **Start** button: browsers only let a
    page make sound after you click or press a key, so click it (or press almost any key).
-   The first time, Orograph loads a factory scene called **First Light** with four parts
+   The first time, Oro loads a factory scene called **First Light** with four parts
    ready to play.
 2. **Press Space** (or the Play button in the top bar). The parts play their sequencer
    patterns together. Press Space again to stop.
@@ -112,7 +112,7 @@ Orograph's design.
    **Roll**, then drag the dot and let go. It becomes a marble that rolls downhill, and the
    sound follows it.
 
-Orograph saves your session in the browser (or the desktop app) as you go, so next time it
+Oro saves your session in the browser (or the desktop app) as you go, so next time it
 opens where you left off.
 
 ---
@@ -206,7 +206,7 @@ looking at.
 The readout at the bottom right shows the dot's position and, while sound is running, the
 height of the land under it (**h**, from −1 to +1).
 
-If your computer cannot run the 3D view (WebGL switched off or unavailable), Orograph shows
+If your computer cannot run the 3D view (WebGL switched off or unavailable), Oro shows
 a flat, top-down map in its place. Click or drag on it to move the dot. Everything else
 works as usual, except placing Tour waypoints, which needs the 3D map.
 
@@ -315,7 +315,7 @@ saved with its patch and remembers its formula, so you can reopen and edit it.
 Click the small import button next to a slot (or drop a file straight onto the slot) to
 load your own land into it.
 
-**Images become height maps.** Bright is high, dark is low. Before importing, Orograph asks:
+**Images become height maps.** Bright is high, dark is low. Before importing, Oro asks:
 
 * **Height from**: **Brightness**, or a single colour channel (**Red**, **Green**, **Blue**),
   which is handy for maps that store height in one channel.
@@ -327,7 +327,7 @@ load your own land into it.
 Images are centre-cropped to a square and reduced to 512 by 512 points.
 
 **16-bit height maps (DEMs).** Real elevation data, such as a digital elevation model
-exported as a 16-bit greyscale PNG, is read by Orograph's own PNG decoder at full 16-bit
+exported as a 16-bit greyscale PNG, is read by Oro's own PNG decoder at full 16-bit
 precision instead of through the browser (which would cut it to 8 bits and add colour
 management). Grey values are treated as heights, not as light. This keeps gentle slopes
 smooth instead of turning them into tiny terraces, so real mountains and coastlines become
@@ -335,7 +335,7 @@ playable land.
 
 **Audio imports.** Choose **Recording** to map a complete recording across the terrain,
 or **Wavetable** for single-cycle frames. WAV decoding is sample-exact; other formats use
-the browser audio decoder. In Wavetable mode, Orograph splits a WAV into
+the browser audio decoder. In Wavetable mode, Oro splits a WAV into
 single-cycle frames: it uses the frame size stored in the file if there is one (a `clm`
 chunk, as many wavetable editors write), otherwise multiples of 2048 samples, then 1024,
 512 or 256, and failing all of those it treats the file as one cycle. Each frame is
@@ -408,7 +408,7 @@ u  = dotX + x cos θ − y sin θ,   v = dotY + x sin θ + y cos θ     (wrapped
 ### How the point travels: Laps, Pace and Travel
 
 These three change *when* the point is where along the loop, without changing the loop's
-shape. They are the most "synth-like" controls in Orograph.
+shape. They are the most "synth-like" controls in Oro.
 
 **Laps** (1 to 8) traces the loop that many times per cycle and restarts it at the start of
 every cycle. At whole numbers the waveform simply repeats (2 laps sound an octave up, 3 an
@@ -500,7 +500,7 @@ The **Unison** card shapes the stacked copies:
   **Random** (new positions for every note).
 * **Stack** transposes some copies: **+12**, **±12**, **+7**, **+12 +19** or **+12 +24**
   semitones, cycled across the copies; the centre copy stays at the note.
-* **Map spread** is Orograph's own: each copy reads the land at its own spot around the
+* **Map spread** is Oro's own: each copy reads the land at its own spot around the
   dot (up to a quarter of a tile away), so the copies differ in tone and not only in
   pitch. It turns a stack into a chorus of neighbouring landscapes.
 
@@ -809,7 +809,7 @@ The patch browser sits in the top bar:
   patches and scenes between computers as a JSON file.
 
 Your own patches and scenes are marked **User** and can be deleted (click the bin twice).
-Factory ones cannot. Orograph comes with more than fifty factory patches in ten categories
+Factory ones cannot. Oro comes with more than fifty factory patches in ten categories
 (Bass, Lead, Pad, Keys, Pluck, Bell, Texture, Drone, FX and Arp) and seven factory scenes
 (First Light, Glass Archipelago, Neon Coastline, Isoline Pulse, Paper Maps, Continental
 Shelf and Signal Fault).
@@ -838,7 +838,7 @@ The **Master** section:
 | Effect | Controls |
 |---|---|
 | **Delay** | A stereo ping-pong delay synced to the tempo. **Time** (1/2 down to 1/32, including dotted and triplet values), **Feedback**, **Tone** (dark and full to thin and bright) and **Return**. Changing the time bends the pitch smoothly, like a tape delay, instead of clicking. |
-| **Reverb** | A convolution reverb whose impulse response Orograph generates itself. **Size**, **Damp** (how quickly the highs die away) and **Return**. |
+| **Reverb** | A convolution reverb whose impulse response Oro generates itself. **Size**, **Damp** (how quickly the highs die away) and **Return**. |
 | **Colour** | **Chorus** (on the whole mix) and **Warmth** (soft saturation that keeps the loudness about the same as you turn it up). |
 | **Volume** | The master fader, with a stereo peak meter. |
 | **Ceiling** | The output limiter's ceiling, from −6 dB to 0 dB (default −0.3 dB). Peaks never go above it, and quieter material passes at the same level whatever the ceiling. |
@@ -853,7 +853,7 @@ output. The limiter is always on, so the output never goes above the ceiling.
 ### Record
 
 Press **R** or the red record button in the top bar to start recording, and again to stop.
-Orograph saves a **24-bit stereo WAV** of exactly what you hear (after the limiter) to your
+Oro saves a **24-bit stereo WAV** of exactly what you hear (after the limiter) to your
 downloads folder, named with the date and time, for example `orograph-20261002-143015.wav`.
 A recording stops and saves by itself after 20 minutes.
 
@@ -902,7 +902,7 @@ closes the loop at the next whole bar instead. When the transport is stopped, re
 starts at once and the next press closes the loop, at any length.
 
 **The transport.** Stopping the transport stops the loop, and pressing Play starts it again
-from its beginning on bar 1, in time with the sequencers. When Orograph follows an external
+from its beginning on bar 1, in time with the sequencers. When Oro follows an external
 MIDI clock, the clock's start and stop do the same. Changing the tempo afterwards does not
 stretch a loop that is already recorded.
 
@@ -981,7 +981,7 @@ Open **Settings** with the gear button or the **,** key.
 
 * **Theme**: **System** (follow your computer's light or dark setting), **Dark** or
   **Light**. The theme button in the top bar cycles through the same three. When
-  Orograph runs on hendrickresearch.com and you have not chosen a theme in Orograph yet, it
+  Oro runs on hendrickresearch.com and you have not chosen a theme in Oro yet, it
   follows the website's own Appearance setting.
 * **Reduce motion**: calms animations. System follows your computer's setting. The map always eases into shape changes and its glow never pulses fast (so fast modulation cannot strobe the screen); with Reduce motion on it eases more and the glow barely moves.
 * **Show tips**: hover hints and the map hint.
@@ -1024,7 +1024,7 @@ computer, not part of a patch.
 
 ### Voice (1.4)
 
-**Settings > Voice** brings a microphone into Orograph: a laptop's own microphone, a USB
+**Settings > Voice** brings a microphone into Oro: a laptop's own microphone, a USB
 microphone, or a microphone on an audio interface. Your voice joins the master next to the
 tracks, so you hear it with the synth, the delay and reverb can colour it, the looper records
 and overdubs it, and Resample can turn a vocal loop into a terrain. Nothing is opened until
@@ -1038,7 +1038,7 @@ simulated signals in software, not yet with real microphones.
 * **Input** picks the microphone. Names appear once the browser may use the microphone;
   press **Refresh** after plugging one in.
 * By default the browser's voice-call processing (echo cancellation, noise suppression,
-  auto gain) is switched off, so you hear exactly what the microphone picks up. Orograph asks
+  auto gain) is switched off, so you hear exactly what the microphone picks up. Oro asks
   for the audio rate it runs at (48 kHz on most computers) and 24-bit where the device offers
   it, so the browser does not resample. The facts under the controls show what the browser
   actually gave.
@@ -1114,7 +1114,7 @@ localhost, or the offline file). Safari does not support Web MIDI. In a browser,
 **Connect MIDI** in Settings > MIDI & MPC and allow access when asked; the desktop app does
 not need to ask.
 
-### What Orograph understands
+### What Oro understands
 
 * **Notes** and **velocity**, with a **velocity curve** (Soft, Linear, Hard).
 * **Pitch bend**, **mod wheel** (CC 1), **sustain** (CC 64), **channel pressure** and
@@ -1132,7 +1132,7 @@ not need to ask.
 
 * **Omni**: any channel plays one part (the selected part, or a part you choose).
 * **Multi**: each part listens on its own channel.
-* **Send notes** plays another instrument (such as the MPC) from Orograph's keyboard,
+* **Send notes** plays another instrument (such as the MPC) from Oro's keyboard,
   sequencer and arpeggiator, with an output channel per part.
 * **MPC pads**: **Notes** plays the pitches the pads send; **Scale** maps the pads onto the
   current key and scale, starting from a **base note** (press **Learn** and hit your lowest
@@ -1155,9 +1155,9 @@ Cutoff, Reso, Drive, Env Amt, Reverb send and Delay send, for the selected part.
 
 Only one device should lead the tempo. Turning on one of these turns the other off:
 
-* **Follow MPC clock**: the MPC sets the tempo and starts and stops Orograph. The tempo
+* **Follow MPC clock**: the MPC sets the tempo and starts and stops Oro. The tempo
   shows an **EXT** badge.
-* **Send clock to MPC**: Orograph sets the tempo. On the MPC, set Sync Receive to MIDI
+* **Send clock to MPC**: Oro sets the tempo. On the MPC, set Sync Receive to MIDI
   Clock.
 
 ### Akai MPC XL in brief
@@ -1168,14 +1168,14 @@ version:
 1. Connect the MPC XL's **USB-C** port to the computer with a cable that carries data. Keep
    the MPC in **Standalone** mode. On Windows, if no MIDI port appears, install the MPC XL
    driver from Akai's inMusic Software Center.
-2. In Orograph, **Connect MIDI**. Ports whose name contains "MPC" are recognised
-   automatically and Orograph prefers Port 1.
-3. **To play Orograph from the pads**: on the MPC, enable USB MIDI Port 1 under Menu >
+2. In Oro, **Connect MIDI**. Ports whose name contains "MPC" are recognised
+   automatically and Oro prefers Port 1.
+3. **To play Oro from the pads**: on the MPC, enable USB MIDI Port 1 under Menu >
    Preferences > MIDI / Sync, make a MIDI track whose output is USB MIDI Port 1, and play.
-   Choose **Notes** or **Scale** for the pads in Orograph.
+   Choose **Notes** or **Scale** for the pads in Oro.
 4. **To map the Q-Links**: run the **Q-Link learn** wizard.
-5. **To play the MPC from Orograph**: set a track's MIDI input on the MPC to USB MIDI Port 1
-   on a specific channel with monitoring on, then turn on **Send notes** in Orograph.
+5. **To play the MPC from Oro**: set a track's MIDI input on the MPC to USB MIDI Port 1
+   on a specific channel with monitoring on, then turn on **Send notes** in Oro.
 6. **Tempo**: use either Follow MPC clock or Send clock to MPC, never both.
 
 None of this has been tested on a physical MPC XL yet. The steps come from Akai's
@@ -1189,7 +1189,7 @@ what is being sent.
 Version 1.1 can send parts out to a pedalboard and bring the pedals back in. It follows the
 pedal and MPC XL manuals but **has not been tested with real pedals or a real MPC XL yet**,
 so start with the send low and check each step. Everything lives in **Settings > Pedals**;
-with the pedal send off, Orograph sounds exactly as before.
+with the pedal send off, Oro sounds exactly as before.
 
 **Pedal send.** Switch on **Pedal send**, pick an **Output device** with four or more
 outputs (for example the MPC XL over USB) and choose which outputs carry the **Main mix**
@@ -1201,10 +1201,10 @@ outputs, or the browser cannot choose an output, the send stays off and the pane
 Choosing an output works in Chrome, Edge and the desktop app.
 
 **Pedal return.** Switch on **Pedal return** and pick the **Input** the pedals come back on.
-The browser asks once for permission to use it. Orograph turns off echo cancellation, noise
+The browser asks once for permission to use it. Oro turns off echo cancellation, noise
 suppression and automatic gain so the pedals sound as they are. The return joins the master
 mix, and **Return to delay** and **Return to reverb** send it into the effects; it never
-goes back into the pedal send. If it starts to feed back, Orograph mutes it and shows an
+goes back into the pedal send. If it starts to feed back, Oro mutes it and shows an
 **Unmute return** button. With **Mono return + guitar**, input channel 1 is the pedals and
 channel 2 is your guitar, which drives the **Guitar Level** Links source.
 
@@ -1233,13 +1233,13 @@ pitch harder to find). Nothing here has been tried with a real guitar yet.
   range becomes a new note. With this off, or with Bend at 0, a bend steps from note to
   note instead.
 * **Capture** records one held note (about three seconds) and turns it into a wavetable
-  terrain: Orograph finds the note's pitch, cuts one cycle at a time from the pick attack
+  terrain: Oro finds the note's pitch, cuts one cycle at a time from the pick attack
   to the decay and lays them out along one axis of the map. Choose **Slot A** or **Slot
   B**, press **Capture**, then pick one note and let it ring. The bar shows the progress,
   then the pane shows the note and frequency it found, and the terrain is stored and
   selected in that slot of the guitar's part (the selected part when Part is "Selected
   part"), just like an imported WAV. If there is no steady pitch (a chord, a muted string,
-  silence) Orograph says so and changes nothing.
+  silence) Oro says so and changes nothing.
 
 **Latency.** **Ping** plays a short chirp on the send with the music muted and times how long
 it takes to come back (expect tens of milliseconds). Bypass delay, reverb and looper pedals
@@ -1266,7 +1266,7 @@ change rate while running, so a new choice applies after a restart: press **Relo
 running at its own rate.
 
 **Pedal MIDI.** Switch on the pedals you have (OBNE Purr-ting, Chase Bliss Lost + Found,
-Cornerstone Nucleo, Walrus Xero) and set each one's MIDI channel; Orograph warns when two
+Cornerstone Nucleo, Walrus Xero) and set each one's MIDI channel; Oro warns when two
 pedals on the same cable share a channel. Each card has **Effect on**, **Bypass**, **Tap
 tempo** (four taps at the song tempo) and **Send preset** where the pedal supports them.
 Messages go to the output chosen in MIDI & MPC unless you pick another one here. Values
@@ -1282,7 +1282,7 @@ and **Max** set the range sent to the pedal (set Min above Max to turn it upside
 **Curve** shapes it (Linear, Soft, Hard). With **LFO** you also get the **Shape** (sine,
 triangle, saw, square, random), the rate in **Hz** or synced to the **Tempo** (from 1/16
 note to 8 bars per cycle, following the song tempo or external clock), and **Depth**, how
-much of the range it sweeps around the middle. Orograph only sends a value when it changes,
+much of the range it sweeps around the middle. Oro only sends a value when it changes,
 and never more than about 100 messages a second per pedal, so a fast LFO cannot crowd out a
 tap or a preset change. If both slots pick the same control, the first one wins.
 
@@ -1428,7 +1428,7 @@ its speakers playing, **Mic Cleanup** removes much of the echo.
 * Try another USB cable: some only carry power.
 * For an MPC, see the troubleshooting list in [MPC-XL.md](MPC-XL.md).
 
-**Stuck notes.** Press **Panic** (Settings > Audio or MIDI). It stops every note in Orograph
+**Stuck notes.** Press **Panic** (Settings > Audio or MIDI). It stops every note in Oro
 and sends sustain off, all sound off and all notes off to the MIDI output.
 
 **An import did not work.** Use a PNG or JPEG image, or a WAV file, under 25 MB. Very
@@ -1438,7 +1438,7 @@ detailed photos make noisy, harsh land: raise **Smoothing**.
 you use. A different browser, a private window, or clearing site data starts empty. Use
 **Export** for backups.
 
-**The desktop app will not open the first time.** Orograph is not signed with a paid
+**The desktop app will not open the first time.** Oro is not signed with a paid
 certificate, so macOS and Windows ask you to confirm once. The [README](../README.md#download)
 explains each system step by step.
 
@@ -1446,11 +1446,11 @@ explains each system step by step.
 
 ## 18. Credits and clean-room statement
 
-**Clean room.** Orograph is an independent implementation of wave terrain synthesis, written
+**Clean room.** Oro is an independent implementation of wave terrain synthesis, written
 from first principles and published mathematics. No code, graphics, sounds or presets from
 any other product were used. It was inspired by the idea behind the Conductive Labs Terrain
-Synth. Terrain Synth is a trademark of Conductive Labs; Orograph is not affiliated with,
-endorsed by, or connected to Conductive Labs. Orograph's terrains, patches, scenes, icons
+Synth. Terrain Synth is a trademark of Conductive Labs; Oro is not affiliated with,
+endorsed by, or connected to Conductive Labs. Oro's terrains, patches, scenes, icons
 and diagrams were made for it. The paths are classic mathematical curves, including Johan
 Gielis's superformula.
 
@@ -1479,7 +1479,7 @@ The Lorenz system is from E. N. Lorenz, "Deterministic Nonperiodic Flow" (1963),
 neuron model from A. L. Hodgkin and A. F. Huxley (1952).
 
 **Made by** Chase ([Hendrick Research](https://www.hendrickresearch.com)), written with the
-help of Claude Code. Orograph is free and open source under the [MIT licence](../LICENSE).
+help of Claude Code. Oro is free and open source under the [MIT licence](../LICENSE).
 
 
 ## 19. Using the expanded 2.0 controls
@@ -1600,7 +1600,7 @@ them. Older releases need one manual upgrade to a copy that contains this update
 
 The Windows installer and Linux AppImage can download an update inside the app. Choose
 **Download update**, or enable **Download updates automatically**. Installation waits for
-**Restart and install**; Orograph first waits for the current session and preset library
+**Restart and install**; Oro first waits for the current session and preset library
 to be saved. A failed save keeps the app open. It never restarts in the middle of playing
 or installs an update simply because you quit.
 
@@ -1610,7 +1610,7 @@ manual path. Browser users get the hosted version when they reload the site; an 
 HTML copy is updated by downloading the new file. Saved patches and scenes remain in
 their existing storage. Export your library if you also move to another browser or computer.
 
-Updates come from the public Orograph GitHub releases. The supported desktop installer
+Updates come from the public Oro GitHub releases. The supported desktop installer
 verifies downloaded artifact checksums. Release publishing includes the update metadata
 and hashes; bumping the version and completing the release routine makes the next release
 available to existing copies with checks enabled. This does not require an account.
@@ -1618,7 +1618,7 @@ available to existing copies with checks enabled. This does not require an accou
 
 ### Browser performance
 
-Orograph reuses minimap sampling work while terrains morph and uses a fast colour
+Oro reuses minimap sampling work while terrains morph and uses a fast colour
 conversion lookup. This reduces rendering overhead while keeping the source resolution,
 audio settings and uncapped animation. In one measured Chrome scene, render-loop
 JavaScript time fell from 3.51 ms to 1.39 ms per frame at about 60 fps. Results depend on

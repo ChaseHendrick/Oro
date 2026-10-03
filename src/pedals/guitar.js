@@ -1,4 +1,4 @@
-// Guitar input for Orograph (docs/PEDALS.md, "Guitar as modulation / notes / terrain").
+// Guitar input for Oro (docs/PEDALS.md, "Guitar as modulation / notes / terrain").
 //
 //   createGuitarInput(ctx, sourceNode)  envelope follower + pitch tracker on the
 //       input, in the 'orograph-guitar' AudioWorklet (guitar-worklet.js) when it is
@@ -140,7 +140,7 @@ export function captureToWavetable(samples, sampleRate, {
     if (r.clarity >= 0.85 && r.period > 0) est.push({ period: r.period, clarity: r.clarity });
   }
   if (est.length < 2) {
-    return { ok: false, reason: 'Orograph could not find a steady pitch. Hold one clear note (no chords) for about a second, then try Capture again.' };
+    return { ok: false, reason: 'Oro could not find a steady pitch. Hold one clear note (no chords) for about a second, then try Capture again.' };
   }
   est.sort((p, q) => p.period - q.period);
   const P = est[est.length >> 1].period;

@@ -1,6 +1,6 @@
-# Orograph architecture and module contracts
+# Oro architecture and module contracts
 
-Orograph is an original, clean-room wave terrain synthesizer. A closed **path**
+Oro is an original, clean-room wave terrain synthesizer. A closed **path**
 (orbit) is traced across a 2D height map (**terrain**) once per oscillator cycle;
 the height under the moving point is the audio sample. Pitch = how fast the path
 is traced. Timbre = the shape of the land the path crosses. The user places the
@@ -12,7 +12,7 @@ implementers; anything not specified is the implementer's choice.
 ## Stack
 
 * Vite 8, plain ES modules (no framework, no TypeScript), `three@0.186`, `@dimforge/rapier3d-compat@0.21` (lazy-loaded), Web Audio AudioWorklet, Web MIDI.
-* Output targets: `dist/` (normal web build, relative `base: './'`, deployable under any sub-path such as `/music/orograph/`), `dist-single/index.html` (one offline HTML file, `npm run build:single`), Electron desktop app (`electron/`, `npm run dist`).
+* Output targets: `dist/` (normal web build, relative `base: './'`, deployable under any sub-path such as `/music/oro/`), `dist-single/index.html` (one offline HTML file, `npm run build:single`), Electron desktop app (`electron/`, `npm run dist`).
 * Tests: `vitest` (Node) in `tests/**/*.test.js`; browser end-to-end checks in `tests/e2e/*.cjs` driven by the globally installed Playwright (`/opt/node22/lib/node_modules/playwright`, Chromium at `/opt/pw-browsers`). Launch Chromium with `--autoplay-policy=no-user-gesture-required` and for WebGL in headless use `--use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`.
 
 ## Directory ownership
@@ -149,7 +149,7 @@ Worklet → main, about 60 times per second:
 
 Two protocol extras: a single port message may be an **array** of messages (applied in order), and `processorOptions.init` may carry an array of messages applied in the constructor (needed for OfflineAudioContext renders, which start before port messages arrive).
 
-`dsp-core.js` exports `class OrographDSP { constructor(sampleRate); handleMessage(msg); process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime); }` plus a `postMessage` hook, so the same engine runs inside the AudioWorklet, inside a ScriptProcessorNode fallback, and in Node tests.
+`dsp-core.js` exports `class OroDSP { constructor(sampleRate); handleMessage(msg); process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime); }` plus a `postMessage` hook, so the same engine runs inside the AudioWorklet, inside a ScriptProcessorNode fallback, and in Node tests.
 
 ## Audio host API (`src/audio/engine.js`)
 
@@ -335,7 +335,7 @@ Panic. Mode changes release held notes through the router, respecting sustain.
 Capture remains one held note, regardless of tracking mode.
 
 
-## Orograph 2.0 additions
+## Oro 2.0 additions
 
 The append-only parameter registry is now 88 part parameters with 40 modulation targets.
 Mod records retain flat numeric fields, 32 steps, six-stage envelope settings and four

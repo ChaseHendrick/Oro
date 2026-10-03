@@ -99,7 +99,7 @@ export function readPngChunks(bytes) {
     } else if (!(type.charCodeAt(0) & 32)) {
       // Upper-case first letter = critical chunk we do not understand: the
       // spec says decoding must stop rather than guess.
-      throw new Error(`This PNG file uses a feature Orograph cannot read (${type.replace(/[^\x20-\x7e]/g, '?')})`);
+      throw new Error(`This PNG file uses a feature Oro cannot read (${type.replace(/[^\x20-\x7e]/g, '?')})`);
     }
     p = start + len + 4; // skip the CRC
   }

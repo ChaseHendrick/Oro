@@ -1,6 +1,6 @@
 {
-  "name": "Orograph",
-  "short_name": "Orograph",
+  "name": "Oro",
+  "short_name": "Oro",
   "description": "A 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
   "start_url": "./",
   "scope": "./",

@@ -368,7 +368,7 @@ export function createVoiceHost(ctx, { masterIn, delayIn = null, reverbIn = null
   async function capture({ seconds = VOICE_CAPTURE_SECONDS, onProgress = null } = {}) {
     const fail = (reason) => ({ ok: false, reason });
     if (disposed) return fail('The audio engine was shut down.');
-    if (!mic) return fail('Turn on Voice first, so Orograph can hear you.');
+    if (!mic) return fail('Turn on Voice first, so Oro can hear you.');
     if (capturing) return fail('A capture is already running.');
     if (ctx.state && ctx.state !== 'running') return fail('Start the audio first, then try Capture again.');
     const secs = clamp(num(Number(seconds), VOICE_CAPTURE_SECONDS), 0.5, 10);
@@ -425,8 +425,8 @@ export function createVoiceHost(ctx, { masterIn, delayIn = null, reverbIn = null
       guardArmed: !!guard,
       muted,
       muteReason: muted ? (kind === 'clipping'
-        ? 'The voice was clipping, so Orograph muted it. Turn the input gain down, then press Unmute.'
-        : 'The voice started feeding back, so Orograph muted it. Use headphones or turn Monitor off, then press Unmute.') : null,
+        ? 'The voice was clipping, so Oro muted it. Turn the input gain down, then press Unmute.'
+        : 'The voice started feeding back, so Oro muted it. Use headphones or turn Monitor off, then press Unmute.') : null,
       tracking: !!tracker,
       voiceLevel,
       capturing: !!capturing, captureProgress: capturing ? capturing.progress : 0,

@@ -12,7 +12,7 @@ import { pathPoint, pathBlockAt, shapePathPoint } from '../../src/dsp/paths.js';
 import { generateTerrain, base64ToBytes } from '../../src/dsp/terrains.js';
 import { wavHeader } from '../../src/audio/wav.js';
 
-describe('Orograph terrain expansion', () => {
+describe('Oro terrain expansion', () => {
   it('appends registries without moving imported terrains or old paths', () => {
     expect(TERRAIN_INDEX.user).toBe(13); expect(PATH_INDEX.scribble).toBe(11);
     expect(TERRAINS.filter(t => t.id !== 'user').length).toBeGreaterThanOrEqual(18);

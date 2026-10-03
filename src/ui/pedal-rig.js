@@ -365,7 +365,7 @@ export function createPedalRig({
     await new Promise(r => setTimeout(r, 0));
     let res;
     try { res = analyse(rec.samples, rec.sampleRate, { name: 'Guitar capture' }); } catch (err) { res = { ok: false, reason: `The analysis failed (${(err && err.message) || err}).` }; }
-    if (!res || !res.ok) return fail((res && res.reason) || 'Orograph could not find a steady pitch.');
+    if (!res || !res.ok) return fail((res && res.reason) || 'Oro could not find a steady pitch.');
     const name = `Guitar ${noteLabel(res.note)}`;
     try {
       await addUserTerrain(store, part, slot, { ...res.userTerrain, name });

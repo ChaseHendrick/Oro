@@ -1,6 +1,6 @@
 'use strict';
 
-// Orograph desktop shell (Electron main process).
+// Oro desktop shell (Electron main process).
 //
 // Loads the Vite build in dist/ through a privileged app://orograph/ scheme so
 // the page gets a real, secure origin (localStorage, Web MIDI, AudioWorklet and
@@ -34,6 +34,10 @@ const distDir = !app.isPackaged && process.env.OROGRAPH_DIST
   : path.join(__dirname, '..', 'dist');
 if (!app.isPackaged && process.env.OROGRAPH_USER_DATA) {
   app.setPath('userData', path.resolve(process.env.OROGRAPH_USER_DATA));
+} else {
+  // The app was called Orograph until 2.3. Keep its data folder, so sessions,
+  // settings and window state carry over to Oro.
+  app.setPath('userData', path.join(app.getPath('appData'), 'Orograph'));
 }
 
 // Must happen before 'ready': privileges cannot be granted to a scheme later.
@@ -135,7 +139,7 @@ function createMainWindow() {
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
     show: false,
-    title: 'Orograph',
+    title: 'Oro',
     backgroundColor: nativeTheme.shouldUseDarkColors ? BACKGROUND.dark : BACKGROUND.light,
     ...(isMac ? { titleBarStyle: 'hiddenInset', titleBarOverlay: true } : {}),
     // Linux shows this in the task switcher; macOS and Windows use the bundle icon.
@@ -210,7 +214,7 @@ function createMainWindow() {
       buttons: ['Reload', 'Quit'],
       defaultId: 0,
       cancelId: 1,
-      message: 'Orograph stopped unexpectedly.',
+      message: 'Oro stopped unexpectedly.',
       detail: 'Your last session is saved automatically. Reload to carry on playing.',
     });
     crashPromptOpen = false;
@@ -238,7 +242,7 @@ function start() {
   app.on('web-contents-created', (_event, contents) => guardWebContents(contents));
 
   app.whenReady().then(() => {
-    log(`Orograph ${app.getVersion()} on Electron ${process.versions.electron}; serving ${distDir}`);
+    log(`Oro ${app.getVersion()} on Electron ${process.versions.electron}; serving ${distDir}`);
 
     protocol.handle(policy.APP_SCHEME, createAppHandler({ root: distDir, host: policy.APP_HOST, log }));
     installPermissionPolicy(session.defaultSession);
@@ -246,7 +250,7 @@ function start() {
     const capability = updateCapability({ platform: process.platform, packaged: app.isPackaged,
       appImage: !!process.env.APPIMAGE,
       portable: !!(process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR),
-      nsisInstalled: process.platform === 'win32' && fs.existsSync(path.join(path.dirname(app.getPath('exe')), 'Uninstall Orograph.exe')) });
+      nsisInstalled: process.platform === 'win32' && ['Uninstall Oro.exe', 'Uninstall Orograph.exe'].some(f => fs.existsSync(path.join(path.dirname(app.getPath('exe')), f))) });
     const preferencesFile = createUpdatePreferencesFile(path.join(app.getPath('userData'), 'updates.json'));
     // Manual formats use release notices, never the installer's download/install
     // machinery. Keep electron-updater's publisher verification unchanged.
@@ -256,7 +260,7 @@ function start() {
       fetchRelease: () => fetchLatestRelease(net.fetch.bind(net)),
       notify: state => {
         if (!Notification.isSupported()) return;
-        const notice = new Notification({ title: `Orograph ${state.availableVersion} is available`, body: 'Open Settings > Updates to choose when to update.' });
+        const notice = new Notification({ title: `Oro ${state.availableVersion} is available`, body: 'Open Settings > Updates to choose when to update.' });
         notice.on('click', focusMainWindow); notice.show();
       },
     });
@@ -264,7 +268,7 @@ function start() {
     app.once('will-quit', () => { removeUpdateIpc(); updates.dispose(); });
 
     app.setAboutPanelOptions({
-      applicationName: 'Orograph',
+      applicationName: 'Oro',
       applicationVersion: app.getVersion(),
       copyright: 'Copyright (c) 2026 Chase. MIT License.',
       credits: 'A 3D wave terrain synthesizer. Built with three.js and Rapier.',
@@ -273,13 +277,13 @@ function start() {
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate({
       isMac,
       isPackaged: app.isPackaged,
-      appName: 'Orograph',
+      appName: 'Oro',
       openExternal,
       checkUpdates: async () => {
         const state = await updates.check();
         if (!mainWindow || mainWindow.isDestroyed()) return;
         await dialog.showMessageBox(mainWindow, { type: state.error ? 'warning' : 'info', buttons: ['OK'],
-          message: state.availableVersion ? `Orograph ${state.availableVersion} is available.` : state.status === 'current' ? 'Orograph is up to date.' : 'Update check',
+          message: state.availableVersion ? `Oro ${state.availableVersion} is available.` : state.status === 'current' ? 'Oro is up to date.' : 'Update check',
           detail: state.error || (state.availableVersion ? 'Open Settings > Updates to choose a download. Your app will not restart automatically.' : state.capability.reason) });
       },
     })));

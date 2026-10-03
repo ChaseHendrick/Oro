@@ -1,8 +1,8 @@
 # Third-party notices
 
-Orograph is MIT licensed (see [LICENSE](LICENSE)). It is an independent, clean-room
+Oro is MIT licensed (see [LICENSE](LICENSE)). It is an independent, clean-room
 implementation; the only third-party code it ships is listed below. Every build of
-Orograph (the web app, the offline HTML file and the desktop apps) contains the first
+Oro (the web app, the offline HTML file and the desktop apps) contains the first
 two components. The desktop apps additionally contain Electron.
 
 ## Science source models (v2.1)
@@ -20,8 +20,8 @@ repository's `code/` folder are under the Apache License 2.0):
   four-vortex minimiser), doi:10.5281/zenodo.23096146
 * ChaseHendrick/rank-window (the Matérn smoothness idea), doi:10.5281/zenodo.23096200
 
-The copyright holder of that code is also Orograph's author, who releases this JavaScript
-version with the rest of Orograph under the MIT licence. The papers themselves are not
+The copyright holder of that code is also Oro's author, who releases this JavaScript
+version with the rest of Oro under the MIT licence. The papers themselves are not
 included.
 
 ## three.js 0.186.1
@@ -62,7 +62,7 @@ copyright notice that is included in or attached to the work
 copyright license to reproduce, prepare Derivative Works of,
 Copyright 2020 Dimforge EURL
 
-Orograph uses the published package unmodified (it is bundled into the app as is).
+Oro uses the published package unmodified (it is bundled into the app as is).
 The full license text follows.
 
 ```text

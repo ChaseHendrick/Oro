@@ -3,7 +3,7 @@
 // audio host does (512 x 512 plus mip chain) and cached per (terrain, seed, detail).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { generateTerrain, buildMipChain } from '../../src/dsp/terrains.js';
 import { createStore } from '../../src/core/store.js';
 import { migrateState } from '../../src/core/migrate.js';
@@ -148,7 +148,7 @@ export function roughMix({ L, R, D, V }, { tempo = 120, delayBeats = 0.75, feedb
 export function renderScene(scene, bars = 4) {
   const state = migrateState(scene);
   const clock = createFakeClock({ startSec: 0 });
-  const dsp = new OrographDSP(SR);
+  const dsp = new OroDSP(SR);
   dsp.handleMessage({ t: 'global', p: { tempo: state.global.tempo } });
   dsp.handleMessage({ t: 'tracks', count: state.parts.length });
   for (let p = 0; p < state.parts.length; p++) loadPart(dsp, p, state.parts[p].params, state.parts[p].mods, state.parts[p].links);

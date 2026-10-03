@@ -1,10 +1,10 @@
-# Orograph 2.0 feature checklist
+# Oro 2.0 feature checklist
 
 This checklist implements the owner's requested expansion. The target column records
 that request; it does not independently audit another product. Validation is recorded
 in [EXPANSION-VALIDATION.md](EXPANSION-VALIDATION.md).
 
-| Area | Requested target | Orograph 2.0 implementation |
+| Area | Requested target | Oro 2.0 implementation |
 |---|---|---|
 | Unison | At least 7 copies | Up to 8 per voice |
 | Subs | Two subs, seven waveforms each | Independent one/two-octave subs, seven waves each |

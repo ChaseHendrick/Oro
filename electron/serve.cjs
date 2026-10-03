@@ -159,10 +159,10 @@ function textResponse(status, message) {
 
 function missingBuildPage(root) {
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Orograph</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Oro</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#120e2b;color:#f3ecff;
 font:16px/1.5 system-ui,sans-serif}main{max-width:34rem;padding:2rem}code{color:#ff9a6b}</style></head>
-<body><main><h1>Orograph has not been built yet</h1>
+<body><main><h1>Oro has not been built yet</h1>
 <p>The desktop shell could not find the web app in <code>${esc(root)}</code>.</p>
 <p>From the project folder run <code>npm run build</code>, then start the app again.</p></main></body></html>`;
 }

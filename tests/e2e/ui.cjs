@@ -1,4 +1,4 @@
-// End-to-end checks for the Orograph user interface in headless Chromium.
+// End-to-end checks for the Oro user interface in headless Chromium.
 //
 //   npx vite --config dev/ui/vite.config.mjs --port 5184 --strictPort &   (repo root; no HMR,
 //                                             so edits elsewhere never reload a page mid-test)

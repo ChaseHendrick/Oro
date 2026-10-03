@@ -125,7 +125,7 @@ async function ping(signal = $('pingSignal').value) {
 async function startFeedback() {
   await start();
   if (fb) return fb;
-  // A loop outside Orograph (like an MPC monitoring mistake): gain above one through a saturating stage.
+  // A loop outside Oro (like an MPC monitoring mistake): gain above one through a saturating stage.
   const seed = ctx.createOscillator();
   seed.frequency.value = 700;
   const burst = ctx.createGain();
@@ -157,7 +157,7 @@ function stopFeedback() {
 }
 function showGuard() {
   const s = guard.status();
-  kv($('guardOut'), { tripped: s.tripped, kind: s.kind || '', 'return level': `${s.levelDb.toFixed(1)} dBFS`, 'return muted': s.muted, 'loop outside Orograph': s.outside });
+  kv($('guardOut'), { tripped: s.tripped, kind: s.kind || '', 'return level': `${s.levelDb.toFixed(1)} dBFS`, 'return muted': s.muted, 'loop outside Oro': s.outside });
   $('guardReason').textContent = [s.reason, s.outsideReason].filter(Boolean).join(' ');
   return s;
 }
@@ -453,7 +453,7 @@ async function auto() {
   const gs = showGuard();
   state.metrics.guard = { tripMs, kind: gs.kind, muted: gs.muted, outside: gs.outside, returnGain: returnGain.gain.value };
   check('feedback guard trips on a runaway loop and mutes the return', gs.tripped && gs.muted && returnGain.gain.value < 1e-3, `${gs.kind} after ${tripMs.toFixed(0)} ms`);
-  check('guard notices the loop keeps going outside Orograph', gs.outside === true, gs.outsideReason);
+  check('guard notices the loop keeps going outside Oro', gs.outside === true, gs.outsideReason);
   stopFeedback();
   guard.reset();
   await sleep(150);

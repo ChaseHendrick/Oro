@@ -100,7 +100,7 @@ await new Promise((r) => setTimeout(r, 50));
 results.cspViolations = violations.slice();
 
 window.__stub = { done: true, results };
-document.title = 'Orograph stub ready';
+document.title = 'Oro stub ready';
 
 const tbody = document.querySelector('#results tbody');
 for (const [key, value] of Object.entries(results)) {

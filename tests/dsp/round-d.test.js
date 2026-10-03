@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { TERRAINS, PATHS } from '../../src/dsp/catalog.js';
-import { OrographDSP, QUALITY_MODES, HALFBAND_4X } from '../../src/dsp/dsp-core.js';
+import { OroDSP, QUALITY_MODES, HALFBAND_4X } from '../../src/dsp/dsp-core.js';
 import { pathPoint, evenPhase, pingPong, travelPhase, travelBlock } from '../../src/dsp/paths.js';
 import { MAX_PARTS, MOD_PARAM_IDS, PART_PARAM_MAP, PART_PARAM_INDEX as PIX, defaultLinks, defaultMods, toNorm } from '../../src/core/params.js';
 import { terrainHeight } from '../../src/dsp/terrain-math.js';
@@ -737,7 +737,7 @@ describe('quality modes', () => {
 
 describe('robustness of the new messages', () => {
   it('ignores malformed Round D messages', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     for (const m of [{ t: 'links', part: 0, links: 'x' }, { t: 'links', part: 9, links: [] }, { t: 'pressure', part: 0, v: NaN },
       { t: 'slide', part: 0, v: 3, note: 'x' }, { t: 'marble', part: 0, speed: Infinity, height: -9 }, { t: 'quality', mode: 'ultra' },
       { t: 'params', part: 0, p: { cutoff: NaN }, time: 0.1 }, { t: 'params', part: 0, p: { nope: 1 }, time: 1, ramp: 2 },
@@ -753,7 +753,7 @@ describe('robustness of the new messages', () => {
   it('runs every mode at 44.1 and 96 kHz with odd block sizes', () => {
     for (const sr of [44100, 96000]) {
       for (const mode of QUALITY_MODES) {
-        const dsp = new OrographDSP(sr);
+        const dsp = new OroDSP(sr);
         dsp.handleMessage({ t: 'terrain', part: 0, slot: 0, levels: terrainChain(T.ripple) });
         dsp.handleMessage({ t: 'params', part: 0, p: { filterType: 5, air: 0.4, traverse: 1, cutoff: 200 } });
         dsp.handleMessage({ t: 'quality', mode });

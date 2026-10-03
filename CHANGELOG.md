@@ -1,9 +1,15 @@
 # Changelog
 
-All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
+All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
 ## 2.3.0 (October 2026)
+
+* **Orograph is now Oro.** The app, window, installers (Oro-mac-arm64.dmg and so on), offline
+  file, recordings (oro-YYYYMMDD-HHMMSS.wav) and documentation use the new name. Nothing is
+  lost: the desktop app keeps using the same data folder, so your sessions, settings and
+  window layout carry over, and updates keep arriving through the same channel. The web
+  app moves to hendrickresearch.com/music/oro/ (the old address forwards there).
 
 * **Warp modes.** PWM, Quantize, Flip and Spiral change how the point travels the path
   each cycle, with a modulatable Warp amt (Laps and Pace already cover sync and bend).

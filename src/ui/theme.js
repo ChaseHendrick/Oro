@@ -7,8 +7,8 @@
 // never flashes the wrong colours; this module takes over after boot.
 
 export const THEME_KEY = 'orograph.theme';
-// When Orograph is served from hendrickresearch.com/music/orograph/ it shares the site's
-// origin, so with no Orograph choice yet it follows the site's Appearance setting.
+// When Oro is served from hendrickresearch.com/music/oro/ it shares the site's
+// origin, so with no Oro choice yet it follows the site's Appearance setting.
 export const SITE_THEME_KEY = 'hendrick-appearance';
 export const THEME_PREFS = ['system', 'dark', 'light'];
 

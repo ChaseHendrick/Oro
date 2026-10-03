@@ -48,9 +48,9 @@ export function createUpdatesTab(ctx, { version, api = globalThis.orographDeskto
   function render() {
     if (disposed) return;
     const messages = {
-      idle: 'No update check has been made.', checking: 'Checking for updates...', current: 'Orograph is up to date.',
-      available: `Orograph ${state?.availableVersion || ''} is available.`, downloading: `Downloading update${state?.progress ? `: ${Math.round(state.progress.percent)}%` : '...'}`,
-      downloaded: `Orograph ${state?.availableVersion || ''} is downloaded. Save and restart when you are ready.`,
+      idle: 'No update check has been made.', checking: 'Checking for updates...', current: 'Oro is up to date.',
+      available: `Oro ${state?.availableVersion || ''} is available.`, downloading: `Downloading update${state?.progress ? `: ${Math.round(state.progress.percent)}%` : '...'}`,
+      downloaded: `Oro ${state?.availableVersion || ''} is downloaded. Save and restart when you are ready.`,
       installing: 'Restarting to install the update...', error: 'The update did not complete. You can try again.', disabled: 'Update checks are unavailable in this development build.',
     };
     if (state) {
@@ -76,7 +76,7 @@ export function createUpdatesTab(ctx, { version, api = globalThis.orographDeskto
     void api.status().then(next => { if (!disposed) { state = next; render(); } }).catch(err => { localError = err?.message || 'Update settings could not be loaded.'; render(); });
   }
   const el = h('div', { class: 'settings-pane' },
-    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Orograph updates'),
+    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Oro updates'),
       h('p', { class: 'setting-hint' }, `Installed version ${version || 'unknown'}. Earlier releases without this updater need one manual upgrade.`),
       status, description, error, progress, h('div', { class: 'btn-row' }, check, download, install, release)), preferences);
   render();

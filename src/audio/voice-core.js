@@ -179,7 +179,7 @@ export function settingsWarnings(settings, { cleanup = false, sampleRate = 0 } =
   }
   if (s.autoGainControl === true) out.push('The browser kept auto gain on, so the level will move by itself.');
   if (s.sampleRate && sampleRate && s.sampleRate !== sampleRate) {
-    out.push(`The microphone runs at ${s.sampleRate} Hz and Orograph at ${sampleRate} Hz, so the browser resamples it.`);
+    out.push(`The microphone runs at ${s.sampleRate} Hz and Oro at ${sampleRate} Hz, so the browser resamples it.`);
   }
   return out;
 }
@@ -232,7 +232,7 @@ export function monitorDefault({ inputLabel = '', outputLabel = '' } = {}) {
     const both = input === 'builtin';
     return { on: false, reason: 'speakers', input, output, hint: both ? `Monitoring is off because the built-in microphone would hear the built-in speakers. ${HEADPHONES_HINT}` : `Monitoring is off because the output looks like speakers. ${HEADPHONES_HINT}` };
   }
-  return { on: false, reason: 'unknown', input, output, hint: `Monitoring is off until Orograph knows the output is headphones. ${HEADPHONES_HINT}` };
+  return { on: false, reason: 'unknown', input, output, hint: `Monitoring is off until Oro knows the output is headphones. ${HEADPHONES_HINT}` };
 }
 
 /** Monitor setting ('auto' | 'on' | 'off') + the devices -> whether the voice is heard. */
@@ -254,7 +254,7 @@ export const CLIP_HOLD_MS = 1500;
  * One meter reading from the raw input peak (0..1+ linear, before the input
  * gain) and the input gain in dB. `input` = the microphone itself clipped
  * (lower the level in the system's sound settings or on the interface);
- * `gain` = Orograph's input gain pushed it over full scale.
+ * `gain` = Oro's input gain pushed it over full scale.
  */
 export function meterReading(rawPeak, gainDb) {
   const raw = Math.abs(num(rawPeak, 0));
@@ -283,14 +283,14 @@ export function createClipLight({ holdMs = CLIP_HOLD_MS } = {}) {
 
 // ---------------------------------------------------------------- messages
 
-export const MIC_WHY = 'Orograph uses the microphone only while Voice is enabled: to let you hear yourself with the synth, loop your vocals, play a track by singing or humming, capture a sung note as a terrain, and let your voice move the terrain. The sound stays on this computer and is only recorded when you record or loop it.';
+export const MIC_WHY = 'Oro uses the microphone only while Voice is enabled: to let you hear yourself with the synth, loop your vocals, play a track by singing or humming, capture a sung note as a terrain, and let your voice move the terrain. The sound stays on this computer and is only recorded when you record or loop it.';
 
 /** A refused or failed getUserMedia -> what to tell the person. */
 export function voiceErrorReason(err, { electron = false, mac = false } = {}) {
   const name = err && err.name;
   if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
-    if (electron && mac) return 'macOS is blocking the microphone for Orograph. Allow it in System Settings > Privacy & Security > Microphone, then press Try again.';
-    if (electron) return 'The system is blocking the microphone for Orograph. Allow microphone access in your system privacy settings, then press Try again.';
+    if (electron && mac) return 'macOS is blocking the microphone for Oro. Allow it in System Settings > Privacy & Security > Microphone, then press Try again.';
+    if (electron) return 'The system is blocking the microphone for Oro. Allow microphone access in your system privacy settings, then press Try again.';
     return 'Microphone access is blocked for this page. Allow it in the browser (the icon at the left of the address bar, or the site settings), then press Try again.';
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'No microphone was found. Plug one in, or check that the computer\'s microphone is switched on, then press Try again.';
@@ -299,4 +299,4 @@ export function voiceErrorReason(err, { electron = false, mac = false } = {}) {
   return `The microphone could not be opened (${(err && err.message) || err || 'unknown error'}).`;
 }
 
-export const NO_CAPTURE_REASON = 'This browser cannot use a microphone here. Orograph needs a secure page (https or localhost) or the desktop app for Voice.';
+export const NO_CAPTURE_REASON = 'This browser cannot use a microphone here. Oro needs a secure page (https or localhost) or the desktop app for Voice.';

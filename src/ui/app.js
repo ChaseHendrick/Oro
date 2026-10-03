@@ -1,4 +1,4 @@
-// Orograph user interface entry point.
+// Oro user interface entry point.
 //
 //   createUI(root, { store, engine, visuals, music, presets, midi })
 //

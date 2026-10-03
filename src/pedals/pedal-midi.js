@@ -30,7 +30,7 @@ export const DEFAULT_EXACT_LOOKAHEAD_MS = 250;
 // applied to a 0..1 source: Linear y = x, Soft y = x^2, Hard y = sqrt(x).
 export const MAP_CURVES = Object.freeze(['Linear', 'Soft', 'Hard']);
 
-/** Orograph values that can drive pedal controls. `bipolar` sources run -1..1. */
+/** Oro values that can drive pedal controls. `bipolar` sources run -1..1. */
 export const PEDAL_SOURCES = Object.freeze([
   { id: 'macro1', label: 'Macro 1', bipolar: false },
   { id: 'macro2', label: 'Macro 2', bipolar: false },
@@ -351,7 +351,7 @@ export function createPedalMidi({
     const p = pedals.get(pedalId);
     if (!p) return { ok: false, reason: 'That pedal is not set up.' };
     const control = engageControl(p.profile);
-    if (!control) return { ok: false, reason: `${p.profile.name} has no documented bypass message, so Orograph cannot switch it.` };
+    if (!control) return { ok: false, reason: `${p.profile.name} has no documented bypass message, so Oro cannot switch it.` };
     const t = time != null ? time : now();
     p.values.set(control.id, !bypassed);
     enqueueCC(p, control, encodeControl(control, !bypassed), t, { force: true, exact: true });
@@ -399,7 +399,7 @@ export function createPedalMidi({
     for (const p of list) p.sent.clear();
   }
 
-  /** Re-send every value Orograph has asked for (after a pedal was power-cycled). */
+  /** Re-send every value Oro has asked for (after a pedal was power-cycled). */
   function refresh(pedalId, { time } = {}) {
     const p = pedals.get(pedalId);
     if (!p) return false;
@@ -415,7 +415,7 @@ export function createPedalMidi({
     for (const p of pedals.values()) if (!pedalId || p.id === pedalId) p.queue.length = 0;
   }
 
-  /** What Orograph has asked each pedal for, to store with scenes. */
+  /** What Oro has asked each pedal for, to store with scenes. */
   function getState() {
     const out = {};
     for (const p of pedals.values()) {
@@ -448,7 +448,7 @@ export function createPedalMidi({
   // ------------------------------------------------------------ mapping layer
 
   /**
-   * Route an Orograph source to a pedal control.
+   * Route an Oro source to a pedal control.
    * @param {{source: string, pedal: string, control: string, min?: number, max?: number, curve?: number|string}} m
    * @returns {string|null} mapping id
    */

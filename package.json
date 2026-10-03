@@ -1,8 +1,8 @@
 {
   "name": "orograph",
-  "productName": "Orograph",
+  "productName": "Oro",
   "version": "2.3.0",
-  "description": "Orograph: a 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
+  "description": "Oro: a 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
   "author": "Chase",
   "license": "MIT",
   "type": "module",
@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "com.hendrickresearch.orograph",
-    "productName": "Orograph",
+    "productName": "Oro",
     "copyright": "Copyright (c) 2026 Chase",
     "directories": {
       "output": "release",
@@ -94,13 +94,13 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "identity": "-",
-      "artifactName": "Orograph-mac-${arch}.${ext}",
+      "artifactName": "Oro-mac-${arch}.${ext}",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Orograph listens to a microphone or audio input only when you turn on Voice in Settings > Voice (to hear and loop your vocals, play notes by singing and capture sung notes as terrains) or the pedal return in Settings > Pedals (to hear your guitar pedals and measure their latency)."
+        "NSMicrophoneUsageDescription": "Oro listens to a microphone or audio input only when you turn on Voice in Settings > Voice (to hear and loop your vocals, play notes by singing and capture sung notes as terrains) or the pedal return in Settings > Pedals (to hear your guitar pedals and measure their latency)."
       }
     },
     "dmg": {
-      "artifactName": "Orograph-mac-${arch}.${ext}"
+      "artifactName": "Oro-mac-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -125,12 +125,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Orograph",
-      "uninstallDisplayName": "Orograph",
-      "artifactName": "Orograph-windows-setup.${ext}"
+      "shortcutName": "Oro",
+      "uninstallDisplayName": "Oro",
+      "artifactName": "Oro-windows-setup.${ext}"
     },
     "portable": {
-      "artifactName": "Orograph-windows-portable.${ext}"
+      "artifactName": "Oro-windows-portable.${ext}"
     },
     "linux": {
       "target": [
@@ -151,7 +151,7 @@
       "icon": "build/icon.png",
       "executableName": "orograph",
       "synopsis": "3D wave terrain synthesizer",
-      "artifactName": "Orograph-linux-${arch}.${ext}",
+      "artifactName": "Oro-linux-${arch}.${ext}",
       "syncDesktopName": true
     }
   },

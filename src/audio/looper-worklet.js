@@ -8,7 +8,7 @@
 
 import { LooperCore } from './looper-core.js';
 
-class OrographLooper extends AudioWorkletProcessor {
+class OroLooper extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const o = (options && options.processorOptions) || {};
@@ -37,4 +37,4 @@ class OrographLooper extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('orograph-looper', OrographLooper);
+registerProcessor('orograph-looper', OroLooper);

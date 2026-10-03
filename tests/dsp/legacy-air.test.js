@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { AIR_SCENARIOS, renderLegacyAir } from './fixtures/legacy-air-render.js';
 
 // SHA-256 of all six Float32 output buses from the unoptimized 3ca6fa1 core.
@@ -16,7 +16,7 @@ describe('legacy Air audio after control-loop optimization', () => {
   for (let index = 0; index < AIR_SCENARIOS.length; index++) {
     const scenario = AIR_SCENARIOS[index];
     it(`preserves every output bit at ${scenario.sr} Hz / ${scenario.quality} / Tone ${scenario.tone}`, () => {
-      const output = renderLegacyAir(OrographDSP, scenario);
+      const output = renderLegacyAir(OroDSP, scenario);
       const hash = createHash('sha256');
       for (const bus of ['L', 'R', 'DL', 'DR', 'VL', 'VR']) hash.update(new Uint8Array(output[bus].buffer));
       expect(hash.digest('hex')).toBe(REFERENCE[index]);

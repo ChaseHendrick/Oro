@@ -48,8 +48,8 @@ describe('MPC port detection', () => {
   });
   it('ships a complete setup guide', () => {
     expect(MPC_GUIDE.map(s => s.title)).toEqual([
-      'Connect', 'Play Orograph from the MPC pads', 'Twist Q-Links to control Orograph',
-      'Play the MPC from Orograph', 'Sync tempo', 'Troubleshooting',
+      'Connect', 'Play Oro from the MPC pads', 'Twist Q-Links to control Oro',
+      'Play the MPC from Oro', 'Sync tempo', 'Troubleshooting',
     ]);
     const text = JSON.stringify(MPC_GUIDE);
     expect(text).not.toMatch(/\u2014/); // no em dashes in user-facing copy

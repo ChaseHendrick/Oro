@@ -9,7 +9,7 @@
 
 const BLOCK = 4096;
 
-class OrographRecorder extends AudioWorkletProcessor {
+class OroRecorder extends AudioWorkletProcessor {
   constructor() {
     super();
     this.armed = false;
@@ -75,4 +75,4 @@ class OrographRecorder extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('orograph-recorder', OrographRecorder);
+registerProcessor('orograph-recorder', OroRecorder);

@@ -104,7 +104,7 @@ async function stubSuite() {
   check(r.rangeRequest === '206 {"ok":', 'range requests return 206 partial content', r.rangeRequest);
   check(r.png === 512, 'PNG icon loads', r.png);
   check(typeof r.svg === 'number' && r.svg > 0, 'SVG favicon loads', r.svg);
-  check(r.manifest === 'Orograph', 'web manifest served', r.manifest);
+  check(r.manifest === 'Oro', 'web manifest served', r.manifest);
   check(r.worker === 42, 'blob: Worker allowed by CSP', r.worker);
   check(r.audioWorklet === 'running' || r.audioWorklet === 'suspended', 'blob: AudioWorklet module loads', r.audioWorklet);
   check(r.localStorage === 1, 'localStorage available on first launch', r.localStorage);
@@ -191,7 +191,7 @@ async function stubSuite() {
   // Playwright reads stdout during startup, so reload to see this load's log lines.
   await page.reload({ waitUntil: 'load' });
   await sleep(300);
-  check((await page.textContent('h1')) === 'Orograph has not been built yet', 'helpful page when dist/ is missing');
+  check((await page.textContent('h1')) === 'Oro has not been built yet', 'helpful page when dist/ is missing');
   check(mainLog.some((l) => l.includes('loaded app://orograph/index.html')), 'main process logs each page load', mainLog);
   await app.close();
 

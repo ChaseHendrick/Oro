@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 1024 1024">
-  <title>Orograph</title>
+  <title>Oro</title>
   <defs>
     <radialGradient id="ogs-sky" cx="500" cy="330" r="760" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#2f2678"/><stop offset="0.55" stop-color="#18133f"/><stop offset="1" stop-color="#0b0920"/>
