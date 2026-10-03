@@ -380,6 +380,106 @@ like Spectra.
 Imported files can be up to 25 MB. Your terrain is saved with the session and with any
 patch or scene you save from that part.
 
+
+### Real places: Earth, Moon and Mars (2.10)
+
+Under each terrain slot, **Real places** opens real elevation data as a terrain. Pick a tab
+(**Earth**, **Moon**, **Mars** or **Night sky**), point at a place to read its facts, and
+click it to load it into that slot. It becomes an ordinary imported terrain: it is saved
+with the session, Undo takes it back, and the image controls work as for any import. The
+image library also has a **Real places** button. Nothing is downloaded until you open the
+list, and each map (about 100 KB) only when you choose it. The single-file offline build
+does not include the maps; the web app and the desktop app do.
+
+Each place is a square on the ground, seen from straight above, resampled to 256 × 256 and
+stretched over 16 bits, so the lowest point in the square is the bottom of the terrain
+and the highest is the top. The elevation ranges below come from the data as processed
+(the source pixels in each square).
+
+**Earth** (AWS Terrain Tiles, about 13 to 300 m per pixel depending on the place;
+ocean depths come from coarser bathymetry):
+
+| Place | Centre | Square | Elevation |
+|---|---|---|---|
+| Grand Canyon | 36.10° N, 112.11° W | 24 km | 706 to 2,544 m |
+| Mount Everest | 27.99° N, 86.92° E | 20 km | 4,439 to 8,753 m |
+| Mariana Trench | 11.35° N, 142.20° E | 200 km | −10,902 to −1,318 m |
+| Yosemite Valley | 37.73° N, 119.59° W | 16 km | 1,163 to 2,772 m |
+| Eyjafjallajökull | 63.63° N, 19.61° W | 24 km | −43 to 1,669 m |
+| Mount Fuji | 35.36° N, 138.73° E | 30 km | 111 to 3,754 m |
+| Kilimanjaro | 3.07° S, 37.36° E | 50 km | 996 to 5,883 m |
+| Matterhorn | 45.98° N, 7.66° E | 12 km | 1,677 to 4,354 m |
+| Mauna Kea | 19.82° N, 155.47° W | 60 km | −1,966 to 4,197 m |
+| Dead Sea Rift | 31.50° N, 35.48° E | 60 km | −423 to 1,062 m |
+
+**Moon** (LRO LOLA global elevation model, 256 pixels per degree, about 118 m per pixel;
+heights relative to a sphere of radius 1,737.4 km):
+
+| Place | Centre | Square | Elevation |
+|---|---|---|---|
+| Tycho | 43.31° S, 11.36° W | 150 km | −3,542 to 1,839 m |
+| Copernicus | 9.62° N, 20.08° W | 160 km | −3,675 to 832 m |
+| Montes Apenninus | 18.91° N, 3.67° W | 400 km | −2,834 to 3,413 m |
+| Shackleton crater | 89.67° S, 129.78° E | 50 km | −2,871 to 1,959 m |
+
+**Mars** (MGS MOLA global elevation model, 128 pixels per degree, about 463 m per pixel;
+heights relative to the Mars areoid):
+
+| Place | Centre | Square | Elevation |
+|---|---|---|---|
+| Olympus Mons | 18.65° N, 133.80° W | 800 km | −2,811 to 21,241 m |
+| Valles Marineris | 13.90° S, 59.20° W | 1800 km | −5,699 to 6,713 m |
+| Hellas basin | 42.40° S, 70.50° E | 2800 km | −8,155 to 4,550 m |
+| Gale crater | 5.40° S, 137.80° E | 220 km | −4,607 to 1,347 m |
+
+Sources: Earth from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
+(terrarium PNG tiles; see the attribution in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)).
+Moon from `Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014.tif` and Mars from
+`Mars_MGS_MOLA_DEM_mosaic_global_463m.tif`, both at
+[planetarymaps.usgs.gov/mosaic](https://planetarymaps.usgs.gov/mosaic/) (NASA data, mosaics
+by the USGS Astrogeology Science Center), read with HTTP range requests. The maps are
+built by `scripts/build-places.mjs` and `public/places/places.json` lists every source,
+coordinate and range.
+
+### Night sky (2.10)
+
+The **Night sky** tab turns real stars into a terrain: every star is a soft peak, and the
+brighter the star the higher the peak (height follows the star's magnitude, so faint stars
+still show). Constellation views are drawn as on a star chart, north up and east to the
+left; the whole sky is laid out with right ascension across and declination down.
+
+| View | Stars | Brightest (magnitude) |
+|---|---|---|
+| Orion | 149 | Rigel (0.12) |
+| Ursa Major | 62 | Alioth (1.77) |
+| Cassiopeia | 50 | Schedar (2.23) |
+| Scorpius | 95 | Antares (0.96) |
+| Southern Cross and the Pointers | 121 | Alpha Centauri (-0.01) |
+| Whole sky | 2887 | Sirius (-1.46) |
+
+The stars are the 2,887 stars down to magnitude 5.5 in the Yale Bright Star
+Catalogue, 5th revised edition (Hoffleit and Warren 1991, CDS catalogue V/50), stored in
+`public/places/stars.json` and drawn when you choose a view.
+
+### Sonify your data (2.10)
+
+Under each terrain slot, **Data** turns your own numbers into sound. Paste numbers (one per
+line, or several on one line) or a table (CSV, tab or semicolon separated, with or without
+a header row), or open or drop a .csv file. Oro shows how many points it found and their
+minimum and maximum. With several columns, choose one, or **All columns as a grid**.
+
+- **As a terrain** loads the data into the slot. One column becomes a ridge: the values
+  run across the map from left to right, sharp at the front and more and more smoothed
+  towards the back, so moving the dot back and forth blends detail and trend. Several
+  columns become a grid, one column of data per strip across the map, each scaled to its
+  own range.
+- **As a melody** writes the values into the selected track's active pattern, one note per
+  step (the pattern's length), lowest value to highest note over two octaves of the
+  current key and scale, so every note fits. Dot locks are kept. It is one Undo step.
+
+Up to 10,000 rows and 2 MB are used; text beyond the row limit is left out and Oro tells
+you. Your data never leaves your computer.
+
 ---
 
 ## 6. Paths
@@ -745,6 +845,28 @@ a Link source to let it move any knob.
   one of four configurations, each turning at its own rate. **Collapse** is how far in the
   vortices are; **Swirl X** and **Swirl Y** put each voice of a chord on its own vortex,
   which is a natural way to spread a chord in stereo or across the terrain.
+
+
+### Live weather (2.10)
+
+**Live weather** (in Modulation > Links, at the bottom) adds four link sources that follow
+the real weather where you choose: **Weather Wind** (0 to 60 km/h becomes 0 to 1),
+**Weather Rain** (precipitation, the square root of 0 to 10 mm, 0 to 1), **Weather Temp**
+(minus 20 to 40 °C becomes minus 1 to 1, 10 °C is the middle) and **Weather Clouds**
+(cloud cover, 0 to 1). Pick them as a source in any link, like the science sources. Each
+new reading glides in over about 30 seconds, so nothing jumps.
+
+It is off by default. Open the panel, search for a city, pick the right one and turn on
+**Use live weather**. Oro then asks [Open-Meteo](https://open-meteo.com/) for the current
+weather every 10 minutes. The search sends the name you type to Open-Meteo's geocoding
+service; the weather requests send only the place's coordinates, rounded to about 1 km.
+Nothing else is sent. The chosen place is stored on this computer (in the browser's local
+storage), not in your session, so a song you share does not carry your location. If the
+connection fails, the sources keep their last values and Oro tries again at the next
+update. Turning it off glides the sources back to 0. The panel shows the current readings
+and the credit "Weather data by Open-Meteo.com". Open-Meteo's free API is for
+non-commercial use, and its data is licensed CC BY 4.0. A bounce plays the latest
+readings, held still for the whole bounce.
 
 ---
 
@@ -2147,6 +2269,15 @@ idea behind Smooth random from *A Finite Rank Window Cannot Show That a Neural P
 Code Satisfies the Eigenspectrum Smoothness Bound* ([doi:10.5281/zenodo.23096200](https://doi.org/10.5281/zenodo.23096200)).
 The Lorenz system is from E. N. Lorenz, "Deterministic Nonperiodic Flow" (1963), and the
 neuron model from A. L. Hodgkin and A. F. Huxley (1952).
+
+**Real data** (2.10): Earth elevation from AWS Terrain Tiles (3DEP, SRTM and GMTED2010
+courtesy of the U.S. Geological Survey, ETOPO1 from NOAA, EU-DEM from Copernicus, and the
+other sources listed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)); Moon elevation
+from the LRO Lunar Orbiter Laser Altimeter and Mars elevation from the MGS Mars Orbiter Laser
+Altimeter (NASA Goddard Space Flight Center), mosaics by the USGS Astrogeology Science Center;
+stars from the Yale Bright Star Catalogue, 5th revised edition (Hoffleit and Warren 1991, via
+CDS); live weather by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0, free for
+non-commercial use).
 
 **Made by** Chase ([Hendrick Research](https://www.hendrickresearch.com)), written with the
 help of Claude Code. Oro is free and open source under the [MIT licence](../LICENSE).

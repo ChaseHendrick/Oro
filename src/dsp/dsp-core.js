@@ -56,6 +56,7 @@ import { AnalogFilter } from './analog-filters.js';
 import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.js';
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
+import { WeatherBank } from './weather-sources.js';
 import { Filter2 } from './filter2.js';
 import { KitPlayer } from './drum-kit.js';
 import { renderLibraryDrum } from './drum-library.js';
@@ -156,12 +157,13 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
   L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19,
   L_SCIENCE = 20, L_SCIENCE_END = 26, L_SWIRLX = 27, L_SWIRLY = 28,
-  L_TURING = 29, L_FUNC = 30;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
+  L_TURING = 29, L_FUNC = 30, L_WEATHER = 31, L_WEATHER_END = 34;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
 for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE, L_EXPRESSION, L_SUSTAIN, L_BREATH]) if (s < NSRC) PART_SOURCE[s] = 1;
 for (let s = L_SCIENCE; s <= L_SCIENCE_END && s < NSRC; s++) PART_SOURCE[s] = 1;
 if (L_TURING < NSRC) PART_SOURCE[L_TURING] = 1;
+for (let s = L_WEATHER; s <= L_WEATHER_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.10 live weather (global)
 const SCI_TURING = 7;
 const SCIENCE_KEYS = { sciNeuronCurrent: 'neuronCurrent', sciNeuronKick: 'neuronKick', sciNeuronTemp: 'neuronTemp', sciNeuronRate: 'neuronRate',
   sciLorenzRate: 'lorenzRate', sciPendEnergy: 'pendEnergy', sciPendRate: 'pendRate', sciSmoothTime: 'smoothTime', sciSmoothness: 'smoothness',
@@ -907,7 +909,8 @@ class Part {
       else if (s === L_SUSTAIN) x=this.sustainLevel;
       else if (s === L_BREATH) x=this.breath;
       else if (s === L_TURING) x = science ? science[SCI_TURING] : 0;
-      else if (s >= L_SCIENCE) x = science ? science[s - L_SCIENCE] : 0;
+      else if (s >= L_WEATHER && s <= L_WEATHER_END) x = this.weather ? this.weather[s - L_WEATHER] : 0;
+      else if (s >= L_SCIENCE && s <= L_SCIENCE_END) x = science ? science[s - L_SCIENCE] : 0;
       else if (s >= L_MACRO && s < L_MACRO + 4) x = macros[s - L_MACRO];
       else x = 0;
       return x;
@@ -1006,7 +1009,8 @@ export class OroDSP {
     /** Telemetry hook; the worklet points this at port.postMessage. */
     this.postMessage = () => {};
     this.parts = [];
-    for (let i = 0; i < MAX_PARTS; i++) this.parts.push(new Part(i, this.sr, this.os));
+    this.weather = new WeatherBank();   // v2.10 live weather Link sources (global), read by every part
+    for (let i = 0; i < MAX_PARTS; i++) { const P = new Part(i, this.sr, this.os); P.weather = this.weather.out; this.parts.push(P); }
     // Parts (tracks) in use: 0..count-1. The rest only render while they fade
     // out after being removed (see setTracks and dormant()).
     this.count = DEFAULT_PARTS;
@@ -1153,6 +1157,7 @@ export class OroDSP {
       case 'mods': this.setMods(msg.part, msg.m); break;
       case 'global': this.setGlobal(msg.p); break;
       case 'noiseRecording': this.setNoiseRecording(msg.part, msg.data); break;
+      case 'weather': this.weather.set(msg.v, !!msg.snap); break;
       case 'expression': case 'sustainLevel': case 'breath': {
         const P=this.partAt(msg.part); if (P) P[msg.t]=clamp01(finiteOr(msg.v,0)); break;
       }
@@ -1286,6 +1291,7 @@ export class OroDSP {
       return;
     }
     const P = new Part(i, this.sr, this.os);
+    P.weather = this.weather.out;
     P.rc.dcR = this.dcR;
     const air = this.airTabs[String(this.os)];
     if (air) { P.rc.tiltA = air.a; P.rc.airNorm = air.tab; }
@@ -1474,6 +1480,7 @@ export class OroDSP {
     if (s === L_BREATH) return P.breath;
     if (s >= L_SCIENCE && s <= L_SCIENCE_END) return this.science.out[s - L_SCIENCE];
     if (s === L_TURING) return this.science.out[SCI_TURING];
+    if (s >= L_WEATHER && s <= L_WEATHER_END) return this.weather.out[s - L_WEATHER];
     return 0;
   }
 
@@ -2921,6 +2928,7 @@ export class OroDSP {
   controlUpdate(elapsed) {
     this.tabBudget = TABLE_BUDGET;
     this.science.step(elapsed / this.sr, this.transport.playing ? this.currentBeats() : null, 60 / this.tempo);
+    this.weather.step(elapsed / this.sr);
     let anySolo = false;
     const count = this.count;
     for (let i = 0; i < count; i++) if (this.parts[i].params[PI.solo] >= 0.5) anySolo = true;

@@ -11,6 +11,7 @@ import { createMiniSlider, createSelect } from './controls.js';
 import { createKnob } from './knob.js';
 import { createFunctionEditor } from './function-editor.js';
 import { icon } from './icons.js';
+import { openWeatherPanel } from './weather-panel.js';
 
 const { PART_PARAM_MAP, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, clamp } = params;
 export const LINK_SOURCES = params.LINK_SOURCES || ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4', 'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height'];
@@ -183,6 +184,12 @@ export function createLinksPanel(ctx) {
 
   const fn = createFunctionEditor(ctx);
   scope.add(fn.dispose);
-  const el = h('div', { class: 'links-pane' }, macroCard, listCard, fn.el, sciCard);
+  // v2.10 live weather (opt-in): Weather Wind, Rain, Temp and Clouds sources
+  const weatherBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Live weather');
+  scope.on(weatherBtn, 'click', () => openWeatherPanel(ctx, weatherBtn));
+  const weatherCard = h('section', { class: 'links-science', 'aria-labelledby': 'sec-weather' },
+    h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-weather' }, 'Live weather'), weatherBtn),
+    h('p', { class: 'links-note' }, 'Off by default. Wind, rain, temperature and clouds where you choose, as link sources. Weather data by Open-Meteo.com.'));
+  const el = h('div', { class: 'links-pane' }, macroCard, listCard, fn.el, sciCard, weatherCard);
   return { el, dispose: scope.dispose };
 }
