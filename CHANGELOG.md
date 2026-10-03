@@ -3,6 +3,19 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.0.2 (October 2026)
+
+* **The map has no edge.** The land repeats in every direction, and now it looks and plays
+  that way: no walls, no seam lines between the copies, no frame around the play area. Drag,
+  glide, roll or tour the dot as far as you like; when it heads towards the edge of the view
+  the camera follows it (never while you are dragging it). The displayed land (11 x 11 copies,
+  detailed in the middle and coarser towards the distance) stays centred under the camera, so
+  even fully zoomed out the land reaches the edges of the view and melts into the fog. The
+  minimap moves the dot within the copy you are looking at.
+* **Optional frame-rate cap** (Settings > General > Frame rate): Uncapped (the default), 30,
+  60 or 120. It saves battery and heat on laptops; the dot, glides and physics still move by
+  the real time that passed, and the sound is unaffected.
+
 ## 2.0.1 (October 2026)
 
 * Smaller desktop apps. Electron ships Chromium's interface text in about 55 languages

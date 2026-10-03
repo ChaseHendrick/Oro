@@ -77,14 +77,15 @@ export const SANITIZE_SHADER = {
 export const MINIMAP_TERRAIN_MS = 0;
 
 /**
- * The play area is the whole 3 x 3 plane of tiles (-1 .. 2 in tile units).
- * The sound only uses the position within one tile (the terrain wraps), so
- * the dot can roam over all nine copies; a person's moves stop at the outer
- * edge instead of wrapping to the other side.
+ * The map is endless. The sound only uses the position within one tile (the
+ * terrain wraps), so the dot can travel any distance over the copies, and the
+ * displayed plane follows the camera, which follows the dot. Play-area
+ * coordinates are tile units (0 .. 1 is one copy); PLAY_LIMIT only keeps them
+ * far from float trouble (ten thousand tiles each way).
  */
-export const PLAY_MIN = -1, PLAY_MAX = 2;
+export const PLAY_LIMIT = 1e4;
 export function clampEdge(x) {
-  return Number.isFinite(x) ? Math.min(PLAY_MAX - 1e-4, Math.max(PLAY_MIN, x)) : 0.5;
+  return Number.isFinite(x) ? Math.min(PLAY_LIMIT, Math.max(-PLAY_LIMIT, x)) : 0.5;
 }
 
 export const QUALITY = {
@@ -92,12 +93,42 @@ export const QUALITY = {
   medium: { pixelRatio: 1.5, bloom: true, samples: 4 },
   low: { pixelRatio: 1, bloom: false, samples: 0 },
 };
+/** Frame-rate caps for the 3D map (Settings > General). 0 = uncapped, the default. */
+export const FPS_CAPS = [0, 30, 60, 120];
+
+/**
+ * Opt-in frame pacing: shouldPaint(now, cap) says whether this display frame
+ * should be drawn. It learns the display's frame time (a moving average of
+ * the gaps between calls) and paints once at least 1/cap minus half a display
+ * frame has passed, so a 60 cap on a 60 Hz screen still paints every frame
+ * and on a 120 Hz screen every other one. Skipped frames cost nothing; the
+ * next painted frame advances everything by the real elapsed time.
+ */
+export function createPacer() {
+  let frameMs = 1000 / 60, prev = NaN, lastPaint = -Infinity;
+  return {
+    shouldPaint(now, cap) {
+      if (Number.isFinite(prev)) {
+        const d = now - prev;
+        if (d > 0 && d < 100) frameMs += (d - frameMs) * 0.1;
+      }
+      prev = now;
+      if (!(cap > 0) || now - lastPaint >= 1000 / cap - frameMs * 0.5) { lastPaint = now; return true; }
+      return false;
+    },
+    get frameMs() { return frameMs; },
+  };
+}
 export const RENDER_STYLES = ['relief', 'wire', 'contour', 'heat', 'points', 'normals'];
 const META = Object.freeze({ source: 'visual' });
 const FADE_SECONDS = 0.3;
 const SWITCH_SECONDS = 0.35;
 const GLIDE_MS = 420;
 const LONG_PRESS_MS = 550;
+// Endless map: the camera follows the dot once it leaves the middle 70% of
+// the view, at up to FOLLOW_RATE (per second, scaled by how far out it is).
+const FOLLOW_BOX = 0.7;
+const FOLLOW_RATE = 3;
 const SIZE_DRAG_PX = 220;           // a Shift-drag this tall sweeps the whole Size range
 const SIZE_STEP = 0.03;             // normalised Size per wheel notch or [ / ] press
 const MAX_POLAR = 1.4;              // radians from straight down
@@ -265,6 +296,13 @@ export async function createVisuals(container, { store, engine = null, quality, 
   const ghost = { a: 0 };
   const dotPos = { u: 0.5, v: 0.5, x: 0, y: 0, z: 0 };
   let dotScale = 1;
+  // World centre of the displayed plane (and the markers): the tile copy
+  // under the camera, so the land never runs out (see recentrePlane()).
+  const planeOrigin = { x: 0, z: 0 };
+  // opt-in frame-rate cap (0 = uncapped)
+  const pacer = createPacer();
+  const readFpsCap = () => { const c = Number(store.get('ui.fpsCap')); return FPS_CAPS.includes(c) ? c : 0; };
+  let fpsCap = readFpsCap();
   // Orbits: the live one (newest voice), the knob-only base and one per voice.
   const orbitLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5, pathWindow: 0, pathMangle: 0, pathMirror: 0 };
   const baseLive = { stretch: 0, size: 0.22, rotate: 0, centerX: 0.5, centerY: 0.5, pathParam: 0.5, pathWindow: 0, pathMangle: 0, pathMirror: 0 };
@@ -394,8 +432,11 @@ export async function createVisuals(container, { store, engine = null, quality, 
       rig.poke();
       if (editing()) { minimapWaypoint(u, v, phase); return; }
       cancelGlide();
+      // the minimap shows one copy of the land: use the copy nearest the dot
+      // (the map is endless, so the dot may be many tiles from the first one)
+      const refU = ctl.mode !== 'idle' ? ctl.u : dotPos.u, refV = ctl.mode !== 'idle' ? ctl.v : dotPos.v;
       ctl.mode = phase === 'end' ? 'idle' : 'drag';
-      ctl.u = u; ctl.v = v;
+      ctl.u = clampEdge(u + Math.round(refU - u)); ctl.v = clampEdge(v + Math.round(refV - v));
       if (phase === 'end') {
         if (sim.isActive(sel)) sim.release(sel, 0, 0);
       } else if (sim.isActive(sel)) {
@@ -508,7 +549,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   function pickTerrain(clientX, clientY, out) {
     const ray = rayAt(clientX, clientY);
-    return intersectRay(view, ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z, out);
+    return intersectRay(view, ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z, out, EXTENT, planeOrigin.x, planeOrigin.z);
   }
 
   /** Screen-space test against the marble, generous for fingers. */
@@ -536,7 +577,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   function startGlide(u, v) {
     currentBase(_base);
     ctl.fromU = _base.u; ctl.fromV = _base.v;
-    // straight to the target, never across the seam (the edges are walls for a person's moves)
+    // straight to the target, never across the seam
     ctl.toU = clampEdge(u);
     ctl.toV = clampEdge(v);
     ctl.t0 = clock;
@@ -560,8 +601,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   /** After a person's move, remember which tile copy the dot ended on (play-area coordinates in ctl). */
   function settleTile(p) {
-    tile[p].u = Math.max(-1, Math.min(1, Math.floor(ctl.u)));
-    tile[p].v = Math.max(-1, Math.min(1, Math.floor(ctl.v)));
+    tile[p].u = Math.floor(ctl.u);
+    tile[p].v = Math.floor(ctl.v);
     lastWrapped[p].u = wrap01(ctl.u); lastWrapped[p].v = wrap01(ctl.v);
   }
 
@@ -734,7 +775,6 @@ export async function createVisuals(container, { store, engine = null, quality, 
   function dragTo(clientX, clientY) {
     if (!pickTerrain(clientX, clientY, hit)) return;
     ctl.mode = 'drag';
-    // dragging past an edge stops the dot at the edge instead of wrapping it to the other side
     ctl.u = clampEdge(hit.u + press.offU);
     ctl.v = clampEdge(hit.v + press.offV);
     recordHist(hit.x, hit.z);
@@ -946,6 +986,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
         case 'ui.selectedPart': selectPart(clampPart(store.get('ui.selectedPart')), true); break;
         case 'ui.view': if (!meta || meta.source !== 'visual') api.setView(store.get('ui.view')); break;
         case 'ui.quality': api.setQuality(store.get('ui.quality')); break;
+        case 'ui.fpsCap': fpsCap = readFpsCap(); break;
         case 'ui.autoRotate': rig.setAutoRotate(!!store.get('ui.autoRotate')); break;
         case 'ui.renderStyle': api.setRenderStyle(store.get('ui.renderStyle')); break;
         case 'ui.palette': api.setPalette(store.get('ui.palette')); break;
@@ -980,6 +1021,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     editOn = !!store.get('ui.editWaypoints');
     selectPart(clampPart(store.get('ui.selectedPart')), true);
     api.setQuality(store.get('ui.quality'));
+    fpsCap = readFpsCap();
     rig.setAutoRotate(!!store.get('ui.autoRotate'));
     api.setRenderStyle(store.get('ui.renderStyle'));
     api.setPalette(store.get('ui.palette'));
@@ -1264,10 +1306,41 @@ export async function createVisuals(container, { store, engine = null, quality, 
    */
   const _off = new THREE.Vector3();
   const _sph = new THREE.Spherical();
+  /**
+   * Keep the dot on screen: once it leaves the middle of the view (|NDC| over
+   * FOLLOW_BOX), pan the camera and its target together towards it, faster
+   * the further out it is. The orbit (distance, heading, tilt) is unchanged.
+   */
+  function followDot(dt) {
+    projV.set(dotPos.x, dotPos.y, dotPos.z).project(camera);
+    const behind = !(projV.z < 1);
+    const ex = behind ? 2 : Math.max(Math.abs(projV.x) - FOLLOW_BOX, Math.abs(projV.y) - FOLLOW_BOX, 0) / (1 - FOLLOW_BOX);
+    if (ex <= 0) return;
+    const k = reduced ? 1 : Math.min(1, dt * FOLLOW_RATE * Math.min(2, Math.max(0.25, ex)));
+    const dx = (dotPos.x - controls.target.x) * k, dz = (dotPos.z - controls.target.z) * k;
+    if (!(Math.abs(dx) + Math.abs(dz) > 1e-6)) return;
+    controls.target.x += dx; controls.target.z += dz;
+    camera.position.x += dx; camera.position.z += dz;
+  }
+
+  /**
+   * Centre the displayed plane on the tile copy under the camera's target.
+   * Every copy is the same land, so moving it by whole tiles changes nothing
+   * on screen; a little hysteresis stops it flipping at a tile edge.
+   */
+  function recentrePlane() {
+    const tx = controls.target.x / W, tz = controls.target.z / W;
+    if (Math.abs(tx - planeOrigin.x / W) > 0.6) planeOrigin.x = Math.round(tx) * W;
+    if (Math.abs(tz - planeOrigin.z / W) > 0.6) planeOrigin.z = Math.round(tz) * W;
+    terrain.mesh.position.set(planeOrigin.x, 0, planeOrigin.z);
+    markers.group.position.set(planeOrigin.x, 0, planeOrigin.z);
+    terrain.uniforms.uOrigin.value.set(planeOrigin.x, planeOrigin.z);
+  }
+
   function keepAboveLand() {
     const cp = camera.position;
-    const inside = Math.abs(cp.x) < EXTENT && Math.abs(cp.z) < EXTENT;
-    const floor = (inside ? Math.max(0, view.yAt(cp.x, cp.z)) : 0) + CAMERA_CLEARANCE;
+    // the land repeats in every direction, so there is always land under the camera
+    const floor = Math.max(0, view.yAt(cp.x, cp.z)) + CAMERA_CLEARANCE;
     if (cp.y >= floor) return;
     _off.copy(cp).sub(controls.target);
     _sph.setFromVector3(_off);
@@ -1282,6 +1355,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   function frame(now) {
     if (!running) return;
     raf = requestAnimationFrame(frame);
+    if (!pacer.shouldPaint(now, fpsCap)) return;
     tick(now, true);
   }
 
@@ -1350,19 +1424,17 @@ export async function createVisuals(container, { store, engine = null, quality, 
       else { baseCenter(_base); wu = _base.u; wv = _base.v; dotSrc = 'base'; }
       wu = wrap01(wu); wv = wrap01(wv);
       // A rolling marble or a modulated centre that crosses a tile seam moves
-      // on to the neighbouring copy instead of jumping back across the tile;
-      // past the outer edge of the plane it wraps to the far side.
+      // on to the neighbouring copy instead of jumping back across the tile
+      // (the map is endless, so it can keep going).
       const tp = tile[sel], lw = lastWrapped[sel];
       if (dotSrc !== prevSrc && Number.isFinite(prevU)) {
         // control changed hands (released, a glide or physics took over): show
         // the dot on the copy nearest to where it was drawn
-        tp.u = Math.max(-1, Math.min(1, Math.round(prevU - wu)));
-        tp.v = Math.max(-1, Math.min(1, Math.round(prevV - wv)));
+        tp.u = Math.round(prevU - wu);
+        tp.v = Math.round(prevV - wv);
       } else if (Number.isFinite(lw.u)) {
         if (wu - lw.u > 0.5) tp.u -= 1; else if (wu - lw.u < -0.5) tp.u += 1;
         if (wv - lw.v > 0.5) tp.v -= 1; else if (wv - lw.v < -0.5) tp.v += 1;
-        if (tp.u > 1) tp.u = -1; else if (tp.u < -1) tp.u = 1;
-        if (tp.v > 1) tp.v = -1; else if (tp.v < -1) tp.v = 1;
       }
       lw.u = wu; lw.v = wv;
       dotPos.u = wu + tp.u; dotPos.v = wv + tp.v;
@@ -1504,8 +1576,13 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
     // ---- camera
     const owned = rig.update(dt, now);
+    // the map is endless: when the dot heads off screen (rolling, drifting,
+    // gliding, a tour, a modulated centre, or let go near the edge), the view
+    // follows it; never while a person is dragging it
+    if (!owned && ctl.mode !== 'drag') followDot(dt);
     if (!owned) controls.update(dt);
     keepAboveLand();
+    recentrePlane();
 
     // ---- HUD
     if ((minimapDirty || view.version !== minimapVersion) && now - minimapImgAt >= MINIMAP_TERRAIN_MS) {
@@ -1669,6 +1746,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
         return pickTerrain(clientX, clientY, hit) ? { u: wrap01(hit.u), v: wrap01(hit.v), y: hit.y } : null;
       },
       dot() { return { u: dotPos.u, v: dotPos.v, x: dotPos.x, y: dotPos.y, z: dotPos.z, src: dotSrc, offset: [dispOffset.u, dispOffset.v] }; },
+      /** The camera's target and the displayed plane's centre (world units; the plane follows the camera). */
+      viewCentre() { return { target: [controls.target.x, controls.target.z], plane: [planeOrigin.x, planeOrigin.z] }; },
       /** Client coordinates of the marble's centre as drawn. */
       dotScreen() { rect = canvas.getBoundingClientRect(); return dotScreen({ x: 0, y: 0 }); },
       stats() {

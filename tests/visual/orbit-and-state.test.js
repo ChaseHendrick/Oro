@@ -146,17 +146,18 @@ describe('terrain mesh and textures', () => {
     for (const l of levels) expect(mean(l.data)).toBeCloseTo(mean(t), 4);
   });
 
-  it('builds a 3 x 3 tile grid, dense in the centre tile', () => {
+  it('builds an 11 x 11 tile grid, dense in the centre tile and coarser ring by ring', () => {
     for (const q of ['high', 'medium', 'low']) {
       const g = buildTerrainGeometry(q);
-      const [c, o] = MESH_RES[q];
-      const n = c + 2 * o + 1;
+      const [c, ...rings] = MESH_RES[q];
+      const n = c + 2 * rings.reduce((a, b) => a + b, 0) + 1;
+      expect(rings.length).toBe(5);
       expect(g.attributes.position.count).toBe(n * n);
       const xs = g.attributes.position.array;
-      expect(xs[0]).toBeCloseTo(-15, 9);
-      expect(xs[(n - 1) * 3]).toBeCloseTo(15, 9);
-      // centre spacing finer than the neighbours'
-      expect(xs[(o + 1) * 3] - xs[o * 3]).toBeLessThan(xs[3] - xs[0]);
+      expect(xs[0]).toBeCloseTo(-55, 9);
+      expect(xs[(n - 1) * 3]).toBeCloseTo(55, 9);
+      // outermost ring spacing is coarser than the centre's
+      expect(xs[3] - xs[0]).toBeGreaterThan(10 / c);
       g.dispose();
     }
   });

@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.0.1, including the guitar pedal features
+going on under the hood. It describes version 2.0.2, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -191,9 +191,17 @@ square badges mark [dot locks](#dot-locks-in-the-sequencer) and flash when their
 numbered round pins and a dashed route show a Tour; rings open where the Explore marble
 passes a peak or a valley.
 
+**The map has no edge.** The land repeats in every direction (it is the same tile over and
+over, see [what wave terrain synthesis is](#1-what-wave-terrain-synthesis-is)), so you can drag,
+glide, roll or tour the dot as far as you like: there are no walls, seams or borders. When the
+dot heads towards the edge of the view, the camera follows it (never while you are dragging
+it). The sound only depends on where the dot is within the tile, so travelling doesn't change
+it.
+
 The **minimap** in the top right corner of the view is a flat, top-down picture of the whole
 map with the loop and the dot. Click or drag on it to place the dot precisely; it is the
-quickest way to jump across the map.
+quickest way to jump across the map. It moves the dot within the copy of the land you are
+looking at.
 
 The readout at the bottom right shows the dot's position and, while sound is running, the
 height of the land under it (**h**, from −1 to +1).
@@ -881,6 +889,10 @@ Open **Settings** with the gear button or the **,** key.
   | **Low** | 1x pixel density, no glow, no anti-aliasing | Lightest; use it if the map stutters |
 
   Visual quality never changes the sound.
+* **Frame rate** for the 3D map: **Uncapped** (the default) draws the map as often as the
+  screen refreshes. **30**, **60** or **120** caps it, which saves battery and heat on a
+  laptop. The dot, glides and physics still move by the real time that passed, and the
+  sound is never affected.
 * **Map style**, **Palette** (the colours of the land from valleys to peaks, shown as
   swatches) and **Auto-rotate**.
 
@@ -1277,8 +1289,8 @@ typing in a text field.
   sound.
 * Close other heavy tabs or apps.
 
-**The map stutters or the fan spins up.** Lower **Visual quality** to Medium or Low and turn
-off **Auto-rotate**. On laptops, plug in power: some systems slow the graphics chip on
+**The map stutters or the fan spins up.** Lower **Visual quality** to Medium or Low, set a
+**Frame rate** cap (Settings > General) and turn off **Auto-rotate**. On laptops, plug in power: some systems slow the graphics chip on
 battery.
 
 **The 3D map is replaced by a flat map.** Your browser could not start WebGL. Check that
