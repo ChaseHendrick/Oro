@@ -3,6 +3,14 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.0.1 (October 2026)
+
+* Smaller desktop apps. Electron ships Chromium's interface text in about 55 languages
+  (220 language folders on the Mac); Orograph's interface is English, so only the English
+  files are bundled now. On Apple silicon the app is about 50 MB smaller on disk and the
+  download about 13 MB smaller; Windows and Linux save about 9 MB on disk. A computer set
+  to another language still works (Chromium falls back to English).
+
 ## 2.0.0 (October 2026): Expanded synthesis and performance
 
 * Eight unison copies, two seven-wave subs, coloured noise and imported recording loops,
