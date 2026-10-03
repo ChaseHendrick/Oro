@@ -418,7 +418,49 @@ export const ARP_MODES = ['Off', 'Up', 'Down', 'Up/Down', 'Random', 'As Played',
  */
 export function defaultStep() {
   // lock/lx/ly: optional dot lock. When lock = 1 the dot glides to (lx, ly) as the step plays.
+  // Optional fields, absent unless changed (read them with stepProb / stepRatchet):
+  //   prob: chance (0..1) the step plays each time it comes round (absent = 1, always).
+  //   ratchet: 1..RATCHET_MAX hits that split the step evenly (absent = 1, a single note).
+  // Keeping them out of the default step keeps older sessions and scenes byte-for-byte the same.
   return { on: 0, degree: 0, octave: 0, vel: 0.8, gate: 0.5, slide: 0, accent: 0, lock: 0, lx: 0.5, ly: 0.5 };
+}
+
+/** Most hits a ratcheted step can play. */
+export const RATCHET_MAX = 4;
+/** Each ratchet repeat plays at this fraction of the previous hit's velocity. */
+export const RATCHET_DECAY = 0.85;
+
+const finiteOr = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+/** A step's play probability, 0..1 (missing = 1). */
+export function stepProb(step) {
+  return clamp(finiteOr(step && step.prob, 1), 0, 1);
+}
+/** A step's ratchet count, 1..RATCHET_MAX (missing = 1). */
+export function stepRatchet(step) {
+  return clamp(Math.round(finiteOr(step && step.ratchet, 1)), 1, RATCHET_MAX);
+}
+
+function mix32(h) {
+  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15; h = Math.imul(h, 0x846ca68b);
+  return h ^ (h >>> 16);
+}
+/**
+ * Deterministic random number in [0, 1) for one pass of a step: a hash of
+ * (seed, track index, absolute step count since play started). The same
+ * inputs always give the same answer, so playback, offline renders and tests
+ * agree, while every pass of a looping pattern gets a fresh roll.
+ */
+export function stepChance(seed, part, absStep) {
+  const h = mix32(mix32(mix32((absStep | 0) + 0x9e3779b9) ^ Math.imul((part | 0) + 1, 0x85ebca6b)) ^ Math.imul(seed | 0, 0xc2b2ae35));
+  return (h >>> 0) / 4294967296;
+}
+/** Whether a step that is on plays this pass, given its probability. */
+export function stepPlays(step, seed, part, absStep) {
+  const pr = stepProb(step);
+  if (pr >= 1) return true;
+  if (pr <= 0) return false;
+  return stepChance(seed, part, absStep) < pr;
 }
 /** Patterns a track can hold (the arrangement picks between them). */
 export const MAX_PATTERNS = 16;

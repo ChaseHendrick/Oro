@@ -7,13 +7,16 @@
 //   { time, msg: {t:'transport', playing: true, beatTime: 0, beat: 0, spb} }
 //   { time, msg: {t:'noteOn', part, note, vel} } / { time, msg: {t:'noteOff', part, note} }
 //   { time, msg: {t:'params', part, p: {centerX, centerY}, ramp} }   dot locks
-// Swing, slides, ties, gates and accents follow src/music/transport.js;
+// Swing, slides, ties, gates, accents, probability (the transport's first
+// Play, seed 1) and ratchets follow src/music/transport.js;
 // arpeggiators need held keys and are not rendered here.
 
-import { MAX_PARTS, SEQ_RATES, stepToMidi, activeSeq, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, activeSeq, clamp } from '../core/params.js';
 
 const MIN_GAP = 0.003;        // between a note-off and the next note-on (as the router)
 const SLIDE_OVERLAP = 0.004;  // a slid note overlaps the next one (legato)
+
+const PROB_SEED = 1;         // the transport's seed on its first Play
 
 const finite = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
@@ -62,21 +65,29 @@ export function sequencerEvents(state, bars = 4, { parts } = {}) {
         push(t, { t: 'params', part: p, p: { centerX: clamp(finite(step.lx, 0.5), 0, 1), centerY: clamp(finite(step.ly, 0.5), 0, 1) },
           ramp: clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t) });
       }
-      if (!step.on) {
+      if (!step.on || !stepPlays(step, PROB_SEED, p, abs)) {
         if (tie !== null) { push(t, { t: 'noteOff', part: p, note: tie }); tie = null; }
         continue;
       }
       const note = clamp(stepToMidi(step, finite(seq.baseOctave, 3), finite(g.scaleRoot, 0), finite(g.scaleType, 0)), 0, 127);
       const vel = step.accent ? 1 : clamp(finite(step.vel, 0.8), 0.01, 1);
-      const gateEnd = Math.max(t + 0.01, Math.min(t + clamp(finite(step.gate, 0.5), 0.05, 1) * rate * spb, tNext - MIN_GAP));
-      if (tie === note) {
-        if (!step.slide) { push(gateEnd, { t: 'noteOff', part: p, note }); tie = null; }
-        continue;
+      const gateSec = clamp(finite(step.gate, 0.5), 0.05, 1) * rate * spb;
+      const hits = stepRatchet(step);
+      for (let i = 0; i < hits; i++) {
+        const ti = hits === 1 ? t : t + (tNext - t) * i / hits;
+        const tiNext = i + 1 === hits ? tNext : t + (tNext - t) * (i + 1) / hits;
+        const minLen = hits === 1 ? 0.01 : Math.min(0.01, (tiNext - ti) / 2);
+        const slide = i + 1 === hits && step.slide;
+        const gateEnd = Math.max(ti + minLen, Math.min(ti + gateSec / hits, tiNext - MIN_GAP));
+        if (tie === note) {
+          if (!slide) { push(gateEnd, { t: 'noteOff', part: p, note }); tie = null; }
+          continue;
+        }
+        push(ti, { t: 'noteOn', part: p, note, vel: clamp(vel * RATCHET_DECAY ** i, 0.01, 1) });
+        if (tie !== null) { push(ti + SLIDE_OVERLAP, { t: 'noteOff', part: p, note: tie }); tie = null; }
+        if (slide) tie = note;
+        else push(gateEnd, { t: 'noteOff', part: p, note });
       }
-      push(t, { t: 'noteOn', part: p, note, vel });
-      if (tie !== null) { push(t + SLIDE_OVERLAP, { t: 'noteOff', part: p, note: tie }); tie = null; }
-      if (step.slide) tie = note;
-      else push(gateEnd, { t: 'noteOff', part: p, note });
     }
     if (tie !== null) push(end, { t: 'noteOff', part: p, note: tie });
   }

@@ -4,7 +4,7 @@
 import {
   MAX_PARTS, MIN_PARTS, DEFAULT_PARTS, MAX_PATTERNS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
   ARP_RHYTHMS, ENV_MODES, MOD_FIELDS, LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
-  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION,
+  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION, RATCHET_MAX,
   defaultState, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
 } from './params.js';
 import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
@@ -110,7 +110,7 @@ export function sanitizePattern(src, n = 1) {
   for (let i = 0; i < SEQ_STEPS; i++) {
     const st = (Array.isArray(s.steps) && s.steps[i]) || {};
     const d = defaultStep();
-    out.steps.push({
+    const step = {
       on: num(st.on, d.on) ? 1 : 0,
       degree: Math.round(clamp(num(st.degree, d.degree), -21, 28)),
       octave: Math.round(clamp(num(st.octave, d.octave), -2, 2)),
@@ -121,7 +121,13 @@ export function sanitizePattern(src, n = 1) {
       lock: num(st.lock, d.lock) ? 1 : 0,
       lx: clamp(num(st.lx, d.lx), 0, 1),
       ly: clamp(num(st.ly, d.ly), 0, 1),
-    });
+    };
+    // Probability and ratchet are stored only when they differ from the default (1).
+    const prob = clamp(num(st.prob, 1), 0, 1);
+    const ratchet = Math.round(clamp(num(st.ratchet, 1), 1, RATCHET_MAX));
+    if (prob < 1) step.prob = prob;
+    if (ratchet > 1) step.ratchet = ratchet;
+    out.steps.push(step);
   }
   return out;
 }

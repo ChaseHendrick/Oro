@@ -7,8 +7,8 @@
 // sideways with the row names pinned; the code below works either way.
 
 import {
-  SEQ_STEPS, SEQ_RATES, ARP_MODES, ARP_RHYTHMS, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, stepToMidi, clamp, defaultStep,
-  activePatternIndex, patternPath,
+  SEQ_STEPS, SEQ_RATES, ARP_MODES, ARP_RHYTHMS, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, RATCHET_MAX, stepToMidi, clamp, defaultStep,
+  activePatternIndex, patternPath, stepProb, stepRatchet,
 } from '../core/params.js';
 import { addPattern, selectPattern, removePattern } from '../core/tracks.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
@@ -20,8 +20,9 @@ export function midiName(m) {
   return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
 }
 
-const ROWS = ['on', 'degree', 'octave', 'vel', 'gate', 'accent', 'slide', 'lock'];
-const LABELS = ['Step', 'Note', 'Oct', 'Vel', 'Gate', 'Accent', 'Slide', 'Dot'];
+const ROWS = ['on', 'degree', 'octave', 'vel', 'gate', 'prob', 'ratchet', 'accent', 'slide', 'lock'];
+const LABELS = ['Step', 'Note', 'Oct', 'Vel', 'Gate', 'Prob', 'Ratch', 'Accent', 'Slide', 'Dot'];
+const LABEL_TIPS = { Prob: 'Probability', Ratch: 'Ratchet' };
 
 // Local pattern tools so editing still works if the music module is missing.
 function localClear(store, part) {
@@ -169,18 +170,26 @@ export function createSeqPanel(ctx) {
     const oct = h('span', { class: 'seq-oct', role: 'spinbutton', tabindex: i === 0 ? '0' : '-1', 'aria-label': `Step ${i + 1} octave`, 'aria-valuemin': '-2', 'aria-valuemax': '2' });
     const vel = h('span', { class: 'seq-bar seq-bar--vel', role: 'slider', tabindex: i === 0 ? '0' : '-1', 'aria-label': `Step ${i + 1} velocity`, 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('span', { class: 'seq-bar-fill' }));
     const gate = h('span', { class: 'seq-bar seq-bar--gate', role: 'slider', tabindex: i === 0 ? '0' : '-1', 'aria-label': `Step ${i + 1} gate`, 'aria-valuemin': '5', 'aria-valuemax': '100' }, h('span', { class: 'seq-bar-fill' }));
+    const prob = h('span', {
+      class: 'seq-bar seq-bar--prob', role: 'slider', tabindex: i === 0 ? '0' : '-1', 'aria-label': `Step ${i + 1} probability`, 'aria-valuemin': '0', 'aria-valuemax': '100',
+      dataset: { tip: 'Probability: the chance this step plays each time it comes round' },
+    }, h('span', { class: 'seq-bar-fill' }));
+    const rat = h('span', {
+      class: 'seq-oct seq-rat', role: 'spinbutton', tabindex: i === 0 ? '0' : '-1', 'aria-label': `Step ${i + 1} ratchet`, 'aria-valuemin': '1', 'aria-valuemax': String(RATCHET_MAX),
+      dataset: { tip: 'Ratchet: play the step 1 to 4 times, evenly spaced. Click to cycle, drag up or down to set.' },
+    });
     const acc = h('button', { type: 'button', class: 'seq-flag seq-flag--acc', tabindex: i === 0 ? '0' : '-1', 'aria-pressed': 'false', 'aria-label': `Step ${i + 1} accent` });
     const slide = h('button', { type: 'button', class: 'seq-flag seq-flag--slide', tabindex: i === 0 ? '0' : '-1', 'aria-pressed': 'false', 'aria-label': `Step ${i + 1} slide` });
     const lock = h('button', {
       type: 'button', class: 'seq-lock', tabindex: i === 0 ? '0' : '-1', 'aria-pressed': 'false', 'aria-label': `Step ${i + 1} dot lock`,
       dataset: { tip: 'Dot lock: the dot glides here when this step plays. Click to lock it to where the dot is now, Shift-click, right-click or long-press to move the lock there, click again to clear.' },
     }, h('span', { class: 'seq-lock-dot' }));
-    cells.on.push(pad); cells.degree.push(note); cells.octave.push(oct); cells.vel.push(vel); cells.gate.push(gate); cells.accent.push(acc); cells.slide.push(slide); cells.lock.push(lock);
-    const col = h('div', { class: ['seq-col', i % 4 === 0 && 'is-beat'], dataset: { step: String(i) } }, num, pad, note, oct, vel, gate, acc, slide, lock);
+    cells.on.push(pad); cells.degree.push(note); cells.octave.push(oct); cells.vel.push(vel); cells.gate.push(gate); cells.prob.push(prob); cells.ratchet.push(rat); cells.accent.push(acc); cells.slide.push(slide); cells.lock.push(lock);
+    const col = h('div', { class: ['seq-col', i % 4 === 0 && 'is-beat'], dataset: { step: String(i) } }, num, pad, note, oct, vel, gate, prob, rat, acc, slide, lock);
     cols.push(col);
   }
   const labels = h('div', { class: 'seq-labels', 'aria-hidden': 'true' },
-    h('span', { class: 'seq-num' }, ''), ...LABELS.map(t => h('span', { class: `seq-label seq-label--${t.toLowerCase()}` }, t)));
+    h('span', { class: 'seq-num' }, ''), ...LABELS.map(t => h('span', { class: `seq-label seq-label--${t.toLowerCase()}`, title: LABEL_TIPS[t] }, t)));
   const grid = h('div', { class: 'seq-grid', role: 'group', 'aria-label': 'Steps. Use the arrow keys to move along a row and up or down to change a value.' }, labels, ...cols);
   const playNote = h('span', { class: 'seq-status', 'aria-live': 'off' });
   const main = h('div', { class: 'seq-main' }, globalBar, grid, arpBar, playNote);
@@ -226,6 +235,14 @@ export function createSeqPanel(ctx) {
       setAttr(cells.vel[i], 'aria-valuenow', String(Math.round(s.vel * 100)));
       cells.gate[i].firstChild.style.transform = `scaleX(${s.gate})`;
       setAttr(cells.gate[i], 'aria-valuenow', String(Math.round(s.gate * 100)));
+      const pr = stepProb(s), rt = stepRatchet(s);
+      cells.prob[i].firstChild.style.transform = `scaleX(${pr})`;
+      setAttr(cells.prob[i], 'aria-valuenow', String(Math.round(pr * 100)));
+      setAttr(cells.prob[i], 'aria-valuetext', `${Math.round(pr * 100)}%`);
+      setText(cells.ratchet[i], String(rt));
+      cells.ratchet[i].classList.toggle('is-zero', rt === 1);
+      setAttr(cells.ratchet[i], 'aria-valuenow', String(rt));
+      setAttr(cells.ratchet[i], 'aria-valuetext', rt === 1 ? '1 hit' : `${rt} hits`);
       setAttr(cells.accent[i], 'aria-pressed', String(!!s.accent));
       setAttr(cells.slide[i], 'aria-pressed', String(!!s.slide));
       const locked = !!s.lock;
@@ -308,6 +325,7 @@ export function createSeqPanel(ctx) {
   }
   barDrag('vel', 'vel', 0);
   barDrag('gate', 'gate', 0.05);
+  barDrag('prob', 'prob', 0);
 
   // Note cells: vertical drag, wheel.
   cells.degree.forEach((cell, i) => {
@@ -368,6 +386,32 @@ export function createSeqPanel(ctx) {
     scope.on(cell, 'pointerup', end);
     scope.on(cell, 'pointercancel', () => { st = null; });
   });
+  // Ratchet cells: vertical drag sets 1..RATCHET_MAX, a plain click cycles 1 -> 2 -> 3 -> 4 -> 1.
+  cells.ratchet.forEach((cell, i) => {
+    let st = null;
+    scope.on(cell, 'pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      cell.focus({ preventScroll: true });
+      st = { id: e.pointerId, y: e.clientY, v: stepRatchet(steps()[i]), moved: false };
+      try { cell.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    });
+    scope.on(cell, 'pointermove', (e) => {
+      if (!st || st.id !== e.pointerId) return;
+      const d = Math.round((st.y - e.clientY) / 14);
+      if (d !== 0) st.moved = true;
+      if (st.moved) setStep(i, 'ratchet', clamp(st.v + d, 1, RATCHET_MAX));
+    });
+    const end = () => {
+      if (st && !st.moved) {
+        const v = stepRatchet(steps()[i]);
+        setStep(i, 'ratchet', v >= RATCHET_MAX ? 1 : v + 1);
+      }
+      st = null;
+    };
+    scope.on(cell, 'pointerup', end);
+    scope.on(cell, 'pointercancel', () => { st = null; });
+  });
   for (const field of ['accent', 'slide']) {
     cells[field].forEach((b, i) => scope.on(b, 'click', () => setStep(i, field, (steps()[i] || {})[field] ? 0 : 1)));
   }
@@ -413,6 +457,8 @@ export function createSeqPanel(ctx) {
             else if (row === 'octave') setStep(i, 'octave', clamp(s.octave + dir, -2, 2));
             else if (row === 'vel') setStep(i, 'vel', clamp(Math.round((s.vel + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0, 1));
             else if (row === 'gate') setStep(i, 'gate', clamp(Math.round((s.gate + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0.05, 1));
+            else if (row === 'prob') setStep(i, 'prob', clamp(Math.round((stepProb(s) + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0, 1));
+            else if (row === 'ratchet') setStep(i, 'ratchet', clamp(stepRatchet(s) + (big ? dir * RATCHET_MAX : dir), 1, RATCHET_MAX));
             else handled = false;
             break;
           }
@@ -421,6 +467,9 @@ export function createSeqPanel(ctx) {
               const field = row;
               setStep(i, field, s[field] ? 0 : 1);
               if (row === 'on' && !s.on) previewStep(i);
+            } else if (row === 'ratchet') {
+              const v = stepRatchet(s);
+              setStep(i, 'ratchet', v >= RATCHET_MAX ? 1 : v + 1);
             } else if (row === 'lock') {
               toggleLock(i, e.shiftKey);
             } else handled = false;

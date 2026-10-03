@@ -755,6 +755,16 @@ The grid has one column per step and one row per setting:
 not "C sharp". Change the key or scale and every pattern follows, staying in key. Setting a
 step while the transport is stopped plays it so you can hear what you chose.
 
+### Probability and ratchets (2.5)
+
+Two more rows in the step grid. **Prob** is the chance, from 0 to 100%, that a step plays
+each time it comes round (100% is the usual always-on step; 0% never plays). The roll is
+made fresh every pass, so a 50% step plays about half the time, with no fixed pattern.
+**Ratchet** plays a step 1 to 4 times, splitting its length evenly; each repeat has the
+same gate within its own slice and plays a little softer than the one before (85% of
+its velocity). Steps start with Prob 100% and Ratchet 1, so existing patterns are
+unchanged.
+
 ### Dot locks in the sequencer
 
 The **Dot** row lets the sequencer move the dot, so each step can sit on a different patch
