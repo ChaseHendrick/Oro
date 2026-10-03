@@ -52,8 +52,8 @@ export function createMusic({ store, engine = null, presets = null, timers = def
     return transport.currentStep(p);
   }
 
-  function renderEvents(bars = 4, { parts } = {}) {
-    return renderSessionEvents(store, bars, { parts, held: (p) => router.heldEntries(p), random });
+  function renderEvents(bars = 4, { parts, forceOn } = {}) {
+    return renderSessionEvents(store, bars, { parts, forceOn, held: (p) => router.heldEntries(p), random });
   }
 
   return {

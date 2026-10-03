@@ -4,8 +4,9 @@
 // A session's tuning is stored at the root of the state as `tuning` and is
 // absent for the default (12-TET with A4 = 440 Hz), so a session that never
 // touches it saves exactly as before and the engine keeps its original pitch
-// code. Pitch bend, Tune, Fine and the Octave switch are applied on top of
-// the tuned key in equal-tempered semitones (an octave is always 2/1).
+// code. Pitch bend and Tune move through the tuning by keys (a bend of n
+// semitones plays n keys away, fractions in between); Fine, unison detune
+// and the Octave switch stay equal-tempered (cents, and a true 2/1).
 //
 // Mapping without a .kbm: the scale's first degree (1/1) sits on the tuning
 // root key in the octave of middle C (C4 = key 60), and every key above or
@@ -212,6 +213,13 @@ export function sanitizeTuning(src) {
   if (scale) out.scale = scale;
   if (map) out.map = map;
   return out;
+}
+
+/** The explicit record of the default tuning, written into scenes (sessions leave it out). */
+export const DEFAULT_TUNING = Object.freeze({ id: 'equal12', ref: REF_DEFAULT, root: -1 });
+/** A tuning as scenes store it: always present, the default included. */
+export function tuningRecord(src) {
+  return sanitizeTuning(src) || { ...DEFAULT_TUNING };
 }
 
 /** The degrees (cents, last = period) of a sanitized tuning. */

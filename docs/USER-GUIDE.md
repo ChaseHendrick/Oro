@@ -757,8 +757,9 @@ These are shared by all parts:
 ### Microtuning (2.9)
 
 Every synth part can play in a tuning other than 12-tone equal temperament. The tuning is
-part of the session (it is saved with it and with scenes) and lives in **Settings > Audio
-> Tuning**:
+part of the session and lives in **Settings > Audio > Tuning**. Scenes saved from 2.9 on
+record their tuning (12-TET included) and bring it back when loaded; scenes saved before
+2.9, and the factory scenes, have no tuning record and leave the current tuning as it is.
 
 * **Tuning**: 12-TET (the default), Just intonation (5-limit), Pythagorean,
   Quarter-comma meantone, Werckmeister III, 19-TET, 24-TET (quarter tones), 31-TET and
@@ -783,10 +784,13 @@ Bohlen-Pierce, most imported scales) keep the root key at its usual pitch, so a 
 is still about 261.6 Hz, and an octave is then 19 keys wide. Tuned pitches are kept
 between 8 Hz and 20 kHz.
 
-Pitch bend, **Tune**, **Fine**, the **Octave** switch and unison detune work as before:
-they are applied in equal-tempered semitones on top of the tuned key (Octave is always a
-true 2/1). Glide slides smoothly between the tuned pitches. Drum kit tracks are not
-affected, and notes sent to other MIDI gear are unchanged. Bounces use the tuning too.
+In a tuning other than the default, pitch bend and **Tune** move through the tuning by
+keys: a bend or transpose of 2 semitones plays the note two keys up in the tuning (in
+19-TET that is two 19-TET steps), and part of a bend lands smoothly between two keys.
+Past the lowest or highest key the last step size carries on. **Fine** and unison detune
+stay in cents, and the **Octave** switch is always a true 2/1. Glide slides smoothly
+between the tuned pitches. Drum kit tracks are not affected, and notes sent to other MIDI
+gear are unchanged. Bounces use the tuning too.
 
 ### The step sequencer
 
@@ -950,11 +954,16 @@ out as Standard MIDI Files (`.mid`):
 
 * **Export**: with **This pattern** chosen, saves one pass of the selected track's
   current pattern (even if its sequencer is off). With **All tracks, N bars**, saves N
-  bars of every track whose sequencer is on, one MIDI track each. Files are type 1 at 480
-  ticks per beat, with the session tempo, 4/4 and the track names. Timing comes from the
-  same offline sequencer as the WAV bounce, so swing, ratchets and probability (as on the
-  first Play) match a bounce. Arpeggiators and live playing are not included. Drum kit
-  tracks are written on channel 10, lane 1 as key 36 (C1) up to lane 8 as key 43.
+  bars of every track whose sequencer is on, one MIDI track each (plus any track whose
+  arpeggiator made notes). Files are type 1 at 480 ticks per beat, with the session
+  tempo, 4/4 and the track names. The notes come from the same offline replay as the WAV
+  bounce, so the file has exactly what a bounce would play: the step sequencer (with
+  swing, ratchets, slides, humanize and probability as on the first Play), the
+  arpeggiator playing the keys that are held or latched with Hold when you export, and
+  the chord trigger. Notes you play live are not included. (If the music engine did not
+  start, only the step sequencers are written.) Accented steps are written at
+  velocity 127. Drum kit tracks are written on channel 10, lane 1 as key 36 (C1) up to
+  lane 8 as key 43.
   The **Bounce** popover also has **Save MIDI**, for the bars chosen there.
 * **Import**: reads a type 0 or type 1 file into the selected track's current pattern.
   If the file has several tracks (or channels) with notes, choose one from the list (the
@@ -962,13 +971,19 @@ out as Standard MIDI Files (`.mid`):
   pattern's step rate, starting at the bar of the first note, and the first *Length*
   steps are written. Each note becomes a scale degree and octave in the global key and
   scale; notes outside the scale snap to the nearest scale note (the lower one on a tie).
-  Velocity and length set each step's Vel and Gate, and overlapping notes become slides.
-  One note per step is kept (the highest). On a drum kit track the notes fill the lanes
-  instead: keys 36 to 43 go to lanes 1 to 8, and other keys wrap round onto them.
+  Velocity and length set each step's Vel and Gate, notes at velocity 120 or more are
+  also marked as accents (keeping their velocity), and overlapping notes become slides.
+  The **chords** menu under the buttons decides what happens when several notes land on
+  one step: **Highest note** (the default) or **Lowest note** keeps one, and **Split
+  across tracks** writes the highest notes into this track, the next voice down into the
+  track after it, and so on, each into that track's current pattern. Voices beyond the
+  last track are dropped, and the status line says how many. On a drum kit track the
+  notes fill the lanes instead: keys 36 to 43 go to lanes 1 to 8, and other keys wrap
+  round onto them.
   Dot locks and the steps after the pattern's length are left as they were.
 * The status line says how many notes came in, how many were snapped, how many were left
   out and the file's tempo (the session tempo is not changed). An import is one undo
-  step.
+  step, also when it is split across several tracks.
 
 ### Arpeggiator
 

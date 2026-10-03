@@ -1,6 +1,11 @@
 // v2.9 Standard MIDI Files: export from the sequencers, import into a pattern.
 import { describe, it, expect } from 'vitest';
-import { writeMidi, parseMidi, exportMidi, midiChoices, notesToPattern, noteToDegree, PPQ, DRUM_CHANNEL } from '../../src/music/midi-file.js';
+import { writeMidi, parseMidi, exportMidi, midiChoices, notesToPattern, noteToDegree, importMidiNotes, PPQ, DRUM_CHANNEL } from '../../src/music/midi-file.js';
+import { createStore } from '../../src/core/store.js';
+import { createHistory } from '../../src/core/history.js';
+import { renderSessionEvents } from '../../src/music/render.js';
+import { createPresets } from '../../src/presets/presets.js';
+import { createMemoryStorage } from './fakes.js';
 import { sequencerEvents } from '../../src/audio/bounce-events.js';
 import { defaultState, defaultStep, stepToMidi, SCALE_NAMES, SEQ_STEPS } from '../../src/core/params.js';
 
@@ -188,5 +193,98 @@ describe('import', () => {
     expect(() => parseMidi(new Uint8Array([1, 2, 3]))).toThrow(/not a MIDI file/);
     expect(() => parseMidi(Uint8Array.from([0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 3, 0, 1, 0, 96]))).toThrow(/format 3/);
     expect(() => parseMidi(Uint8Array.from([0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 1, 0, 96]))).toThrow(/no tracks/);
+  });
+});
+
+describe('2.9 follow-ups', () => {
+  const fakeTimers = () => {
+    let id = 0; const q = new Map();
+    return { setTimeout: (fn) => { q.set(++id, fn); return id; }, clearTimeout: (i) => q.delete(i), flush: () => { const f = [...q.values()]; q.clear(); f.forEach(x => x()); } };
+  };
+  // A minor, base octave 3: a three-note chord on step 1, two notes on step 3, one on step 5
+  const CHORDS = [
+    { beat: 0, beats: 0.2, note: 64, vel: 100 }, { beat: 0, beats: 0.2, note: 60, vel: 100 }, { beat: 0, beats: 0.2, note: 57, vel: 100 },
+    { beat: 0.5, beats: 0.2, note: 62, vel: 100 }, { beat: 0.5, beats: 0.2, note: 69, vel: 100 },
+    { beat: 1, beats: 0.2, note: 59, vel: 100 },
+  ];
+  const tracksOf = (store, k) => store.get(`parts.${k}.patterns.0.steps`).slice(0, 5).map(st => (st.on ? noteFromStep(st) : null));
+  const noteFromStep = (st) => stepToMidi(st, 3, 9, MINOR);
+
+  it('chords: highest or lowest note, or split voice k onto track sel + k as one undo step', () => {
+    const base = session();
+    base.parts = base.parts.slice(0, 3);
+    let store = createStore(base);
+    let r = importMidiNotes(store, CHORDS, { part: 0, chord: 'high' });
+    expect(tracksOf(store, 0)).toEqual([64, null, 69, null, 59]);
+    expect([r.dropped, r.voices, r.tracks]).toEqual([3, 3, 1]);
+    store = createStore(base);
+    importMidiNotes(store, CHORDS, { part: 0, chord: 'low' });
+    expect(tracksOf(store, 0)).toEqual([57, null, 62, null, 59]);
+    // split from track 2 of 3: voice 2 has no track left
+    store = createStore(base);
+    const timers = fakeTimers();
+    const h = createHistory(store, { timers });
+    r = importMidiNotes(store, CHORDS, { part: 1, chord: 'split' });
+    timers.flush();
+    expect(tracksOf(store, 1)).toEqual([64, null, 69, null, 59]);
+    expect(tracksOf(store, 2)).toEqual([60, null, 62, null, null]);
+    expect([r.tracks, r.voicesDropped, r.dropped, r.used]).toEqual([2, 1, 0, 5]);
+    expect(h.list().past).toEqual(['Import']);
+    h.undo();
+    expect(tracksOf(store, 1)).toEqual([null, null, null, null, null]);
+    expect(tracksOf(store, 2)).toEqual([null, null, null, null, null]);
+  });
+
+  it('accents: exported at velocity 127 and read back from velocity 120 up, velocity kept', () => {
+    const s = session();
+    const pat = melodic(s);
+    pat.steps[0] = { ...pat.steps[0], accent: 1, vel: 0.4 };
+    pat.steps[3] = { ...pat.steps[3], accent: 1 };
+    const m = parseMidi(exportMidi(s, { mode: 'pattern', part: 0 }).bytes);
+    const notes = m.tracks[1].notes;
+    expect(notes[0].vel).toBe(127);
+    const res = notesToPattern(notes, { ...pat, steps: [] }, { root: 9, scaleType: MINOR });
+    res.steps.forEach((st, i) => expect(st.accent).toBe(pat.steps[i].accent ? 1 : 0));
+    expect(res.steps[0].vel).toBe(1);
+    expect(notesToPattern([{ beat: 0, beats: 0.2, note: 57, vel: 121 }], pat, { root: 9, scaleType: MINOR }).steps[0]).toMatchObject({ accent: 1, vel: 0.953 });
+  });
+
+  it('export takes the bounce replay when given: arpeggiated held keys come out too', () => {
+    const s = session();
+    s.parts[0].arp = { mode: 1, rate: 3, octaves: 1, gate: 0.5, hold: 1, rhythm: 0 };
+    s.parts[0].seqOn = 0;
+    const store = createStore(s);
+    const held = (p) => (p === 0 ? [{ note: 60, vel: 0.8 }, { note: 64, vel: 0.8 }] : []);
+    const calls = [];
+    const render = (bars, o) => { calls.push(o); return renderSessionEvents(store, bars, { ...o, held }); };
+    const plain = exportMidi(store.serialize(), { mode: 'pattern', part: 0 });
+    expect(plain.notes).toBe(0);
+    const res = exportMidi(store.serialize(), { mode: 'pattern', part: 0, render });
+    expect(calls[0]).toEqual({ parts: [0], forceOn: [0] });
+    const notes = parseMidi(res.bytes).tracks[1].notes;
+    expect(notes.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(notes.map(n => n.note))).toEqual(new Set([60, 64]));
+    // session export lists the arp-only track because it made notes
+    const all = exportMidi(store.serialize(), { mode: 'session', bars: 1, render });
+    expect(all.tracks).toBe(1);
+  });
+
+  it('scenes record their tuning; a scene without one keeps the current tuning', () => {
+    const store = createStore(defaultState());
+    const presets = createPresets({ store, storage: createMemoryStorage() });
+    presets.saveScene('Plain');
+    const plain = presets.getScene(presets.scenes().find(x => x.name === 'Plain').id);
+    expect(plain.tuning).toEqual({ id: 'equal12', ref: 440, root: -1 });
+    store.set('tuning', { id: 'equal19', ref: 440, root: 0 });
+    presets.saveScene('Nineteen');
+    expect(presets.getScene(presets.scenes().find(x => x.name === 'Nineteen').id).tuning).toEqual({ id: 'equal19', ref: 440, root: 0 });
+    // an older scene (no tuning record) leaves the tuning alone
+    const old = { ...defaultState(), name: 'Old' };
+    presets.loadScene(old);
+    expect(store.get('tuning')).toEqual({ id: 'equal19', ref: 440, root: 0 });
+    // a scene that recorded 12-TET switches back to it; the session then saves no tuning
+    presets.loadScene(plain.id);
+    expect(store.get('tuning')).toBe(undefined);
+    expect('tuning' in JSON.parse(JSON.stringify(store.serialize()))).toBe(false);
   });
 });

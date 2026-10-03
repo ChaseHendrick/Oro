@@ -16,7 +16,7 @@ import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from './smart.js';
 import { sanitizeChord } from '../music/chord-trigger.js';
-import { sanitizeTuning } from '../dsp/tuning.js';
+import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -253,5 +253,8 @@ export function migrateScene(src) {
   const out = migrateState(src);
   const pedalPresets = src && typeof src === 'object' ? sanitizePedalPresets(src.pedalPresets) : null;
   if (pedalPresets) out.pedalPresets = pedalPresets;
+  // v2.9: a scene that records its tuning keeps the record (12-TET included);
+  // older scenes have none and leave the current tuning alone when loaded
+  if (src && typeof src === 'object' && src.tuning && typeof src.tuning === 'object') out.tuning = tuningRecord(src.tuning);
   return out;
 }
