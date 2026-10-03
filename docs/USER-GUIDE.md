@@ -1743,6 +1743,34 @@ flashes. When you find a secret or earn a badge, a short message says so.
 hint for each one still hidden, and every badge: the ones you have earned with the date,
 the rest as **???** with a hint. Like the counters, this is kept only in this browser.
 
+### Resonator: hear the shape of the land (2.10)
+
+The **Resonator** card in the Sound tab treats the track's own terrain as a drum skin with fixed edges, one map tile across. High ground is stiff and carries waves fast, low ground is slack and slow, so peaks, ridges and craters change which overtones ring and how strongly.
+
+- **Resonator**: **Off** (the default, nothing runs and the sound is unchanged), **Strike** (every note hits the skin at the dot, harder with velocity) or **Resonate** (the track's own sound drives the skin at the dot all the time, like strings ringing in sympathy).
+- **Mix**: from the dry track (0) to the ringing skin only (1).
+- **Decay**: how long the lowest mode rings, as the time to fall by 60 dB.
+- **Tone**: dark (high overtones die quickly) to bright (they ring about as long as the lowest one).
+- **Size**: the skin against the note. At 1x the lowest mode sits on the note; 2x rings an octave lower, 0.5x an octave higher. The newest note sets the pitch, so chords strike one skin tuned to the last note.
+- **Listen**: where the pickup sits. At 0 it is opposite the dot through the middle of the map; turning either way swings it round the middle towards the dot. A pickup near a quiet line of a mode hears less of it.
+
+The skin follows terrain A and B blended by the Morph knob's set position (modulating Morph does not reshape it) and is rebuilt shortly after the terrain changes. In Resonate mode its level follows the track's level, so the land and Decay change the colour more than the loudness.
+
+**Accuracy.** The lowest mode is computed for the actual land and lands on the note within about 0.1 percent in our tests; the overtones are whatever the land makes them, usually not harmonic. The grid is coarse (24 x 24 cells at Eco, 32 x 32 at Standard and Raw, 36 x 36 at High and Pristine), runs at about 24 kHz and is interpolated to the output rate, so very fine terrain detail is smoothed and the highest overtones are approximate. Each grid has a pitch ceiling: notes above roughly 300 to 650 Hz (lower on steep land, depending on quality) ring one or more octaves lower.
+
+**CPU.** This is the most expensive control in Oro: a ringing skin costs about as much as several voices, and it doubles for notes above roughly 220 to 350 Hz at Standard and High (the simulation then takes two smaller steps per sample). Measured on a slow test machine, one ringing skin took about 6 percent of a core at Eco, 12 to 25 percent at Standard and 14 to 30 percent at High. It costs nothing while Off, while the skin is at rest (it stops computing once it has died away) or while Mix is at 0. Use it on one or two tracks, or choose Eco on a slow computer.
+
+### Imprint (2.10)
+
+**Imprint** (next to Image library and Formula under each terrain slot) turns a sound into land, so the track plays that sound back at any note.
+
+1. Choose or drop an audio file, or press **Record 3 s** to record through the voice input (turn it on in Settings > Voice). One clear held note works best.
+2. Pick a mode. **Single** writes one cycle of the sound along the path the dot traces now. **Time** writes up to 32 successive cycles on rings of the same path at Size 0.06 (the start of the sound) to 0.46 (the end), so turning **Size** moves through the sound in time.
+3. Set **Strength**: how much of the rest of the land the imprint takes over. The path itself always carries the sound; at 0 the old land stays everywhere else and only blends in near the path, at 100% the whole map becomes smooth land grown from the imprint.
+4. Press **Imprint into A** (or B). The status line says what was found, for example "Imprinted 220 Hz cycle from "note.wav"". The result is a user terrain on that slot, saved with the session like an imported image, and one Undo step takes it back.
+
+Oro finds the pitch with the same analysis as Voice capture, cuts band-limited single cycles and lines them up. In our tests a track playing an imprinted cycle with the same path settings matched the source's first eight harmonics within 1 percent. The match holds for the path as it was when you pressed Imprint: Laps 1, Direction Forward and Morph turned to this slot's side work best, and Spin, Key>Size, unison Map spread and path modulation move the dot off the imprinted ring (which is often the fun part). Time mode works best with round paths such as the Ellipse, whose rings do not cross. Very short, noisy or chord recordings are refused with a reason.
+
 ### MIDI & MPC, Pedals, Shortcuts, About
 
 Covered in the next sections. **About** shows the version and licence.

@@ -18,6 +18,7 @@ import { offerPostcardFile } from './postcard.js';
 
 // v2.9 PNG files already checked for a postcard (Use as terrain imports them as usual).
 const postcardChecked = new WeakSet();
+import { openImprint } from './imprint-panel.js';
 
 const TERRAIN_KNOBS = ['morph', 'warp', 'lift', 'fold', 'seed', 'detail'];
 const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror', 'warpMode', 'warpAmount'];
@@ -160,13 +161,18 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
   parentScope.on(libraryBtn, 'click', () => openTerrainLibrary(ctx, libraryBtn, slot));
   const formulaBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Build terrain ${slot} from a formula` }, 'Formula');
   parentScope.on(formulaBtn, 'click', () => openFormulaTerrain(ctx, formulaBtn, slot));
+  const imprintBtn = h('button', {
+    type: 'button', class: 'btn btn--ghost btn--sm', disabled: !canImport, 'aria-label': `Imprint a sound into terrain ${slot}`,
+    dataset: { tip: canImport ? 'Turn a sound into land: one cycle of it along the dot\'s path' : 'Imprint needs the audio engine, which is not available' },
+  }, 'Imprint');
+  parentScope.on(imprintBtn, 'click', () => openImprint(ctx, imprintBtn, slot));
   const channel = createKnob(ctx, binder.partParam('imageChannel' + slot), { size: 'sm', label: 'Channel', ariaLabel: () => 'Image channel' });
   const mapping = createKnob(ctx, binder.partParam('imageMapping' + slot), { size: 'sm', label: 'Mapping', ariaLabel: () => 'Image mapping' });
   parentScope.add(channel.dispose); parentScope.add(mapping.dispose);
   const imageControls = h('div', { class: 'knob-grid knob-grid--2 knob-grid--tight' }, channel.el, mapping.el);
   const card = h('div', { class: 'terrain-card', style: { position: 'relative' } }, pick, importBtn);
   pick.style.width = '100%';
-  const el = h('div', { class: 'terrain-slot', dataset: { slot } }, card, fileInput, h('div', { class: 'terrain-source-btns' }, libraryBtn, formulaBtn), imageControls);
+  const el = h('div', { class: 'terrain-slot', dataset: { slot } }, card, fileInput, h('div', { class: 'terrain-source-btns' }, libraryBtn, formulaBtn, imprintBtn), imageControls);
 
   function render() {
     const part = binder.selected();

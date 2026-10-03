@@ -9,6 +9,7 @@ import { COLLAPSE_NAMES, COLLAPSE_BARS } from '../dsp/science-sources.js';
 import { FILTER2_TYPES, FILTER_ROUTES } from '../dsp/filter2.js';
 import { defaultFuncPoints } from '../dsp/function-gen.js';
 import { defaultDrum } from '../dsp/drum-kit.js';
+import { RESO_MODES } from '../dsp/resonator.js';
 
 // v2.2 unison: how detune positions are spread, and transposing stacks
 // (semitones cycled across the copies from the outside in; the centre copy
@@ -245,6 +246,14 @@ export const PART_PARAMS = [
   // return buses. At 0 (the default) the buses do not run at all.
   P('sendA', 'Send A', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the shared Send A reverb, after the level fader' }),
   P('sendB', 'Send B', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the shared Send B delay, after the level fader' }),
+  // 2.10 Resonator (src/dsp/resonator.js): the track's terrain as a ringing
+  // membrane. Off (the default) runs nothing and changes nothing.
+  P('resoOn', 'Resonator', 'reso', 'enum', 0, RESO_MODES.length - 1, 0, { options: RESO_MODES, hint: 'Strike: every note hits the land like a drum skin at the dot. Resonate: the track\'s own sound makes the land ring' }),
+  P('resoMix', 'Mix', 'reso', 'lin', 0, 1, 0.5, { hint: 'Dry track (0) to the ringing land only (1)' }),
+  P('resoDecay', 'Decay', 'reso', 'exp', 0.05, 20, 1.5, { unit: 's', hint: 'How long the lowest mode rings (time to fall by 60 dB)' }),
+  P('resoTone', 'Tone', 'reso', 'lin', 0, 1, 0.5, { hint: 'Dark (high modes die fast) to bright (they ring as long as the lowest)' }),
+  P('resoSize', 'Size', 'reso', 'exp', 0.25, 4, 1, { unit: 'x', hint: 'Size of the skin against the note: 2x rings an octave lower, 0.5x an octave higher' }),
+  P('resoListen', 'Listen', 'reso', 'lin', -1, 1, 0, { hint: 'Where the pickup sits: 0 is opposite the dot through the middle of the map; either way swings it round towards the dot' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
