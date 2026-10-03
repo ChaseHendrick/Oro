@@ -360,7 +360,9 @@ export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide'
   // v2.4: the Turing looping random source (global) and the track's Function (per voice)
   'Turing', 'Function',
   // v2.10 live weather (global, src/dsp/weather-sources.js): Wind, Rain and Clouds 0..1, Temp -1..1
-  'Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds'];
+  'Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds',
+  // v2.12 game controller right stick (global, src/dsp/pad-sources.js): -1..1
+  'Pad Stick X', 'Pad Stick Y'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {

@@ -121,6 +121,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
   let voiceMsg = null;            // v1.4 Voice Level link source
   let weatherMsg = null;          // v2.10 live weather link sources
+  let padMsg = null;              // v2.12 game controller right stick link sources
   let pedalCompMs = 0;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
@@ -129,6 +130,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     if (guitarMsg && guitarMsg.v) out.push({ ...guitarMsg });
     if (voiceMsg && voiceMsg.v) out.push({ ...voiceMsg });
     if (weatherMsg) out.push({ ...weatherMsg, snap: true });
+    if (padMsg) out.push({ ...padMsg, snap: true });
     controllers.forEach((c, part) => {
       if (c.bend) out.push({ t: 'bend', part, v: c.bend });
       if (c.wheel) out.push({ t: 'wheel', part, v: c.wheel });
@@ -560,6 +562,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       if (!values || values.length !== 4 || !Array.from(values).every(Number.isFinite)) return;
       weatherMsg = { t: 'weather', v: Array.from(values) };
       post({ ...weatherMsg, snap: !!snap });
+    },
+    /** v2.12 game controller right stick [x, y], -1..1 (the DSP smooths it). */
+    setPadStick(x, y) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      padMsg = { t: 'pad', v: [clamp(x, -1, 1), clamp(y, -1, 1)] };
+      post(padMsg);
     },
     controlSource(part, source, v) {
       if (!validPart(part) || !['expression','sustainLevel','breath'].includes(source) || !Number.isFinite(v)) return;

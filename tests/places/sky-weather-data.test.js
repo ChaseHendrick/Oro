@@ -39,7 +39,7 @@ describe('live weather', () => {
     expect(mapWeather({ wind_speed_10m: 30, precipitation: 2.5, temperature_2m: 25, cloud_cover: 50 })).toEqual([0.5, 0.5, 0.5, 0.5]);
     expect(mapWeather({ wind_speed_10m: 200, precipitation: 99, temperature_2m: -60, cloud_cover: 140 })).toEqual([1, 1, -1, 1]);
     expect(mapWeather(null)).toEqual([0, 0, 0, 0]);
-    expect(LINK_SOURCES.slice(-4)).toEqual(['Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds']);
+    expect(LINK_SOURCES.slice(31, 35)).toEqual(['Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds']);
     expect(LINK_SOURCES.indexOf('Function')).toBe(30);
     expect(LINK_SOURCES.indexOf('Weather Wind')).toBe(31);
   });

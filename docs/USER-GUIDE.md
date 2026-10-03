@@ -1974,6 +1974,72 @@ None of this has been tested on a physical MPC XL yet. The steps come from Akai'
 documentation, so treat menu names as guidance and use the MPC's MIDI monitor to confirm
 what is being sent.
 
+### Game controllers and haptics (2.12)
+
+Oro can be played with a game controller. It is off by default: open **Settings >
+Controllers** and turn on **Use game controllers**. The settings are kept on this computer
+(not in your session), and Oro only reads the controller while this is on and one is
+connected. Most browsers only show a controller after you press one of its buttons.
+
+With a controller in the standard layout (most Xbox, PlayStation and Switch Pro style pads):
+
+| Input | What it does |
+|---|---|
+| Left stick | Moves the dot of the selected track (faster the further you push; set **Dot speed** and **Deadzone**) |
+| Right stick | Two Link sources, **Pad Stick X** and **Pad Stick Y** (-1 to 1, up is +1) |
+| Left trigger | Plays the root of the key; how far you pull it sets the velocity |
+| Right trigger | Plays a triad on the root, with velocity |
+| A, B, X, Y | Notes 1 to 4 of the current key and scale; hold LB for notes 5 to 8 |
+| D-pad up and down | Octave up and down |
+| D-pad left and right | Previous and next track |
+| Start | Play or stop |
+
+On a drum kit track the triggers play pads 1 and 2 and A, B, X, Y play pads 1 to 4 (5 to 8
+with LB). The triggers are notes rather than Link sources so they can be played like keys.
+
+Every action can be reassigned: choose **Assign** next to it in the mapping table and press
+the button (or move the stick) you want. Esc cancels; **Reset the mapping** goes back to the
+defaults. The **Input test** shows the buttons and sticks as you use them, which helps with
+controllers that are not in the standard layout.
+
+**Golf with a controller.** In Golf the left stick turns the aim, holding either trigger
+charges the shot (the bar under the aim shows the power) and letting go shoots. A goes back to
+the tee on the driving range or on to the next hole; B quits.
+
+**Haptics.** Also off by default, in the same tab:
+
+- **Rumble with the bass**: a short rumble on notes of the track playing lowest (or drum kit
+  pad 1), a bump when a golf ball is hit and a longer one when it drops in the hole. Set the
+  strength, and use **Test rumble** to check it.
+- **Pulse on the beat** (phones): a short vibration on each beat while the transport plays,
+  longer on the first beat of the bar. It never runs with Reduce motion on and stops when
+  Oro is hidden.
+
+Where the browser or device cannot do it, the tab says "not supported on this device".
+These features have not been tested with every controller or phone.
+
+### Match a song: key and tempo (2.12)
+
+In the Seq tab's global bar (next to Key and Scale), **Match a song** finds the tempo and key
+of a piece of music so Oro can play along. Drop an audio file on the panel, choose one, or
+record about 10 seconds from the microphone while the song plays. The audio is analysed in
+your browser and never uploaded; only the first 90 seconds are used.
+
+Oro shows something like "About 124 BPM, A minor (next: C major)", with how sure it is.
+**Apply tempo and key** sets the global tempo, key and scale (Major or Minor) as one step,
+so a single Undo puts them back. **Tempo only**, **Key only**, **Use** the next best key, or
+**Use** the half or double tempo are there when the first guess is not right. Relative keys
+(A minor and C major share their notes) and half or double tempos are the usual mix-ups.
+
+When audio is running, **Play the song along** loops the file as a simple backing track
+with its own volume. It goes straight to your speakers: it is not recorded, not in the
+looper, and does not follow Oro's tempo.
+
+How it works: the tempo comes from how the sound's spectrum changes over time (onsets),
+checked for repeating beat periods between 60 and 200 BPM; the key from how strongly each of
+the 12 notes sounds overall, compared with the Krumhansl-Kessler key profiles. Silence,
+noise and music without a steady beat or clear key give a low confidence message.
+
 ---
 
 ## 15. Guitar pedals
