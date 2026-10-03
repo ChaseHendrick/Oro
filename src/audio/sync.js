@@ -17,6 +17,8 @@ import {
 } from '../core/params.js';
 import { sanitizeLinks } from '../core/migrate.js';
 import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
+import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
+import { decodeNoiseRecording } from '../dsp/noise-recording.js';
 
 const MOD_SET = new Set(MOD_PARAM_IDS);
 
@@ -48,8 +50,9 @@ function cleanMod(o) {
  * @param {(fn: () => void) => void} [o.defer] scheduling primitive (tests may pass a manual one)
  * @param {() => object[]} [o.extra] host state that is not in the store (quality, controllers),
  *   appended to snapshot() so a rebuilt DSP gets it back too
+ * @param {() => number} [o.sampleRate] active render rate used to decode recorded noise
  */
-export function createStoreSync({ store, post, onGlobal = () => {}, defer = queueMicrotask, extra = () => [] }) {
+export function createStoreSync({ store, post, onGlobal = () => {}, defer = queueMicrotask, extra = () => [], sampleRate = () => 48000 }) {
   let scheduled = false;
   let full = false;
   let fullExtra = false;     // a full resend that must include the host state too (resendAll)
@@ -60,6 +63,8 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   let mods = Array.from({ length: MAX_PARTS }, () => new Set());
   let ids = trackIds(store.get('parts'));
   const links = new Set();
+  const trackFx = new Set();
+  const noise = new Set();
   let globalAll = false;
   const globals = new Set();
   let watchDirty = false;
@@ -100,6 +105,17 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     return { t: 'links', part: i, links: sanitizeLinks(src) };
   }
 
+  function fxMsg(i) {
+    const fx = sanitizeTrackFx(store.get(`parts.${i}.trackFx`));
+    const tracks = trackIds(store.get('parts'));
+    const source = fx.sidechain === 'mix' ? -2 : fx.sidechain === 'self' ? -1 : tracks.indexOf(fx.sidechain);
+    return { t: 'trackFx', part: i, fx, sidechainIndex: source === i ? -1 : source };
+  }
+
+  function noiseMsg(i) {
+    return { t: 'noiseRecording', part: i, data: decodeNoiseRecording(store.get(`parts.${i}.noiseRecording`), sampleRate()) };
+  }
+
   function globalMsg(ids) {
     const src = store.get('global') || {};
     const p = {};
@@ -138,6 +154,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       if (m) out.push(m);
       const l = linksMsg(i);
       if (l) out.push(l);
+      out.push(fxMsg(i), noiseMsg(i));
     }
     out.push(watchMsg());
     if (withExtra) {
@@ -148,7 +165,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
 
   function reset() {
     full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false;
-    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear();
+    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); trackFx.clear(); noise.clear();
     for (const s of params) s.clear();
     for (const s of mods) s.clear();
   }
@@ -184,6 +201,8 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
           const l = linksMsg(i);
           if (l) out.push(l);
         }
+        if (partAll.has(i) || trackFx.has(i)) out.push(fxMsg(i));
+        if (partAll.has(i) || noise.has(i)) out.push(noiseMsg(i));
       }
       if (watchDirty) out.push(watchMsg());
     }
@@ -221,12 +240,15 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const move = (set) => new Set([...set].map(i => inv[i]).filter(i => i >= 0 && i < change.count));
     params = change.perm.map(j => params[j]);
     mods = change.perm.map(j => mods[j]);
-    for (const set of [partAll, paramsAll, modsAll, links]) {
+    for (const set of [partAll, paramsAll, modsAll, links, trackFx, noise]) {
       const moved = move(set);
       set.clear();
       for (const i of moved) set.add(i);
     }
     for (const i of change.fresh) partAll.add(i);
+    // Stable sidechain IDs resolve to new DSP indices after every reorder,
+    // including tracks whose own rack did not otherwise change.
+    for (let i = 0; i < change.count; i++) trackFx.add(i);
     watchDirty = true;
     mark();
     posts++;
@@ -251,6 +273,12 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         mark();
       } else if (k[2] === 'links') {
         links.add(i);
+        mark();
+      } else if (k[2] === 'trackFx') {
+        trackFx.add(i);
+        mark();
+      } else if (k[2] === 'noiseRecording') {
+        noise.add(i);
         mark();
       }
       return;

@@ -1,7 +1,7 @@
 {
   "name": "orograph",
   "productName": "Orograph",
-  "version": "1.5.1",
+  "version": "2.0.0",
   "description": "Orograph: a 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
   "author": "Chase",
   "license": "MIT",
@@ -52,7 +52,14 @@
     ],
     "asar": true,
     "icon": "build/icon.png",
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "ChaseHendrick",
+      "repo": "synth",
+      "private": false,
+      "releaseType": "release"
+    },
+    "electronUpdaterCompatibility": ">=2.16",
     "electronFuses": {
       "runAsNode": false,
       "enableNodeOptionsEnvironmentVariable": false,
@@ -143,5 +150,8 @@
       "artifactName": "Orograph-linux-${arch}.${ext}",
       "syncDesktopName": true
     }
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }

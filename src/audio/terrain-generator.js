@@ -5,7 +5,7 @@
 // terrain, so the preferred path is a small pool of dedicated workers started
 // from the bundled worker code (Blob URL, then data: URL for file:// pages).
 // When workers cannot start (strict CSP, very old browser) jobs run on the
-// main thread, one step per macrotask, and terrains drop to 256 x 256 so each
+// main thread, one step per macrotask, with the same 512 x 512 resolution, so each
 // step stays around the 50 ms long-task budget.
 
 import { buildTerrainData, mipChainFor, runJob } from './terrain-jobs.js';
@@ -42,7 +42,7 @@ const nextTask = (fn) => setTimeout(fn, 0);
  *   run() always accepts a job (it queues when busy); free() says how many
  *   jobs would start right away, so a caller can hold back and re-prioritise.
  */
-export async function createTerrainGenerator({ code = '', size = 512, inlineSize = 256, workers = 2, forceInline = false } = {}) {
+export async function createTerrainGenerator({ code = '', size = 512, inlineSize = 512, workers = 2, forceInline = false } = {}) {
   const pool = [];
   let via = 'inline';
   if (!forceInline && code && typeof Worker === 'function') {

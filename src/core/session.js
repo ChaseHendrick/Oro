@@ -10,6 +10,7 @@
 //     flush() saves at once, and main.js calls it on pagehide and when the
 //     page is hidden.
 
+import { readDurable, writeDurable, LARGE_STORAGE_MARKER } from './durable-storage.js';
 import { migrateState } from './migrate.js';
 
 export const SESSION_KEY = 'orograph.session.v1';
@@ -24,12 +25,18 @@ function safeStorage() {
 export function loadSession(storage = safeStorage()) {
   try {
     const raw = storage && storage.getItem(SESSION_KEY);
-    if (!raw) return null;
+    if (!raw || raw === LARGE_STORAGE_MARKER) return null;
     return migrateState(JSON.parse(raw));
   } catch (err) {
     console.warn('[orograph] ignoring unreadable saved session', err);
     return null;
   }
+}
+
+/** Read both small legacy saves and larger IndexedDB saves before boot. */
+export async function loadSessionAsync(storage = safeStorage()) {
+  try { const raw = await readDurable(SESSION_KEY, storage); return raw ? migrateState(JSON.parse(raw)) : null; }
+  catch { return null; }
 }
 
 /**
@@ -41,6 +48,8 @@ export function createAutosave({
   timers = globalThis, now = () => Date.now(),
 } = {}) {
   let timer = null;
+  let latestSave = Promise.resolve(true);
+  let saveRevision = 0, inFlight = false;
   let firstChange = null;   // time of the oldest unsaved change
 
   function clear() {
@@ -50,12 +59,23 @@ export function createAutosave({
   function flush() {
     clear();
     if (firstChange == null) return false;
+    const unsavedSince = firstChange, revision = ++saveRevision;
     firstChange = null;
-    if (!storage) return false;
     try {
-      storage.setItem(SESSION_KEY, JSON.stringify(store.serialize()));
-      return true;
-    } catch { return false; /* storage full or blocked */ }
+      const result = writeDurable(SESSION_KEY, JSON.stringify(store.serialize()), storage);
+      inFlight = !result.immediate;
+      latestSave = result.done.then(ok => {
+        if (revision === saveRevision) {
+          inFlight = false;
+          if (!ok) {
+            firstChange = firstChange == null ? unsavedSince : Math.min(firstChange, unsavedSince);
+            console.warn('[orograph] session could not be saved; export a scene to keep it');
+          }
+        }
+        return ok;
+      });
+      return result.immediate;
+    } catch { firstChange = unsavedSince; inFlight = false; latestSave = Promise.resolve(false); return false; }
   }
 
   function schedule() {
@@ -69,7 +89,8 @@ export function createAutosave({
   return {
     schedule,
     flush,
-    pending: () => firstChange != null,
+    pending: () => firstChange != null || inFlight,
+    settled: () => latestSave,
     dispose() { clear(); },
   };
 }

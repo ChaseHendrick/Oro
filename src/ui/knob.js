@@ -199,14 +199,15 @@ export function createKnob(ctx, binding, opts = {}) {
     const depth = m ? m.lfoDepth || 0 : 0;
     const env = m ? m.envDepth || 0 : 0;
     const n = toNorm(def, value());
-    const key = `${depth}|${env}|${n}`;
+    const ctrlRange = [1,2,3,4].reduce((sum,i) => sum + Math.abs(m?.[`ctrl${i}Depth`] || 0), 0);
+    const key = `${depth}|${env}|${ctrlRange}|${n}`;
     if (key === lastModKey) return;
     lastModKey = key;
-    modActive = Math.abs(depth) > 0.0005 || Math.abs(env) > 0.0005;
+    modActive = Math.abs(depth) > 0.0005 || Math.abs(env) > 0.0005 || ctrlRange > 0.0005;
     el.classList.toggle('is-modulated', modActive);
     if (!modActive) { modArc.setAttribute('d', ''); return; }
-    const lo = clamp(n - Math.abs(depth) + Math.min(0, env), 0, 1);
-    const hi = clamp(n + Math.abs(depth) + Math.max(0, env), 0, 1);
+    const lo = clamp(n - Math.abs(depth) + Math.min(0, env) - ctrlRange, 0, 1);
+    const hi = clamp(n + Math.abs(depth) + Math.max(0, env) + ctrlRange, 0, 1);
     modArc.setAttribute('d', arcPath(C, C, R_MOD, lo, hi));
   }
 

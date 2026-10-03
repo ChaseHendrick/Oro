@@ -5,16 +5,18 @@
 // Loads the Vite build in dist/ through a privileged app://orograph/ scheme so
 // the page gets a real, secure origin (localStorage, Web MIDI, AudioWorklet and
 // ES modules behave exactly as on the web). The renderer is sandboxed with no
-// Node access and no preload: the web app needs nothing from the main process.
+// Node access. A narrow preload exposes the opt-in desktop updater only.
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, Menu, dialog, nativeTheme, protocol, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, nativeTheme, protocol, screen, session, shell, ipcMain, net, Notification } = require('electron');
 
 const policy = require('./policy.cjs');
 const { createAppHandler } = require('./serve.cjs');
 const { buildMenuTemplate } = require('./menu.cjs');
 const { MIN_SIZE, fitToDisplays, createWindowStateFile } = require('./window-state.cjs');
+const { updateCapability, createUpdateController } = require('./updates.cjs');
+const { createUpdatePreferencesFile, fetchLatestRelease, installUpdateIpc } = require('./updates-host.cjs');
 
 const isMac = process.platform === 'darwin';
 // Same colours index.html paints before the app loads, so there is no flash.
@@ -44,6 +46,7 @@ protocol.registerSchemesAsPrivileged([{
 }]);
 
 let mainWindow = null;
+let updates = null;
 
 function focusMainWindow() {
   if (!mainWindow) return;
@@ -141,6 +144,7 @@ function createMainWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
       webSecurity: true,
       spellcheck: false, // no red squiggles under preset names
       autoplayPolicy: 'no-user-gesture-required',
@@ -224,7 +228,8 @@ function start() {
 
   app.on('second-instance', focusMainWindow);
   // Otherwise Chromium fetches Hunspell dictionaries from Google as soon as the
-  // session exists (Windows and Linux); Orograph should make no network requests.
+  // session exists (Windows and Linux). Only explicit or opted-in update checks
+  // should contact the release server.
   // Disabling alone is not enough; clearing the language list stops the download.
   app.on('session-created', (ses) => {
     ses.setSpellCheckerEnabled(false);
@@ -238,6 +243,26 @@ function start() {
     protocol.handle(policy.APP_SCHEME, createAppHandler({ root: distDir, host: policy.APP_HOST, log }));
     installPermissionPolicy(session.defaultSession);
 
+    const capability = updateCapability({ platform: process.platform, packaged: app.isPackaged,
+      appImage: !!process.env.APPIMAGE,
+      portable: !!(process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR),
+      nsisInstalled: process.platform === 'win32' && fs.existsSync(path.join(path.dirname(app.getPath('exe')), 'Uninstall Orograph.exe')) });
+    const preferencesFile = createUpdatePreferencesFile(path.join(app.getPath('userData'), 'updates.json'));
+    // Manual formats use release notices, never the installer's download/install
+    // machinery. Keep electron-updater's publisher verification unchanged.
+    const autoUpdater = capability.supportsInstall ? require('electron-updater').autoUpdater : null;
+    updates = createUpdateController({ version: app.getVersion(), capability, updater: autoUpdater,
+      readPreferences: preferencesFile.read, writePreferences: preferencesFile.write,
+      fetchRelease: () => fetchLatestRelease(net.fetch.bind(net)),
+      notify: state => {
+        if (!Notification.isSupported()) return;
+        const notice = new Notification({ title: `Orograph ${state.availableVersion} is available`, body: 'Open Settings > Updates to choose when to update.' });
+        notice.on('click', focusMainWindow); notice.show();
+      },
+    });
+    const removeUpdateIpc = installUpdateIpc({ ipcMain, getContents: () => mainWindow?.webContents, controller: updates });
+    app.once('will-quit', () => { removeUpdateIpc(); updates.dispose(); });
+
     app.setAboutPanelOptions({
       applicationName: 'Orograph',
       applicationVersion: app.getVersion(),
@@ -250,9 +275,17 @@ function start() {
       isPackaged: app.isPackaged,
       appName: 'Orograph',
       openExternal,
+      checkUpdates: async () => {
+        const state = await updates.check();
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        await dialog.showMessageBox(mainWindow, { type: state.error ? 'warning' : 'info', buttons: ['OK'],
+          message: state.availableVersion ? `Orograph ${state.availableVersion} is available.` : state.status === 'current' ? 'Orograph is up to date.' : 'Update check',
+          detail: state.error || (state.availableVersion ? 'Open Settings > Updates to choose a download. Your app will not restart automatically.' : state.capability.reason) });
+      },
     })));
 
     createMainWindow();
+    updates.start();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

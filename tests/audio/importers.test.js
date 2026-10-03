@@ -95,7 +95,7 @@ describe('file type sniffing', () => {
     expect(sniffType(new Uint8Array(4), 'scan.webp')).toBe('image');
     expect(sniffType(new Uint8Array(4), 'x', 'image/avif')).toBe('image');
     expect(sniffType(new Uint8Array(4), 'table.wav')).toBe('wav');
-    expect(sniffType(b('ID3', 4, 0), 'song.mp3', 'audio/mpeg')).toBe(null);
+    expect(sniffType(b('ID3', 4, 0), 'song.mp3', 'audio/mpeg')).toBe('audio');
     expect(sniffType(b('%PDF-1.7'), 'doc.pdf', 'application/pdf')).toBe(null);
   });
 });
@@ -181,13 +181,13 @@ describe('wavetable frames', () => {
       mono[f * n + i] = (1 - k) * Math.sin(2 * Math.PI * t) + k * Math.sin(2 * Math.PI * 5 * t);
     }
     const ut = await wavetableFromSamples(mono, { name: 'morph.wav', yieldToUI: false });
-    expect(ut).toMatchObject({ name: 'morph', kind: 'wavetable', w: 256, h: 256, mirror: 1, frameSize: 2048, frameCount: 300, frameMode: 'serum' });
+    expect(ut).toMatchObject({ name: 'morph', kind: 'wavetable', w: 512, h: 300, mirror: 1, frameSize: 2048, frameCount: 300, frameMode: 'serum' });
     const bytes = base64ToBytes(ut.data);
-    expect(bytes.length).toBe(256 * 256);
+    expect(bytes.length).toBe(512 * 300);
     // first row is a single sine
-    const row0 = Array.from(bytes.subarray(0, 256), v => v / 127.5 - 1);
-    expect(row0[64]).toBeGreaterThan(0.97);
-    expect(row0[192]).toBeLessThan(-0.97);
+    const row0 = Array.from(bytes.subarray(0, 512), v => v / 127.5 - 1);
+    expect(row0[128]).toBeGreaterThan(0.97);
+    expect(row0[384]).toBeLessThan(-0.97);
     // survives store sanitising and decodes to a table
     const part = sanitizePart({ userTerrain: { A: ut } }, 0);
     expect(part.userTerrain.A).not.toBeNull();
@@ -219,7 +219,7 @@ describe('importTerrainFile (Node, WAV path)', () => {
     const n = 2048 * 4;
     const ch = new Float32Array(n).map((_, i) => Math.sin(2 * Math.PI * (i % 2048) / 2048));
     const file = new File([encodeWav24([ch], 44100)], 'four.wav', { type: 'audio/wav' });
-    const ut = await importTerrainFile(store, 2, 'B', file);
+    const ut = await importTerrainFile(store, 2, 'B', file, { audioMode: 'wavetable' });
     expect(ut.kind).toBe('wavetable');
     expect(ut.h).toBe(4);
     expect(store.get('parts.2.params.terrainB')).toBe(TERRAIN_INDEX.user);
@@ -240,11 +240,11 @@ describe('importTerrainFile (Node, WAV path)', () => {
     wavInfo(bytes).readMono(0, frames);
     const fullRead = performance.now() - tf;
     const t0 = performance.now();
-    const ut = await importTerrainFile(store, 0, 'A', new File([bytes], 'long.wav'));
+    const ut = await importTerrainFile(store, 0, 'A', new File([bytes], 'long.wav'), { audioMode: 'wavetable' });
     const ms = performance.now() - t0;
-    expect(ut.h).toBe(256);
-    const row = Array.from(base64ToBytes(ut.data).subarray(0, 256), v => v / 127.5 - 1);
-    expect(row[64]).toBeGreaterThan(0.97);                // stereo mix of two equal sines
+    expect(ut.h).toBe(512);
+    const row = Array.from(base64ToBytes(ut.data).subarray(0, 512), v => v / 127.5 - 1);
+    expect(row[128]).toBeGreaterThan(0.97);                // stereo mix of two equal sines
     expect(ms).toBeLessThan(Math.max(1500, 2 * fullRead));
   }, 60000);
 
@@ -253,7 +253,7 @@ describe('importTerrainFile (Node, WAV path)', () => {
     await expect(importTerrainFile(store, 0, 'A', new File([], 'empty.png'))).rejects.toThrow(/empty/);
     const big = { name: 'huge.png', size: MAX_IMPORT_BYTES + 1, type: 'image/png', slice: () => new Blob([]) };
     await expect(importTerrainFile(store, 0, 'A', big)).rejects.toThrow(/25 MB/);
-    await expect(importTerrainFile(store, 0, 'A', new File(['ID3abc'], 'song.mp3', { type: 'audio/mpeg' }))).rejects.toThrow(/not an image or a WAV/);
+    await expect(importTerrainFile(store, 0, 'A', new File(['ID3abc'], 'song.mp3', { type: 'audio/mpeg' }))).rejects.toThrow(/browser audio decoder/);
     await expect(importTerrainFile(store, 7, 'A', new File(['x'], 'a.png'))).rejects.toThrow(/no track/);
     await expect(importTerrainFile(store, 0, 'C', new File(['x'], 'a.png'))).rejects.toThrow(/A or B/);
     expect(store.get('parts.0.params.terrainA')).toBe(TERRAIN_INDEX.swell);

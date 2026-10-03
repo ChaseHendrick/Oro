@@ -58,6 +58,35 @@ export const PALETTES = [
   },
 ];
 
+// Additional authored ramps, appended so the original five palette ids stay stable.
+const EXTRA_RAMPS = [
+  ['Forest', ['#04110a','#123c20','#2e6338','#57904d','#a6bd70','#edf2bf']],
+  ['Desert', ['#19100c','#563628','#966246','#c9945f','#e6c28a','#fff1cc']],
+  ['Ocean', ['#020b17','#072d55','#075d80','#1b94a1','#66c7c6','#d6fcdf']],
+  ['Rose', ['#180713','#4b1735','#842853','#bd4977','#e895ab','#ffe4df']],
+  ['Cobalt', ['#030819','#111b56','#273f9e','#4866d2','#91a4f2','#e5eaff']],
+  ['Copper', ['#140b07','#472519','#80412b','#b56b40','#dcaa79','#f9e6c6']],
+  ['Jade', ['#021410','#063f32','#15745a','#39a77c','#89d3a9','#dcffe6']],
+  ['Amethyst', ['#0b041b','#29174c','#523778','#8058a7','#bb91d2','#f2ddff']],
+  ['Solar', ['#1c0902','#702503','#bb5304','#e39b16','#f8d650','#fff9ba']],
+  ['Sepia', ['#0d0b07','#342e1e','#625338','#9a855e','#c9b68d','#f6eccf']],
+  ['Viridis', ['#440154','#414487','#2a788e','#22a884','#7ad151','#fde725']],
+  ['Magma', ['#000004','#3b0f70','#8c2981','#de4968','#fe9f6d','#fcfdbf']],
+  ['Icefire', ['#06243b','#216e91','#8ec1cc','#e5cdb3','#f0dfcc','#fff5e6']],
+  ['Moss', ['#11160b','#363f19','#647230','#959b4e','#c7c57f','#f2ebbf']],
+  ['Candy', ['#21123c','#615799','#cc78bf','#f3a6c0','#f5d1b8','#fff1d8']],
+  ['Neon', ['#070b1c','#0b326d','#0c8090','#46d584','#b7e348','#ffecab']],
+  ['Autumn', ['#1c0c08','#5c2515','#a94b1e','#d28329','#e1bb52','#f2e3aa']],
+  ['Slate', ['#080f19','#233343','#496278','#7f97a8','#bac8cf','#f0f1eb']],
+  ['Sandstone', ['#211620','#5b3a45','#936253','#bf9477','#dfc6a2','#fff1cf']],
+];
+for (const [name, colors] of EXTRA_RAMPS) {
+  const dark = lin(colors);
+  // Dawn ramps retain each authored hue while lifting the valley to paper.
+  const light = dark.map((rgb, i) => rgb.map((c, k) => c * 0.58 + [0.72, 0.69, 0.62][k] * (0.32 + i * 0.012)));
+  PALETTES.push({ name, tint: 0.16, dark, light });
+}
+
 // Heat-map style: one perceptual ramp, the same on both themes.
 export const HEAT_RAMP = lin(['#0b0726', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf']);
 

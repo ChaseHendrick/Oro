@@ -7,7 +7,7 @@ import { createStore } from '../../src/core/store.js';
 import { MAX_PARTS, defaultState } from '../../src/core/params.js';
 import { addTrack, removeTrack, moveTrack } from '../../src/core/tracks.js';
 
-let dom, createTrackTabs, createMixPanel, createSeqPanel, createBinder, actions;
+let dom, createTrackTabs, createMixPanel, createSeqPanel, createModPanel, createBinder, actions;
 const saved = {};
 beforeAll(async () => {
   dom = installFakeDom();
@@ -18,6 +18,7 @@ beforeAll(async () => {
   ({ createTrackTabs } = await import('../../src/ui/track-tabs.js'));
   ({ createMixPanel } = await import('../../src/ui/mix-panel.js'));
   ({ createSeqPanel } = await import('../../src/ui/seq-panel.js'));
+  ({ createModPanel } = await import('../../src/ui/mod-panel.js'));
   ({ createBinder } = await import('../../src/ui/bind.js'));
   actions = await import('../../src/ui/track-actions.js');
 });
@@ -35,6 +36,24 @@ function makeCtx(tracks = 4) {
 }
 
 const visibleTabs = (tabs) => tabs.el.querySelectorAll('button.part-tab').filter(t => !t.hidden);
+
+describe('modulation on later tracks', () => {
+  it('refreshes the count and Clear all after editing track 16', () => {
+    const { ctx, store } = makeCtx(16);
+    store.set('ui.selectedPart', 15);
+    const panel = createModPanel(ctx);
+    const clear = panel.el.querySelector('button.btn--xs');
+    expect(clear.disabled).toBe(true);
+    store.set('parts.15.mods.morph.lfoDepth', .3);
+    dom.flush();
+    expect(panel.el.querySelector('.mod-count').textContent).toBe('1 parameter moving');
+    expect(clear.disabled).toBe(false);
+    clear.click(); dom.flush();
+    expect(store.get('parts.15.mods.morph.lfoDepth')).toBe(0);
+    expect(clear.disabled).toBe(true);
+    panel.dispose();
+  });
+});
 
 describe('track tabs', () => {
   it('shows one tab per track and follows adds, removes and reorders', () => {

@@ -470,7 +470,7 @@ describe('Voice Level link source', () => {
   it('is appended after Guitar Level, so saved links keep their meaning', () => {
     expect(LINK_SOURCES.indexOf('Guitar Level')).toBe(15);
     expect(LINK_SOURCES.indexOf('Voice Level')).toBe(16);
-    expect(LINK_SOURCES.length).toBe(17);
+    expect(LINK_SOURCES.length).toBe(20);
     expect(sanitizeLinks([{ src: 16, dst: 'cutoff', amt: 0.5, curve: 0 }])).toEqual([{ src: 16, dst: 'cutoff', amt: 0.5, curve: 0 }]);
   });
 

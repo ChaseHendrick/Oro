@@ -137,7 +137,7 @@ uniform vec3 uRamp[6];
 uniform vec3 uHeat[6];
 uniform vec3 uPart;
 uniform float uTint;
-uniform int uStyle;          // 0 relief, 1 wire, 2 contour, 3 heat, 4 points
+uniform int uStyle;          // 0 relief, 1 wire, 2 contour, 3 heat, 4 points, 5 normals
 
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
@@ -303,7 +303,10 @@ void main() {
   float spec = pow(max(dot(N, Hv), 0.0), 48.0) * (0.05 + 0.08 * (1.0 - uThemeT)) * shadow;
   float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
 
-  if (uStyle == 1) {
+  if (uStyle == 5) {
+    // True surface normals encoded as RGB, independent of height palettes.
+    col = N * 0.5 + 0.5;
+  } else if (uStyle == 1) {
     // Wire: a dark (or paper) body with a lattice that follows the land, in
     // the palette's colours so the part-coloured orbit stays the hero.
     float lit = 0.35 + 0.65 * diff * shadow;
@@ -351,7 +354,7 @@ void main() {
     float minor = isoLine(x, uStyle == 2 ? 1.2 : 1.0) * crowd;
     float xm = h / 0.5;
     float major = isoLine(xm, uStyle == 2 ? 2.0 : 1.4) * (1.0 - smoothstep(0.15, 0.5, fwidth(xm)));
-    float ca = uContourA * (uStyle == 2 ? 2.4 : uStyle == 1 ? 0.5 : 1.0);
+    float ca = uStyle == 5 ? 0.0 : uContourA * (uStyle == 2 ? 2.4 : uStyle == 1 ? 0.5 : 1.0);
     float far = 1.0 - smoothstep(16.0, 34.0, camDist);
     vec3 cc = uStyle == 2 ? mix(uContour, mix(uPart, uContour, 0.4), 0.5) : uContour;
     col = mix(col, cc, clamp((minor * 0.45 + major * 1.25) * ca * far, 0.0, 0.85));
@@ -359,8 +362,8 @@ void main() {
 
   // Faint coordinate grid (eighths of a tile) and the tile seams.
   {
-    float g = gridLine(uv * 8.0, 1.0) * uGridA;
-    float seam = gridLine(uv, 1.6) * uGridA * 2.2;
+    float g = gridLine(uv * 8.0, 1.0) * uGridA * (uStyle == 5 ? 0.0 : 1.0);
+    float seam = gridLine(uv, 1.6) * uGridA * 2.2 * (uStyle == 5 ? 0.0 : 1.0);
     col = mix(col, uGrid, clamp(g + seam, 0.0, 0.6));
   }
 

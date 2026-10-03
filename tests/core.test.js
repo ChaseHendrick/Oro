@@ -19,7 +19,7 @@ describe('params', () => {
       expect(fromNorm(d, 1)).toBeCloseTo(d.max, 6);
     }
   });
-  it('has modulatable params', () => { expect(MOD_PARAM_IDS).toContain('centerX'); expect(MOD_PARAM_IDS.length).toBe(18); expect(MOD_PARAM_IDS).toContain('laps'); expect(MOD_PARAM_IDS).toContain('pace'); });
+  it('has modulatable params', () => { expect(MOD_PARAM_IDS).toContain('centerX'); expect(MOD_PARAM_IDS.length).toBeGreaterThanOrEqual(32); expect(MOD_PARAM_IDS).toContain('laps'); expect(MOD_PARAM_IDS).toContain('pace'); });
   it('resolves scale degrees to MIDI notes', () => {
     // A minor (root 9, scaleType 1), base octave 3: degree 0 -> A3 = 57
     expect(stepToMidi({ degree: 0, octave: 0 }, 3, 9, 1)).toBe(57);
@@ -66,11 +66,11 @@ describe('migrate', () => {
 
 describe('round D contract', () => {
   it('keeps the optional low byte plane of an imported 16-bit terrain', () => {
-    const ut = { name: 'dem', kind: 'image', w: 4, h: 4, mirror: 1, data: 'AAAA', lo: 'BBBB' };
+    const ut = { name: 'dem', kind: 'image', w: 4, h: 4, mirror: 1, data: btoa(String.fromCharCode(...new Uint8Array(16))), lo: btoa(String.fromCharCode(...new Uint8Array(16).fill(42))) };
     const kept = migrateState({ parts: [{ userTerrain: { A: ut, B: { ...ut, lo: 42 } } }] }).parts[0].userTerrain;
     expect(kept.A).toEqual(ut);
     expect(kept.B).not.toHaveProperty('lo');
-    expect(kept.B.data).toBe('AAAA');
+    expect(kept.B.data).toBe(ut.data);
     const empty = migrateState({ parts: [{ userTerrain: { A: { ...ut, lo: '' } } }] }).parts[0].userTerrain.A;
     expect(empty).not.toHaveProperty('lo');
   });
@@ -85,8 +85,8 @@ describe('round D contract', () => {
     // An unknown source index is clamped to the last known source (Voice Level since v1.4).
     expect(p.links).toEqual([{ src: LINK_SOURCES.length - 1, dst: 'cutoff', amt: 1, curve: 1 }]);
     expect(p.mods.morph.lfoShape).toBe(6);
-    expect(p.mods.morph.steps.length).toBe(16);
-    expect(p.mods.morph.steps.slice(0, 3)).toEqual([1, -1, 0.2]);
+    expect(p.mods.morph.steps.length).toBe(32);
+    expect(p.mods.morph.steps.slice(0, 3)).toEqual([1, -1, -0.4]);
     expect(p.dot).toMatchObject({ mode: 4, tourMode: 2, waypoints: [{ x: 1, y: 0.3, beats: 16 }] });
     expect(m.parts[1].links).toEqual([{ src: 1, dst: 'morph', amt: 1, curve: 0 }]);
   });

@@ -2,6 +2,7 @@
 // in localStorage. Patches change one track's sound; scenes replace the whole
 // session (the track list with its patterns, the mix, effects, tempo and key).
 
+import { readDurable, writeDurable, LARGE_STORAGE_MARKER } from '../core/durable-storage.js';
 import { isTrack, REPLACE_TRACKS } from '../core/tracks.js';
 import {
   PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, defaultPart,
@@ -19,8 +20,9 @@ export const FORMAT = 'orograph-presets';
 // Library / export file version. 2 = v1.1: scenes and patches may carry
 // `pedalPresets` (one optional Program Change per pedal). Version 1 files load
 // unchanged: they simply have none. The storage key stays the same.
-export const PRESET_VERSION = 2;
+export const PRESET_VERSION = 3;
 
+export const FAVORITE_COUNT = 36;
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 const FACTORY_PATCH_LIST = FACTORY_PATCHES.map(p => ({ ...p, id: 'f-' + slug(p.name), factory: true }));
@@ -53,10 +55,14 @@ function sanitizePatchMods(src) {
 
 export function sanitizePatch(src) {
   if (!src || typeof src !== 'object' || !src.params || typeof src.params !== 'object') return null;
-  const clean = sanitizePart({ dot: src.dot, userTerrain: src.userTerrain }, 0);
+  const clean = sanitizePart({ dot: src.dot, userTerrain: src.userTerrain, trackFx: src.trackFx, noiseRecording: src.noiseRecording }, 0);
   const patch = {
     name: String(src.name || 'Imported patch').slice(0, 60),
     category: typeof src.category === 'string' && src.category.trim() ? src.category.trim().slice(0, 30) : 'User',
+    author: typeof src.author === 'string' ? src.author.trim().slice(0, 60) : '',
+    folder: typeof src.folder === 'string' ? src.folder.trim().slice(0, 80) : '',
+    trackFx: clean.trackFx,
+    noiseRecording: clean.noiseRecording,
     tags: Array.isArray(src.tags) ? src.tags.filter(t => typeof t === 'string').slice(0, 8) : [],
     params: sanitizePatchParams(src.params),
     mods: sanitizePatchMods(src.mods),
@@ -84,31 +90,67 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
   if (!store) throw new Error('createPresets needs a store');
   const emitter = createEmitter();
   let user = { patches: [], scenes: [] };
+  let favorites = Array(FAVORITE_COUNT).fill(null);
+  let latestSave = Promise.resolve(true);
+  let hydrated = false, deferredSave = null;
+  const earlyFavoriteSlots = new Set();
+  const earlyPatchParts = new Map();
 
+  let loadedSmall = false;
   function load() {
     if (!storage) return;
     try {
       const raw = storage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
+      if (!raw || raw === LARGE_STORAGE_MARKER) return;
+      applyLibrary(JSON.parse(raw)); loadedSmall = true;
+    } catch { user = { patches: [], scenes: [] }; }
+  }
+
+  function applyLibrary(data) {
       user.patches = (Array.isArray(data.patches) ? data.patches : [])
         .map(p => { const s = sanitizePatch(p); return s && { ...s, id: typeof p.id === 'string' ? p.id : newId() }; })
         .filter(Boolean);
       user.scenes = (Array.isArray(data.scenes) ? data.scenes : [])
         .map(s => { const c = sanitizeScene(s); return c && { ...c, id: typeof s.id === 'string' ? s.id : newId() }; })
         .filter(Boolean);
-    } catch { user = { patches: [], scenes: [] }; }
+    const known = new Set(allPatches().map(p => p.id));
+    favorites = Array.from({ length: FAVORITE_COUNT }, (_, i) => typeof data.favorites?.[i] === 'string' && known.has(data.favorites[i]) ? data.favorites[i] : null);
   }
 
+  function writeLibrary() {
+    const result = writeDurable(STORAGE_KEY, JSON.stringify({ format: FORMAT, version: PRESET_VERSION, patches: user.patches, scenes: user.scenes, favorites }), storage);
+    result.done.then(ok => { if (!ok) emitter.emit('storage-error', { message: 'Could not save the library. Export it to keep your patches.' }); });
+    return result;
+  }
   function persist() {
-    if (!storage) return false;
-    try {
-      storage.setItem(STORAGE_KEY, JSON.stringify({ format: FORMAT, version: PRESET_VERSION, patches: user.patches, scenes: user.scenes }));
-      return true;
-    } catch { return false; }
+    if (!hydrated) {
+      if (!deferredSave) deferredSave = ready.then(() => writeLibrary().done);
+      latestSave = deferredSave;
+      return false;
+    }
+    const result = writeLibrary(); latestSave = result.done;
+    return result.immediate;
   }
 
   load();
+  hydrated = loadedSmall || !globalThis.indexedDB;
+  const ready = hydrated ? Promise.resolve() : readDurable(STORAGE_KEY, storage).then(raw => {
+    const early = deferredSave ? { patches: user.patches.slice(), scenes: user.scenes.slice(), favorites: favorites.slice() } : null;
+    if (raw) { try { applyLibrary(JSON.parse(raw)); } catch { /* Retain readable edits if the saved library is corrupt. */ } }
+    if (early) {
+      for (const kind of ['patches', 'scenes']) for (const item of early[kind]) {
+        if (user[kind].some(existing => existing.id === item.id)) continue;
+        const name = uniqueName(item.name, kind === 'patches' ? allPatches() : allScenes());
+        user[kind].push({ ...item, name });
+        if (kind === 'patches' && name !== item.name) {
+          for (const i of earlyPatchParts.get(item.id) || []) if (store.get(`parts.${i}.patchName`) === item.name) store.set(`parts.${i}.patchName`, name, { source: 'preset' });
+        }
+      }
+      for (const slot of earlyFavoriteSlots) favorites[slot] = early.favorites[slot];
+    }
+    hydrated = true;
+    emitter.emit('change', { kind: 'library', action: 'ready' });
+  });
 
   const changed = (detail) => emitter.emit('change', detail);
 
@@ -121,6 +163,8 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
   function patches() {
     return allPatches().map(p => ({
       id: p.id, name: p.name, category: p.category, factory: !!p.factory, tags: (p.tags || []).slice(),
+      author: p.author || (p.factory ? 'Chase Hendrick' : ''), folder: p.folder || (p.factory ? 'Factory' : ''),
+      favoriteSlots: favorites.flatMap((id, i) => id === p.id ? [i] : []),
       pedalPresets: p.pedalPresets ? { ...p.pedalPresets } : null,
     }));
   }
@@ -145,6 +189,10 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const current = store.get(`parts.${p}`) || defaultPart(p);
     const next = sanitizePart(partWithPatch(current, patch), p);
     store.set(`parts.${p}`, next, { source: 'preset' });
+    if (!hydrated && patch.id) {
+      if (!earlyPatchParts.has(patch.id)) earlyPatchParts.set(patch.id, new Set());
+      earlyPatchParts.get(patch.id).add(p);
+    }
     // The pedal rig decides whether a patch may recall pedal presets (off by default).
     const pedalPresets = action === 'load' ? sanitizePedalPresets(patch.pedalPresets) : null;
     changed({ kind: 'patch', action, part: p, id: patch.id || null, pedalPresets });
@@ -182,7 +230,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
    * `pedalPresets`: { pedalId: program } to store with the patch, null for none;
    * left out, an existing patch of that name keeps the ones it had.
    */
-  function savePatch(part, name, { category, pedalPresets } = {}) {
+  function savePatch(part, name, { category, author, folder, pedalPresets } = {}) {
     const p = partIndex(part);
     if (p == null) return null;
     const cur = store.get(`parts.${p}`);
@@ -198,6 +246,10 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       id: existing ? existing.id : newId(),
       name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),
       category: category && typeof category === 'string' ? category.slice(0, 30) : (from ? from.category : 'User'),
+      author: String(author ?? existing?.author ?? '').trim().slice(0, 60),
+      folder: String(folder ?? existing?.folder ?? '').trim().slice(0, 80),
+      trackFx: JSON.parse(JSON.stringify(cur.trackFx)),
+      noiseRecording: cur.noiseRecording ? { ...cur.noiseRecording } : null,
       tags: from ? (from.tags || []).slice() : [],
       params,
       mods: compactMods(cur.mods),
@@ -210,6 +262,10 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     if (pp) patch.pedalPresets = pp;
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;
     else user.patches.push(patch);
+    if (!hydrated) {
+      if (!earlyPatchParts.has(patch.id)) earlyPatchParts.set(patch.id, new Set());
+      earlyPatchParts.get(patch.id).add(p);
+    }
     persist();
     store.set(`parts.${p}.patchName`, patch.name, { source: 'preset' });
     changed({ kind: 'patch', action: 'save', id: patch.id });
@@ -298,6 +354,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const pp = sanitizePedalPresets(pedalPresets);
     if (pp) item.pedalPresets = pp;
     else delete item.pedalPresets;
+    favorites = favorites.map(id => allPatches().some(p => p.id === id) ? id : null);
     persist();
     changed({ kind: kind === 'scene' ? 'scene' : 'patch', action: 'edit', id: item.id });
     return true;
@@ -308,6 +365,8 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const before = user[key].length;
     user[key] = user[key].filter(x => x.id !== id && x.name !== id);
     if (user[key].length === before) return false;
+    const validIds = new Set(allPatches().map(patch => patch.id));
+    favorites = favorites.map(favorite => validIds.has(favorite) ? favorite : null);
     persist();
     changed({ kind: kind === 'scene' ? 'scene' : 'patch', action: 'delete', id });
     return true;
@@ -337,6 +396,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     } else {
       data = { format: FORMAT, version: PRESET_VERSION, patches: user.patches.map(stripPatch), scenes: user.scenes.map(stripScene) };
     }
+    if (kind === 'all') data.favorites = favorites.map(id => allPatches().find(p => p.id === id)?.name || null);
     return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   }
 
@@ -346,6 +406,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     try { data = JSON.parse(text); } catch { throw new Error('That file is not valid JSON.'); }
     const items = Array.isArray(data) ? data : data && data.format === FORMAT ? [...(data.patches || []), ...(data.scenes || [])] : [data];
     let patchCount = 0, sceneCount = 0;
+    const importedNames = new Map();
     for (const item of items) {
       if (item && Array.isArray(item.parts)) {
         const s = sanitizeScene(item);
@@ -357,17 +418,37 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
         const p = sanitizePatch(item);
         if (!p) continue;
         p.name = uniqueName(p.name, allPatches());
-        user.patches.push({ ...p, id: newId() });
+        const id = newId();
+        importedNames.set(item.name, id);
+        user.patches.push({ ...p, id });
         patchCount++;
       }
     }
-    if (!patchCount && !sceneCount) throw new Error('No Orograph patches or scenes were found in that file.');
+    const favoriteBank = data?.format === FORMAT && Array.isArray(data.favorites);
+    if (!patchCount && !sceneCount && !favoriteBank) throw new Error('No Orograph patches or scenes were found in that file.');
+    if (favoriteBank) {
+      favorites = Array.from({ length: FAVORITE_COUNT }, (_, i) => importedNames.get(data.favorites[i]) || allPatches().find(p => p.name === data.favorites[i])?.id || null);
+      if (!hydrated) for (let i = 0; i < FAVORITE_COUNT; i++) earlyFavoriteSlots.add(i);
+    }
     persist();
     changed({ kind: 'import', action: 'import', patches: patchCount, scenes: sceneCount });
     return { patches: patchCount, scenes: sceneCount };
   }
 
+  function setFavorite(slot, id) {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= FAVORITE_COUNT || (id != null && (typeof id !== 'string' || !findPatch(id)))) return false;
+    favorites[slot] = id == null ? null : findPatch(id).id;
+    if (!hydrated) earlyFavoriteSlots.add(slot);
+    persist(); changed({ kind: 'favorite', action: 'edit', slot }); return true;
+  }
+  function programPatch(program) {
+    if (!Number.isInteger(program) || program < 0 || program > 127) return null;
+    if (favorites.some(Boolean)) return findPatch(favorites[program]) || null;
+    return allPatches()[program] || null;
+  }
   return {
+    ready, settled: () => latestSave,
+    favorites: () => favorites.map(id => id ? patches().find(p => p.id === id) || null : null), setFavorite, programPatch,
     patches, categories, loadPatch, nextPatch, savePatch, initPatch, randomizePatch,
     scenes, loadScene, saveScene, setPedalPresets, deleteUser, exportJSON, importJSON,
     getPatch: (id) => { const p = findPatch(id); return p ? JSON.parse(JSON.stringify(p)) : null; },

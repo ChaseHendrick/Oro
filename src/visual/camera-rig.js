@@ -3,13 +3,17 @@
 // only starts once the user has left the view alone for a while.
 
 import * as THREE from 'three';
+import { CAMERA_VIEWS, sanitizeCameraView } from './camera-view.js';
 
-export const VIEW_NAMES = ['orbit', 'top', 'low'];
+export const VIEW_NAMES = CAMERA_VIEWS;
 
 const PRESETS = {
   orbit: { phi: 0.86, scale: 1.0 },
   top: { phi: 0.0006, scale: 1.0, theta: 0 },
   low: { phi: 1.27, scale: 0.8 },
+  front: { phi: 1.12, scale: 1.0, theta: 0 },
+  side: { phi: 1.05, scale: 1.0, theta: Math.PI / 2 },
+  diagonal: { phi: 0.9553, scale: 1.0, theta: Math.PI / 4 },
 };
 
 export const FOV = 38;
@@ -57,10 +61,11 @@ export function createCameraRig(camera, controls, clock = () => performance.now(
   let rotateGain = 0;
   let lastAspect = camera.aspect;
 
-  controls.addEventListener('start', () => {
+  const onStart = () => {
     transition = null;
     idle = 0;
-  });
+  };
+  controls.addEventListener('start', onStart);
 
   function current(out) {
     offset.copy(camera.position).sub(target);
@@ -86,6 +91,23 @@ export function createCameraRig(camera, controls, clock = () => performance.now(
   return {
     get view() { return view; },
     get transitioning() { return !!transition; },
+    capture() {
+      return { position: camera.position.toArray(), target: target.toArray(), up: camera.up.toArray(), fov: camera.fov, view };
+    },
+    restore(saved) {
+      const valid = sanitizeCameraView(saved);
+      if (!valid) return false;
+      transition = null; view = valid.view; idle = 0; rotateGain = 0;
+      controls.autoRotate = false;
+      // Flush any residual OrbitControls damping before applying the capture.
+      const damping = controls.enableDamping;
+      controls.enableDamping = false; controls.update();
+      target.fromArray(valid.target); camera.position.fromArray(valid.position); camera.up.fromArray(valid.up).normalize();
+      camera.fov = valid.fov; camera.updateProjectionMatrix(); camera.lookAt(target);
+      controls.update(); controls.enableDamping = damping;
+      return true;
+    },
+    dispose() { controls.removeEventListener?.('start', onStart); },
 
     /** Animate to a preset (instant when animate is false or motion is reduced). */
     setView(name, animate = true) {

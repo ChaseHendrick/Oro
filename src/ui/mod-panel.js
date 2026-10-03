@@ -33,7 +33,7 @@ export function createModPanel(ctx) {
   const clearAll = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('close') + '<span>Clear all</span>' });
   const head = h('div', { class: 'mod-row mod-row--head', 'aria-hidden': 'true' },
     h('span', null, 'Parameter'), h('span', null, 'Live'), h('span', null, ''), h('span', null, 'LFO'),
-    h('span', null, 'Depth'), h('span', null, 'Env 2'), h('span', null, ''), h('span', null, ''));
+    h('span', null, 'Depth'), h('span', null, 'Env'), h('span', null, ''), h('span', null, ''));
   const table = h('div', { class: 'mod-table', role: 'group', 'aria-label': 'Modulation overview' },
     h('div', { class: 'mod-col' }, head.cloneNode(true), rows.slice(0, Math.ceil(rows.length / 2)).map(r => r.el)),
     h('div', { class: 'mod-col' }, head, rows.slice(Math.ceil(rows.length / 2)).map(r => r.el)));
@@ -72,7 +72,7 @@ export function createModPanel(ctx) {
 
   function renderCount() {
     const mods = store.get(`parts.${binder.selected()}.mods`) || {};
-    const n = MOD_PARAM_IDS.filter(id => mods[id] && (Math.abs(mods[id].lfoDepth) > 0.0005 || Math.abs(mods[id].envDepth) > 0.0005)).length;
+    const n = MOD_PARAM_IDS.filter(id => mods[id] && (Math.abs(mods[id].lfoDepth) > 0.0005 || Math.abs(mods[id].envDepth) > 0.0005 || [1,2,3,4].some(n => Math.abs(mods[id][`ctrl${n}Depth`] || 0) > 0.0005))).length;
     setText(count, n === 0 ? 'Nothing is moving yet' : n === 1 ? '1 parameter moving' : `${n} parameters moving`);
     clearAll.disabled = n === 0;
   }
@@ -83,7 +83,7 @@ export function createModPanel(ctx) {
     });
     ctx.toast('Cleared all modulation for this part', { kind: 'info' });
   });
-  scope.add(store.subscribe('parts', (path) => { if (/^parts(\.\d(\.mods.*)?)?$/.test(path)) schedule(renderCount); }));
+  scope.add(store.subscribe('parts', (path) => { if (/^parts(\.\d+(\.mods.*)?)?$/.test(path)) schedule(renderCount); }));
   scope.add(store.subscribe('ui.selectedPart', () => schedule(renderCount)));
   renderCount();
 
@@ -141,11 +141,12 @@ function createRow(ctx, parentScope, id) {
     const p = binder.selected();
     const v = store.get(`parts.${p}.params.${id}`) ?? def.default;
     const n = toNorm(def, v);
-    active = Math.abs(m.lfoDepth) > 0.0005 || Math.abs(m.envDepth) > 0.0005;
+    active = Math.abs(m.lfoDepth) > 0.0005 || Math.abs(m.envDepth) > 0.0005 || [1,2,3,4].some(n => Math.abs(m[`ctrl${n}Depth`] || 0) > 0.0005);
+    const controllerRange = [1,2,3,4].reduce((sum,n) => sum + Math.abs(m[`ctrl${n}Depth`] || 0), 0);
     el.classList.toggle('is-active', active);
     el.classList.toggle('is-synced', !!m.lfoSync);
-    lo = clamp(n - Math.abs(m.lfoDepth) + Math.min(0, m.envDepth), 0, 1);
-    hi = clamp(n + Math.abs(m.lfoDepth) + Math.max(0, m.envDepth), 0, 1);
+    lo = clamp(n - Math.abs(m.lfoDepth) + Math.min(0, m.envDepth) - controllerRange, 0, 1);
+    hi = clamp(n + Math.abs(m.lfoDepth) + Math.max(0, m.envDepth) + controllerRange, 0, 1);
     base.style.left = (n * 100).toFixed(2) + '%';
     range.style.left = (lo * 100).toFixed(2) + '%';
     range.style.width = ((hi - lo) * 100).toFixed(2) + '%';
@@ -154,6 +155,7 @@ function createRow(ctx, parentScope, id) {
     shapeBtn.dataset.tip = `${LFO_SHAPES[m.lfoShape]} (click to change)`;
     setText(depthVal, formatDepth(m.lfoDepth));
     setText(envVal, formatDepth(m.envDepth));
+    envVal.title = m.envOwn ? 'Own parameter envelope' : 'Envelope 2';
     div.el.hidden = !m.lfoSync;
     rate.el.hidden = !!m.lfoSync;
     rateCell.dataset.tip = m.lfoSync ? `Synced: ${SYNC_DIVS[m.lfoDiv]?.name}` : '';

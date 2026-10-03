@@ -20,7 +20,7 @@ describe('pedal parameters', () => {
   });
 
   it('appends them, so the worklet slots of older parameters do not move', () => {
-    const n = PART_PARAMS.length;
+    const n = 60; // Original v1.1 registry; later parameters must append.
     expect(PART_PARAM_INDEX.pedalSend).toBe(n - 3);
     expect(PART_PARAM_INDEX.pedalInsert).toBe(n - 1);
     expect(PART_PARAM_INDEX.formant).toBe(n - 4);
@@ -53,7 +53,7 @@ describe('migrating saved sessions', () => {
     old.parts[2].params.cutoff = 1234;
     old.parts[1].links = [{ src: 5, dst: 'morph', amt: 0.4, curve: 1 }];
     const m = migrateState(old);
-    expect(STATE_VERSION).toBe(4); // 3 only adds optional pedal presets to scenes, 4 the track list (v1.3)
+    expect(STATE_VERSION).toBe(5); // v2 adds expanded modulation and per-track sound state.
     expect(m.version).toBe(STATE_VERSION);
     for (const p of m.parts) for (const id of PEDAL_PARAM_IDS) expect(p.params[id]).toBe(0);
     expect(m.parts[2].params.cutoff).toBe(1234);

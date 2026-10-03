@@ -95,6 +95,9 @@ jobs:
       - name: Package with electron-builder
         run: npx electron-builder --publish never
 
+      - name: Verify update metadata and package hashes
+        run: node electron/update-artifacts.cjs release ${{ matrix.label }}
+
       - name: List the packages
         run: ls -la release
 
@@ -102,13 +105,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: orograph-${{ matrix.label }}
-          # Named patterns skip helper files such as NSIS's __uninstaller-*.exe and *.blockmap.
+          # Include updater manifests and differential blockmaps, while skipping NSIS helpers.
           path: |
             release/Orograph-*.dmg
             release/Orograph-*.zip
             release/Orograph-*.exe
             release/Orograph-*.AppImage
             release/Orograph-*.tar.gz
+            release/Orograph-*.blockmap
+            release/latest*.yml
+            release/Orograph-app-update-*.yml
           if-no-files-found: error
           compression-level: 0
 
@@ -174,14 +180,17 @@ jobs:
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "Orograph $VERSION" --notes-file notes.md --draft=false --prerelease=false --latest
             gh release upload "$TAG" assets/* --clobber
             # Drop files that this build no longer produces.
             for name in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
               if [[ ! -e "assets/$name" ]]; then gh release delete-asset "$TAG" "$name" --yes; fi
             done
+            gh release edit "$TAG" --title "Orograph $VERSION" --notes-file notes.md --draft=false --prerelease=false --latest
           else
-            gh release create "$TAG" assets/* --verify-tag --title "Orograph $VERSION" --notes-file notes.md --latest
+            # Upload every binary and integrity manifest before making the new
+            # release visible to installed updaters.
+            gh release create "$TAG" assets/* --verify-tag --title "Orograph $VERSION" --notes-file notes.md --draft
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
           fi
 
           echo "Published https://github.com/$GH_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

@@ -25,6 +25,7 @@ const _fallbackPoint = (shape, t, order, param, out) => {
 };
 
 export const pathPoint = fn(paths, 'pathPoint') || _fallbackPoint;
+export const shapePathPoint = fn(paths, 'shapePathPoint') || ((x, y, t, w, m, mirror, out) => { out.x = x; out.y = y; return out; });
 
 export function makeTransform(stretch, size, rotateDeg, spinPhase, centerX, centerY, out = {}) {
   const f = fn(tmath, 'makeTransform');

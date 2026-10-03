@@ -45,30 +45,35 @@ few lines.
 
 ## A quick tour
 
-* **Thirteen landscapes and your own.** Swell, Ripple, Bessel, Dunes, Ridge, Massif,
-  Craters, Terraces, Cells, Canyon, Spectra, Lattice and Vortex, each with Seed and
-  Detail. Blend any two with Morph, ripple them with Warp, and shape the result with
-  Lift and Fold. Import a photo or a 16-bit elevation map (DEM) as land, or a WAV
-  wavetable.
-* **Twelve paths.** Ellipse, Lissajous, Rose, Polygon, Star, Spiral, Scan, Spirograph,
-  Figure 8, Epicycloid, Superformula and Scribble, with Size, Stretch, Rotate and Spin.
-  **Laps** gives hard-sync sweeps and **Pace** gives phase distortion.
+* **Nineteen mathematical terrains and 320 original images.** Browse the built-in
+  image library or import your own image, 16-bit elevation map, wavetable or complete
+  audio recording. Image imports retain red, green, blue and brightness for live channel
+  morphing. Cartesian and polar mapping work at 512 by 512 resolution.
+* **Twenty paths.** Line, Square and Raster join Ellipse, Lissajous, Rose and the other
+  curves. Window, Mangle and axis mirroring reshape the path; Laps and Pace retain
+  hard-sync sweeps and phase distortion.
 * **A dot with a mind of its own.** Pin it, let it **Roll** downhill as a marble you can
   flick, **Drift**, **Explore** the land playing in-key notes at peaks and valleys, or
   **Tour** through waypoints in time with the music. A minimap and keyboard control make
   precise placement easy.
-* **Sound shaping.** Poly, Mono and Legato voices with unison, a sub oscillator and a
-  breathy Air layer; low, band, high, notch, comb and vowel filters; two envelopes.
-* **Modulation everywhere.** Every moving knob has its own LFO (including a drawable
-  16-step shape) and envelope depth. **Links** route velocity, aftertouch, MPE slide,
-  the marble, the terrain height or four global **Macros** to anything.
+* **Sound shaping.** Up to eight unison copies, two sub oscillators with seven waves
+  each, four noise colours, synthesized vinyl/waves/city loops and imported recordings,
+  eleven morphable partial profiles, phase modulation, ring modulation and a tuned
+  Karplus-Strong pluck. Three ladder colours, SEM and diode-inspired digital filters
+  join the state-variable, comb and vowel filters.
+* **Modulation everywhere.** Forty targets each have an LFO, an independent six-stage
+  envelope and four controller slots. LFO timing, skew, offset, finite loop counts and
+  a drawable 32-step shape with glide and smoothing support detailed movement. Links
+  and four global Macros provide additional routing.
 * **Music.** Up to sixteen tracks, a 16-step sequencer per track that stores scale degrees so it
   follows the key, accents, slides, **dot locks** that move the dot per step, an
-  arpeggiator, swing, and a one-key **preview** phrase for every patch.
+  arpeggiator with 40 scales and 28 rhythm patterns, swing, and a one-key **preview** phrase for every patch.
 * **Patches and scenes.** More than fifty factory patches in ten categories, seven
-  factory scenes, your own patches and scenes, random patches, and JSON export and
-  import.
-* **Mix and record.** Ping-pong delay, reverb, chorus, warmth and a limiter with an
+  factory scenes, searchable categories, authors and folders, 36 MIDI Program Change
+  favourites, your own patches and scenes, random patches, and JSON export and import.
+* **Mix and record.** A four-slot effects rack on each track with 27 effects and ten
+  routing layouts, plus vector mixing for banks of four tracks. Shimmer, granular pitch
+  shifting, EQ and multiband compression join the master effects and limiter with an
   adjustable ceiling. Record what you play to a 24-bit WAV, or **bounce** the sequencers
   offline, with optional stems per part.
 * **Looper and resampling.** A tempo-locked looper with overdub, undo and WAV export, and
@@ -81,9 +86,14 @@ few lines.
   hear it with the synth, loop and resample vocals, play a part by singing or humming,
   capture a sung note as a terrain, and let your voice move the terrain through Links.
 * **MIDI and the Akai MPC XL.** Omni or one channel per part, MPC pad scale mode, a
-  Q-Link learn wizard, MIDI Learn on any knob, clock in or out, MPE, and a step by step
+  Q-Link learn wizard, MIDI Learn on sound and master knobs, clock in or out, MPE, and a step by step
   MPC guide inside the app.
-* **Dark and light themes**, keyboard shortcuts for the main actions, and a layout that
+* **Desktop updates.** Optional release checks and background downloads on Windows
+  installer/Linux AppImage builds, followed by your choice to restart and install.
+  Mac and portable/archive copies offer release notices and manual downloads. Older
+  copies need one manual upgrade to gain the updater.
+* **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
+  camera views, keyboard shortcuts for the main actions, and a layout that
   works on a phone.
 
 ## Download
@@ -102,8 +112,8 @@ or use these direct links:
 | Any computer, in Chrome or Edge | [Orograph.html](https://github.com/ChaseHendrick/synth/releases/latest/download/Orograph.html) (see [Play in the browser](#play-in-the-browser)) |
 
 Releases are built and published automatically by GitHub Actions from the `main`
-branch. If a link above says "Not Found", the first release has not been published yet;
-[build it yourself](#build-it-yourself) in the meantime.
+branch. Open the Releases page for the current assets and build status. You can also
+[build it yourself](#build-it-yourself).
 
 Not sure which Mac you have? Open the Apple menu and choose **About This Mac**. If it
 says **Chip: Apple M1** (or M2, M3 and so on), take the Apple silicon version. If it says

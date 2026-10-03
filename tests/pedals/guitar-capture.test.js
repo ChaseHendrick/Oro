@@ -210,13 +210,13 @@ describe('pedal rig: capture', () => {
 describe('addUserTerrain', () => {
   it('stores and selects a terrain like an import, and refuses a damaged one', async () => {
     const store = createStore(defaultState());
-    const data = 'A'.repeat(Math.ceil(256 * 2 / 3) * 4);
+    const data = Buffer.alloc(256 * 2).toString('base64');
     const ut = await addUserTerrain(store, 2, 'b', { name: 'x.wav', kind: 'wavetable', w: 256, h: 2, mirror: 1, data, extra: 1 });
     expect(ut).toEqual({ name: 'x', kind: 'wavetable', w: 256, h: 2, mirror: 1, data });
     expect(store.get('parts.2.userTerrain.B')).toEqual(ut);
     expect(store.get('parts.2.params.terrainB')).toBe(TERRAIN_INDEX.user);
     await expect(addUserTerrain(store, 2, 'A', { w: 1, h: 1, data: '' })).rejects.toThrow(/empty or damaged/);
-    await expect(addUserTerrain(store, 9, 'A', { w: 4, h: 4, data: 'AAAA' })).rejects.toThrow(/no track/);
-    await expect(addUserTerrain(store, 0, 'C', { w: 4, h: 4, data: 'AAAA' })).rejects.toThrow(/slot/);
+    await expect(addUserTerrain(store, 9, 'A', { w: 256, h: 2, data })).rejects.toThrow(/no track/);
+    await expect(addUserTerrain(store, 0, 'C', { w: 256, h: 2, data })).rejects.toThrow(/slot/);
   });
 });

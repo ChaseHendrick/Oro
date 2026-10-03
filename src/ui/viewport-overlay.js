@@ -10,6 +10,7 @@ import { createSegmented, createToggle } from './controls.js';
 import { createScopeCard } from './scope.js';
 import { addLoop } from './frame.js';
 import { openDotSettings } from './dot-settings.js';
+import { openPopover } from './layers.js';
 import { openPalettePopover } from './palettes.js';
 import { createFlatMap } from './flat-map.js';
 import { icon } from './icons.js';
@@ -18,6 +19,9 @@ export const VIEWS = [
   { value: 'orbit', label: 'Orbit view', icon: 'view-orbit' },
   { value: 'top', label: 'Top view', icon: 'view-top' },
   { value: 'low', label: 'Low view', icon: 'view-low' },
+  { value: 'front', label: 'Front view', icon: 'view-low' },
+  { value: 'side', label: 'Side view', icon: 'view-low' },
+  { value: 'diagonal', label: 'Diagonal view', icon: 'view-orbit' },
 ];
 export const STYLES = [
   { value: 'relief', label: 'Relief', icon: 'relief' },
@@ -25,6 +29,7 @@ export const STYLES = [
   { value: 'contour', label: 'Contours', icon: 'contour' },
   { value: 'heat', label: 'Heat map', icon: 'heat' },
   { value: 'points', label: 'Points', icon: 'points' },
+  { value: 'normals', label: 'Normals', icon: 'relief' },
 ];
 const DOT_ICONS = ['pin', 'roll', 'drift', 'explore', 'tour'];
 const DOT_TIPS = [
@@ -55,7 +60,7 @@ export function createViewportOverlay(ctx, viewportEl) {
   const viewBinding = via(binder.uiValue('view', VIEWS.map(v => v.value), 'orbit'), 'setView');
   const styleBinding = via(binder.uiValue('renderStyle', STYLES.map(s => s.value), 'relief'), 'setRenderStyle');
   const rotateBinding = { ...via(binder.uiValue('autoRotate', [0, 1], 1), 'setAutoRotate', v => !!v), def: { id: 'autoRotate', label: 'Auto-rotate', default: 1 } };
-  const viewSeg = createSegmented(ctx, viewBinding, { label: 'Camera', iconOnly: true, size: 'sm', options: VIEWS });
+  const viewSeg = createSegmented(ctx, viewBinding, { label: 'Camera', iconOnly: true, size: 'sm', className: 'seg--camera', options: VIEWS.slice(0, 3) });
   const rotate = createToggle(ctx, rotateBinding, { label: 'Auto-rotate', iconName: 'rotate', text: false, className: 'toggle--icon', tip: 'Slowly circle the map (Orbit view)' });
   const styleSeg = createSegmented(ctx, styleBinding, { label: 'Map style', iconOnly: true, size: 'sm', className: 'seg--style', options: STYLES });
   for (const c of [viewSeg, rotate, styleSeg]) scope.add(c.dispose);
@@ -67,8 +72,12 @@ export function createViewportOverlay(ctx, viewportEl) {
     palettePop = openPalettePopover(ctx, paletteBtn);
   });
 
+  const cameraBtn = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': 'Camera views and saved views', 'aria-haspopup': 'dialog', dataset: { tip: 'Six camera presets and your saved views' }, html: icon('save') });
+  cameraBtn.disabled = !visuals;
+  scope.on(cameraBtn, 'click', () => openCameraViews(ctx, cameraBtn));
+
   const left = h('div', { class: 'vp-toolbar vp-toolbar--left', role: 'toolbar', 'aria-label': 'View' },
-    viewSeg.el, rotate.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }), styleSeg.el, paletteBtn);
+    viewSeg.el, cameraBtn, rotate.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }), styleSeg.el, paletteBtn);
 
   // ---- dot behaviour
   const dotBinding = binder.path('dot.mode', DOT_DEF);
@@ -158,4 +167,51 @@ export function createViewportOverlay(ctx, viewportEl) {
   }
 
   return { el: overlay, dispose() { scope.dispose(); overlay.remove(); } };
+}
+
+/** Device-local camera presets, named captures, restore and deletion. */
+export function openCameraViews(ctx, anchor) {
+  const { store, visuals, prefs } = ctx;
+  const name = h('input', { type: 'text', maxlength: '60', placeholder: 'Name this view', 'aria-label': 'Saved camera view name', class: 'field' });
+  const select = h('select', { 'aria-label': 'Saved camera views', class: 'select-native' });
+  const save = h('button', { type: 'button', class: 'btn btn--primary btn--sm' }, 'Save current view');
+  const load = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Restore');
+  const remove = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Delete');
+  const message = h('p', { class: 'popover-note', 'aria-live': 'polite' });
+  const presets = VIEWS.map(v => h('button', { type: 'button', class: 'btn btn--ghost btn--sm', onClick: () => { call(visuals, 'setView', v.value); store.set('ui.view', v.value, { source: 'ui' }); render(); } }, v.label.replace(' view', '')));
+  const body = h('div', { class: 'import-pop' }, h('div', { class: 'popover-title' }, 'Camera views'),
+    h('div', { class: 'knob-grid knob-grid--3 knob-grid--tight' }, presets),
+    h('p', { class: 'popover-note' }, 'Save a camera angle, zoom and focus point on this device. Restore pauses auto-rotate.'),
+    name, save, select, h('div', { class: 'import-actions' }, remove, load), message);
+  const list = () => prefs.get('savedCameraViews') || [];
+  function render() {
+    const selected = select.value, views = list();
+    select.replaceChildren(...views.map(v => h('option', { value: v.id }, v.name)));
+    if (views.some(v => v.id === selected)) select.value = selected;
+    load.disabled = remove.disabled = views.length === 0;
+    select.disabled = views.length === 0;
+    presets.forEach((b, i) => { const on = store.get('ui.view') === VIEWS[i].value; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on)); });
+  }
+  save.addEventListener('click', () => {
+    const camera = call(visuals, 'captureCameraView');
+    if (!camera) { setText(message, 'The camera is not available.'); return; }
+    const views = list(), label = name.value.trim() || `View ${views.length + 1}`, existing = views.find(v => v.name === label);
+    if (!existing && views.length >= 24) { setText(message, 'Delete a saved view to make room. You can keep 24 views.'); return; }
+    const id = existing?.id || `camera-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    const next = views.filter(v => v.id !== id); next.push({ id, name: label, ...camera });
+    prefs.set('savedCameraViews', next); prefs.flush(); render(); select.value = id;
+    setText(message, `Saved ${label}.`);
+  });
+  load.addEventListener('click', () => {
+    const saved = list().find(v => v.id === select.value);
+    if (saved && call(visuals, 'restoreCameraView', saved)) { render(); setText(message, `Restored ${saved.name}.`); }
+  });
+  remove.addEventListener('click', () => {
+    const saved = list().find(v => v.id === select.value);
+    if (!saved) return;
+    prefs.set('savedCameraViews', list().filter(v => v.id !== saved.id)); prefs.flush(); render(); setText(message, `Deleted ${saved.name}.`);
+  });
+  const off = prefs.on(key => { if (key === 'savedCameraViews') render(); });
+  render();
+  return openPopover(ctx.layers, anchor, body, { className: 'popover--import', label: 'Camera views', placement: 'bottom-start', focus: 'input', onClose: off });
 }

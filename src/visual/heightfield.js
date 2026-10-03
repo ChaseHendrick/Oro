@@ -48,6 +48,7 @@ export class HeightField {
     // Bumped whenever the surface changes shape, so consumers (physics
     // colliders, the minimap image) know when to rebuild.
     this.version = 0;
+    this.tableVersion = 0; // source-only revision for cached CPU sample grids
   }
 
   slot(s) { return s === 'B' || s === 1 ? this.B : this.A; }
@@ -70,6 +71,7 @@ export class HeightField {
     sl.data = data || null;
     sl.size = data ? size : 0;
     this.version++;
+    this.tableVersion++;
   }
 
   /** Advance a slot's crossfade; returns the new fade. */

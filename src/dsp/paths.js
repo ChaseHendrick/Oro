@@ -13,7 +13,7 @@
 
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
 
-export const PATH_COUNT = 12;
+export const PATH_COUNT = 20;
 const ELLIPSE = 0, LISSA = 1, ROSE = 2, POLYGON = 3, STAR = 4, SPIRAL = 5,
   SCAN = 6, SPIRO = 7, EIGHT = 8, CUSP = 9, SUPER = 10, SCRIBBLE = 11;
 
@@ -266,6 +266,68 @@ function scribbleAt(t, n, p, X, Y, j) {
   Y[j] = y > 1 ? 1 : y < -1 ? -1 : y;
 }
 
+// Append-only shapes share the point kernel across scalar and block renderers.
+function lineAt(t, n, p, X, Y, j) {
+  const r = fastCos(t * n), angle = (p - 0.5) * 0.5;
+  X[j] = r * fastCos(angle); Y[j] = r * fastSin(angle);
+}
+function fixedPolygonAt(t, n, p, X, Y, j, sides) {
+  const u = (t * n % 1) * sides, k = Math.floor(u), f = u - k;
+  const a = k / sides, b = (k + 1) / sides;
+  const x = fastCos(a) + f * (fastCos(b) - fastCos(a));
+  const y = fastSin(a) + f * (fastSin(b) - fastSin(a));
+  X[j] = x + p * (fastCos(t * n) - x); Y[j] = y + p * (fastSin(t * n) - y);
+}
+function squareAt(t, n, p, X, Y, j) { fixedPolygonAt(t + 0.125 / n, n, p, X, Y, j, 4); }
+function triangleAt(t, n, p, X, Y, j) { fixedPolygonAt(t + 0.25 / n, n, p, X, Y, j, 3); }
+const rasterVertices = new Map(Array.from({ length: 8 }, (_, n) => {
+  const rows = n + 2, v = [[-1, -1]];
+  for (let r = 0; r < rows; r++) {
+    const y = -1 + 2 * r / (rows - 1), end = r % 2 ? -1 : 1;
+    if (r) v.push([-end, y]);
+    v.push([end, y]);
+  }
+  v.push([v[v.length - 1][0], -1], [-1, -1]);
+  return [rows, v];
+}));
+function rasterAt(t, n, p, X, Y, j) {
+  const v = rasterVertices.get(n + 1);
+  const u = (t - Math.floor(t)) * (v.length - 1), k = Math.min(v.length - 2, Math.floor(u)), f = u - k;
+  X[j] = v[k][0] + f * (v[k + 1][0] - v[k][0]);
+  Y[j] = (v[k][1] + f * (v[k + 1][1] - v[k][1])) * (0.1 + 0.9 * p);
+}
+function hypocycloidAt(t, n, p, X, Y, j) {
+  const k = n + 2, a = (k - 1) / k, b = (0.15 + 0.85 * p) / k;
+  X[j] = a * fastCos(t) + b * fastCos((k - 1) * t);
+  Y[j] = a * fastSin(t) - b * fastSin((k - 1) * t);
+}
+function butterflyAt(t, n, p, X, Y, j) {
+  const r = (Math.exp(fastCos(t)) - 2 * fastCos((n + 1) * t) + Math.pow(fastSin(t * 0.5), 6)) / 5.75;
+  X[j] = Math.tanh(1.5 * r * fastSin(t)) * (0.3 + 0.7 * p); Y[j] = Math.tanh(3 * r * fastCos(t));
+}
+function heartAt(t, n, p, X, Y, j) {
+  const q = t * n;
+  X[j] = Math.pow(fastSin(q), 3);
+  Y[j] = (13 * fastCos(q) - (2 + 3 * p) * fastCos(2 * q) - 2 * fastCos(3 * q) - fastCos(4 * q)) / 21;
+}
+function lemniscateAt(t, n, p, X, Y, j) {
+  const c = fastCos(t * n), s = fastSin(t * n), d = 1 + s * s;
+  X[j] = c / d; Y[j] = 2 * c * s / d * (0.2 + 0.8 * p);
+}
+const EXTRA_PATHS = [lineAt, squareAt, rasterAt, triangleAt, hypocycloidAt, butterflyAt, heartAt, lemniscateAt];
+
+/** Window, Mangle and Mirror operate on raw path coordinates before its affine transform. */
+export function shapePathPoint(x, y, t, window = 0, mangle = 0, mirror = 0, out) {
+  const m = Math.max(-1, Math.min(1, mangle || 0));
+  const nx = x + 0.5 * m * y * (1 - Math.abs(x));
+  const ny = y + 0.5 * m * x * (1 - Math.abs(y));
+  const w = Math.max(0, Math.min(1, window || 0));
+  const aperture = 1 - w + w * (0.5 - 0.5 * fastCos(t));
+  out.x = ((mirror & 1) ? Math.abs(nx) : nx) * aperture;
+  out.y = ((mirror & 2) ? Math.abs(ny) : ny) * aperture;
+  return out;
+}
+
 const PX = new Float64Array(1), PY = new Float64Array(1);
 
 /**
@@ -288,7 +350,7 @@ export function pathPoint(shape, t, order, param, out) {
     case CUSP: cuspAt(t, n, p, PX, PY, 0); break;
     case SUPER: superAt(t, n, p, PX, PY, 0); break;
     case SCRIBBLE: scribbleAt(t, n, p, PX, PY, 0); break;
-    default: PX[0] = fastCos(t); PY[0] = fastSin(t); break;
+    default: if (EXTRA_PATHS[shape - 12]) EXTRA_PATHS[shape - 12](t, n, p, PX, PY, 0); else { PX[0] = fastCos(t); PY[0] = fastSin(t); } break;
   }
   out.x = PX[0]; out.y = PY[0];
   return out;
@@ -347,7 +409,7 @@ export function pathBlock(shape, order, n, state, X, Y) {
     case CUSP: loopCusp(n, state, X, Y, o); break;
     case SUPER: loopSuper(n, state, X, Y, o); break;
     case SCRIBBLE: loopScribble(n, state, X, Y, o); break;
-    default: loop(ellipseAt, n, state, X, Y, o); break;
+    default: loop(EXTRA_PATHS[shape - 12] || ellipseAt, n, state, X, Y, o); break;
   }
 }
 
@@ -588,7 +650,12 @@ export function pathBlockAt(shape, order, n, T, param, dParam, X, Y) {
     case CUSP: atCusp(n, T, param, dParam, X, Y, o); break;
     case SUPER: atSuper(n, T, param, dParam, X, Y, o); break;
     case SCRIBBLE: atScribble(n, T, param, dParam, X, Y, o); break;
-    default: atEllipse(n, T, param, dParam, X, Y, o); break;
+    default: {
+      const fn = EXTRA_PATHS[shape - 12] || ellipseAt;
+      let p = param;
+      for (let j = 0; j < n; j++) { p += dParam; fn(T[j], o, Math.max(0, Math.min(1, p)), X, Y, j); }
+      break;
+    }
   }
 }
 

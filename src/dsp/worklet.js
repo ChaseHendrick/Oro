@@ -14,6 +14,7 @@
 // and a live host can use it to start with the right patch and terrains.
 
 import { OrographDSP } from './dsp-core.js';
+import { DspLoadMeter } from './load-meter.js';
 
 class OrographProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -23,6 +24,10 @@ class OrographProcessor extends AudioWorkletProcessor {
     const sr = typeof sampleRate === 'number' && sampleRate > 0
       ? sampleRate
       : (options && options.processorOptions && options.processorOptions.sampleRate) || 48000;
+    const measure=options?.processorOptions?.measureLoad === true;
+    const precise=typeof globalThis.performance?.now === 'function';
+    this.loadMeter=measure ? new DspLoadMeter(sr,!precise) : null;
+    this.loadClock=measure ? (precise ? globalThis.performance.now.bind(globalThis.performance) : Date.now) : null;
     this.dsp = new OrographDSP(sr);
     this.dsp.postMessage = (msg) => this.port.postMessage(msg);
     const init = options && options.processorOptions && options.processorOptions.init;
@@ -46,6 +51,7 @@ class OrographProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs) {
+    const started=this.loadMeter ? this.loadClock() : 0;
     const dry = outputs[0], dly = outputs[1], rev = outputs[2];
     const frames = (dry && dry[0] && dry[0].length) || 128;
     const L = this.channel(dry, 0, frames, 0);
@@ -60,6 +66,10 @@ class OrographProcessor extends AudioWorkletProcessor {
     this.dsp.process(L, R, DL, DR, VL, VR, frames, globalThis.currentTime, PL, PR);
     // a mono dry output still gets both channels
     if (dry && dry.length === 1) for (let i = 0; i < frames; i++) dry[0][i] = 0.5 * (L[i] + R[i]);
+    if (this.loadMeter) {
+      const report=this.loadMeter.record(this.loadClock()-started,frames);
+      if (report) this.port.postMessage(report);
+    }
     return true;
   }
 }

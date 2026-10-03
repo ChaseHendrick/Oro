@@ -3,6 +3,36 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.0.0 (October 2026): Expanded synthesis and performance
+
+* Eight unison copies, two seven-wave subs, coloured noise and imported recording loops,
+  eleven morphable partial profiles, phase and ring modulation, and a Karplus-Strong pluck.
+* Three ladder colours, SEM and diode-inspired digital filter types. These are original
+  algorithms, not measured replicas of named hardware circuits.
+* Nineteen mathematical terrains, twenty paths, a browsable offline library of 320
+  original generated images, 512 by 512 tables, complete audio-file terrains, live image
+  channel morphing and Cartesian/polar mapping. Window, Mangle and mirroring shape paths.
+* Forty modulation targets, independent six-stage envelopes and four controller slots
+  on each target. LFO skew, phase, offset, delay, fade-in, up to 32 loops and a 32-step
+  sequencer with glide and smoothing. Expression, sustain and breath MIDI sources.
+* Four effect slots per track, 27 effects and ten routing layouts. Includes shimmer,
+  granular pitch shift, flanger, phaser, overdrive, decimator, four-band EQ, sidechain
+  ducking and three-band upward/downward compression.
+* Vector mixing, 40 scales, 28 arp trigger rhythms, 36 ordered MIDI patch favourites,
+  author/folder metadata, 24 palettes, six camera angles, six render styles and named
+  saved views. Larger imported sessions and libraries use IndexedDB storage.
+* Desktop update checks, optional background downloads for Windows installer/Linux
+  AppImage builds, and an explicit saved-session restart/install action. Mac, portable
+  Windows and Linux archive builds offer release notices and manual downloads.
+* Existing parameter and catalog IDs retain their meanings. Older 16-step LFO patterns
+  are expanded by repeating each cell twice, preserving their original timing.
+* Browser minimap sampling reuses warped source grids and a bounded-error colour lookup.
+  The measured moving-terrain scene used about 60% less render-loop JavaScript time
+  at the same resolution and approximately 60 fps, with no frame cap or audio change.
+* New oscillator and effects paths have focused spectral, tuning, stability, lifecycle
+  and performance tests. Maximum 16-track/four-effect loads depend on the computer;
+  dense patches benefit from lower quality or fewer simultaneous voices.
+
 ## 1.5.1 (October 2026): Pedal profile explanation
 
 * Settings > Pedals explains why these MIDI pedal profiles are included:

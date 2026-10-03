@@ -471,6 +471,8 @@ export async function createMidi({
       if (RPN_CCS.has(cc)) { rpnIn(input, ch, cc, value); return; }
       if (cc === CC_SLIDE) { slideIn(input, ch, value / 127); return; }
     }
+    const controlSource = { 11: 'expression', 64: 'sustainLevel', 2: 'breath' }[cc];
+    if (controlSource && engine?.controlSource) for (const p of partsFor(targetsFor(ch))) engine.controlSource(p, controlSource, value / 127);
     if (learnPending && cc <= LEARNABLE_MAX_CC) {
       const { target, resolve } = learnPending;
       learnPending = null;
@@ -504,6 +506,7 @@ export async function createMidi({
         for (const p of partsFor(targets)) {
           if (engine && engine.bend) engine.bend(p, 0);
           if (engine && engine.wheel) engine.wheel(p, 0);
+          if (engine?.controlSource) for (const source of ['expression','sustainLevel','breath']) engine.controlSource(p, source, 0);
         }
         if (router) for (const t of targets) router.sustain(t, false);
         break;
@@ -617,7 +620,7 @@ export async function createMidi({
   function programIn(ch, program) {
     if (!settings.programChange || !presets) return;
     const list = presets.patches();
-    const patch = list[program];
+    const patch = typeof presets.programPatch === 'function' ? presets.programPatch(program) : list[program];
     if (!patch) return;
     for (const p of partsFor(targetsFor(ch))) presets.loadPatch(p, patch.id);
   }

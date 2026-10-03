@@ -7,7 +7,7 @@
 // sideways with the row names pinned; the code below works either way.
 
 import {
-  SEQ_STEPS, SEQ_RATES, ARP_MODES, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, stepToMidi, clamp, defaultStep,
+  SEQ_STEPS, SEQ_RATES, ARP_MODES, ARP_RHYTHMS, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, stepToMidi, clamp, defaultStep,
   activePatternIndex, patternPath,
 } from '../core/params.js';
 import { addPattern, selectPattern, removePattern } from '../core/tracks.js';
@@ -124,6 +124,7 @@ export function createSeqPanel(ctx) {
     }));
 
   const arpMode = createSelect(ctx, P('arp.mode', { id: 'arpMode', label: 'Arp mode', curve: 'enum', min: 0, max: ARP_MODES.length - 1, default: 0, options: ARP_MODES }), { label: 'Arpeggiator mode', className: 'select--sm' });
+  const arpRhythm = createSelect(ctx, P('arp.rhythm', { id: 'arpRhythm', label: 'Rhythm', curve: 'enum', min: 0, max: ARP_RHYTHMS.length - 1, default: 0, options: ARP_RHYTHMS.map(r => r.name) }), { label: 'Arpeggiator rhythm', className: 'select--sm' });
   const arpRate = createSelect(ctx, P('arp.rate', { id: 'arpRate', label: 'Arp rate', curve: 'enum', min: 0, max: 5, default: 3, options: SEQ_RATES.map(r => r.name) }), { label: 'Arpeggiator rate', className: 'select--sm' });
   const arpOct = createSegmented(ctx, P('arp.octaves', { id: 'arpOct', label: 'Octaves', curve: 'int', min: 1, max: 4, default: 1 }), {
     label: 'Arpeggiator octaves', size: 'sm', options: [1, 2, 3, 4].map(v => ({ value: v, label: String(v), aria: `${v} octave${v > 1 ? 's' : ''}` })),
@@ -135,7 +136,7 @@ export function createSeqPanel(ctx) {
   const scale = createSelect(ctx, binder.globalParam('scaleType'), { label: 'Scale', className: 'select--sm' });
   const swing = createMiniSlider(ctx, binder.globalParam('swing'), { ariaLabel: 'Swing', format: v => Math.round(v * 100) + '%' });
   const keyMode = createSegmented(ctx, binder.globalParam('keyMode'), { label: 'Keyboard plays', size: 'sm' });
-  for (const c of [seqOn, seqRate, seqLen, seqOct, arpMode, arpRate, arpOct, arpGate, arpHold, key, scale, swing, keyMode, lockGlide, lockRec]) scope.add(c.dispose);
+  for (const c of [seqOn, seqRate, seqLen, seqOct, arpMode, arpRate, arpRhythm, arpOct, arpGate, arpHold, key, scale, swing, keyMode, lockGlide, lockRec]) scope.add(c.dispose);
 
   const field = (label, control, cls = '') => h('div', { class: ['field-row', cls] }, h('span', { class: 'mini-label' }, label), control);
   const side = h('div', { class: 'seq-side' },
@@ -153,7 +154,7 @@ export function createSeqPanel(ctx) {
     field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el),
     h('span', { class: 'seq-global-note' }, 'All tracks'));
   const arpBar = h('div', { class: 'seq-arp', role: 'group', 'aria-label': 'Arpeggiator for this track' },
-    h('span', { class: 'section-title' }, 'Arp'), arpMode.el, arpRate.el, field('Octaves', arpOct.el), field('Gate', arpGate.el, 'field-row--gate'), arpHold.el);
+    h('span', { class: 'section-title' }, 'Arp'), arpMode.el, arpRate.el, arpRhythm.el, field('Octaves', arpOct.el), field('Gate', arpGate.el, 'field-row--gate'), arpHold.el);
 
   // ---------------------------------------------------------------- grid
   const cells = {};

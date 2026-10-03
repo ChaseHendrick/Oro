@@ -69,15 +69,16 @@ See `src/core/params.js`. State shape (persisted):
 ```
 { version, global: {paramId: number}, parts: [ { id, name, color, patchName,
     params: {paramId: number},                 // plain units, enums are integer indices
-    mods:   {paramId: {lfoShape, lfoRate, lfoSync, lfoDiv, lfoDepth, envDepth, retrig}},
+    mods:   {paramId: {...MOD_DEFAULT, steps: [32 values]}},
     seqOn: 0|1, activePattern: index,
     patterns: [ {id, name, rate, length, baseOctave, lockGlide, steps: [{on, degree, octave, vel, gate, slide, accent, lock, lx, ly}]} ],
-    arp:    {mode, rate, octaves, gate, hold},
+    arp:    {mode, rate, octaves, gate, hold, rhythm},
     dot:    {mode: 0 Pin | 1 Roll | 2 Drift, gravity, friction, driftSpeed},
-    userTerrain: {A: UserTerrain|null, B: UserTerrain|null} } x 1..MAX_PARTS ] }
+    userTerrain: {A: UserTerrain|null, B: UserTerrain|null},
+    trackFx: {routing, sidechain, slots: [four FX slots]}, noiseRecording: PCM16Recording|null } x 1..MAX_PARTS ] }
 ```
 
-### Tracks: MAX_PARTS vs the live list (v1.3, STATE_VERSION 4)
+### Tracks: MAX_PARTS vs the live list (introduced in v1.3; current STATE_VERSION 5)
 
 `state.parts` is a variable-length list of 1..`MAX_PARTS` (16) tracks, each with a stable
 string `id` (t1, t2, ...; never reused within a list). It is the only source of truth for
@@ -112,14 +113,14 @@ saves are migrated: four parts become tracks t1..t4 and each `seq` becomes patte
 
 Non-persisted `ui` branch: see `DEFAULT_UI` in `src/core/store.js`.
 
-`UserTerrain = { name, kind: 'image'|'wavetable', w, h, mirror: 0|1, data: base64 Uint8Array (w*h, row-major, 0..255) }`.
+`UserTerrain = { name, kind: 'image'|'wavetable'|'audio', w, h, mirror: 0|1, data: base64 Uint8Array (w*h, row-major, 0..255) }`.
 For `kind: 'wavetable'` each row is one single-cycle frame resampled to `w` samples (periodic in x); `mirror` reflects the non-periodic axis (or both axes for images) so the table tiles.
 
-Modulation is evaluated in **normalised** space: `n = clamp(toNorm(def, base) + lfo·lfoDepth + env2·envDepth (+ modwheel on morph), 0, 1)`, then `fromNorm(def, n)`. LFO output is bipolar −1..1 (S&H / Drift too). `rotate` wraps instead of clamping. `centerX/centerY` wrap instead of clamping. Mod wheel adds `+wheel · 1.0` normalised to `morph`. Pitch bend: ±`bendRange` semitones.
+Modulation is evaluated in **normalised** space: `n = clamp(toNorm(def, base) + lfo·lfoDepth + envelope·envDepth + four controller slots (+ modwheel on morph), 0, 1)`, then `fromNorm(def, n)`. LFO output is bipolar −1..1 (S&H / Drift too). `rotate` wraps instead of clamping. `centerX/centerY` wrap instead of clamping. Mod wheel adds `+wheel · 1.0` normalised to `morph`. Pitch bend: ±`bendRange` semitones.
 
 ## Audio worklet protocol
 
-Processor name: `'orograph'`. Constructed with `numberOfInputs: 0, numberOfOutputs: 3, outputChannelCount: [2, 2, 2]` (dry, delay send, reverb send — per-part level/pan/sends/mute/solo applied inside the worklet), `processorOptions: { sampleRate }`.
+Processor name: `'orograph'`. Constructed with `numberOfInputs: 0, numberOfOutputs: 4, outputChannelCount: [2, 2, 2, 2]` (dry, delay send, reverb send and pedal send; per-part level/pan/sends/mute/solo are applied inside the worklet), `processorOptions: { sampleRate, measureLoad: true }` for real-time audio. Offline constructors omit load measurement.
 
 Main → worklet (`node.port.postMessage`):
 
@@ -133,6 +134,9 @@ Main → worklet (`node.port.postMessage`):
 | `{t:'noteOff', part, note, time}` | |
 | `{t:'allOff', part?}` | release all (part omitted = every part); `{t:'panic'}` hard-silences |
 | `{t:'bend', part, v}` / `{t:'wheel', part, v}` | −1..1 / 0..1 |
+| `{t:'trackFx', part, fx}` | four-slot rack, routing and stable sidechain ID |
+| `{t:'noiseRecording', part, data: Float32Array|null}` | mono recording resampled to the worklet rate |
+| `{t:'expression', part, v}` / `{t:'sustainLevel', part, v}` / `{t:'breath', part, v}` | normalized MIDI CC11/64/2 controller sources |
 | `{t:'watch', part}` | which part to report telemetry for |
 | `{t:'transport', playing, beatTime, beat}` | optional: anchors synced LFO phase to the sequencer |
 
@@ -273,7 +277,7 @@ MIDI: channel pressure and poly aftertouch → `engine.pressure`; MPE mode (sett
 
 ```js
 visuals.on('extremum', fn({ part, kind, height, x, y }))   // Explore mode: the marble passed a local peak or valley
-visuals.setRenderStyle('relief'|'wire'|'contour'|'heat'|'points'); visuals.setPalette(i); visuals.palettes() -> [{ name, dark, light }]
+visuals.setRenderStyle('relief'|'wire'|'contour'|'heat'|'points'|'normals'); visuals.setPalette(i); visuals.palettes() -> [{ name, dark, light }]
 ```
 
 Visuals send `engine.marble(part, speed, height)` from the physics, draw dot-lock markers (numbered, flashing on 'step' events with a lock), Tour waypoints (editable when `ui.editWaypoints`: click adds, drag moves, right-click deletes), the base orbit (thin) and modulated orbit (bright), per-voice orbits when voices differ, and a comet trail whose density follows `paceSpeed`. Dot gestures: Shift-drag = Size, Alt-drag = Rotate, wheel over the dot = Size, `[` / `]` = Size when the map has focus.
@@ -329,3 +333,56 @@ noteOn/noteOff events and no channel-wide bends. The driver keeps each held note
 source route, follows track reorders and removes entries on global or per-track
 Panic. Mode changes release held notes through the router, respecting sustain.
 Capture remains one held note, regardless of tracking mode.
+
+
+## Orograph 2.0 additions
+
+The append-only parameter registry is now 88 part parameters with 40 modulation targets.
+Mod records retain flat numeric fields, 32 steps, six-stage envelope settings and four
+controller source/depth/curve groups. Migration doubles old 16-step cells. Five appended
+filter types and oscillator helpers preserve the legacy fast paths at default amounts.
+
+`src/dsp/oscillator-extras.js`, `analog-filters.js` and `modulation-extras.js` contain the
+new pure DSP. `track-fx-config.js` owns the persistent four-slot rack schema, normalized
+controls and catalogue; `track-effects.js` processes each part after decimation. Sidechain
+sources resolve stable track IDs through store sync. Mix/named-track detectors read
+preceding-block raw levels; self detection uses the current rack input.
+
+`user-terrain.js` validates image/audio/wavetable sources and optional four-channel planes.
+`terrain-library.js` generates the original image catalogue and PNGs. Worker cache keys
+include channel blend and mapping. The visual normal shader is render-style index 5.
+
+`noise-recording.js` packs imported mono loops as PCM16 base64 and resamples for realtime
+and offline render rates. `durable-storage.js` keeps legacy small localStorage documents
+and falls back to IndexedDB for larger JSON. Boot awaits session/preset readiness. JSON
+exports carry all source planes, rack state and recordings. Favourite references are kept
+in the library, with names remapped on portable import. Camera captures belong to device
+preferences and are validated by `src/visual/camera-view.js`.
+
+
+## Desktop update contract
+
+`electron/updates.cjs` owns the update state machine with injected network, updater and
+timer dependencies. All automatic preferences default to false. `electron/updates-host.cjs`
+provides atomic preference storage and main-frame IPC validation. The sandboxed preload
+exposes only `window.orographDesktop.updates`; the renderer receives no Node or generic IPC
+access. `src/ui/updates-tab.js` awaits `ctx.prepareUpdate()` before requesting an explicit
+restart. That callback flushes and awaits both session and preset storage.
+
+NSIS installed copies and AppImage copies use electron-updater. Other current packages
+use the fixed public GitHub release endpoint and manual download link. macOS remains a
+manual path while the app lacks the signing identity required for automatic installation.
+`.github/workflows/desktop.yml` validates and publishes the three platform update manifests
+and relevant differential blockmaps beside the existing downloads. A new release is
+assembled as a draft before its binary and metadata assets become visible to clients.
+
+
+## Browser minimap sampling
+
+`src/visual/minimap-sampling.js` caches four warped source grids with half-pixel centres.
+`HeightField.tableVersion` changes only when a source is installed, including reinstall
+of a modified array. Reference/size/version changes and warp invalidate the grids. Morph
+and A/B fade weights are blended each frame; shading, palette, tint and lift stay in
+`hud.js`. The shared sRGB lookup differs by at most one output byte. The cache holds
+six fixed 112 by 112 Float64 grids and one 4097-entry lookup, without changing frame rate
+or the 512 terrain/audio source resolution.

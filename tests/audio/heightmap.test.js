@@ -188,7 +188,7 @@ describe('16-bit storage', { timeout: 60000 }, () => {
     const mono = new Float32Array(2048 * 2).map((_, i) => Math.sin(2 * Math.PI * (i % 2048) / 2048));
     const ut = await wavetableFromSamples(mono, { yieldToUI: false });
     expect(typeof ut.lo).toBe('string');
-    expect(base64ToBytes(ut.lo).length).toBe(256 * 2);
+    expect(base64ToBytes(ut.lo).length).toBe(512 * 2);
   });
 });
 
@@ -199,7 +199,7 @@ describe('importTerrainFile with options (PNG path, Node)', { timeout: 60000 }, 
     const file = new File([encodePng({ width: W, height: H, colorType: 0, bitDepth: 16, samples: s })], 'alps.png', { type: 'image/png' });
     const store = createStore(defaultState());
     const ut = await importTerrainFile(store, 1, 'B', file, { smooth: 0, tile: 'wrap' });
-    expect(ut).toMatchObject({ name: 'alps', kind: 'image', w: 256, h: 256, mirror: 0 });
+    expect(ut).toMatchObject({ name: 'alps', kind: 'image', w: 300, h: 300, mirror: 0 });
     expect(typeof ut.lo).toBe('string');
     expect(store.get('parts.1.params.terrainB')).toBe(TERRAIN_INDEX.user);
     expect(store.get('parts.1.userTerrain.B')).toBe(ut);
@@ -213,9 +213,9 @@ describe('importTerrainFile with options (PNG path, Node)', { timeout: 60000 }, 
   });
 
   it('normalises options', () => {
-    expect(importOptions()).toEqual({ channel: 'luma', smooth: 0.3, tile: 'mirror' });
+    expect(importOptions()).toEqual({ channel: 'r', smooth: 0.3, tile: 'mirror' });
     expect(importOptions({ channel: 'b', smooth: 7, tile: 'wrap' })).toEqual({ channel: 'b', smooth: 1, tile: 'wrap' });
-    expect(importOptions({ channel: 'alpha', smooth: NaN, tile: 'x' })).toEqual({ channel: 'luma', smooth: 0.3, tile: 'mirror' });
+    expect(importOptions({ channel: 'alpha', smooth: NaN, tile: 'x' })).toEqual({ channel: 'r', smooth: 0.3, tile: 'mirror' });
   });
 
   it('commits imports into one slot in the order they were started', async () => {

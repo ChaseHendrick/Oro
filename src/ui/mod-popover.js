@@ -2,7 +2,8 @@
 // division, LFO depth, Envelope 2 depth, retrigger, a live animated preview
 // and Clear. Writes parts.N.mods.<id>.<field>.
 
-import { LFO_SHAPES, SYNC_DIVS, MOD_DEFAULT, PART_PARAM_MAP, toNorm, clamp, formatValue } from '../core/params.js';
+import { skewLfoPhase, steppedLfo, previewLfo } from '../dsp/modulation-extras.js';
+import { LFO_SHAPES, SYNC_DIVS, MOD_DEFAULT, PART_PARAM_MAP, toNorm, clamp, formatValue, ENV_MODES, LINK_SOURCES, LINK_CURVES } from '../core/params.js';
 import * as paramsModule from '../core/params.js';
 import { h, createScope, setText, prefersReducedMotion } from './dom.js';
 import { openPopover } from './layers.js';
@@ -13,7 +14,7 @@ import { icon } from './icons.js';
 
 export const RATE_DEF = { id: 'lfoRate', label: 'Rate', curve: 'exp', min: 0.01, max: 30, default: MOD_DEFAULT.lfoRate, unit: 'Hz', hint: 'LFO speed in cycles per second' };
 export const DEPTH_DEF = { id: 'lfoDepth', label: 'LFO', curve: 'lin', min: -1, max: 1, default: 0, hint: 'How far the LFO moves the knob (full = whole travel)' };
-export const ENV_DEF = { id: 'envDepth', label: 'Env 2', curve: 'lin', min: -1, max: 1, default: 0, hint: 'How far Envelope 2 pushes the knob on each note' };
+export const ENV_DEF = { id: 'envDepth', label: 'Envelope', curve: 'lin', min: -1, max: 1, default: 0, hint: 'How far Envelope 2 pushes the knob on each note' };
 export const SHAPE_DEF = { id: 'lfoShape', label: 'Shape', curve: 'enum', min: 0, max: LFO_SHAPES.length - 1, default: 0, options: LFO_SHAPES };
 export const DIV_DEF = { id: 'lfoDiv', label: 'Division', curve: 'enum', min: 0, max: SYNC_DIVS.length - 1, default: MOD_DEFAULT.lfoDiv, options: SYNC_DIVS.map(d => d.name) };
 export const SYNC_DEF = { id: 'lfoSync', label: 'Sync', curve: 'bool', min: 0, max: 1, default: 0, hint: 'Lock the LFO to the tempo' };
@@ -33,9 +34,17 @@ export const STEP_COUNT = paramsModule.LFO_STEP_COUNT || 16;
 export const DEFAULT_STEPS = paramsModule.DEFAULT_LFO_STEPS || Array.from({ length: STEP_COUNT }, (_, i) => Math.sin((i / STEP_COUNT) * Math.PI * 2));
 
 /** LFO waveform value in -1..1 at a phase (cycles); S&H and Drift are seeded per cycle. */
-export function lfoValue(shape, phase, steps) {
+export function lfoValue(shape, phase, steps, settings = null, hz = 1) {
   const cyc = Math.floor(phase);
-  const p = phase - cyc;
+  let p = phase - cyc;
+  if (settings) {
+    p = (p + (settings.lfoPhase || 0)) % 1;
+    p = skewLfoPhase(p, settings.lfoSkew || 0);
+    const raw = shape === 6 && (settings.stepGlide || settings.stepSmooth)
+      ? steppedLfo(steps || DEFAULT_STEPS, 0, p, 1 / (Math.max(.01, hz) * STEP_COUNT), settings.stepGlide || 0, settings.stepSmooth || 0, STEP_COUNT)
+      : lfoValue(shape, cyc + p, steps);
+    return clamp(raw + (settings.lfoOffset || 0), -1, 1);
+  }
   switch (shape) {
     case 6: {
       const arr = Array.isArray(steps) && steps.length ? steps : DEFAULT_STEPS;
@@ -93,6 +102,33 @@ export function openModPopover(ctx, binding, anchor) {
   const readout = h('div', { class: 'modpop-readout' });
   const clearBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', html: icon('close') + '<span>Clear</span>' });
 
+  const fieldControl = (field, label, min, max, options, curve = 'lin') => {
+    const d = { id: field, label, min, max, default: MOD_DEFAULT[field], ...(['lfoDelay','lfoAttack','envDelay','envAttack','envHold','envDecay','envRelease'].includes(field) ? { unit: 's' } : {}), curve: options ? 'enum' : curve, ...(options ? { options } : {}) };
+    const control = options ? createSelect(ctx, f(field, d), { label, className: 'select--sm' })
+      : createKnob(ctx, f(field, d), { size: 'sm', caption: 'both', learnable: false });
+    scope.add(control.dispose);
+    return options ? h('label', { class: 'modpop-field' }, h('span', { class: 'mini-label' }, label), control.el) : control.el;
+  };
+  const lfoExtras = h('details', { class: 'modpop-extra' }, h('summary', null, 'LFO timing and shape'),
+    h('div', { class: 'knob-grid knob-grid--4' },
+      fieldControl('lfoSkew', 'Skew', -1, 1), fieldControl('lfoPhase', 'Phase', 0, 1), fieldControl('lfoOffset', 'Offset', -1, 1),
+      fieldControl('lfoCount', 'Loops (0 = continuous)', 0, 32, null, 'int'), fieldControl('lfoDelay', 'Delay seconds', 0, 8),
+      fieldControl('lfoAttack', 'Fade seconds', 0, 8), fieldControl('stepGlide', 'Step glide', 0, 1), fieldControl('stepSmooth', 'Step smooth', 0, 1)));
+  const own = createToggle(ctx, f('envOwn', { id: 'envOwn', label: 'Own envelope', curve: 'bool', min: 0, max: 1, default: 0 }), { label: 'Own envelope' });
+  scope.add(own.dispose);
+  const envelopeControls = h('div', { class: 'modpop-ownenv' },
+    fieldControl('envMode', 'Envelope mode', 0, 5, ENV_MODES),
+    h('div', { class: 'knob-grid knob-grid--4' },
+      fieldControl('envDelay', 'Delay seconds', 0, 8), fieldControl('envAttack', 'Attack seconds', 0.001, 8),
+      fieldControl('envHold', 'Hold seconds', 0, 8), fieldControl('envDecay', 'Decay seconds', 0.001, 8),
+      fieldControl('envSustain', 'Sustain', 0, 1), fieldControl('envRelease', 'Release seconds', 0.001, 10)));
+  const envExtras = h('details', { class: 'modpop-extra' }, h('summary', null, 'Parameter envelope'), own.el, envelopeControls);
+  const controllers = h('details', { class: 'modpop-extra' }, h('summary', null, 'Four controller slots'),
+    ...[1, 2, 3, 4].map(n => h('div', { class: 'modpop-controller' },
+      fieldControl(`ctrl${n}Source`, `Controller ${n}`, 0, LINK_SOURCES.length - 1, LINK_SOURCES),
+      fieldControl(`ctrl${n}Depth`, `Depth ${n}`, -1, 1),
+      fieldControl(`ctrl${n}Curve`, `Curve ${n}`, 0, LINK_CURVES.length - 1, LINK_CURVES))));
+
   const body = h('div', { class: 'modpop' },
     h('header', { class: 'modpop-head' },
       h('div', null, h('div', { class: 'modpop-kicker' }, 'Modulate'), h('div', { class: 'modpop-title' }, def.label)),
@@ -103,8 +139,9 @@ export function openModPopover(ctx, binding, anchor) {
     h('div', { class: 'modpop-grid' },
       h('div', { class: 'modpop-col' }, h('div', { class: 'mini-label' }, 'Speed'), rateSlot, h('div', { class: 'modpop-toggles' }, syncToggle.el, retrig.el)),
       h('div', { class: 'modpop-col' }, h('div', { class: 'mini-label' }, 'Amount'), h('div', { class: 'modpop-knobs' }, depthKnob.el, envKnob.el))),
+    lfoExtras, envExtras, controllers,
     h('footer', { class: 'modpop-foot' },
-      h('span', { class: 'modpop-hint' }, 'Depth is in knob travel. Env 2 is shaped in the Sound tab.'), clearBtn));
+      h('span', { class: 'modpop-hint' }, 'Depth is in knob travel. Enable Own envelope to use this parameter’s six-stage envelope.'), clearBtn));
 
   const modPath = `parts.${part}.mods.${id}`;
   const getMod = () => ({ ...MOD_DEFAULT, ...(ctx.store.get(modPath) || {}) });
@@ -112,6 +149,7 @@ export function openModPopover(ctx, binding, anchor) {
     const m = getMod();
     rateSlot.classList.toggle('is-synced', !!m.lfoSync);
     stepsEditor.el.hidden = m.lfoShape !== 6;
+    envelopeControls.hidden = !m.envOwn;
     const hz = lfoHz(m, ctx.store.get('global.tempo') || 120);
     setText(readout, `${LFO_SHAPES[m.lfoShape] || 'Sine'} at ${hz >= 10 ? hz.toFixed(1) : hz.toFixed(2)} Hz`);
   }
@@ -144,7 +182,10 @@ export function openModPopover(ctx, binding, anchor) {
     const cycles = 2;
     // With reduced motion the wave stands still; the shape and depth still read.
     const now = prefersReducedMotion() ? 0 : (performance.now() - t0) / 1000;
-    const phaseNow = now * Math.min(hz, 12);
+    const age = Math.max(0, now - m.lfoDelay);
+    const phaseNow = age * hz;
+    const sample = (phase, elapsed = Infinity) => previewLfo(m, phase, 1 / Math.max(.01, hz), elapsed,
+      hash(Math.floor(phase) - 1) * 2 - 1, hash(Math.floor(phase)) * 2 - 1);
     const pad = 4 * dpr;
     const y = n => H - pad - clamp(n, 0, 1) * (H - pad * 2);
     g.strokeStyle = grid; g.lineWidth = 1;
@@ -154,14 +195,14 @@ export function openModPopover(ctx, binding, anchor) {
     g.beginPath();
     for (let i = 0; i <= 160; i++) {
       const ph = (i / 160) * cycles + Math.floor(phaseNow);
-      const n = base + lfoValue(m.lfoShape, ph, m.steps) * m.lfoDepth;
+      const n = base + sample(ph) * m.lfoDepth;
       const x = (i / 160) * W;
       if (i === 0) g.moveTo(x, y(n)); else g.lineTo(x, y(n));
     }
     g.strokeStyle = col; g.lineWidth = 1.6 * dpr; g.lineJoin = 'round';
     g.stroke();
     const frac = (phaseNow % 1) / cycles;
-    const dotN = base + lfoValue(m.lfoShape, Math.floor(phaseNow) + (phaseNow % 1), m.steps) * m.lfoDepth;
+    const dotN = base + sample(phaseNow, now) * m.lfoDepth;
     g.fillStyle = col;
     g.beginPath(); g.arc(frac * W, y(dotN), 3.2 * dpr, 0, Math.PI * 2); g.fill();
     const liveN = ctx.tele ? ctx.tele.norm(part, id) : null;
@@ -180,7 +221,7 @@ export function openModPopover(ctx, binding, anchor) {
 }
 
 /**
- * Sixteen-step LFO editor: drag across the bars to draw values (-1..1),
+ * Thirty-two-step LFO editor: drag across the bars to draw values (-1..1),
  * arrows move and adjust when focused, double-click restores the default.
  */
 export function createStepsEditor(ctx, path, label) {
@@ -249,6 +290,7 @@ export function describeMod(m, tempo) {
   if (!m) return 'Off';
   const parts = [];
   if (Math.abs(m.lfoDepth) > 0.0005) parts.push(`LFO ${formatDepth(m.lfoDepth)} ${LFO_SHAPES[m.lfoShape]} ${m.lfoSync ? SYNC_DIVS[m.lfoDiv]?.name : formatValue(RATE_DEF, m.lfoRate)}`);
-  if (Math.abs(m.envDepth) > 0.0005) parts.push(`Env 2 ${formatDepth(m.envDepth)}`);
+  if (Math.abs(m.envDepth) > 0.0005) parts.push(`${m.envOwn ? 'Own envelope' : 'Env 2'} ${formatDepth(m.envDepth)}`);
+  for (let n = 1; n <= 4; n++) if (Math.abs(m[`ctrl${n}Depth`] || 0) > 0.0005) parts.push(`${LINK_SOURCES[m[`ctrl${n}Source`]]} ${formatDepth(m[`ctrl${n}Depth`])}`);
   return parts.length ? parts.join(', ') : 'Off';
 }

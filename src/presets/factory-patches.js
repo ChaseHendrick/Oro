@@ -45,8 +45,8 @@ const synced = (depth, div, shape = SH.sine, more = {}) => ({ lfoDepth: depth, l
 const env = (depth, more = {}) => ({ envDepth: depth, ...more });
 const amp = (attack, decay, sustain, release) => ({ attack, decay, sustain, release });
 const env2 = (a, d, s, r) => ({ env2Attack: a, env2Decay: d, env2Sustain: s, env2Release: r });
-/** A Steps LFO: 16 held values, synced so the pattern spans `div`. */
-const steps = (depth, div, values, more = {}) => ({ lfoShape: STEPS, lfoSync: 1, lfoDiv: DIV[div], lfoDepth: depth, steps: values, ...more });
+/** A Steps LFO: legacy 16 held values duplicated into 32 steps, synced so the pattern spans `div`. */
+const steps = (depth, div, values, more = {}) => ({ lfoShape: STEPS, lfoSync: 1, lfoDiv: DIV[div], lfoDepth: depth, steps: values.length === 16 ? values.flatMap(v => [v, v]) : values, ...more });
 const link = (src, dst, amt, curve = CURVE.lin) => ({ src: SRC[src], dst, amt, curve });
 // Every patch with its own Links keeps the classic wheel routing first.
 const WHEEL_MORPH = link('wheel', 'morph', 1);

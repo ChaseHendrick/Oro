@@ -45,6 +45,7 @@ class FakeText extends FakeNode {
   constructor(t) { super(); this.data = t; }
   get textContent() { return this.data; }
   set textContent(t) { this.data = String(t); }
+  cloneNode() { return new FakeText(this.data); }
 }
 
 class FakeElement extends FakeNode {
@@ -72,6 +73,15 @@ class FakeElement extends FakeNode {
     this._cls = cls;
   }
   get className() { return [...this._cls].join(' '); }
+  cloneNode(deep = false) {
+    const copy = new FakeElement(this.tagName);
+    for (const [name, value] of this.attributes) copy.setAttribute(name, value);
+    copy.className = this.className; copy.dataset = { ...this.dataset };
+    copy.hidden = this.hidden; copy.disabled = this.disabled; copy.tabIndex = this.tabIndex;
+    copy._html = this._html; copy._value = this._value;
+    if (deep) for (const child of this.childNodes) copy.appendChild(child.cloneNode(true));
+    return copy;
+  }
   set className(v) { this._cls.clear(); String(v).split(/\s+/).filter(Boolean).forEach(c => this._cls.add(c)); }
   set innerHTML(v) { this._html = String(v); this.textContent = ''; }
   get innerHTML() { return this._html; }

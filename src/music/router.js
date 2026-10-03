@@ -11,7 +11,7 @@
 // track list is reordered (src/core/tracks.js). A removed track's state is
 // dropped here; the engine releases and fades out its sound itself.
 
-import { MAX_PARTS, SEQ_RATES, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, ARP_RHYTHMS, clamp } from '../core/params.js';
 import { partCount, watchTracks, permute, inversePerm } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 
@@ -53,7 +53,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   const live = () => parts.slice(0, count());
 
   function freshArp() {
-    return { running: false, index: 0, nextTime: null, nextBeat: null, pendingTime: null, rateIdx: null, fresh: false, gatherUntil: 0, lastRandom: -1 };
+    return { running: false, index: 0, rhythmIndex: 0, nextTime: null, nextBeat: null, pendingTime: null, rateIdx: null, fresh: false, gatherUntil: 0, lastRandom: -1 };
   }
 
   // ---------------------------------------------------------------- helpers
@@ -86,6 +86,7 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       octaves: clamp(Math.round(a.octaves || 1), 1, 4),
       gate: clamp(Number.isFinite(a.gate) ? a.gate : 0.6, 0.05, 1),
       hold: !!a.hold,
+      rhythm: clamp(Math.round(a.rhythm || 0), 0, ARP_RHYTHMS.length - 1),
     };
   }
 
@@ -403,6 +404,9 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   }
 
   function playArpStep(p, cfg, pool, t, off, lead = 0) {
+    const steps = ARP_RHYTHMS[cfg.rhythm]?.steps || ARP_RHYTHMS[0].steps;
+    const phase = parts[p].arp.rhythmIndex++;
+    if (!steps[phase % steps.length]) return;
     for (const n of nextArpNotes(p, cfg, pool)) {
       engineOn(p, n.note, n.vel, t, 'arp', lead);
       engineOff(p, n.note, off, 'arp', lead);

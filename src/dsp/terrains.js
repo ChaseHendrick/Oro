@@ -454,6 +454,30 @@ function genVortex(out, size, rng, detail) {
   }
 }
 
+// Original periodic analytical surfaces. Integer spatial frequencies preserve
+// continuity of the value and slope across the table's torus boundaries.
+function analytical(out, size, rng, detail, mode) {
+  const phase = rng(), n = 1 + Math.round(detail * 5), z = rng();
+  const partials = Array.from({ length: 10 }, (_, k) => ({ x: 1 + Math.floor(rng() * (n + 2)), y: 1 + Math.floor(rng() * (n + 2)), p: rng(), a: (rng() - 0.5) / (k + 1) }));
+  for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+    const x = i / size, y = j / size, sx = fastSin(x), sy = fastSin(y);
+    let v;
+    if (mode === 0) v = fastCos(n * x + phase) + fastCos((n + 1) * y) + 0.7 * fastCos(n * x + (n + 1) * y + 0.4 * fastSin(x - y));
+    else if (mode === 1) v = fastSin(n * x) * fastCos(n * y) + fastSin(n * y) * fastCos(z) + fastSin(z) * fastCos(n * x);
+    else if (mode === 2) v = sx * sy + detail * fastSin(2 * x + phase) * fastSin(3 * y);
+    else if (mode === 3) v = fastCos(n * x) * fastCos(n * y) + 0.35 * detail * fastCos(2 * n * x + phase) * fastCos(2 * n * y);
+    else if (mode === 4) { v = 0; for (const a of partials) v += a.a * fastSin(a.x * x + a.y * y + a.p); }
+    else v = fastCos(n * Math.sqrt(0.001 + sx * sx + sy * sy) + phase + detail * fastSin(x + y));
+    out[j * size + i] = v;
+  }
+}
+const genInterference = (a,n,r,d) => analytical(a,n,r,d,0);
+const genGyroid = (a,n,r,d) => analytical(a,n,r,d,1);
+const genSaddle = (a,n,r,d) => analytical(a,n,r,d,2);
+const genEggbox = (a,n,r,d) => analytical(a,n,r,d,3);
+const genHarmonics = (a,n,r,d) => analytical(a,n,r,d,4);
+const genOrbit = (a,n,r,d) => analytical(a,n,r,d,5);
+
 const GENERATORS = {
   [T.swell]: genSwell,
   [T.ripple]: genRipple,
@@ -468,6 +492,8 @@ const GENERATORS = {
   [T.spectra]: genSpectra,
   [T.lattice]: genLattice,
   [T.vortex]: genVortex,
+  [T.interference]: genInterference, [T.gyroid]: genGyroid, [T.saddle]: genSaddle,
+  [T.eggbox]: genEggbox, [T.harmonics]: genHarmonics, [T.orbit]: genOrbit,
 };
 
 /**

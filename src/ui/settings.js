@@ -7,8 +7,9 @@ import { createSegmented, createToggle } from './controls.js';
 import { createMidiSettings } from './settings-midi.js';
 import { createPedalSettings } from './settings-pedals.js';
 import { createVoiceSettings } from './settings-voice.js';
+import { createUpdatesTab } from './updates-tab.js';
 import { SHORTCUTS } from './shortcuts.js';
-import { STYLES } from './viewport-overlay.js';
+import { STYLES, VIEWS } from './viewport-overlay.js';
 import { openBounce, bounceSupported } from './bounce.js';
 import { createPalettePicker } from './palettes.js';
 import { icon } from './icons.js';
@@ -20,10 +21,11 @@ export const SETTINGS_TABS = [
   { id: 'voice', label: 'Voice', icon: 'mic' },
   { id: 'pedals', label: 'Pedals', icon: 'pedal' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard' },
+  { id: 'updates', label: 'Updates', icon: 'save' },
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '1.5.1';
+export const VERSION = '2.0.0';
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
@@ -46,15 +48,16 @@ function generalTab(ctx, scope) {
     label: 'Visual quality', options: [{ value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }],
   });
   const style = createSegmented(ctx, via(binder.uiValue('renderStyle', STYLES.map(s => s.value), 'relief'), 'setRenderStyle'), { label: 'Map style', options: STYLES.map(s => ({ ...s, label: s.label.replace('Wireframe', 'Wire').replace('Contours', 'Contour').replace('Heat map', 'Heat') })) });
+  const camera = createSegmented(ctx, via(binder.uiValue('view', VIEWS.map(v => v.value), 'orbit'), 'setView'), { label: 'Camera view', options: VIEWS.map(v => ({ ...v, label: v.label.replace(' view', '') })) });
   const palette = createPalettePicker(ctx);
   const rotate = createToggle(ctx, { ...via(binder.uiValue('autoRotate', [0, 1], 1), 'setAutoRotate', v => !!v), def: { id: 'autoRotate', label: 'Auto-rotate', default: 1 } }, { label: 'Auto-rotate', className: 'toggle--switch' });
   const motion = createSegmented(ctx, prefBinding(ctx, 'reduceMotion', 'system'), {
     label: 'Reduce motion', options: [{ value: 'system', label: 'System' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
   });
   const tips = createToggle(ctx, { ...prefBinding(ctx, 'showTips', 1), def: { id: 'showTips', label: 'Show tips', default: 1 } }, { label: 'Show tips', className: 'toggle--switch' });
-  for (const c of [theme, quality, style, palette, rotate, motion, tips]) scope.add(c.dispose);
+  for (const c of [theme, quality, camera, style, palette, rotate, motion, tips]) scope.add(c.dispose);
   if (!visuals) {
-    for (const c of [quality, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
+    for (const c of [quality, camera, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
   }
 
   return h('div', { class: 'settings-pane' },
@@ -64,6 +67,7 @@ function generalTab(ctx, scope) {
       row('Show tips', 'Hover hints and the map hint', tips.el)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
+      row('Camera view', 'Six angles. Save your own from the map toolbar.', camera.el),
       row('Map style', null, style.el),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),
       row('Auto-rotate', 'Slowly circles the map in Orbit view', rotate.el)));
@@ -116,6 +120,11 @@ function audioTab(ctx, scope) {
       const lat = ((c.baseLatency || 0) + (c.outputLatency || 0)) * 1000;
       fact('Latency', lat > 0 ? `${lat.toFixed(1)} ms` : 'Not reported');
     }
+    const load = engine.dspLoad?.();
+    if (load && state === 'running') {
+      fact('DSP load estimate', `${Math.round(load.percent)}%${load.coarseClock ? ' (coarse timer)' : ''}`, load.percent < 80);
+      if (load.percent >= 80) fact('Load', 'Lower unison, simultaneous notes or audio quality', false);
+    }
     startBtn.hidden = state === 'running';
   }
   scope.on(startBtn, 'click', async () => { await ctx.startAudio(); render(); });
@@ -130,6 +139,7 @@ function audioTab(ctx, scope) {
   const ctxObj = engine && engine.context;
   if (ctxObj && typeof ctxObj.addEventListener === 'function') scope.on(ctxObj, 'statechange', render);
   scope.add(listen(engine, 'state', render));
+  scope.add(listen(engine, 'load', render));
   render();
 
   // Output device picker (only where the browser supports choosing one).
@@ -198,6 +208,7 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     voice: () => { const m = createVoiceSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     pedals: () => { const m = createPedalSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     shortcuts: () => h('div', { class: 'settings-pane' }, shortcutsList()),
+    updates: () => { const m = createUpdatesTab(ctx, { version: VERSION }); scope.add(m.dispose); return m.el; },
     about: () => aboutTab(),
   };
   for (const t of SETTINGS_TABS) {
@@ -245,4 +256,3 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
   tabs[SETTINGS_TABS.findIndex(t => t.id === current)]?.focus();
   return { ...modal, select: (id) => select(id, true), current: () => current };
 }
-

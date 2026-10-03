@@ -1,9 +1,10 @@
 # Orograph handoff
 
-Updated 2026-10-02 during the continuation of the 15:05 UTC handoff, for whoever continues this project next (a person, or
-an assistant such as ChatGPT that has never seen the earlier conversations). It is meant to
-be enough on its own: read it top to bottom, then `docs/ARCHITECTURE.md` before changing
-code.
+Updated 2026-10-03 for Orograph 2.0.0. Read this and `docs/ARCHITECTURE.md`
+before continuing. The owner requested the complete expansion in
+`docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
+limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
+separate future features; they are outside the 2.0 expansion.
 
 ---
 
@@ -36,7 +37,8 @@ tests, Playwright (Chromium) for browser checks. Node 22.
 | `ChaseHendrick/music-field-manual` | the owner's notes, **PolyForm licensed** | | use facts from it only, never copy code |
 
 Work happens on a branch and goes in through a pull request. The owner wants PRs merged
-(squash) once CI is green, then the website updated (section 6). One feature per release.
+(squash) once CI is green, then the website updated (section 6). Keep releases coherent; the owner requested the
+full set of 2.0 capabilities together.
 
 ## 3. State checked during this continuation
 
@@ -57,8 +59,8 @@ The earlier release blocker is resolved. Checked on 2026-10-02:
   remain outstanding.
 * The follow-up **1.5.1** patch adds the owner's brief pedal profile explanation to
   Settings > Pedals, the user guide and pedal notes: **Why these pedals?** These are
-  the ones I have. Release and website publication for this patch still need
-  verification.
+  the ones I have. Synth PR #11 and website PR #16 were merged; both builds, all ten release assets and
+  the exact production copy were verified.
 
 Follow the release routine in section 6: test both web builds, check browser input
 paths, merge the feature PR only once CI is green, verify all download assets, then
@@ -72,7 +74,7 @@ The macOS runner problem described in the original handoff was temporary. The
 
 ```bash
 npm ci
-npx vitest run            # about 1050 tests, about 45 s; all must pass
+npx vitest run            # all tests must pass; use --maxWorkers=4 on a busy local machine
 npm run build             # web build into dist/
 npm run build:single      # one offline HTML file into dist-single/
 npx vite --port 5190 --strictPort &              # dev server
@@ -213,15 +215,10 @@ structured data has `alternateName: "HendrickResearch"`. Do not invent other nam
      before/after A/B, the match score, and undo.
    * Be honest in the UI and docs about how close a match is; wave terrain cannot
      reproduce every sound.
-3. **Gaps compared with the Terrain Synth** (from `docs/RESEARCH.md`; implement only from
-   general DSP knowledge, never from their code):
-   * per-track effect slots with more effects (phaser, flanger, overdrive, decimator, EQ,
-     shimmer);
-   * ladder and diode filters;
-   * phase modulation, ring modulation, inharmonic partial profiles;
-   * unison up to 7 (Orograph has 4), more sub-oscillator waveforms and noise colours;
-   * per-parameter envelopes and richer LFOs (delay, skew, loop counts, 32 steps);
-   * vector mixing of tracks, saved camera views, more palettes.
+3. The requested oscillator, terrain, modulation, effects, patch and display expansion
+   is implemented in **2.0.0**. See `docs/FEATURE-PARITY.md` for every requested item and
+   `docs/EXPANSION-VALIDATION.md` for evidence and performance bounds. A browser test is
+   available at `tests/e2e/expansion.cjs`.
 
 ## 8. Things learned the hard way
 
@@ -260,8 +257,8 @@ structured data has `alternateName: "HendrickResearch"`. Do not invent other nam
   tested in software.
 * **Quality:** high sound quality matters (32-bit float paths, no clicks, dithered
   exports). Smooth visuals: never cap the frame rate.
-* **Process:** each feature is its own small release: PR, CI green, merge, then update the
-  website.
+* **Process:** PR, CI green, squash merge, verify the release assets, then update and
+  verify the website.
 * **About the owner:** has a neuroscience degree and is in law school; technical
   explanations are welcome. Uses a Mac with Chrome, owns an Akai MPC XL and guitar pedals.
   Often asks for status and for a percentage of progress; give honest numbers.

@@ -17,7 +17,13 @@ export const TERRAINS = [
   { id: 'spectra',  name: 'Spectra',  desc: 'Classic waveforms stacked like a wavetable: sine to tri to saw to square.' },
   { id: 'lattice',  name: 'Lattice',  desc: 'A soft checkerboard grid: hollow square-wave buzz.' },
   { id: 'vortex',   name: 'Vortex',   desc: 'Spiral arms winding out from the centre.' },
-  { id: 'user',     name: 'Imported', desc: 'Your own image (heightmap) or WAV wavetable.' },
+  { id: 'user',     name: 'Imported', desc: 'Your own image, audio terrain or wavetable.' },
+  { id: 'interference', name: 'Interference', desc: 'Crossing harmonic wavefronts with moving interference bands.' },
+  { id: 'gyroid', name: 'Gyroid', desc: 'A periodic slice of a triply periodic minimal surface.' },
+  { id: 'saddle', name: 'Saddle', desc: 'Alternating sinusoidal saddles and curved passes.' },
+  { id: 'eggbox', name: 'Eggbox', desc: 'Rounded repeating wells with harmonic ridges.' },
+  { id: 'harmonics', name: 'Harmonics', desc: 'A seeded Fourier field of smooth spatial partials.' },
+  { id: 'orbit', name: 'Orbit', desc: 'Nested periodic rings bent by an angular wave field.' },
 ];
 
 // Every path is a closed curve traced once per oscillator cycle (t in [0,1)).
@@ -36,6 +42,14 @@ export const PATHS = [
   { id: 'cusp',     name: 'Epicycloid',  orderLabel: 'Cusps',    paramLabel: 'Depth',   desc: 'A wheel rolling around a wheel: cardioids and cusps.' },
   { id: 'super',    name: 'Superformula', orderLabel: 'Symmetry', paramLabel: 'Pinch',  desc: 'Gielis superformula blobs and pinched stars.' },
   { id: 'scribble', name: 'Scribble',    orderLabel: 'Seed',     paramLabel: 'Chaos',   desc: 'A smooth random closed loop. Change the seed for a new one.' },
+  { id: 'line', name: 'Line', orderLabel: 'Passes', paramLabel: 'Angle', desc: 'A straight line traced out and back with an adjustable angle.' },
+  { id: 'square', name: 'Square', orderLabel: 'Passes', paramLabel: 'Round', desc: 'Four fixed straight sides that blend into a circle.' },
+  { id: 'raster', name: 'Raster', orderLabel: 'Rows', paramLabel: 'Height', desc: 'A serpentine row scan with an edge return to its start.' },
+  { id: 'triangle', name: 'Triangle', orderLabel: 'Passes', paramLabel: 'Round', desc: 'Three straight sides that blend into a circle.' },
+  { id: 'hypocycloid', name: 'Hypocycloid', orderLabel: 'Cusps', paramLabel: 'Depth', desc: 'A small wheel rolling inside a circle.' },
+  { id: 'butterfly', name: 'Butterfly', orderLabel: 'Wings', paramLabel: 'Spread', desc: 'A smooth butterfly curve with paired wing lobes.' },
+  { id: 'heart', name: 'Heart', orderLabel: 'Passes', paramLabel: 'Notch', desc: 'A smooth heart-shaped loop with adjustable indentation.' },
+  { id: 'lemniscate', name: 'Lemniscate', orderLabel: 'Passes', paramLabel: 'Width', desc: 'The rational Bernoulli figure eight, traced smoothly.' },
 ];
 
 export const TERRAIN_NAMES = TERRAINS.map(t => t.name);

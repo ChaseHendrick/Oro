@@ -1146,3 +1146,34 @@
   .seq-lock-dot { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
   .seq-lock { -webkit-touch-callout: none; user-select: none; }
 }
+
+/* Expanded sound, modulation and performance editors. */
+.popover--mod { width: min(480px, calc(100vw - 16px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.modpop-extra { border-top: 1px solid var(--border); padding-top: 8px; }
+.modpop-extra summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; padding: 4px 0 10px; }
+.modpop-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.modpop-controller { display: grid; grid-template-columns: minmax(100px, 1fr) 72px minmax(80px, .65fr); align-items: center; gap: 8px; }
+.modpop-ownenv { display: flex; flex-direction: column; gap: 10px; }
+.sound-selects { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.sound-field { display: flex; flex-direction: column; gap: 4px; }
+.knob-row--env { flex-wrap: wrap; }
+.vector-body { display: flex; align-items: center; gap: 24px; }
+.vector-pad { position: relative; width: min(250px, 68vw); height: 160px; touch-action: none; border: 1px solid var(--border); border-radius: var(--r); background: linear-gradient(135deg, color-mix(in srgb, var(--part) 18%, var(--panel-solid)), var(--panel-2)); }
+.vector-pad:focus-visible { outline: 2px solid var(--part); outline-offset: 3px; }
+.vector-dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: var(--part); border: 2px solid var(--text); transform: translate(-50%, -50%); pointer-events: none; }
+.vector-corner { position: absolute; font-size: var(--fs-xs); padding: 6px; pointer-events: none; }
+.vector-corner--0 { top: 0; left: 0; } .vector-corner--1 { top: 0; right: 0; }
+.vector-corner--2 { bottom: 0; left: 0; } .vector-corner--3 { bottom: 0; right: 0; }
+.patch-metadata { display: grid; gap: 8px; } .patch-metadata label { display: grid; gap: 4px; }
+.favorite-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px; }
+.favorite-slot { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.favorite-slot select { width: 100%; min-width: 0; }
+@media (max-width: 500px) { .favorite-grid { grid-template-columns: 1fr; } .modpop-controller { grid-template-columns: minmax(90px, 1fr) 64px minmax(65px, .6fr); } }
+
+/* Extra camera views remain in the popup when phone toolbars need more room. */
+@container stage (max-width: 430px) {
+  .vp-toolbar--left .seg--camera .seg-btn:nth-child(n + 3) { display: none; }
+}
+@container stage (max-width: 360px) {
+  .vp-toolbar--left .seg--camera { display: none; }
+}

@@ -12,7 +12,7 @@ import { describePedalPresets } from '../pedals/pedal-presets.js';
 
 export function matchesQuery(item, q) {
   if (!q) return true;
-  const hay = [item.name, item.category, item.description, ...(item.tags || [])].filter(Boolean).join(' ').toLowerCase();
+  const hay = [item.name, item.category, item.author, item.folder, item.description, ...(item.tags || [])].filter(Boolean).join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
 }
 
@@ -126,6 +126,8 @@ export function openSaveForm(ctx, anchor, kind) {
     class: 'field', type: 'text', maxlength: '60', 'aria-label': kind === 'patch' ? 'Patch name' : 'Scene name',
     value: current && current !== 'Init' ? current : '', placeholder: kind === 'patch' ? 'My patch' : 'My scene',
   });
+  const initial = userItem(presets, kind, current);
+  const metadata = kind === 'patch' ? { category: h('input', { class: 'field', 'aria-label': 'Patch category', maxlength: '30', value: initial?.category || 'User' }), author: h('input', { class: 'field', 'aria-label': 'Patch author', maxlength: '60', value: initial?.author || 'Chase Hendrick' }), folder: h('input', { class: 'field', 'aria-label': 'Patch folder', maxlength: '80', value: initial?.folder || 'My patches' }) } : null;
   const go = h('button', { type: 'submit', class: 'btn btn--primary btn--sm' }, 'Save');
   // Pedal presets (v1.1): only with the pedal rig and a pedal that takes presets.
   const existing = () => userItem(presets, kind, input.value.trim());
@@ -136,11 +138,12 @@ export function openSaveForm(ctx, anchor, kind) {
   }
   const form = h('form', { class: 'save-form' },
     h('div', { class: 'popover-title' }, kind === 'patch' ? 'Save patch' : 'Save scene'),
-    h('p', { class: 'popover-note' }, kind === 'patch' ? 'Saves the sound of this part (not its pattern) to your patches.' : 'Saves all four parts, patterns, tempo and key as a scene.'),
+    h('p', { class: 'popover-note' }, kind === 'patch' ? 'Saves the sound of this part (not its pattern) to your patches.' : 'Saves all tracks, patterns, tempo and key as a scene.'),
     h('div', { class: 'save-row' }, input, go),
+    metadata ? h('div', { class: 'patch-metadata' }, ...Object.entries(metadata).map(([key, input]) => h('label', null, h('span', { class: 'mini-label' }, key[0].toUpperCase() + key.slice(1)), input))) : null,
     fields ? fields.el : null);
   let pop;
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = input.value.trim() || (kind === 'patch' ? 'My patch' : 'My scene');
     // Left out (no section), an existing scene or patch keeps the pedal presets it had.
@@ -153,12 +156,13 @@ export function openSaveForm(ctx, anchor, kind) {
     try {
       let saved = name;
       if (kind === 'patch') {
-        const id = presets.savePatch(part, name, { pedalPresets });
+        const id = presets.savePatch(part, name, { pedalPresets, category: metadata.category.value, author: metadata.author.value, folder: metadata.folder.value });
         saved = (typeof presets.getPatch === 'function' && id != null && presets.getPatch(id)?.name) || store.get(`parts.${part}.patchName`) || name;
       } else {
         const id = presets.saveScene(name, { pedalPresets });
         saved = (typeof presets.getScene === 'function' && id != null && presets.getScene(id)?.name) || name;
       }
+      if (typeof presets.settled === 'function' && !await presets.settled()) throw new Error('Storage is unavailable');
       ctx.toast(kind === 'patch' ? `Saved patch "${saved}"` : `Saved scene "${saved}"`, { kind: 'success' });
     } catch (err) {
       console.warn('[ui] save failed', err);
@@ -187,6 +191,9 @@ function openBrowser(ctx, anchor) {
     role: 'combobox', 'aria-expanded': 'true', 'aria-controls': listId, 'aria-autocomplete': 'list',
   });
   const tabPatches = h('button', { type: 'button', class: 'tab-btn', role: 'tab', 'aria-selected': 'true' }, 'Patches');
+  const tabFavorites = h('button', { type: 'button', class: 'tab-btn', role: 'tab', 'aria-selected': 'false' }, 'Favourites (36)');
+  const folder = h('select', { class: 'select select--sm', 'aria-label': 'Patch folder filter' });
+  let folderFilter = '';
   const tabScenes = h('button', { type: 'button', class: 'tab-btn', role: 'tab', 'aria-selected': 'false' }, 'Scenes');
   const list = h('div', { class: 'preset-list', id: listId, role: 'listbox', 'aria-label': 'Presets' });
   const fileInput = h('input', { type: 'file', accept: '.json,application/json', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
@@ -196,18 +203,41 @@ function openBrowser(ctx, anchor) {
   const body = h('div', { class: 'browser' },
     h('div', { class: 'browser-top' },
       h('div', { class: 'search-wrap' }, h('span', { class: 'search-icon', html: icon('search') }), search),
-      h('div', { class: 'tabs tabs--sm', role: 'tablist', 'aria-label': 'Preset type' }, tabPatches, tabScenes)),
+      h('div', { class: 'tabs tabs--sm', role: 'tablist', 'aria-label': 'Preset type' }, tabPatches, tabScenes, tabFavorites)),
+    folder,
     list,
     h('footer', { class: 'browser-foot' }, saveScene, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
 
   function items() {
-    if (tab === 'patches') return (call(presets, 'patches') || []).filter(p => matchesQuery(p, query));
+    if (tab === 'patches') return (call(presets, 'patches') || []).filter(p => matchesQuery(p, query) && (!folderFilter || p.folder === folderFilter));
     return (call(presets, 'scenes') || []).filter(sc => matchesQuery(sc, query));
   }
 
   function render() {
     list.textContent = '';
     options = [];
+    folder.hidden = tab !== 'patches'; search.hidden = tab === 'favorites';
+    const folders = [...new Set((call(presets, 'patches') || []).map(p => p.folder).filter(Boolean))].sort();
+    folder.textContent = ''; folder.append(h('option', { value: '' }, 'All folders'));
+    for (const name of folders) folder.append(h('option', { value: name }, name));
+    folder.value = folderFilter;
+    if (tab === 'favorites') {
+      list.setAttribute('role', 'group'); list.setAttribute('aria-label', 'MIDI Program Change favourites');
+      list.append(h('p', { class: 'popover-note' }, 'Program numbers 1 to 36 recall these slots when MIDI Program Change is enabled in Settings. Once a slot is assigned, empty slots ignore Program Change. An entirely empty bank uses the original patch order.'));
+      const favorites = call(presets, 'favorites') || Array(36).fill(null), all = call(presets, 'patches') || [];
+      const grid = h('div', { class: 'favorite-grid' });
+      favorites.forEach((patch, index) => {
+        const picker = h('select', { class: 'select select--sm', 'aria-label': `Favourite slot ${index + 1}` }, h('option', { value: '' }, 'Empty'));
+        for (const p of all) picker.append(h('option', { value: p.id }, p.name));
+        picker.value = patch?.id || '';
+        picker.addEventListener('change', () => call(presets, 'setFavorite', index, picker.value || null));
+        const recall = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', 'aria-label': `Recall favourite ${index + 1}`, disabled: !patch }, String(index + 1).padStart(2, '0'));
+        recall.addEventListener('click', () => { if (patch) call(presets, 'loadPatch', part, patch.id); });
+        grid.append(h('div', { class: 'favorite-slot' }, recall, picker));
+      });
+      list.append(grid); search.removeAttribute('aria-activedescendant'); return;
+    }
+    list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Presets');
     const current = store.get(`parts.${part}.patchName`);
     const data = items();
     if (!data.length) {
@@ -235,6 +265,7 @@ function openBrowser(ctx, anchor) {
         const opt = h('div', {
           class: ['preset-item', isCurrent && 'is-current'], role: 'option', id, 'aria-selected': String(isCurrent), dataset: { id: String(it.id) },
         }, h('span', { class: 'preset-texts' }, h('span', { class: 'preset-name' }, it.name),
+          tab === 'patches' && (it.author || it.folder) ? h('span', { class: 'preset-desc' }, [it.author, it.folder].filter(Boolean).join(' · ')) : null,
           tab === 'scenes' && it.description ? h('span', { class: 'preset-desc' }, it.description) : null,
           pedalText ? h('span', { class: 'preset-desc preset-pedals' }, `Pedals: ${pedalText}`) : null), meta, pedalBtn, del);
         opt.addEventListener('pointerdown', (e) => { if (!e.target.closest('.preset-del, .preset-pedals-btn')) e.preventDefault(); });
@@ -297,11 +328,14 @@ function openBrowser(ctx, anchor) {
     tab = t;
     tabPatches.setAttribute('aria-selected', String(t === 'patches'));
     tabScenes.setAttribute('aria-selected', String(t === 'scenes'));
+    tabFavorites.setAttribute('aria-selected', String(t === 'favorites'));
     search.placeholder = t === 'patches' ? 'Search patches' : 'Search scenes';
     render();
   }
   scope.on(tabPatches, 'click', () => setTab('patches'));
   scope.on(tabScenes, 'click', () => setTab('scenes'));
+  scope.on(tabFavorites, 'click', () => setTab('favorites'));
+  scope.on(folder, 'change', () => { folderFilter = folder.value; render(); });
   scope.on(search, 'input', () => { query = search.value.trim(); render(); });
   scope.on(search, 'keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(activeIdx + 1); }
@@ -330,7 +364,7 @@ function openBrowser(ctx, anchor) {
     try {
       const res = await presets.importJSON(file);
       const n = (res && res.patches) || 0, m = (res && res.scenes) || 0;
-      ctx.toast(`Imported ${n} patch${n === 1 ? '' : 'es'} and ${m} scene${m === 1 ? '' : 's'}`, { kind: 'success' });
+      ctx.toast(n || m ? `Imported ${n} patch${n === 1 ? '' : 'es'} and ${m} scene${m === 1 ? '' : 's'}` : 'Imported favorite bank', { kind: 'success' });
       render();
     } catch (err) {
       console.warn('[ui] import failed', err);

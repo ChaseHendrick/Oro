@@ -40,15 +40,20 @@ import {
 } from '../core/params.js';
 import {
   pathBlock, pathBlockAt, pathPoint, pathLength, paceWarp, paceBlock,
-  travelBlock, prepareEven, evenPhase, pingPong,
+  travelBlock, prepareEven, evenPhase, pingPong, shapePathPoint,
 } from './paths.js';
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
 import { generateTerrain, buildMipChain } from './terrains.js';
+import { subWave, PROFILE_PARTIALS, profileRatio, ColourNoise, noiseTextures, fadeLoop, loopSample, KarplusStrong } from './oscillator-extras.js';
+import { AnalogFilter } from './analog-filters.js';
+import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.js';
+import { TrackEffects } from './track-effects.js';
+import { MAX_NOISE_SECONDS } from './noise-recording.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
 const MAX_OS = 4;                       // the High quality renders voices at 4x
-const MAX_UNISON = 4;
+const MAX_UNISON = 8;
 const VOICE_GAIN = 0.5;                 // headroom: a full-scale voice sits at -6 dBFS
 const SMOOTH_TIME = 0.004;              // one-pole smoothing of control targets (s)
 const TERRAIN_FADE_TIME = 0.03;         // crossfade when a new terrain table arrives (s)
@@ -84,6 +89,7 @@ const IDLE = 0, ATTACK = 1, DECAY = 2, RELEASE = 3;
 
 const NMOD = MOD_PARAM_IDS.length;
 const MOD_DEFS = MOD_PARAM_IDS.map(id => PART_PARAM_MAP[id]);
+const MOD_PARAM_OFFSETS=new Uint16Array(MOD_PARAM_IDS.map(id => PART_PARAM_INDEX[id]));
 const MOD_SLOT = Object.fromEntries(MOD_PARAM_IDS.map((id, i) => [id, i]));
 const MOD_WRAPS = new Uint8Array(MOD_PARAM_IDS.map(id => (id === 'rotate' || id === 'centerX' || id === 'centerY') ? 1 : 0));
 const M_MORPH = MOD_SLOT.morph, M_WARP = MOD_SLOT.warp, M_LIFT = MOD_SLOT.lift, M_FOLD = MOD_SLOT.fold;
@@ -92,14 +98,22 @@ const M_ROTATE = MOD_SLOT.rotate, M_CX = MOD_SLOT.centerX, M_CY = MOD_SLOT.cente
 const M_CUTOFF = MOD_SLOT.cutoff, M_RES = MOD_SLOT.resonance, M_DRIVE = MOD_SLOT.drive, M_PAN = MOD_SLOT.pan;
 const M_LAPS = MOD_SLOT.laps, M_PACE = MOD_SLOT.pace, M_FORMANT = MOD_SLOT.formant;
 const SIZE_DEF = PART_PARAM_MAP.size;
+const EXTRA_IDS = ['sub2','airTexture','inharmProfile','inharmAmount','phaseMod','phaseRatio','ringMod','ringRatio','pluck','pluckDecay','pluckTone','pluckDispersion','pathWindow','pathMangle'];
+const EXTRA_SLOTS = EXTRA_IDS.map(id => MOD_SLOT[id]);
+const EX = Object.fromEntries(EXTRA_IDS.map((id,i) => [id,i]));
+const NEX = EXTRA_IDS.length;
+const LEGACY_MOD_IDS = ['morph','warp','lift','fold','pathParam','size','stretch','rotate','centerX','centerY','fine','cutoff','resonance','drive','pan','laps','pace','formant'];
+const LEGACY_MOD_MASK=new Uint8Array(MOD_PARAM_IDS.map(id => LEGACY_MOD_IDS.includes(id) ? 1 : 0));
+const NEW_MOD_FIELDS = ['lfoSkew','lfoDelay','lfoAttack','lfoPhase','lfoCount','stepGlide','stepSmooth','envOwn'];
+const ENV_IDS = ['envDelay','envAttack','envHold','envDecay','envSustain','envRelease','envMode'];
 // Modulation slots that shape the orbit (Pristine falls back to direct
 // rendering while any of them is pushed around by Env 2 or a per-voice Link).
-const ORBIT_SLOTS = [M_MORPH, M_WARP, M_LIFT, M_FOLD, M_PARAM, M_SIZE, M_STRETCH, M_ROTATE, M_CX, M_CY, M_LAPS, M_PACE];
+const ORBIT_SLOTS = [M_MORPH, M_WARP, M_LIFT, M_FOLD, M_PARAM, M_SIZE, M_STRETCH, M_ROTATE, M_CX, M_CY, M_LAPS, M_PACE, MOD_SLOT.pathWindow, MOD_SLOT.pathMangle, MOD_SLOT.phaseMod];
 // Slots whose per-voice modulation (Env 2, per-voice Links) moves the mean
 // height of the cycle fast enough for the DC blocker to let a thump through:
 // such voices track the mean and remove it (see orbitMeanEnd). Shape and
 // Rotate are left out: they move the mean little and slowly.
-const MEAN_SLOTS = [M_SIZE, M_STRETCH, M_CX, M_CY, M_MORPH, M_WARP, M_LIFT, M_FOLD, M_LAPS, M_PACE];
+const MEAN_SLOTS = [M_SIZE, M_STRETCH, M_CX, M_CY, M_MORPH, M_WARP, M_LIFT, M_FOLD, M_LAPS, M_PACE, MOD_SLOT.pathWindow, MOD_SLOT.pathMangle];
 
 const PI = PART_PARAM_INDEX;
 const NPARAMS = PART_PARAMS.length;
@@ -112,10 +126,10 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 // for the whole part (folded into the part's shared modulation, so they also
 // show in idle telemetry) rather than per voice.
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
-  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16;
+  L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19;
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
-for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE]) if (s < NSRC) PART_SOURCE[s] = 1;
+for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE, L_EXPRESSION, L_SUSTAIN, L_BREATH]) if (s < NSRC) PART_SOURCE[s] = 1;
 const NCURVES = LINK_CURVES.length;
 const DEFAULT_LINKS = defaultLinks();
 
@@ -195,10 +209,10 @@ const HB1_CENTER = HALFBAND_4X[HB1_M];
 
 // --- default terrain -------------------------------------------------------
 // A built-in Swell so a part is never silent while its terrain message is in
-// flight. Generated once per realm at 256 (a few ms), shared by every part.
+// flight. Generated once per realm at 512, shared by every part.
 let DEFAULT_CHAIN = null;
 function defaultChain() {
-  if (!DEFAULT_CHAIN) DEFAULT_CHAIN = buildMipChain(generateTerrain(0, { size: 256, seed: 7, detail: 0.5 }), 256, MIN_MIP);
+  if (!DEFAULT_CHAIN) DEFAULT_CHAIN = buildMipChain(generateTerrain(0, { size: 512, seed: 7, detail: 0.5 }), 512, MIN_MIP);
   return DEFAULT_CHAIN;
 }
 
@@ -352,7 +366,7 @@ class FFT {
 // --- voice -----------------------------------------------------------------
 
 class Voice {
-  constructor(index) {
+  constructor(index, sr = 48000, os = OVERSAMPLE) {
     this.index = index;
     this.active = false;
     this.gate = false;
@@ -379,6 +393,17 @@ class Voice {
 
     this.envStage = IDLE; this.envLvl = 0;
     this.env2Stage = IDLE; this.env2Lvl = 0;
+    this.ampExtra = new SixStageEnvelope(); this.env2Extra = new SixStageEnvelope();
+    this.ampCustom = false; this.env2Custom = false;
+    this.ownEnvs = Array.from({length:NMOD}, () => new SixStageEnvelope());
+    this.ex = new Float64Array(NEX); this.exTarget = new Float64Array(NEX); this.dex = new Float64Array(NEX);
+    this.partialPhase = new Float64Array(PROFILE_PARTIALS); this.partialInc = new Float64Array(PROFILE_PARTIALS); this.partialGain = new Float64Array(PROFILE_PARTIALS);
+    this.ringPh = 0; this.ringInc = 0; this.pmPh = 0; this.pmInc = 0; this.sub2Ph = 0;
+    this.texturePos = 0; this.extraAir = 0; this.dExtraAir = 0; this.airKind = 0; this.subKind = 0; this.sub2Kind = 0; this.pathMirror = 0;
+    this.colourL = new ColourNoise(sr * os); this.colourR = new ColourNoise(sr * os, 7);
+    this.string = new KarplusStrong(sr * os, 8, sr * MAX_OS); this.stringOn = false;
+    this.analog = [new AnalogFilter(), new AnalogFilter()]; this.analogCurrent = 0;
+    this.renderRate = sr * os;
 
     // pending note when this voice is being stolen
     this.stealFade = 0; this.stealStep = 0; this.stealGain = 1;
@@ -465,7 +490,7 @@ class Voice {
     this.tabX = 1; this.dTabX = 0; this.tw = 0; this.dtw = 0;
     this.tabValid = false; this.tabCount = 0; this.calm = 0; this.drift = 0; this.tabAge = 0;
     this.orb = new Float64Array(12);
-    this.tabKey = new Float64Array(20);    // what the arriving table was built from
+    this.tabKey = new Float64Array(23);    // what the arriving table was built from
   }
 
   resetState() {
@@ -474,7 +499,11 @@ class Voice {
     this.envLvl = 0; this.env2Lvl = 0;
     this.envStage = IDLE; this.env2Stage = IDLE;
     this.stealFade = 0; this.stealGain = 1; this.pending = false;
-    this.subPh = 0;
+    this.subPh = 0; this.sub2Ph = this.ringPh = this.pmPh = this.texturePos = 0;
+    this.partialPhase.fill(0); if (this.stringOn) this.string.reset(); this.stringOn = false;
+    this.ampExtra.reset(); this.env2Extra.reset();
+    for (const env of this.ownEnvs) env.reset();
+    this.analog[0].reset(); this.analog[1].reset();
     this.blepPend.fill(0); this.blepSkip.fill(0);
     this.tlL = 0; this.tlR = 0;
     this.vs.fill(0);
@@ -493,6 +522,7 @@ class Voice {
     this.pdxR = this.pdxL; this.pdyR = this.pdyL;
     for (let i = 0; i < 6; i++) this.vs[6 + i] = this.vs[i];
     if (this.comb) this.comb.copyWithin(this.combLen, 0, this.combLen);
+    for (const filter of this.analog) filter.state.copyWithin(4, 0, 4);
     this.stereo = true;
   }
 
@@ -503,6 +533,14 @@ class Voice {
       const a = o[key];
       if (ArrayBuffer.isView(a)) this[key].set(a);
       else if (a === null || typeof a !== 'object') this[key] = a;
+    }
+    this.ampExtra.copyFrom(o.ampExtra); this.env2Extra.copyFrom(o.env2Extra);
+    for (let m=0;m<NMOD;m++) this.ownEnvs[m].copyFrom(o.ownEnvs[m]);
+    this.string.sampleRate = o.string.sampleRate; this.string.copyFrom(o.string);
+    for (let i=0;i<2;i++) this.analog[i].copyFrom(o.analog[i]);
+    for (const name of ['colourL','colourR']) {
+      const a=this[name], b=o[name]; a.seed=b.seed; a.previous=b.previous; a.brown=b.brown;
+      a.pink.set(b.pink); a.blue.set(b.blue); a.blueIndex=b.blueIndex; a.alpha.set(b.alpha); a.scale.set(b.scale); a.brownAlpha=b.brownAlpha; a.brownScale=b.brownScale;
     }
   }
 }
@@ -528,13 +566,21 @@ class Part {
     this.lfoSteps = new Float64Array(NMOD * LFO_STEP_COUNT);
     for (let m = 0; m < NMOD; m++) for (let s = 0; s < LFO_STEP_COUNT; s++) this.lfoSteps[m * LFO_STEP_COUNT + s] = DEFAULT_LFO_STEPS[s];
 
+    for (const field of NEW_MOD_FIELDS) this[field === 'lfoPhase' ? 'lfoStart' : field] = new Float64Array(NMOD).fill(MOD_DEFAULT[field]);
+    this.lfoValueOffset = new Float64Array(NMOD);
+    this.lfoAge = new Float64Array(NMOD); this.lfoCycles = new Int32Array(NMOD);
+    this.ctrlSrc = new Int32Array(NMOD * 4); this.ctrlDepth = new Float64Array(NMOD * 4); this.ctrlCurve = new Int32Array(NMOD * 4);
+    this.envConfig = Array.from({length:NMOD}, () => new Float64Array(ENV_IDS.map(id => MOD_DEFAULT[id])));
+    this.ampConfig = new Float64Array(7); this.env2Config = new Float64Array(7);
     this.lfoPhase = new Float64Array(NMOD);
     this.lfoOffset = new Float64Array(NMOD);   // phase offset for transport-anchored, retriggered LFOs
     this.lfoVal = new Float64Array(NMOD);
     this.lfoR0 = new Float64Array(NMOD);
     this.lfoR1 = new Float64Array(NMOD);
     this.rng = mulberry32(0x0b0e + index * 977);
-    for (let m = 0; m < NMOD; m++) { this.lfoR0[m] = this.rng() * 2 - 1; this.lfoR1[m] = this.rng() * 2 - 1; }
+    this.extraRng = mulberry32(0xe71a + index * 977);
+    for (const id of LEGACY_MOD_IDS) { const m=MOD_SLOT[id]; this.lfoR0[m]=this.rng()*2-1; this.lfoR1[m]=this.rng()*2-1; }
+    for (let m=0;m<NMOD;m++) if (!LEGACY_MOD_IDS.includes(MOD_PARAM_IDS[m])) { this.lfoR0[m]=this.extraRng()*2-1; this.lfoR1[m]=this.extraRng()*2-1; }
 
     this.partNorm = new Float64Array(NMOD);
     this.partPlain = new Float64Array(NMOD);
@@ -546,8 +592,9 @@ class Part {
     this.lkAmt = new Float64Array(MAX_LINKS); this.lkCurve = new Int32Array(MAX_LINKS);
     this.partLink = new Float64Array(NMOD);
     this.vLinked = new Uint8Array(NMOD);
+    this.voiceModSlots=new Uint16Array(NMOD); this.voiceModCount=0;
     this.voiceLinks = false; this.needTerrH = false; this.orbitVoiceMod = false; this.trackMean = false;
-    this.wheel = 0;
+    this.wheel = 0; this.expression = 0; this.sustainLevel = 0; this.breath = 0;
     this.pressure = 0; this.slide = 0;
     // until the host sends the part's Links, the default set (Mod Wheel ->
     // Morph, what used to be hard-wired) applies
@@ -567,7 +614,7 @@ class Part {
     this.nRamps = 0;
 
     this.voices = [];
-    for (let i = 0; i < VOICES_PER_PART; i++) this.voices.push(new Voice(i));
+    for (let i = 0; i < VOICES_PER_PART; i++) this.voices.push(new Voice(i, sr, os));
 
     this.terrA = defaultChain();
     this.terrB = defaultChain();
@@ -593,6 +640,7 @@ class Part {
     this.att2C = 0; this.dec2C = 0; this.rel2C = 0; this.sus2 = 0.25;
 
     // mixer
+    this.vectorGain=1; this.vectorSmooth=1; this.dVector=0;
     this.gain = 0; this.dGain = 0; this.dly = 0; this.dDly = 0; this.rev = 0; this.dRev = 0;
     this.ped = 0; this.dPed = 0;   // pedal send (v1.1), the fourth bus
     this.exit = 1;                 // 1 while in the track list, fades to 0 after leaving it
@@ -600,6 +648,8 @@ class Part {
     // buffer at the host rate, allocated the first time it is needed.
     this.ddL = null; this.ddR = null; this.ddW = 0; this.ddN = 0;
     this.tail = 0;
+    this.effects = new TrackEffects(sr); this.sidechainIndex = -1; this.rawPeak = 0; this.previousRawPeak = 0;
+    this.recording = null; this.textures = noiseTextures(sr);
 
     // voice bus at the oversampled rate with the decimator history in front
     // (hist samples); the 4x mode decimates through a 2x bus (mid)
@@ -616,6 +666,7 @@ class Part {
     this.rc = { os, dcR: 0, attC: 0, decC: 0, relC: 0, sus: 0.75, tiltA: 0, airNorm: null, busL: this.busL, busR: this.busR, hist: this.hist };
     this.ghost = null;
 
+    this.layoutDirty=false;
     this.sr = sr;
     this.shapeI = 0; this.orderI = 1; this.ftype = 1; this.mode = 0;
     this.paceShapeI = 0; this.subT = 0;
@@ -633,9 +684,9 @@ class Part {
   updateDerived() {
     const sr = this.sr;
     const P = this.params;
-    this.shapeI = Math.max(0, Math.min(11, Math.round(P[PI.pathShape]) || 0));
+    this.shapeI = Math.max(0, Math.min(PART_PARAM_MAP.pathShape.max, Math.round(P[PI.pathShape]) || 0));
     this.orderI = Math.max(1, Math.min(8, Math.round(P[PI.pathOrder]) || 1));
-    this.ftype = Math.max(0, Math.min(6, Math.round(P[PI.filterType]) || 0));
+    this.ftype = Math.max(0, Math.min(11, Math.round(P[PI.filterType]) || 0));
     this.mode = Math.max(0, Math.min(2, Math.round(P[PI.polyMode]) || 0));
     this.paceShapeI = Math.max(0, Math.min(2, Math.round(P[PI.paceShape]) || 0));
     // Sub level on a squared (audio taper) curve: half way is about -12 dB
@@ -674,6 +725,11 @@ class Part {
     this.rel2C = Math.exp(Math.log(ENV_FLOOR) / blocks(P[PI.env2Release]));
     this.sus2 = clamp01(P[PI.env2Sustain]);
     const rc = this.rc;
+    const ac=this.ampConfig, ec=this.env2Config;
+    ac[0]=P[PI.ampDelay]; ac[1]=P[PI.attack]; ac[2]=P[PI.ampHold]; ac[3]=P[PI.decay]; ac[4]=P[PI.sustain]; ac[5]=P[PI.release]; ac[6]=P[PI.ampMode];
+    ec[0]=P[PI.env2Delay]; ec[1]=P[PI.env2Attack]; ec[2]=P[PI.env2Hold]; ec[3]=P[PI.env2Decay]; ec[4]=P[PI.env2Sustain]; ec[5]=P[PI.env2Release]; ec[6]=P[PI.env2Mode];
+    this.ampCustom = P[PI.ampDelay] !== 0 || P[PI.ampHold] !== 0 || P[PI.ampMode] !== 0;
+    this.env2Custom = P[PI.env2Delay] !== 0 || P[PI.env2Hold] !== 0 || P[PI.env2Mode] !== 0;
     rc.os = this.os; rc.attC = this.attC; rc.decC = this.decC; rc.relC = this.relC; rc.sus = this.sus;
   }
 
@@ -726,6 +782,9 @@ class Part {
       else if (s === L_MHEIGHT) x = this.sMarbleHeight;
       else if (s === L_GUITAR) x = guitar;
       else if (s === L_VOICE) x = voice;
+      else if (s === L_EXPRESSION) x=this.expression;
+      else if (s === L_SUSTAIN) x=this.sustainLevel;
+      else if (s === L_BREATH) x=this.breath;
       else x = macros[s - L_MACRO];
       pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], x);
     }
@@ -831,6 +890,7 @@ export class OrographDSP {
 
     this.tempo = 112;
     this.macros = new Float64Array(4);
+    this.vectorMix=0; this.vectorX=this.vectorY=0.5; this.vectorBank=0; this.vectorWeights=new Float64Array(4).fill(1);
     // v1.1 pedal loop: the host says when the pedal send really leaves the
     // computer (outputs 3/4); until then the send bus stays silent and Insert
     // is ignored, so a part can never go quiet with nowhere to go.
@@ -883,7 +943,7 @@ export class OrographDSP {
     this.sav = new Float64Array(8 * MAX_UNISON); // oscillator state saved around a second render
     this.pst = new Float64Array(5);
     this.pt = { x: 0, y: 0 };
-    this.rng = mulberry32(0x6f726f67);
+    this.rng = mulberry32(0x6f726f67); this.extensionRng = mulberry32(0x82edfe);
     this.linkRng = mulberry32(0x11c5);           // Random link source (own stream: unison phases stay as they were)
     this.noiseSeed = 0x2545f491;
     // hard-sync restarts of the current segment: oscillator, sample (n2 = look-ahead), fraction, laps
@@ -893,7 +953,7 @@ export class OrographDSP {
     this.evL = new Float64Array(MAX_SYNC_EVENTS);
     // Pristine scratch (allocated on first use of the mode)
     this.fft = null;
-    this.keyScratch = new Float64Array(20);
+    this.keyScratch = new Float64Array(23);
     this.tabBudget = TABLE_BUDGET;
   }
 
@@ -922,6 +982,16 @@ export class OrographDSP {
         break;
       case 'mods': this.setMods(msg.part, msg.m); break;
       case 'global': this.setGlobal(msg.p); break;
+      case 'noiseRecording': this.setNoiseRecording(msg.part, msg.data); break;
+      case 'expression': case 'sustainLevel': case 'breath': {
+        const P=this.partAt(msg.part); if (P) P[msg.t]=clamp01(finiteOr(msg.v,0)); break;
+      }
+      case 'trackFx': {
+        const P=this.partAt(msg.part); if (!P) break;
+        P.effects.configure(msg.fx);
+        P.sidechainIndex=Math.max(-2,Math.min(MAX_PARTS-1,Math.round(finiteOr(msg.sidechainIndex,-1))));
+        break;
+      }
       case 'terrain': this.setTerrain(msg.part, msg.slot, msg.levels); break;
       case 'noteOn': this.schedule(1, msg); break;
       case 'noteOff': this.schedule(0, msg); break;
@@ -992,7 +1062,7 @@ export class OrographDSP {
         const old = this.parts;
         const inv = new Int32Array(MAX_PARTS);
         this.parts = perm.map((j, i) => { inv[j] = i; return old[j]; });
-        this.parts.forEach((P, i) => { P.index = i; });
+        this.parts.forEach((P, i) => { P.index = i; if (P.sidechainIndex >= 0) P.sidechainIndex=inv[P.sidechainIndex]; });
         for (const e of this.events) e.part = inv[e.part];
         if (this.watch >= 0) this.watch = inv[this.watch];
       }
@@ -1094,6 +1164,28 @@ export class OrographDSP {
       if (o.lfoDepth !== undefined) P.lfoDepth[m] = Math.max(-1, Math.min(1, finiteOr(o.lfoDepth, 0)));
       if (o.envDepth !== undefined) P.envDepth[m] = Math.max(-1, Math.min(1, finiteOr(o.envDepth, 0)));
       if (o.retrig !== undefined) P.retrig[m] = finiteOr(o.retrig, 0) ? 1 : 0;
+      for (const field of NEW_MOD_FIELDS) {
+        if (o[field] === undefined) continue;
+        let x=finiteOr(o[field],MOD_DEFAULT[field]);
+        if (field === 'lfoPhase' || field === 'stepGlide' || field === 'stepSmooth' || field === 'envOwn') x=clamp01(x);
+        else if (field === 'lfoSkew') x=clampPM1(x);
+        else if (field === 'lfoCount') x=Math.max(0,Math.min(32,Math.round(x)));
+        else x=Math.max(0,Math.min(8,x));
+        const target=field === 'lfoPhase' ? P.lfoStart : P[field];
+        if ((field === 'lfoDelay' || field === 'lfoCount') && target[m] !== x) { P.lfoAge[m]=0; P.lfoCycles[m]=0; }
+        target[m]=x;
+      }
+      if (o.lfoOffset !== undefined) P.lfoValueOffset[m]=clampPM1(finiteOr(o.lfoOffset,0));
+      for (let i=0;i<ENV_IDS.length;i++) if (o[ENV_IDS[i]] !== undefined) {
+        const value=finiteOr(o[ENV_IDS[i]],MOD_DEFAULT[ENV_IDS[i]]);
+        P.envConfig[m][i]=i === 4 ? clamp01(value) : i === 6 ? Math.max(0,Math.min(5,Math.round(value))) : Math.max(0,Math.min(i === 5 ? 10 : 8,value));
+      }
+      for (let i=0;i<4;i++) {
+        const n=m*4+i,prefix='ctrl'+(i+1);
+        if (o[prefix+'Source'] !== undefined) P.ctrlSrc[n]=Math.max(0,Math.min(NSRC-1,Math.round(finiteOr(o[prefix+'Source'],0))));
+        if (o[prefix+'Depth'] !== undefined) P.ctrlDepth[n]=clampPM1(finiteOr(o[prefix+'Depth'],0));
+        if (o[prefix+'Curve'] !== undefined) P.ctrlCurve[n]=Math.max(0,Math.min(NCURVES-1,Math.round(finiteOr(o[prefix+'Curve'],0))));
+      }
       if (o.steps !== undefined && o.steps !== null && typeof o.steps.length === 'number') {
         const base = m * LFO_STEP_COUNT;
         for (let s = 0; s < LFO_STEP_COUNT; s++) {
@@ -1105,9 +1197,154 @@ export class OrographDSP {
     this.updateLinkFlags(P);
   }
 
+  /** A custom, host-rate recording. Sanitization and seam fading happen on message receipt. */
+  setNoiseRecording(part, source) {
+    const P=this.partAt(part); if (!P) return;
+    if (!source || typeof source.length !== 'number' || source.length < 2) { P.recording=null; return; }
+    const length=Math.min(Math.floor(source.length),Math.round(this.sr*MAX_NOISE_SECONDS));
+    const data=new Float32Array(length);
+    let mean=0;
+    for (let i=0;i<length;i++) { const x=Math.max(-1,Math.min(1,finiteOr(source[i],0))); data[i]=x; mean+=x; }
+    mean/=length;
+    for (let i=0;i<length;i++) data[i]-=mean;
+    P.recording=fadeLoop(data,this.sr);
+  }
+
+  triggerExtraEnvelopes(P,v,keep) {
+    v.ampExtra.configure(P.ampConfig,1/this.fs2); v.env2Extra.configure(P.env2Config,CTRL/this.sr);
+    v.ampExtra.trigger(keep); v.env2Extra.trigger(keep);
+    v.ampCustom=P.ampCustom; v.env2Custom=P.env2Custom;
+    for (let m=0;m<NMOD;m++) if (P.envOwn[m]) { v.ownEnvs[m].configure(P.envConfig[m],CTRL/this.sr); v.ownEnvs[m].trigger(keep); }
+  }
+
+  partControllerSource(P,s) {
+    if (s === L_WHEEL) return P.wheel;
+    if (s >= L_MACRO && s < L_MACRO+4) return this.macros[s-L_MACRO];
+    if (s === L_MSPEED) return P.sMarbleSpeed;
+    if (s === L_MHEIGHT) return P.sMarbleHeight;
+    if (s === L_GUITAR) return this.sGuitar;
+    if (s === L_VOICE) return this.sVoice;
+    if (s === L_EXPRESSION) return P.expression;
+    if (s === L_SUSTAIN) return P.sustainLevel;
+    if (s === L_BREATH) return P.breath;
+    return 0;
+  }
+
+  /** New controls use their own ramps. The zero default never touches the old oscillator path. */
+  controlExtras(P,v,snap,f,k,inv) {
+    const MP=v.modPlain, ex=v.ex, target=v.exTarget, delta=v.dex, fs=this.fs2;
+    for (let i=0;i<NEX;i++) {
+      const value=MP[EXTRA_SLOTS[i]];
+      target[i]=snap || Math.abs(value-target[i]) < SNAP ? value : target[i]+(value-target[i])*k;
+      if (snap) { ex[i]=target[i]; delta[i]=0; } else delta[i]=(target[i]-ex[i])*inv;
+    }
+    v.subKind=Math.max(0,Math.min(6,Math.round(P.params[PI.subWave])));
+    v.sub2Kind=Math.max(0,Math.min(6,Math.round(P.params[PI.sub2Wave])));
+    v.airKind=Math.max(0,Math.min(8,Math.round(P.params[PI.airType])));
+    v.pathMirror=Math.max(0,Math.min(3,Math.round(P.params[PI.pathMirror])));
+    v.ringInc=Math.min(0.45,f*target[EX.ringRatio]/fs);
+    v.pmInc=Math.min(0.45,f*target[EX.phaseRatio]/fs);
+    if (target[EX.inharmAmount] > 0 || ex[EX.inharmAmount] > 0) {
+      let total=0;
+      for (let i=0;i<PROFILE_PARTIALS;i++) {
+        const frequency=f*profileRatio(target[EX.inharmProfile],i);
+        const taper=frequency < this.sr*0.4 ? 1 : Math.max(0,(this.sr*0.49-frequency)/(this.sr*0.09));
+        const gain=taper/Math.pow(i+1,1.2);
+        v.partialInc[i]=Math.min(0.49,frequency/fs); v.partialGain[i]=gain; total+=gain;
+      }
+      if (total > 0) for (let i=0;i<PROFILE_PARTIALS;i++) v.partialGain[i]/=total;
+    }
+    const level=v.airKind ? AIR_RMS*MP[MOD_SLOT.air]*MP[MOD_SLOT.air] : 0;
+    if (snap) { v.extraAir=level; v.dExtraAir=0; } else v.dExtraAir=(level-v.extraAir)*inv;
+    if (target[EX.pluck] > 0 || ex[EX.pluck] > 0) {
+      if (!v.stringOn) { v.string.trigger(f,target[EX.pluckDecay],target[EX.pluckTone],target[EX.pluckDispersion],v.nz); v.stringOn=true; }
+      else v.string.tune(f,target[EX.pluckDecay],target[EX.pluckTone],target[EX.pluckDispersion]);
+    }
+    v.ampExtra.configure(P.ampConfig,1/fs); v.env2Extra.configure(P.env2Config,CTRL/this.sr);
+    // Moving from the legacy ADSR adopts its current level without restarting the note.
+    if (P.ampCustom && !v.ampCustom) { v.ampExtra.value=v.envLvl; v.ampExtra.stage=v.gate ? 4 : 6; v.ampExtra.elapsed=0; }
+    if (P.env2Custom && !v.env2Custom) { v.env2Extra.value=v.env2Lvl; v.env2Extra.stage=v.gate ? 4 : 6; v.env2Extra.elapsed=0; }
+    v.ampCustom=P.ampCustom; v.env2Custom=P.env2Custom;
+  }
+
+  /** Shaped paths and phase modulation trace arbitrary phases using the same scalar path contract. */
+  extraPaths(P,v,n2,trav,shape,order) {
+    const point=this.pt, ex=v.ex,dex=v.dex;
+    for (let q=0;q<v.uRun;q++) {
+      let phase=v.phase[q],inc=v.inc[q],pm=v.pmPh,param=v.param,pace=v.pace,laps=v.laps;
+      let depth=ex[EX.phaseMod],window=ex[EX.pathWindow],mangle=ex[EX.pathMangle];
+      const X=this.xs[q],Y=this.ys[q];
+      for (let j=0;j<n2;j++) {
+        phase+=inc; phase-=Math.floor(phase); inc+=v.dinc[q]; pm+=v.pmInc; pm-=Math.floor(pm);
+        param+=v.dParam; pace+=v.dPace; laps+=v.dLaps;
+        depth+=dex[EX.phaseMod]; window+=dex[EX.pathWindow]; mangle+=dex[EX.pathMangle];
+        let t=phase+0.25*depth*fastSin(pm); t-=Math.floor(t);
+        t=laps*paceWarp(t,pace,v.paceShape); t-=Math.floor(t);
+        if (trav) t=this.travelMap(shape,order,t,param,trav);
+        pathPoint(shape,t,order,param,point);
+        shapePathPoint(point.x,point.y,t,window,mangle,v.pathMirror,point);
+        X[j]=point.x; Y[j]=point.y;
+      }
+      v.phase[q]=phase; v.inc[q]=inc; v.blepPend[q]=0; v.blepSkip[q]=0;
+    }
+  }
+
+  /** Additive bank, ring mod, string, second sub and alternate air before the voice chain. */
+  renderExtras(P,v,n2,rc) {
+    const ex=v.ex,dx=v.dex,SL=this.sumL,SR=this.sumR;
+    const bank=ex[EX.inharmAmount] !== 0 || dx[EX.inharmAmount] !== 0;
+    const ring=ex[EX.ringMod] !== 0 || dx[EX.ringMod] !== 0;
+    const pluck=ex[EX.pluck] !== 0 || dx[EX.pluck] !== 0;
+    const air=v.extraAir !== 0 || v.dExtraAir !== 0;
+    let rm=v.ringPh,pm=v.pmPh,position=v.texturePos,level=v.extraAir;
+    const data=v.airKind === 8 ? P.recording : (v.airKind >= 5 ? P.textures[v.airKind-5] : null);
+    if (bank || ring || pluck || air) {
+      for (let j=0;j<n2;j++) {
+        for (let i=0;i<NEX;i++) ex[i]+=dx[i];
+        let left=SL[j],right=v.stereo ? SR[j] : left;
+        if (bank) {
+          let value=0;
+          for (let i=0;i<PROFILE_PARTIALS;i++) {
+            let phase=v.partialPhase[i]+v.partialInc[i]; phase-=Math.floor(phase); v.partialPhase[i]=phase;
+            value+=v.partialGain[i]*fastSin(phase);
+          }
+          left+=ex[EX.inharmAmount]*(value-left); right+=ex[EX.inharmAmount]*(value-right);
+        }
+        if (pluck) { const value=v.string.sample(); left+=ex[EX.pluck]*(value-left); right+=ex[EX.pluck]*(value-right); }
+        if (ring) { rm+=v.ringInc; rm-=Math.floor(rm); const multiplier=1-ex[EX.ringMod]+ex[EX.ringMod]*fastSin(rm); left*=multiplier; right*=multiplier; }
+        if (air) {
+          level+=v.dExtraAir;
+          if (data) { const value=level*loopSample(data,position+ex[EX.airTexture]*data.length); left+=value; right+=value; position+=1/rc.os; if (position >= data.length) position-=data.length; }
+          else if (v.airKind < 5) { left+=level*v.colourL.sample(v.airKind); right+=level*v.colourR.sample(v.airKind); }
+        }
+        SL[j]=left; if (v.stereo) SR[j]=right;
+      }
+    } else for (let i=0;i<NEX;i++) ex[i]+=dx[i]*n2;
+    pm+=v.pmInc*n2; pm-=Math.floor(pm);
+    v.pmPh=pm; v.ringPh=rm; v.texturePos=position; v.extraAir=level;
+  }
+
+  analogBlock(v,L,R,n,stereo,current) {
+    const filter=v.analog[current ? v.analogCurrent : 1-v.analogCurrent];
+    const type=current ? v.ft : v.ftOld;
+    // Coefficients are prepared once per segment; interpolation of the input/output
+    // and the existing 8ms type crossfade handle control-rate changes.
+    filter.configure(type,v.g+v.dg*n,Math.max(0,Math.min(1,(2-v.k-v.dk*n)/1.97)),v.sFormant);
+    for (let j=0;j<n;j++) { L[j]=filter.sample(L[j],0); if (stereo) R[j]=filter.sample(R[j],1); }
+  }
+
   setGlobal(p) {
     if (!p || typeof p !== 'object') return;
     if (p.tempo !== undefined) this.tempo = Math.max(20, Math.min(400, finiteOr(p.tempo, this.tempo)));
+    for (const id of ['vectorMix','vectorX','vectorY']) if (p[id] !== undefined) this[id]=clamp01(finiteOr(p[id],this[id]));
+    if (p.vectorBank !== undefined) this.vectorBank=Math.max(0,Math.min(3,Math.round(finiteOr(p.vectorBank,0))));
+    const x=this.vectorX,y=this.vectorY,m=this.vectorMix;
+    this.vectorWeights[0]=1-m+m*Math.sqrt((1-x)*(1-y)); this.vectorWeights[1]=1-m+m*Math.sqrt(x*(1-y));
+    this.vectorWeights[2]=1-m+m*Math.sqrt((1-x)*y); this.vectorWeights[3]=1-m+m*Math.sqrt(x*y);
+    for (const P of this.parts) if (P.activeCount() === 0 && P.tail <= 0) {
+      const bank=P.index-this.vectorBank*4;
+      P.vectorGain=P.vectorSmooth=bank >= 0 && bank < 4 ? this.vectorWeights[bank] : 1; P.dVector=0;
+    }
     for (let i = 0; i < 4; i++) {
       const v = p['macro' + (i + 1)];
       if (v !== undefined) this.macros[i] = clamp01(finiteOr(v, this.macros[i]));
@@ -1161,6 +1398,13 @@ export class OrographDSP {
       P.vLinked[P.lkDst[i]] = 1;
       P.voiceLinks = true;
     }
+    for (let m=0;m<NMOD;m++) for (let i=0;i<4;i++) {
+      const c=m*4+i; if (!P.ctrlDepth[c]) continue;
+      P.vLinked[m]=1; P.voiceLinks=true;
+      if (P.ctrlSrc[c] === L_TERRAIN) P.needTerrH=true;
+    }
+    P.voiceModCount=0;
+    for (let m=0;m<NMOD;m++) if (P.vLinked[m] || P.envDepth[m] || P.envOwn[m]) P.voiceModSlots[P.voiceModCount++]=m;
     let orbit = false, mean = false;
     for (const m of ORBIT_SLOTS) if (P.vLinked[m] || P.envDepth[m] !== 0) orbit = true;
     for (const m of MEAN_SLOTS) if (P.vLinked[m] || P.envDepth[m] !== 0) mean = true;
@@ -1327,7 +1571,7 @@ export class OrographDSP {
   releasePart(P) {
     for (const v of P.voices) {
       if (v.pending) v.pending = false;
-      if (v.active && v.gate) this.releaseVoice(v);
+      if (v.active) this.releaseVoice(v, true);
     }
     P.stackLen = 0;
   }
@@ -1338,7 +1582,7 @@ export class OrographDSP {
       for (const v of P.voices) { v.active = false; v.gate = false; v.resetState(); }
       P.stackLen = 0;
       P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0);
-      P.tail = 0;
+      P.tail = 0; P.effects.reset(); P.rawPeak=P.previousRawPeak=0;
       P.oldA = P.oldB = null; P.fadeA = P.fadeB = P.fadeACur = P.fadeBCur = 0;
       if (P.ghost) P.ghost.left = 0;
     }
@@ -1378,6 +1622,10 @@ export class OrographDSP {
           // re-ramped by the control update forced below
           for (let k = 0; k < MAX_UNISON; k++) { v.inc[k] *= ratio; v.dinc[k] = 0; }
           v.subInc *= ratio; v.dSubInc = 0;
+          v.ringInc *= ratio; v.pmInc *= ratio; v.partialInc.forEach((inc,i) => { v.partialInc[i]=inc*ratio; });
+          v.renderRate=this.fs2; v.colourL.setRate(this.fs2); v.colourR.setRate(this.fs2);
+          // The outgoing ghost sustains the old string while a new-rate excitation crossfades in.
+          v.string.sampleRate=this.fs2; v.stringOn=false;
           v.stealStep *= ratio;
           v.ftDW *= ratio; v.travDW *= ratio;
           // same cutoff at the new rate
@@ -1422,7 +1670,7 @@ export class OrographDSP {
     if (!g) {
       const n = P.outL.length;
       g = P.ghost = {
-        voices: P.voices.map((_, i) => new Voice(i)),
+        voices: P.voices.map((_, i) => new Voice(i, this.sr, this.os)),
         busL: new Float64Array(P.busL.length), busR: new Float64Array(P.busR.length),
         midL: new Float64Array(P.midL.length), midR: new Float64Array(P.midR.length),
         outL: new Float64Array(n), outR: new Float64Array(n),
@@ -1446,7 +1694,7 @@ export class OrographDSP {
       gv.dMorph = gv.dWarp = gv.dLift = gv.dFold = gv.dParam = 0;
       gv.dg = gv.dk = gv.dDrive = gv.dgl = gv.dgr = 0;
       gv.dwA = gv.dwB = gv.dcLvA = gv.dcLvB = gv.dLaps = gv.dPace = 0;
-      gv.dSubInc = gv.dSubLv = gv.daH = gv.daD = 0;
+      gv.dSubInc = gv.dSubLv = gv.daH = gv.daD = 0; gv.dex.fill(0); gv.dExtraAir=0;
       gv.dcD = gv.dcFb = gv.dcFf = gv.dcMk = 0;
       gv.dvf.fill(0); gv.dinc.fill(0);
       gv.dugL.fill(0); gv.dugR.fill(0); gv.gRamp = false; gv.dMean = 0;
@@ -1475,9 +1723,9 @@ export class OrographDSP {
       } else {
         P.lfoOffset[m] = 0;
       }
-      P.lfoPhase[m] = 0;
+      P.lfoPhase[m] = 0; P.lfoAge[m]=0; P.lfoCycles[m]=0;
       const shape = P.lfoShape[m];
-      if (shape === 4 || shape === 5) { P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = P.rng() * 2 - 1; }
+      if (shape === 4 || shape === 5) { P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = (LEGACY_MOD_MASK[m] ? P.rng() : P.extraRng()) * 2 - 1; }
       P.lfoVal[m] = shape === 6 ? P.lfoSteps[m * LFO_STEP_COUNT + LFO_STEP_COUNT - 1] : lfoValue(shape, 0, P.lfoR0[m], P.lfoR1[m]);
     }
     this.partMods(P);
@@ -1540,6 +1788,8 @@ export class OrographDSP {
         v.velGain = this.velGain(P, vel);
         v.envStage = ATTACK;
         v.env2Stage = ATTACK;
+        this.triggerExtraEnvelopes(P,v,true);
+        v.stringOn=false;
       }
       // Mono glides on every note, Legato only between overlapping notes.
       if (!glideOn || (P.mode === 2 && !legato)) v.pitch = note;
@@ -1575,8 +1825,10 @@ export class OrographDSP {
     return 1 - sens * (1 - Math.pow(clamp01(vel), 1.5));
   }
 
-  releaseVoice(v) {
+  releaseVoice(v, force = false) {
     v.gate = false;
+    v.ampExtra.release(force); v.env2Extra.release(force);
+    for (const env of v.ownEnvs) env.release(force);
     if (v.envStage !== IDLE) v.envStage = RELEASE;
     if (v.env2Stage !== IDLE) v.env2Stage = RELEASE;
   }
@@ -1590,6 +1842,8 @@ export class OrographDSP {
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
     v.rand = this.linkRng() * 2 - 1;
+    this.triggerExtraEnvelopes(P,v,true);
+    v.stringOn=false;
   }
 
   startVoice(P, v, note, vel, glideFrom) {
@@ -1602,7 +1856,7 @@ export class OrographDSP {
     v.order = ++this.voiceCounter;
     v.pitch = glideFrom >= 0 ? glideFrom : note;
     v.phase[0] = 0;
-    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = this.rng();
+    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? this.rng() : this.extensionRng();
     v.uniPrev = 0;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
@@ -1612,6 +1866,9 @@ export class OrographDSP {
     // a fresh noise stream per note, so stacked voices never hiss in unison
     this.noiseSeed = (Math.imul(this.noiseSeed ^ (this.noiseSeed >>> 15), 0x2c1b3c6d) + 0x6d2b79f5) | 0;
     v.nz = this.noiseSeed || 1;
+    v.colourL.reset(v.nz); v.colourR.reset(v.nz ^ 0x732ac);
+    v.renderRate=this.fs2; v.string.sampleRate=this.fs2;
+    this.triggerExtraEnvelopes(P,v,false);
     if (v.comb) { v.comb.fill(0); v.cw = 0; }
     v.ft = -1;
     v.trav = P.travBits; v.pShape = P.shapeI; v.pOrder = P.orderI;
@@ -1660,6 +1917,7 @@ export class OrographDSP {
         if (trav !== 0) t = this.travelMap(v.pShape, v.pOrder, t, v.param, trav);
       }
       pathPoint(v.pShape, t, v.pOrder, v.param, pt);
+      if (v.ex[EX.pathWindow] || v.ex[EX.pathMangle] || v.pathMirror) shapePathPoint(pt.x,pt.y,t,v.ex[EX.pathWindow],v.ex[EX.pathMangle],v.pathMirror,pt);
       let u = v.cx + pt.x * v.tA - pt.y * v.tB;
       let w = v.cy + pt.x * v.tC + pt.y * v.tD;
       if (v.warp > 0) {
@@ -1705,6 +1963,7 @@ export class OrographDSP {
     const beats = anchored ? this.currentBeats() : 0;
     for (let m = 0; m < NMOD; m++) {
       const prev = P.lfoPhase[m];
+      P.lfoAge[m]+=dt;
       let ph, period;
       if (P.lfoSync[m]) {
         const div = SYNC_DIVS[P.lfoDiv[m]].beats;
@@ -1718,13 +1977,24 @@ export class OrographDSP {
         period = 1 / P.lfoRate[m];
         ph = prev + P.lfoRate[m] * dt;
       }
+      if (P.lfoAge[m] <= P.lfoDelay[m] && P.lfoDelay[m] > 0) ph=prev;
       ph -= Math.floor(ph);
-      if (ph < prev) { P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = P.rng() * 2 - 1; }
+      if (ph < prev) { P.lfoCycles[m]++; P.lfoR0[m] = P.lfoR1[m]; P.lfoR1[m] = (LEGACY_MOD_MASK[m] ? P.rng() : P.extraRng()) * 2 - 1; }
       P.lfoPhase[m] = ph;
       const shape = P.lfoShape[m];
-      P.lfoVal[m] = shape === 6
-        ? stepsValue(P.lfoSteps, m * LFO_STEP_COUNT, ph, period / LFO_STEP_COUNT)
-        : lfoValue(shape, ph, P.lfoR0[m], P.lfoR1[m]);
+      const extended=P.lfoStart[m] || P.lfoSkew[m] || P.lfoDelay[m] || P.lfoAttack[m] || P.lfoValueOffset[m] || P.lfoCount[m] || P.stepGlide[m] || P.stepSmooth[m];
+      if (!extended) {
+        P.lfoVal[m] = shape === 6
+          ? stepsValue(P.lfoSteps, m * LFO_STEP_COUNT, ph, period / LFO_STEP_COUNT)
+          : lfoValue(shape, ph, P.lfoR0[m], P.lfoR1[m]);
+      } else {
+        const age=P.lfoAge[m]-P.lfoDelay[m];
+        let phase=ph+P.lfoStart[m]; phase-=Math.floor(phase); phase=skewLfoPhase(phase,P.lfoSkew[m]);
+        const value=shape === 6 ? steppedLfo(P.lfoSteps,m*LFO_STEP_COUNT,phase,period/LFO_STEP_COUNT,P.stepGlide[m],P.stepSmooth[m],LFO_STEP_COUNT) : lfoValue(shape,phase,P.lfoR0[m],P.lfoR1[m]);
+        const gain=age <= 0 ? 0 : P.lfoAttack[m] ? Math.min(1,age/P.lfoAttack[m]) : 1;
+        const running=!P.lfoCount[m] || age < P.lfoCount[m]*period;
+        P.lfoVal[m]=clampPM1(P.lfoValueOffset[m]+(running ? value*gain : 0));
+      }
     }
   }
 
@@ -1734,13 +2004,19 @@ export class OrographDSP {
     for (let m = 0; m < NMOD; m++) {
       let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m];
       n += PL[m];
+      for (let i=0;i<4;i++) {
+        const c=m*4+i,source=P.ctrlSrc[c];
+        if (P.ctrlDepth[c] && PART_SOURCE[source]) n+=P.ctrlDepth[c]*linkCurve(P.ctrlCurve[c],this.partControllerSource(P,source));
+      }
       n = MOD_WRAPS[m] ? n - Math.floor(n) : clamp01(n);
       P.partNorm[m] = n;
-      P.partPlain[m] = fromNorm(MOD_DEFS[m], n);
+      P.partPlain[m] = !LEGACY_MOD_MASK[m] && !P.lfoDepth[m] && !PL[m] && !P.ctrlDepth[m*4] && !P.ctrlDepth[m*4+1] && !P.ctrlDepth[m*4+2] && !P.ctrlDepth[m*4+3]
+        ? P.params[MOD_PARAM_OFFSETS[m]] : fromNorm(MOD_DEFS[m], n);
     }
   }
 
   advanceEnv2(P, v) {
+    if (v.env2Custom) { v.env2Lvl=v.env2Extra.sample(CTRL/this.sr); v.env2Stage=v.env2Extra.stage ? ATTACK : IDLE; return; }
     switch (v.env2Stage) {
       case ATTACK:
         v.env2Lvl = ATTACK_OVERSHOOT + (v.env2Lvl - ATTACK_OVERSHOOT) * P.att2C;
@@ -1783,13 +2059,17 @@ export class OrographDSP {
     if (!snap) this.advanceEnv2(P, v);
     // A held note whose envelope has decayed to nothing (sustain 0) is finished:
     // free the voice instead of computing silence (and creeping into denormals).
-    if (v.envStage === DECAY) {
+    if (v.ampCustom && v.ampExtra.stage === 5 && v.ampExtra.config[4] === 0 && (v.ampExtra.config[6] === 0 || v.ampExtra.config[6] === 4)) {
+      v.ampExtra.reset(); v.envStage=IDLE; v.envLvl=0;
+    }
+    if (!v.ampCustom && v.envStage === DECAY) {
       if (P.sus <= 0 && v.envLvl < 1e-5) { v.envStage = IDLE; v.envLvl = 0; }
       else if (Math.abs(v.envLvl - P.sus) < 1e-9) v.envLvl = P.sus;
     }
     if (v.env2Stage === DECAY && Math.abs(v.env2Lvl - P.sus2) < 1e-9) v.env2Lvl = P.sus2;
 
-    const glide = prm[PI.glide];
+    const glideSlot=MOD_SLOT.glide;
+    const glide=P.lfoDepth[glideSlot] || P.envDepth[glideSlot] || P.vLinked[glideSlot] || P.partLink[glideSlot] ? (snap ? P.partPlain[glideSlot] : v.modPlain[glideSlot]) : prm[PI.glide];
     if (glide > 0.0005) {
       if (!snap) {
         const kg = 1 - Math.exp(-CTRL / (sr * glide / 3));
@@ -1819,16 +2099,24 @@ export class OrographDSP {
       }
     }
     const PL = P.partLink;
-    for (let m = 0; m < NMOD; m++) {
-      const ed = P.envDepth[m];
-      const vl = P.vLinked[m];
-      if (ed === 0 && vl === 0) { MN[m] = P.partNorm[m]; MP[m] = P.partPlain[m]; continue; }
-      let n = P.baseNorm[m] + P.lfoVal[m] * P.lfoDepth[m] + e2 * ed;
-      n += PL[m];
-      if (vl) n += VL[m];
-      n = MOD_WRAPS[m] ? n - Math.floor(n) : clamp01(n);
-      MN[m] = n;
-      MP[m] = fromNorm(MOD_DEFS[m], n);
+    MN.set(P.partNorm); MP.set(P.partPlain);
+    for (let j=0;j<P.voiceModCount;j++) {
+      const m=P.voiceModSlots[j],ed=P.envDepth[m],vl=P.vLinked[m];
+      let envelope=e2;
+      if (P.envOwn[m]) {
+        const env=v.ownEnvs[m]; env.configure(P.envConfig[m],CTRL/sr);
+        if (!env.stage && v.gate && !env.gate) env.trigger();
+        if (!snap) env.sample(CTRL/sr); envelope=env.value;
+      }
+      let n=P.baseNorm[m]+P.lfoVal[m]*P.lfoDepth[m]+envelope*ed+PL[m];
+      if (vl) n+=VL[m];
+      for (let i=0;i<4;i++) {
+        const c=m*4+i,depth=P.ctrlDepth[c]; if (!depth) continue;
+        const source=P.ctrlSrc[c];
+        n+=depth*linkCurve(P.ctrlCurve[c],PART_SOURCE[source] ? this.partControllerSource(P,source) : this.voiceSource(P,v,source));
+      }
+      n=MOD_WRAPS[m] ? n-Math.floor(n) : clamp01(n);
+      MN[m]=n; MP[m]=fromNorm(MOD_DEFS[m],n);
     }
     // Key>Size: higher notes shrink or grow the orbit, per voice
     if (P.noteSize !== 0) {
@@ -1872,6 +2160,8 @@ export class OrographDSP {
     if (Math.abs(v.laps - v.sLaps) < 1e-9) v.laps = v.sLaps;
     if (Math.abs(v.pace - v.sPace) < 1e-9) v.pace = v.sPace;
     if (Math.abs(v.subLv - v.sSub) < 1e-9) v.subLv = v.sSub;
+    const subT=SUB_GAIN*MP[MOD_SLOT.sub]*MP[MOD_SLOT.sub];
+    const airT=Math.round(prm[PI.airType]) === 0 ? AIR_RMS*MP[MOD_SLOT.air]*MP[MOD_SLOT.air] : 0;
     const lapsT = MP[M_LAPS];
     let paceT = MP[M_PACE];
     if (snap) {
@@ -1883,12 +2173,12 @@ export class OrographDSP {
       else paceT = 0;
     }
     if (snap) {
-      v.sLaps = lapsT; v.sPace = paceT; v.sSub = P.subT; v.sAir = P.airT; v.sTone = P.airTone;
+      v.sLaps = lapsT; v.sPace = paceT; v.sSub = subT; v.sAir = airT; v.sTone = P.airTone;
     } else {
       v.sLaps = Math.abs(lapsT - v.sLaps) < SNAP ? lapsT : v.sLaps + (lapsT - v.sLaps) * k;
       v.sPace = Math.abs(paceT - v.sPace) < SNAP ? paceT : v.sPace + (paceT - v.sPace) * k;
-      v.sSub = Math.abs(P.subT - v.sSub) < SNAP ? P.subT : v.sSub + (P.subT - v.sSub) * k;
-      v.sAir = Math.abs(P.airT - v.sAir) < SNAP ? P.airT : v.sAir + (P.airT - v.sAir) * k;
+      v.sSub = Math.abs(subT - v.sSub) < SNAP ? subT : v.sSub + (subT - v.sSub) * k;
+      v.sAir = Math.abs(airT - v.sAir) < SNAP ? airT : v.sAir + (airT - v.sAir) * k;
       v.sTone = Math.abs(P.airTone - v.sTone) < SNAP ? P.airTone : v.sTone + (P.airTone - v.sTone) * k;
     }
 
@@ -1923,6 +2213,7 @@ export class OrographDSP {
     // it is added per sample (see terrainPaced).
     let speed = f * pathLength(v.pShape, v.pOrder, v.sParam) * v.sSize * (ax > 1 ? ax : 1 / ax) * (1 + 1.3 * v.sWarp) * v.sLaps + 1e-9;
     if (v.trav & 1) speed *= 2;
+    speed*=1+0.5*Math.PI*Math.abs(v.modPlain[MOD_SLOT.phaseMod]*v.modPlain[MOD_SLOT.phaseRatio])+3*Math.abs(v.modPlain[MOD_SLOT.pathMangle])+v.modPlain[MOD_SLOT.pathWindow];
     v.eSpeed = speed / f;
     const rawA = this.mipRaw(P.terrA, speed), rawB = this.mipRaw(P.terrB, speed);
     const topA = P.terrA.length - 1, topB = P.terrB.length - 1;
@@ -1935,7 +2226,7 @@ export class OrographDSP {
     if (snap) { v.uLvA = uA; v.uLvB = uB; } else { v.uLvA += (uA - v.uLvA) * k; v.uLvB += (uB - v.uLvB) * k; }
 
     // filter
-    const fcRaw = Math.exp((v.sCut + prm[PI.keyTrack] * (semis - 60) / 12 + prm[PI.filterEnv] * 6 * e2) * Math.LN2);
+    const fcRaw = Math.exp((v.sCut + MP[MOD_SLOT.keyTrack] * (semis - 60) / 12 + MP[MOD_SLOT.filterEnv] * 6 * e2) * Math.LN2);
     let fc = fcRaw;
     const fcMax = 0.45 * fs2;
     if (!(fc > 16)) fc = 16; else if (fc > fcMax) fc = fcMax;
@@ -1972,6 +2263,18 @@ export class OrographDSP {
       v.dLaps = (v.sLaps - v.laps) * inv; v.dPace = (v.sPace - v.pace) * inv; v.dSubLv = (v.sSub - v.subLv) * inv;
       v.dcLvA = (v.uLvA - v.cLvA) * inv; v.dcLvB = (v.uLvB - v.cLvB) * inv;
     }
+    const detune=MP[MOD_SLOT.detune], spread=MP[MOD_SLOT.spread];
+    const layoutChanged=detune !== prm[PI.detune] || spread !== prm[PI.spread];
+    if (layoutChanged || P.layoutDirty) for (let q=0;q<MAX_UNISON;q++) {
+      const position=U === 1 ? 0 : q/(U-1)*2-1;
+      P.detRatio[q]=Math.pow(2,position*detune*0.5/1200);
+      if (U === 1) { P.gUL[q]=P.gUR[q]=1; } else {
+        const angle=(position*spread+1)*Math.PI/4,norm=Math.SQRT2/Math.sqrt(U);
+        P.gUL[q]=Math.cos(angle)*norm; P.gUR[q]=Math.sin(angle)*norm;
+      }
+    }
+    P.layoutDirty=layoutChanged;
+    if (snap && layoutChanged) for (let q=0;q<U;q++) { v.ugL[q]=P.gUL[q]; v.ugR[q]=P.gUR[q]; }
     for (let q = 0; q < U; q++) {
       let incT = f * P.detRatio[q] / fs2;
       if (incT > 0.45) incT = 0.45;
@@ -1988,6 +2291,9 @@ export class OrographDSP {
     if (subIncT > 0.45) subIncT = 0.45;
     if (snap) { v.subInc = subIncT; v.dSubInc = 0; } else v.dSubInc = (subIncT - v.subInc) * inv;
 
+    this.controlExtras(P,v,snap,f,k,inv);
+    const velocitySensitivity=MP[MOD_SLOT.velSens];
+    v.velGain=1-velocitySensitivity*(1-Math.pow(clamp01(v.vel),1.5));
     this.setMipRamp(v, P.terrA.length, v.sLvA, snap, true, inv);
     this.setMipRamp(v, P.terrB.length, v.sLvB, snap, false, inv);
     // the cycle's mean height at the end of the block (startVoice seeds it)
@@ -2093,6 +2399,7 @@ export class OrographDSP {
         if (trav !== 0) t = this.travelMap(v.pShape, v.pOrder, t, param, trav);
       }
       pathPoint(v.pShape, t, v.pOrder, param, pt);
+      if (v.exTarget[EX.pathWindow] || v.exTarget[EX.pathMangle] || v.pathMirror) shapePathPoint(pt.x,pt.y,t,v.exTarget[EX.pathWindow],v.exTarget[EX.pathMangle],v.pathMirror,pt);
       let u = cx + pt.x * tA - pt.y * tB;
       let w = cy + pt.x * tC + pt.y * tD;
       if (warp > 0) {
@@ -2125,6 +2432,7 @@ export class OrographDSP {
     }
     if (nt === 5) { if (v.comb) { v.comb.fill(0); v.cw = 0; } v.cD = -1; }
     if (nt === 6) { v.vs.fill(0); v.vf[0] = -1; }
+    if (nt >= 7) { v.analogCurrent=1-v.analogCurrent; v.analog[v.analogCurrent].reset(); }
   }
 
   /**
@@ -2287,6 +2595,10 @@ export class OrographDSP {
       P.dlyS = Math.abs(dT - P.dlyS) < 1e-4 ? dT : P.dlyS + (dT - P.dlyS) * k;
       P.revS = Math.abs(rT - P.revS) < 1e-4 ? rT : P.revS + (rT - P.revS) * k;
       P.pedS = Math.abs(pT - P.pedS) < 1e-4 ? pT : P.pedS + (pT - P.pedS) * k;
+      const bank=P.index-this.vectorBank*4;
+      const vectorTarget=bank >= 0 && bank < 4 ? this.vectorWeights[bank] : 1;
+      P.vectorSmooth=Math.abs(vectorTarget-P.vectorSmooth) < 1e-5 ? vectorTarget : P.vectorSmooth+(vectorTarget-P.vectorSmooth)*k;
+      P.dVector=(P.vectorSmooth-P.vectorGain)/CTRL;
       P.dGain = (P.gainS - P.gain) / CTRL;
       P.dDly = (P.dlyS - P.dly) / CTRL;
       P.dRev = (P.revS - P.rev) / CTRL;
@@ -2337,18 +2649,18 @@ export class OrographDSP {
     const tableOn = v.tabValid && v.tabA !== null && (tw0 > 0 || twEnd > 0);
     const directOn = !tableOn || tw0 < 1 || twEnd < 1;
     const sav = this.sav;
-    if (tableOn && directOn) for (let q = 0; q < MAX_UNISON; q++) { sav[q] = v.phase[q]; sav[4 + q] = v.inc[q]; }
+    if (tableOn && directOn) for (let q = 0; q < MAX_UNISON; q++) { sav[q] = v.phase[q]; sav[1 * MAX_UNISON + q] = v.inc[q]; }
 
     if (directOn) {
       if (v.travW > 0) {
         // the old travel setting renders first and fades out
         for (let q = 0; q < MAX_UNISON; q++) {
-          sav[8 + q] = v.phase[q]; sav[12 + q] = v.inc[q]; sav[16 + q] = v.blepPend[q]; sav[20 + q] = v.blepSkip[q];
+          sav[2 * MAX_UNISON + q] = v.phase[q]; sav[3 * MAX_UNISON + q] = v.inc[q]; sav[4 * MAX_UNISON + q] = v.blepPend[q]; sav[5 * MAX_UNISON + q] = v.blepSkip[q];
         }
         this.oscDirect(P, v, n2, v.travOld, param0, v.shOld, v.orOld);
         for (let j = 0; j < n2; j++) { TL[j] = SL[j]; TR[j] = SR[j]; }
         for (let q = 0; q < MAX_UNISON; q++) {
-          v.phase[q] = sav[8 + q]; v.inc[q] = sav[12 + q]; v.blepPend[q] = sav[16 + q]; v.blepSkip[q] = sav[20 + q];
+          v.phase[q] = sav[2 * MAX_UNISON + q]; v.inc[q] = sav[3 * MAX_UNISON + q]; v.blepPend[q] = sav[4 * MAX_UNISON + q]; v.blepSkip[q] = sav[5 * MAX_UNISON + q];
         }
         this.oscDirect(P, v, n2, v.trav, param0, v.pShape, v.pOrder);
         let w = v.travW;
@@ -2382,6 +2694,7 @@ export class OrographDSP {
     v.tw = twEnd;
     if (twEnd === 0 || twEnd === 1) v.dtw = 0;
 
+    this.renderExtras(P,v,n2,rc);
     v.param += v.dParam * n2;
     v.tA += v.dtA * n2; v.tB += v.dtB * n2; v.tC += v.dtC * n2; v.tD += v.dtD * n2;
     v.cx += v.dcx * n2; v.cy += v.dcy * n2;
@@ -2414,9 +2727,12 @@ export class OrographDSP {
     // is the path phase, the original fast path. Otherwise the Laps/Pace/
     // travel oscillator.
     const sync = v.laps !== 1 || v.dLaps !== 0 || v.pace !== 0 || v.dPace !== 0 || trav !== 0;
-    const paced = sync && (v.pace !== 0 || v.dPace !== 0);
+    let paced = sync && (v.pace !== 0 || v.dPace !== 0);
     let nEv = 0;
-    if (sync) {
+    const customPath=v.ex[EX.phaseMod] !== 0 || v.dex[EX.phaseMod] !== 0 || v.ex[EX.pathWindow] !== 0 || v.dex[EX.pathWindow] !== 0 || v.ex[EX.pathMangle] !== 0 || v.dex[EX.pathMangle] !== 0 || v.pathMirror !== 0;
+    if (customPath) {
+      this.extraPaths(P,v,n2,trav,shape,order); paced=false;
+    } else if (sync) {
       nEv = this.syncPaths(P, v, n2, paced, trav, shape, order);
     } else {
       for (let q = 0; q < U; q++) {
@@ -2542,7 +2858,7 @@ export class OrographDSP {
     const sav = this.sav;
     for (let q = 0; q < U; q++) {
       let ph = writeBack ? v.phase[q] : sav[q];
-      let inc = writeBack ? v.inc[q] : sav[4 + q];
+      let inc = writeBack ? v.inc[q] : sav[1 * MAX_UNISON + q];
       const dinc = v.dinc[q];
       let gl = gUL[q], gr = gUR[q];
       const dgl = gRamp ? v.dugL[q] : 0, dgr = gRamp ? v.dugR[q] : 0;
@@ -2602,6 +2918,9 @@ export class OrographDSP {
     const subOn = v.subLv !== 0 || v.dSubLv !== 0;
     let sPh = v.subPh, sInc = v.subInc, sLv = v.subLv;
     const dsInc = v.dSubInc, dsLv = v.dSubLv;
+    const sub2On=v.ex[EX.sub2] !== 0 || v.dex[EX.sub2] !== 0;
+    let s2Ph=v.sub2Ph,s2Inc=0.5*v.subInc,s2Lv=v.ex[EX.sub2]-v.dex[EX.sub2]*n2;
+    const ds2Inc=0.5*v.dSubInc,ds2Lv=v.dex[EX.sub2];
     let aH = v.aH, aD = v.aD;
     const daH = v.daH, daD = v.daD;
     const airOn = aH !== 0 || aD !== 0 || daH !== 0 || daD !== 0;
@@ -2625,8 +2944,14 @@ export class OrographDSP {
         sPh += sInc;
         if (sPh >= 1) sPh -= 1;
         sInc += dsInc; sLv += dsLv;
-        const sv = sLv * fastSin(sPh);
+        const sv = sLv * (v.subKind === 0 ? fastSin(sPh) : subWave(v.subKind, sPh, sInc));
         yL += sv; yR += sv;
+      }
+      if (sub2On) {
+        s2Ph+=s2Inc; if (s2Ph >= 1) s2Ph-=1;
+        s2Inc+=ds2Inc; s2Lv+=ds2Lv;
+        const sv=SUB_GAIN*s2Lv*s2Lv*subWave(v.sub2Kind,s2Ph,s2Inc);
+        yL+=sv; yR+=sv;
       }
       if (airOn) {
         aH += daH; aD += daD;
@@ -2705,6 +3030,7 @@ export class OrographDSP {
     v.envStage = st; v.envLvl = lvl;
     v.stealGain = sg;
     if (subOn) { v.subPh = sPh; v.subInc = sInc; v.subLv = sLv; } else v.subInc += dsInc * n2;
+    if (sub2On) v.sub2Ph=s2Ph;
     if (airOn) { v.aH = aH; v.aD = aD; v.nz = nz; v.tlL = tlL; v.tlR = tlR; }
     if (pdOn) { v.pdxL = pxL; v.pdyL = pyL; v.pdxR = pxR; v.pdyR = pyR; }
     this.advanceComb(v, n2);
@@ -2735,7 +3061,7 @@ export class OrographDSP {
   voiceChain(P, v, base, n2, rc) {
     // the common case (a state variable filter or none, no filter change in
     // progress) runs as one fused loop: no intermediate buffers
-    if (v.ft <= 4 && !(v.ftW > 0)) { this.voiceChainFused(P, v, base, n2, rc); return; }
+    if (v.ft <= 4 && !(v.ftW > 0) && !v.ampCustom) { this.voiceChainFused(P, v, base, n2, rc); return; }
     const SL = this.sumL, SR = this.sumR;
     const bL = rc.busL, bR = rc.busR;
     const stereo = v.stereo;
@@ -2750,6 +3076,9 @@ export class OrographDSP {
     const subOn = v.subLv !== 0 || v.dSubLv !== 0;
     let sPh = v.subPh, sInc = v.subInc, sLv = v.subLv;
     const dsInc = v.dSubInc, dsLv = v.dSubLv;
+    const sub2On=v.ex[EX.sub2] !== 0 || v.dex[EX.sub2] !== 0;
+    let s2Ph=v.sub2Ph,s2Inc=0.5*v.subInc,s2Lv=v.ex[EX.sub2]-v.dex[EX.sub2]*n2;
+    const ds2Inc=0.5*v.dSubInc,ds2Lv=v.dex[EX.sub2];
     // Air: white noise, tilted (aH * x + aD * lowpass(x)), also before the filter
     let aH = v.aH, aD = v.aD;
     const daH = v.daH, daD = v.daD;
@@ -2773,8 +3102,14 @@ export class OrographDSP {
         sPh += sInc;
         if (sPh >= 1) sPh -= 1;
         sInc += dsInc; sLv += dsLv;
-        const sv = sLv * fastSin(sPh);
+        const sv = sLv * (v.subKind === 0 ? fastSin(sPh) : subWave(v.subKind, sPh, sInc));
         yL += sv; yR += sv;
+      }
+      if (sub2On) {
+        s2Ph+=s2Inc; if (s2Ph >= 1) s2Ph-=1;
+        s2Inc+=ds2Inc; s2Lv+=ds2Lv;
+        const sv=SUB_GAIN*s2Lv*s2Lv*subWave(v.sub2Kind,s2Ph,s2Inc);
+        yL+=sv; yR+=sv;
       }
       if (airOn) {
         aH += daH; aD += daD;
@@ -2804,6 +3139,7 @@ export class OrographDSP {
     v.dcxL = dxL; v.dcyL = dyL; v.dcxR = dxR; v.dcyR = dyR;
     v.drive = drive;
     if (subOn) { v.subPh = sPh; v.subInc = sInc; v.subLv = sLv; } else v.subInc += dsInc * n2;
+    if (sub2On) v.sub2Ph=s2Ph;
     if (airOn) { v.aH = aH; v.aD = aD; v.nz = nz; v.tlL = tlL; v.tlR = tlR; }
 
     this.filterStage(v, n2, stereo);
@@ -2829,7 +3165,10 @@ export class OrographDSP {
     for (let j = 0; j < n2; j++) {
       gl += dgl; gr += dgr;
       let yL = SL[j], yR = SR[j];
-      if (st === ATTACK) {
+      if (v.ampCustom) {
+        lvl=v.ampExtra.sample(1 / (this.sr * rc.os));
+        st=v.ampExtra.stage === 0 ? IDLE : (v.ampExtra.stage === 6 ? RELEASE : ATTACK);
+      } else if (st === ATTACK) {
         lvl = ATTACK_OVERSHOOT + (lvl - ATTACK_OVERSHOOT) * attC;
         if (lvl >= 1) { lvl = 1; st = DECAY; }
       } else if (st === DECAY) {
@@ -2868,6 +3207,7 @@ export class OrographDSP {
     const fo = fading ? v.ftOld : ft;
     const svfNew = ft >= 1 && ft <= 4, svfOld = fo >= 1 && fo <= 4;
     if (!fading) {
+      if (ft >= 7) this.analogBlock(v, SL, SR, n2, stereo, true);
       if (svfNew) this.svfBlock(v, n2, stereo, ft, ft, 0, 0);
       else this.advanceSvf(v, n2);
       if (ft === 5) this.combBlock(v, SL, SR, n2, stereo); else this.advanceComb(v, n2);
@@ -2882,6 +3222,9 @@ export class OrographDSP {
       w -= dw * n2;
     } else {
       for (let j = 0; j < n2; j++) { TL[j] = SL[j]; TR[j] = SR[j]; }
+      // New digital models own two filter states so old/new models can overlap.
+      if (fo >= 7) this.analogBlock(v, TL, TR, n2, stereo, false);
+      if (ft >= 7) this.analogBlock(v, SL, SR, n2, stereo, true);
       // old type on the copy, new type in place
       if (svfOld) { this.svfBlockOn(v, TL, TR, n2, stereo, fo); }
       else if (fo === 5) this.combBlock(v, TL, TR, n2, stereo);
@@ -3368,7 +3711,7 @@ export class OrographDSP {
     if (snap) v.calm = P.orbitVoiceMod ? 0 : 1e9;
     else if (motion > 8) v.calm = 0;
     else if (motion < 4) v.calm += CTRL;
-    const want = v.calm >= 0.064 * this.sr;
+    const want = v.calm >= 0.064 * this.sr && v.exTarget[EX.phaseMod] === 0;
     const cyc = this.sr / f;
     const R = CTRL * Math.ceil(Math.min(1024, Math.max(256, cyc)) / CTRL);
     if (want && !v.tabValid && this.tabBudget <= 0) {
@@ -3432,6 +3775,7 @@ export class OrographDSP {
     out[15] = Math.floor(0.5 * this.sr / (f * P.detRatio[v.uRun - 1] + 1e-9));
     out[16] = P.terrGen; out[17] = (P.oldA !== null ? P.fadeACur : 0) + (P.oldB !== null ? P.fadeBCur : 0);
     out[18] = v.uRun; out[19] = this.mipBias;
+    out[20]=v.exTarget[EX.pathWindow]; out[21]=v.exTarget[EX.pathMangle]; out[22]=v.pathMirror;
   }
 
   /** 0: the table in hand is exact; 1: only the orbit has drifted; 2: something else changed. */
@@ -3440,7 +3784,7 @@ export class OrographDSP {
     this.tableKey(P, v, f, k);
     const old = v.tabKey;
     let res = 0;
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 23; i++) {
       const d = k[i] - old[i];
       if (d > 1e-9 || d < -1e-9) { if (i >= 12) return 2; res = 1; }
     }
@@ -3481,6 +3825,10 @@ export class OrographDSP {
     if (laps !== 1) for (let i = 0; i < M; i++) { const t = laps * T[i]; T[i] = t - Math.floor(t); }
     if (trav !== 0) travelBlock(v.pShape, v.pOrder, M, T, param, 0, trav & 1, trav & 2);
     pathBlockAt(v.pShape, v.pOrder, M, T, param, 0, X, Y);
+    if (v.exTarget[EX.pathWindow] || v.exTarget[EX.pathMangle] || v.pathMirror) {
+      const point=this.pt;
+      for (let i=0;i<M;i++) { shapePathPoint(X[i],Y[i],T[i],v.exTarget[EX.pathWindow],v.exTarget[EX.pathMangle],v.pathMirror,point); X[i]=point.x; Y[i]=point.y; }
+    }
 
     // mip: M points per cycle, content kept to M/4 harmonics (bias 1, as the oscillator)
     const cyc = v.eSpeed;      // terrain units per cycle
@@ -3629,8 +3977,8 @@ export class OrographDSP {
       const g = P.ghost;
       const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
-      if (active === 0 && P.tail <= 0 && !ghostOn) {
-        P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg;
+      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active) {
+        P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg; P.vectorGain+=P.dVector*seg;
         continue;
       }
       if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
@@ -3676,6 +4024,19 @@ export class OrographDSP {
       }
       if (P.oldA) { P.fadeACur += P.dFadeA * n2; if (P.fadeACur < 0) P.fadeACur = 0; }
       if (P.oldB) { P.fadeBCur += P.dFadeB * n2; if (P.fadeBCur < 0) P.fadeBCur = 0; }
+      let rawPeak=0;
+      for (let n=pos;n<pos+seg;n++) rawPeak=Math.max(rawPeak,Math.abs(oL[n]),Math.abs(oR[n]));
+      P.rawPeak=Math.max(P.rawPeak,rawPeak);
+      if (P.effects.active) {
+        const src=P.sidechainIndex;
+        let level=0;
+        if (src >= 0) level=parts[src].previousRawPeak;
+        else if (src === -2) { for (let j=0;j<count;j++) if (j !== i) level+=parts[j].previousRawPeak; }
+        for (let n=pos;n<pos+seg;n++) {
+          const side=src === -1 ? Math.max(Math.abs(oL[n]),Math.abs(oR[n])) : level;
+          const fx=P.effects.processSample(oL[n],oR[n],side); oL[n]=fx.L; oR[n]=fx.R;
+        }
+      }
       // pedal send (skipped while it is and stays silent, the usual case),
       // taken before the dry delay: the pedals get the part on time
       if (P.ped !== 0 || P.dPed !== 0) {
@@ -3700,14 +4061,16 @@ export class OrographDSP {
       }
       let gn = P.gain, dl = P.dly, rv = P.rev;
       const dgn = P.dGain, ddl = P.dDly, drv = P.dRev;
+      let vectorGain=P.vectorGain; const dv=P.dVector;
       for (let n = pos; n < pos + seg; n++) {
         gn += dgn; dl += ddl; rv += drv;
-        const l = oL[n], r = oR[n];
+        vectorGain+=dv;
+        const l = oL[n]*vectorGain, r = oR[n]*vectorGain;
         outL[n] += l * gn; outR[n] += r * gn;
         if (dlyL) { dlyL[n] += l * dl; dlyR[n] += r * dl; }
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }
-      P.gain = gn; P.dly = dl; P.rev = rv;
+      P.gain = gn; P.dly = dl; P.rev = rv; P.vectorGain=vectorGain;
       if (active === 0 && !ghostOn) {
         P.tail -= seg;
         if (P.tail <= 0) { P.busL.fill(0); P.busR.fill(0); P.midL.fill(0); P.midR.fill(0); }
@@ -3740,6 +4103,7 @@ export class OrographDSP {
     for (let i = 0; i < liveN; i++) {
       const P = this.parts[i];
       if (i >= this.count && this.dormant(P)) continue;
+      P.previousRawPeak=P.rawPeak; P.rawPeak=0;
       P.ensureBus(n);
       P.busL.fill(0, P.hist, P.hist + P.os * n);
       P.busR.fill(0, P.hist, P.hist + P.os * n);
