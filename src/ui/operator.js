@@ -10,6 +10,11 @@ import { h, createScope, listen, has, call } from './dom.js';
 import { createToggle, createMiniSlider, createSegmented } from './controls.js';
 import { OPERATOR_DEFAULTS, sanitizeOperator } from '../dsp/damage.js';
 import { createBookkeeping, formatPlayTime } from '../core/bookkeeping.js';
+import { found, has as hasFun, funData, setFunData } from '../core/fun.js';
+import { createFunProgress } from './fun-progress.js';
+
+const SOAKED_SEC = 3600;    // badge: wet for an hour of running audio
+const NOTES_BADGE = 1000;
 
 const JOLT = 25;            // m/s^2 beyond gravity that counts as a drop
 const JOLT_COOLDOWN = 2000; // ms between two detected drops
@@ -92,13 +97,23 @@ export function startOperatorHost(ctx) {
   // Bookkeeping: time with audio running, notes started, patches saved
   let lastNotes = engine ? engine.notesPlayed || 0 : 0;
   let ticks = 0;
+  let soak = Number(funData('soak')) || 0;
   const tick = setInterval(() => {
     const running = !!(engine && engine.context && engine.context.state === 'running');
     if (running) book.add('seconds', 1);
     const n = engine ? engine.notesPlayed || 0 : 0;
     if (n > lastNotes) book.add('notes', n - lastNotes);
     lastNotes = n;
-    if (++ticks % 15 === 0) book.flush();
+    // v2.9 badges: Soaked (an hour wet) and a thousand notes
+    if (running && soak < SOAKED_SEC) {
+      const st = call(engine, 'operatorState');
+      if (st && st.wet > 0 && ++soak >= SOAKED_SEC) { setFunData('soak', soak); found('badge', 'soaked'); }
+    }
+    if (++ticks % 15 === 0) {
+      book.flush();
+      if (soak < SOAKED_SEC && soak !== Number(funData('soak') || 0)) setFunData('soak', soak);
+      if (!hasFun('badge', 'notes-1000') && (book.get().notes || 0) >= NOTES_BADGE) found('badge', 'notes-1000');
+    }
   }, 1000);
   scope.add(() => clearInterval(tick));
   const flush = () => book.flush();
@@ -173,6 +188,7 @@ export function startOperatorHost(ctx) {
     lastJolt = t;
     call(engine, 'operator', 'drop', Math.min(1, 0.5 + (mag - JOLT) / 30));
     if (ctx.toast) ctx.toast('Drop detected', { kind: 'warn' });
+    ctx.eggs?.dropped();
   };
   function syncMotion() {
     const o = readOp(store);
@@ -217,8 +233,8 @@ export function createOperatorSettings(ctx) {
   const allowBtn = button('Allow motion sensor');
   allowBtn.hidden = true;
   const dmgMeter = meter('Drop damage');
-  scope.on(dropBtn, 'click', () => act('drop', 1));
-  scope.on(dropFix, 'click', () => act('repair', 'drop'));
+  scope.on(dropBtn, 'click', () => { act('drop', 1); ctx.eggs?.dropped(); });
+  scope.on(dropFix, 'click', () => { act('repair', 'drop'); ctx.eggs?.repaired(); });
   scope.on(allowBtn, 'click', async () => { if (host) await host.motion.request(); render(); });
 
   // Damage: water
@@ -233,8 +249,13 @@ export function createOperatorSettings(ctx) {
   scope.add(hum.dispose);
   const wetMeter = meter('Wetness');
   const visual = toggle('visual', 'Show on screen');
-  scope.on(spillBtn, 'click', () => act('spill', 1));
-  scope.on(waterFix, 'click', () => act('repair', 'water'));
+  scope.on(spillBtn, 'click', () => {
+    // the damage before this spill decides whether it shorts (src/dsp/damage.js SHORT_CIRCUIT_DMG)
+    const before = (engine && call(engine, 'operatorState')) || { dmg: 0, wet: 0 };
+    act('spill', 1);
+    ctx.eggs?.spilled(readOp(store), before);
+  });
+  scope.on(waterFix, 'click', () => { act('repair', 'water'); ctx.eggs?.repaired(); });
 
   // Quirks and Vintage
   const glitch = toggle('glitch', 'Glitch');
@@ -242,6 +263,22 @@ export function createOperatorSettings(ctx) {
   const slow = toggle('slowdown', 'Slowdown');
   const slowAmt = slider('slowAmount', 'Slowdown amount');
   const vintage = toggle('vintage', 'Vintage sampler');
+  const killScreen = toggle('killScreen', 'Kill screen');
+
+  // Coin slot (src/ui/coin-slot.js)
+  const freePlay = toggle('freePlay', 'Free Play');
+  const coinText = h('div', { class: 'setting-hint', 'aria-live': 'polite' });
+  const coinBtn = button('Insert coin', 'Insert a coin (C key)');
+  scope.on(coinBtn, 'click', () => { ctx.coins?.insert(); renderCoins(); });
+  function renderCoins() {
+    const c = ctx.coins;
+    const live = !!(c && c.active());
+    coinBtn.disabled = !live;
+    if (!c) coinText.textContent = 'Not available.';
+    else if (!live) coinText.textContent = 'On: play freely. Off: Oro stays silent until you insert a coin with C or Insert coin. Each coin is 3 minutes of play.';
+    else { const t = c.text(); coinText.textContent = `${t.label}. ${t.credits}. Each coin is 3 minutes of play, counted from the first note.`; }
+  }
+  if (ctx.coins) scope.add(ctx.coins.onChange(renderCoins));
 
   // Service: test tones
   let tone = 'off';
@@ -287,6 +324,8 @@ export function createOperatorSettings(ctx) {
   }
 
   // Bookkeeping
+  const funProgress = createFunProgress();
+  scope.add(funProgress.dispose);
   const facts = h('dl', { class: 'status-facts status-facts--wide' });
   const resetBook = button('Reset counters');
   const renderBook = () => {
@@ -317,6 +356,7 @@ export function createOperatorSettings(ctx) {
     for (const c of [waterSev, stays, hum]) c.setDisabled(!o.water, 'Turn on Water damage first');
     glitchAmt.setDisabled(!o.glitch, 'Turn on Glitch first');
     slowAmt.setDisabled(!o.slowdown, 'Turn on Slowdown first');
+    renderCoins();
     dropBtn.disabled = dropFix.disabled = !o.drop || noEngine;
     spillBtn.disabled = waterFix.disabled = !o.water || noEngine;
     const m = host && host.motion;
@@ -338,7 +378,7 @@ export function createOperatorSettings(ctx) {
 
   const group = (title, ...kids) => h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, title), ...kids);
   const el = h('div', { class: 'settings-pane settings-operator' },
-    h('p', { class: 'setting-hint op-intro' }, 'Hardware faults and quirks for the master output, saved with the session. Everything is off until you turn it on.'),
+    h('p', { class: 'setting-hint op-intro' }, 'Hardware faults and quirks for the master output, saved with the session. Everything except Free Play is off until you turn it on.'),
     group('Damage',
       row('Drop damage', 'Crackle, brief cutouts, one side dropping out, a scratchy control and a detuned, wobbly pitch. It builds up with every drop and stays until Repair.', dropOn.el),
       row('Severity', null, dropSev.el),
@@ -356,9 +396,12 @@ export function createOperatorSettings(ctx) {
       row('Glitch', 'Now and then the output stutters, repeating a short slice', glitch.el),
       row('Amount', null, glitchAmt.el),
       row('Slowdown', 'Pitch sags when many notes sound, like an overloaded old machine', slow.el),
-      row('Amount', null, slowAmt.el)),
+      row('Amount', null, slowAmt.el),
+      row('Kill screen', 'After 256 loops a pattern slowly breaks up as it plays. Your saved pattern is not changed, and Stop resets it.', killScreen.el)),
     group('Vintage',
       row('Vintage sampler', 'An early sampler sound: 12-bit and about 26 kHz, with gentle filtering', vintage.el)),
+    group('Coin slot',
+      h('div', { class: 'setting-row' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Free Play'), coinText), h('div', { class: 'btn-row op-controls' }, freePlay.el, coinBtn))),
     group('Service',
       h('p', { class: 'op-warn', role: 'note' }, 'Test tones play at -18 dBFS (sine) or about -20 dBFS (noise) before the master volume. Turn your speakers or headphones down before you start.'),
       h('div', { class: 'btn-row op-tones', role: 'group', 'aria-label': 'Test tones' }, toneBtns, stopBtn),
@@ -366,6 +409,6 @@ export function createOperatorSettings(ctx) {
       monEmpty, monList),
     group('Bookkeeping',
       h('p', { class: 'setting-hint' }, 'Stored only in this browser. Nothing is sent anywhere.'),
-      facts, h('div', { class: 'btn-row' }, resetBook)));
+      facts, h('div', { class: 'btn-row' }, resetBook), funProgress.el));
   return { el, dispose: () => scope.dispose() };
 }

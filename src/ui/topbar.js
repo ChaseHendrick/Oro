@@ -14,6 +14,7 @@ import { openMacros } from './macros.js';
 import { openPopover } from './layers.js';
 import { createTrackTabs } from './track-tabs.js';
 import { icon, brandGlyph } from './icons.js';
+import { tempoParser } from './eggs.js';
 
 const THEME_LABEL = { system: 'System', dark: 'Dark', light: 'Light' };
 const THEME_NEXT = { system: 'dark', dark: 'light', light: 'system' };
@@ -55,7 +56,8 @@ export function createTopbar(ctx, container) {
   scope.add(store.subscribe('ui.playing', () => schedule(renderPlay)));
   renderPlay();
 
-  const tempo = createDragNumber(ctx, binder.globalParam('tempo'), { label: 'Tempo in BPM', suffix: 'BPM', step: 1, pxPerStep: 3, className: 'tempo' });
+  // v2.9 one tempo cannot be found (src/ui/eggs.js): typing it keeps the tempo you had
+  const tempo = createDragNumber(ctx, binder.globalParam('tempo'), { label: 'Tempo in BPM', suffix: 'BPM', step: 1, pxPerStep: 3, className: 'tempo', parse: tempoParser(() => ctx.eggs?.tempoNotFound()) });
   scope.add(tempo.dispose);
   const ext = h('span', { class: 'ext-badge', hidden: true, dataset: { tip: 'Following external MIDI clock' } }, 'EXT');
   const renderExt = () => {

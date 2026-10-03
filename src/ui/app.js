@@ -38,6 +38,8 @@ import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
 import { icon } from './icons.js';
 import { startOperatorHost } from './operator.js';
+import { installEggs } from './eggs.js';
+import { createCoinSlot } from './coin-slot.js';
 
 function emitter() {
   const map = new Map();
@@ -282,6 +284,24 @@ export function createUI(root, modules = {}) {
   } catch (err) {
     console.warn('[ui] the looper is unavailable', err);
     ctx.looper = null;
+  }
+
+  // v2.9 secrets, badges and the coin slot (Free Play off).
+  ctx.eggs = null;
+  ctx.coins = null;
+  try {
+    ctx.eggs = installEggs(ctx);
+    scope.add(ctx.eggs.dispose);
+  } catch (err) {
+    console.warn('[ui] secrets are unavailable', err);
+    ctx.eggs = null;
+  }
+  try {
+    ctx.coins = createCoinSlot(ctx);
+    scope.add(ctx.coins.dispose);
+  } catch (err) {
+    console.warn('[ui] the coin slot is unavailable', err);
+    ctx.coins = null;
   }
 
   // v2.9 Operator panel: Real drops, the on-screen damage hint and Bookkeeping run with Settings closed.
