@@ -15,6 +15,7 @@ import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
 import { schedule } from './frame.js';
 import { createToggle, createSelect, createStepper, createMiniSlider, createSegmented } from './controls.js';
 import { icon } from './icons.js';
+import { createDrumPanel } from './drum-panel.js';
 
 export function midiName(m) {
   return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
@@ -202,7 +203,14 @@ export function createSeqPanel(ctx) {
     h('span', { class: 'seq-num' }, ''), ...LABELS.map(t => h('span', { class: `seq-label seq-label--${t.toLowerCase()}`, title: LABEL_TIPS[t] }, t)));
   const grid = h('div', { class: 'seq-grid', role: 'group', 'aria-label': 'Steps. Use the arrow keys to move along a row and up or down to change a value.' }, labels, ...cols);
   const playNote = h('span', { class: 'seq-status', 'aria-live': 'off' });
-  const main = h('div', { class: 'seq-main' }, globalBar, grid, arpBar, playNote);
+  // v2.7 a drum kit track swaps the melodic grid for the kit's lanes
+  const drums = createDrumPanel(ctx);
+  scope.add(drums.dispose);
+  const syncDrum = () => { grid.hidden = drums.isOn(); };
+  scope.add(store.subscribe('parts', syncDrum));
+  scope.add(store.subscribe('ui.selectedPart', syncDrum));
+  syncDrum();
+  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, arpBar, playNote);
   const el = h('div', { class: 'dock-pane dock-pane--seq' }, side, main);
   if (!hasMusic) {
     playNote.textContent = 'Playback is unavailable here (the music engine did not start). You can still edit patterns.';

@@ -1208,3 +1208,19 @@
 .history-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
 .history-item { text-align: left; padding: 5px 8px; border-radius: var(--r-sm, 4px); font-size: var(--fs-sm, 12px); }
 .history-item:hover, .history-item:focus-visible { background: var(--panel-2); }
+
+/* v2.7 drum kit */
+.drum-panel { display: flex; flex-direction: column; gap: 8px; margin: 6px 0; }
+.drum-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.drum-bar .popover-note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); }
+.drum-grid { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
+.drum-grid[hidden], .drum-pad[hidden] { display: none; }
+.drum-row { display: flex; gap: 3px; align-items: stretch; }
+.drum-name { flex: 0 0 92px; text-align: left; padding: 0 6px; height: 24px; border-radius: var(--r-xs); background: var(--panel-3); border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drum-name.is-sel { border-color: var(--part-line); color: var(--part-ink); background: var(--part-soft); }
+.drum-cell { flex: 1 0 22px; min-width: 22px; height: 24px; border-radius: var(--r-xs); background: var(--panel-3); border: 1px solid var(--border); }
+.drum-cell.is-beat { border-color: var(--border-strong); }
+.drum-cell.is-on { background: color-mix(in srgb, var(--part-line) calc(35% + var(--v) * 65%), var(--panel-3)); border-color: var(--part-line); }
+.drum-cell:focus-visible, .drum-name:focus-visible { outline: 2px solid var(--focus, var(--part-line)); outline-offset: 1px; }
+@media (pointer: coarse) { .drum-cell, .drum-name { height: 40px; } .drum-cell { min-width: 40px; } }
+.seq-grid[hidden] { display: none; }

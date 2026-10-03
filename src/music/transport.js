@@ -32,6 +32,7 @@
 // the step's gate scaled to its share and RATCHET_DECAY times the velocity of
 // the hit before it. A slide applies to the last hit.
 
+import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
 import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, stepChance, activeSeq, clamp } from '../core/params.js';
 
 // v2.6 humanize: up to this late (s) at Humanize time 1, and this share of velocity either way at Humanize velocity 1
@@ -211,6 +212,22 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     const lock = stepLock(seq, step);
     announceStep(p, idx, t, lock);
     if (lock) locks.schedule(p, idx, lock, t, clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t));
+    // v2.7 a drum kit track plays its lanes instead of its melodic steps (humanize applies to them too)
+    const drum = store.get(`parts.${p}.drum`);
+    if (drum && drum.on) {
+      if (!seq.enabled || !Array.isArray(seq.drumLanes)) return;
+      const hT = clamp(finite(seq.humanTime, 0), 0, 1), hV = clamp(finite(seq.humanVel, 0), 0, 1);
+      for (let r = 0; r < KIT_PADS; r++) {
+        let v = finite(seq.drumLanes[r] && seq.drumLanes[r][idx], 0);
+        if (!(v > 0)) continue;
+        let tr = t;
+        if (hT > 0) tr += hT * HUMAN_TIME_MAX * stepChance(((probSeed | 0) + runs) ^ (0x51ed + r), p, abs);
+        if (hV > 0) v *= 1 + hV * HUMAN_VEL_MAX * (2 * stepChance(((probSeed | 0) + runs) ^ (0x2a7c + r), p, abs) - 1);
+        router._engineOn(p, KIT_BASE_NOTE + r, clamp(v, 0.01, 1), tr, 'seq', lead);
+        router._engineOff(p, KIT_BASE_NOTE + r, Math.min(tr + 0.05, tNext - MIN_GAP), 'seq', lead);
+      }
+      return;
+    }
     const active = seq.enabled && step && step.on && stepPlays(step, (probSeed | 0) + runs, p, abs);
     if (!active) {
       if (st.tie) { router._engineOff(p, st.tie.note, t, 'seq', st.tie.lead); st.tie = null; }

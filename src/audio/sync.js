@@ -17,6 +17,7 @@ import {
 } from '../core/params.js';
 import { sanitizeLinks } from '../core/migrate.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
+import { sanitizeDrum, base64ToPcm } from '../dsp/drum-kit.js';
 import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { decodeNoiseRecording } from '../dsp/noise-recording.js';
@@ -65,6 +66,8 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   let ids = trackIds(store.get('parts'));
   const links = new Set();
   const funcs = new Set();   // v2.4 Function points
+  const kits = new Set();    // v2.7 drum kits
+  const pcmCache = new Map(); // base64 sample -> Float32Array (decoded once)
   const trackFx = new Set();
   const noise = new Set();
   let globalAll = false;
@@ -105,6 +108,21 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const src = store.get(`parts.${i}.links`);
     if (!Array.isArray(src)) return null;
     return { t: 'links', part: i, links: sanitizeLinks(src) };
+  }
+
+  function kitMsg(i) {
+    const d = sanitizeDrum(store.get(`parts.${i}.drum`));
+    if (!d.on) return { t: 'kit', part: i, on: 0 };
+    const pads = d.pads.map((p) => {
+      const base = { gain: p.level, pitch: p.pitch, decay: p.decay, pan: p.pan, choke: p.choke };
+      if (p.sample) {
+        let pcm = pcmCache.get(p.sample.data);
+        if (!pcm) { pcm = base64ToPcm(p.sample.data); if (pcmCache.size > 64) pcmCache.clear(); pcmCache.set(p.sample.data, pcm); }
+        return { ...base, pcm, rate: p.sample.rate };
+      }
+      return { ...base, synth: p.synth };
+    });
+    return { t: 'kit', part: i, on: 1, pads };
   }
 
   function funcMsg(i) {
@@ -160,7 +178,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       if (m) out.push(m);
       const l = linksMsg(i);
       if (l) out.push(l);
-      out.push(funcMsg(i), fxMsg(i), noiseMsg(i));
+      out.push(funcMsg(i), kitMsg(i), fxMsg(i), noiseMsg(i));
     }
     out.push(watchMsg());
     if (withExtra) {
@@ -171,7 +189,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
 
   function reset() {
     full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false;
-    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); funcs.clear(); trackFx.clear(); noise.clear();
+    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); funcs.clear(); kits.clear(); trackFx.clear(); noise.clear();
     for (const s of params) s.clear();
     for (const s of mods) s.clear();
   }
@@ -208,6 +226,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
           if (l) out.push(l);
         }
         if (partAll.has(i) || funcs.has(i)) out.push(funcMsg(i));
+        if (partAll.has(i) || kits.has(i)) out.push(kitMsg(i));
         if (partAll.has(i) || trackFx.has(i)) out.push(fxMsg(i));
         if (partAll.has(i) || noise.has(i)) out.push(noiseMsg(i));
       }
@@ -283,6 +302,9 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         mark();
       } else if (k[2] === 'funcPoints') {
         funcs.add(i);
+        mark();
+      } else if (k[2] === 'drum') {
+        kits.add(i);
         mark();
       } else if (k[2] === 'trackFx') {
         trackFx.add(i);

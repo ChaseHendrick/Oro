@@ -11,6 +11,7 @@
 // Play, seed 1) and ratchets follow src/music/transport.js;
 // arpeggiators need held keys and are not rendered here.
 
+import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
 import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, activeSeq, clamp } from '../core/params.js';
 
 const MIN_GAP = 0.003;        // between a note-off and the next note-on (as the router)
@@ -64,6 +65,15 @@ export function sequencerEvents(state, bars = 4, { parts } = {}) {
       if (step.lock) {
         push(t, { t: 'params', part: p, p: { centerX: clamp(finite(step.lx, 0.5), 0, 1), centerY: clamp(finite(step.ly, 0.5), 0, 1) },
           ramp: clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t) });
+      }
+      // v2.7 a drum kit track plays its lanes instead of its melodic steps
+      if (list[p].drum && list[p].drum.on) {
+        const lanes = Array.isArray(seq.drumLanes) ? seq.drumLanes : [];
+        for (let r = 0; r < KIT_PADS; r++) {
+          const v = finite(lanes[r] && lanes[r][abs % len], 0);
+          if (v > 0) { push(t, { t: 'noteOn', part: p, note: KIT_BASE_NOTE + r, vel: clamp(v, 0.01, 1) }); push(t + 0.05, { t: 'noteOff', part: p, note: KIT_BASE_NOTE + r }); }
+        }
+        continue;
       }
       if (!step.on || !stepPlays(step, PROB_SEED, p, abs)) {
         if (tie !== null) { push(t, { t: 'noteOff', part: p, note: tie }); tie = null; }
