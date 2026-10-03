@@ -15,6 +15,13 @@ explains every feature in detail.
 * **Optional frame-rate cap** (Settings > General > Frame rate): Uncapped (the default), 30,
   60 or 120. It saves battery and heat on laptops; the dot, glides and physics still move by
   the real time that passed, and the sound is unaffected.
+* **A calmer map for photosensitive players.** Fast modulation (a per-note envelope on Morph,
+  Warp or Lift, as in the first scene's bass) used to bounce the whole map several times a
+  second, and the glow pulsed the whole screen with every note. The map's shape now eases
+  into changes (0.2 s, 0.45 s with Reduced motion) and the glow follows the level slowly and
+  over a smaller range, keeping large-area changes under three a second (WCAG 2.3.1). This is
+  only what you see: the sound, and the way a rolling dot moves, are unchanged. Reduced
+  motion set to Off in Settings now also overrides the system setting on the map.
 
 ## 2.0.1 (October 2026)
 

@@ -140,11 +140,43 @@ const ARIA = 'Terrain map. Click or tap the land to move the dot there, or drag 
 const SIZE_DEF = PART_PARAM_MAP.size, ROTATE_DEF = PART_PARAM_MAP.rotate;
 
 function reducedMotionPreferred() {
-  if (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce') return true;
+  const pref = typeof document !== 'undefined' ? document.documentElement.dataset.motion : '';
+  if (pref === 'reduce') return true;
+  if (pref === 'full') return false;
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 }
 
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+// Photosensitivity guard (visual only; the sound is never touched). Fast
+// modulation such as a per-note envelope on Morph can reshape the whole map
+// several times a second, and a level-driven bloom can pulse the whole
+// screen with every note. The map's shape and the scene glow therefore ease
+// in on these time constants, which keep large-area changes well under three
+// a second (WCAG 2.3.1) whatever the patch does. Reduced motion eases more.
+export const CALM = Object.freeze({
+  shapeTau: 0.2, shapeTauReduced: 0.45,    // s: Morph, Warp, Lift, Fold on the map
+  glowRise: 0.22, glowFall: 0.6,           // s: bloom, orbit and terrain glow following the level
+  bloomBase: 0.85, bloomSwing: 0.3,        // bloom strength = base * (bloomBase + bloomSwing * glow)
+  reducedSwing: 0.35,                      // how much of the glow swing reduced motion keeps
+});
+const SHAPE_IDS = ['morph', 'warp', 'lift', 'fold'];
+
+/** One step of the calm shape filter: a one-pole low-pass per shape value. */
+export function calmShapeStep(cur, target, dt, reduced) {
+  const k = 1 - Math.exp(-Math.max(0, dt) / (reduced ? CALM.shapeTauReduced : CALM.shapeTau));
+  for (const id of SHAPE_IDS) {
+    const t = Number(target[id]) || 0;
+    cur[id] = Number.isFinite(cur[id]) ? cur[id] + (t - cur[id]) * k : t;
+  }
+  return cur;
+}
+
+/** One step of the scene glow: follows the output level, slowly. */
+export function calmGlowStep(glow, level, dt) {
+  const tau = level > glow ? CALM.glowRise : CALM.glowFall;
+  return glow + (level - glow) * (1 - Math.exp(-Math.max(0, dt) / tau));
+}
 
 export async function createVisuals(container, { store, engine = null, quality, music: musicIn = null } = {}) {
   if (!container) throw new Error('createVisuals needs a container element');
@@ -284,7 +316,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
   rig.setAutoRotate(store.get('ui.autoRotate') !== 0 && store.get('ui.autoRotate') !== false);
 
   let tele = null, teleAt = -1e9, teleSpin = 0, teleSpinAt = 0;
-  let spinPhase = 0, flowHead = 0, level = 0, levelTarget = 0, time = 0;
+  let spinPhase = 0, flowHead = 0, level = 0, levelTarget = 0, time = 0, glow = 0;
+  const shapeShown = {};
   let switchT = 1;                   // 0..1 progress of a part switch
   const dispOffset = { u: 0, v: 0 }; // decaying display offset after a part switch
   let dotSrc = 'base';               // which source placed the dot this frame (debug)
@@ -1403,8 +1436,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
     live.setTargets(r.params, r.mods, t, r.links);
     live.step(dt, switchT < 1 ? 0.12 : 0.03);
     const L = live.cur;
-    view.setShape(terrain.hasB() ? L.morph : 0, L.warp, L.lift);
-    fields[sel].setShape(terrain.hasB() ? L.morph : 0, L.warp, L.lift);
+    const S = calmShapeStep(shapeShown, L, dt, reduced);
+    view.setShape(terrain.hasB() ? S.morph : 0, S.warp, S.lift);
+    fields[sel].setShape(terrain.hasB() ? L.morph : 0, L.warp, L.lift);   // physics keeps the live shape: the dot moves as before
 
     // ---- physics, glides, writes
     stepSimulation(dt, now);
@@ -1482,6 +1516,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
       levelTarget = Math.min(1, Math.max(t.peak[0] || 0, t.peak[1] || 0));
     } else levelTarget = 0;
     level += (levelTarget - level) * Math.min(1, dt * (levelTarget > level ? 18 : 4));
+    glow = calmGlowStep(glow, level, dt);
+    const glowShown = glow * (reduced ? CALM.reducedSwing : 1);
 
     // ---- orbits: the newest voice (bright), the knobs alone (thin), every voice
     const refNote = trackVoices(voices);
@@ -1512,7 +1548,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const shape = Math.round(num(r.params.pathShape, 0));
     const order = Math.round(num(r.params.pathOrder, 2));
     const bdt = dt * (reduced ? 0.4 : 1);
-    orbit.update(view, shape, order, orbitLive.pathParam, orbitLive, spinPhase, flowHead, level);
+    orbit.update(view, shape, order, orbitLive.pathParam, orbitLive, spinPhase, flowHead, glowShown);
     orbit.updateBase(view, shape, order, baseLive.pathParam, baseLive, spinPhase, baseShow, dt);
     orbit.updateVoices(view, shape, order, voiceSlots, voiceAmps, spinPhase, voiceShow, dt);
     orbit.updateBeads(view, shape, order, orbitLive.pathParam, orbitLive, spinPhase, voices, bdt,
@@ -1541,16 +1577,16 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
     // ---- terrain uniforms
     const u = terrain.uniforms;
-    u.uMorph.value = terrain.hasB() ? L.morph : 0;
-    u.uWarp.value = L.warp;
-    u.uHeight.value = H * displayLift(L.lift);
-    u.uLift.value = L.lift;
-    u.uFold.value = L.fold;
+    u.uMorph.value = terrain.hasB() ? S.morph : 0;
+    u.uWarp.value = S.warp;
+    u.uHeight.value = H * displayLift(S.lift);
+    u.uLift.value = S.lift;
+    u.uFold.value = S.fold;
     u.uStyle.value = styleIndex;
     u.uDot.value.set(dotPos.u, dotPos.v, dotPos.y - ground - BALL_RADIUS * dotScale, 1);
     u.uGhost.value.set(_base.u, _base.v, ghost.a);
     u.uTime.value = time;
-    u.uLevel.value = level;
+    u.uLevel.value = glowShown;
     u.uFogStart.value = camera.position.distanceTo(controls.target) * 0.8;
     // footprint: inverse of the path transform's linear part
     {
@@ -1604,7 +1640,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     }
 
     // ---- post
-    if (bloom && bloom.enabled) bloom.strength = atm.bloomStrength * (0.8 + 0.7 * level);
+    if (bloom && bloom.enabled) bloom.strength = atm.bloomStrength * (CALM.bloomBase + CALM.bloomSwing * glowShown);
     if (!draw) return;
     renderer.info.reset();
     composer.render(dt);

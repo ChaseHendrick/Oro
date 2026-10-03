@@ -878,7 +878,7 @@ Open **Settings** with the gear button or the **,** key.
   **Light**. The theme button in the top bar cycles through the same three. When
   Orograph runs on hendrickresearch.com and you have not chosen a theme in Orograph yet, it
   follows the website's own Appearance setting.
-* **Reduce motion**: calms animations. System follows your computer's setting.
+* **Reduce motion**: calms animations. System follows your computer's setting. The map always eases into shape changes and its glow never pulses fast (so fast modulation cannot strobe the screen); with Reduce motion on it eases more and the glow barely moves.
 * **Show tips**: hover hints and the map hint.
 * **Visual quality** for the 3D map:
 
