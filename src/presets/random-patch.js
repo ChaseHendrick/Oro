@@ -124,7 +124,7 @@ export function randomPatch(rng = Math.random) {
   const arch = ARCHETYPES[kind];
   const terrainIds = TERRAINS.map((t, i) => (t.id === 'user' ? -1 : i)).filter(i => i >= 0);
   // Scan and Scribble are specialist orbits; keep them rarer.
-  const pathIds = PATHS.map((p, i) => i).filter(i => PATHS[i].id !== 'scan' || rng() < 0.3);
+  const pathIds = PATHS.map((p, i) => i).filter(i => !PATHS[i].hidden && (PATHS[i].id !== 'scan' || rng() < 0.3));
   const a = r.pick(terrainIds);
   let b = r.pick(terrainIds);
   if (b === a) b = terrainIds[(terrainIds.indexOf(a) + 1 + r.int(0, terrainIds.length - 2)) % terrainIds.length];

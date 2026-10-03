@@ -4,8 +4,8 @@
 import {
   MAX_PARTS, MIN_PARTS, DEFAULT_PARTS, MAX_PATTERNS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
   ARP_RHYTHMS, ENV_MODES, MOD_FIELDS, LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
-  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION, RATCHET_MAX,
-  defaultState, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
+  DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION, RATCHET_MAX, CHAIN_MAX, CHAIN_REPEATS_MAX,
+  defaultState, stepPlocks, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
 } from './params.js';
 import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
@@ -16,6 +16,9 @@ import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from './smart.js';
 import { sanitizeChord } from '../music/chord-trigger.js';
+import { sanitizeGhost } from '../music/ghost-data.js';
+import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
+import { sanitizeOperator } from '../dsp/damage.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -135,6 +138,9 @@ export function sanitizePattern(src, n = 1) {
     const ratchet = Math.round(clamp(num(st.ratchet, 1), 1, RATCHET_MAX));
     if (prob < 1) step.prob = prob;
     if (ratchet > 1) step.ratchet = ratchet;
+    // v2.9 parameter locks, absent unless the step has one
+    const plocks = stepPlocks(st);
+    if (plocks) step.plocks = plocks;
     out.steps.push(step);
   }
   return out;
@@ -159,6 +165,24 @@ function sanitizePatterns(p) {
   return out;
 }
 
+/**
+ * v2.9 song mode chain of a track with `n` patterns: { on, entries: [{ pattern, repeats }] }
+ * (entries naming a missing pattern are dropped), or null when it is off and empty.
+ */
+export function sanitizeChain(src, n) {
+  if (!src || typeof src !== 'object') return null;
+  const entries = [];
+  for (const e of Array.isArray(src.entries) ? src.entries : []) {
+    if (entries.length >= CHAIN_MAX) break;
+    if (!e || typeof e !== 'object') continue;
+    const k = Math.round(num(e.pattern, -1));
+    if (!(k >= 0 && k < n)) continue;
+    entries.push({ pattern: k, repeats: Math.round(clamp(num(e.repeats, 1), 1, CHAIN_REPEATS_MAX)) });
+  }
+  const on = num(src.on, 0) ? 1 : 0;
+  return on || entries.length ? { on, entries } : null;
+}
+
 export function sanitizePart(src, i) {
   const base = defaultPart(i);
   const p = src || {};
@@ -174,6 +198,8 @@ export function sanitizePart(src, i) {
     seqOn: num(p.seqOn, num(p.seq?.enabled, base.seqOn)) ? 1 : 0,
     patterns,
     activePattern: Math.round(clamp(num(p.activePattern, 0), 0, patterns.length - 1)),
+    // v2.9 song mode, absent until used
+    ...(sanitizeChain(p.chain, patterns.length) ? { chain: sanitizeChain(p.chain, patterns.length) } : {}),
     arp: {
       mode: Math.round(clamp(num(p.arp?.mode, base.arp.mode), 0, 6)),
       rate: Math.round(clamp(num(p.arp?.rate, base.arp.rate), 0, 5)),
@@ -210,7 +236,14 @@ export function sanitizePart(src, i) {
     ...(sanitizeSmart(p.smart) ? { smart: sanitizeSmart(p.smart) } : {}),
     // v2.8 chord trigger, absent until it is set (absent = off)
     ...(p.chord && typeof p.chord === 'object' ? { chord: sanitizeChord(p.chord) } : {}),
+    // v2.9 ghost replay, absent until one is recorded
+    ...ghostField(p.ghost),
   };
+}
+
+function ghostField(src) {
+  const g = src ? sanitizeGhost(src) : null;
+  return g ? { ghost: g } : {};
 }
 
 /**
@@ -232,10 +265,16 @@ export function migrateState(src) {
   const count = list.length >= MIN_PARTS && (num(src.version, 0) >= 4 || list.length > DEFAULT_PARTS) ? list.length : DEFAULT_PARTS;
   const parts = Array.from({ length: count }, (_, i) => sanitizePart(list[i] || null, i));
   uniqueIds(parts);
+  // v2.9 microtuning, absent for the default tuning
+  const tuning = sanitizeTuning(src.tuning);
+  // v2.9 Operator panel (damage, quirks, vintage), absent while everything is at its default
+  const operator = sanitizeOperator(src.operator);
   return {
     version: STATE_VERSION,
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
     parts,
+    ...(tuning ? { tuning } : {}),
+    ...(operator ? { operator } : {}),
   };
 }
 
@@ -249,5 +288,8 @@ export function migrateScene(src) {
   const out = migrateState(src);
   const pedalPresets = src && typeof src === 'object' ? sanitizePedalPresets(src.pedalPresets) : null;
   if (pedalPresets) out.pedalPresets = pedalPresets;
+  // v2.9: a scene that records its tuning keeps the record (12-TET included);
+  // older scenes have none and leave the current tuning alone when loaded
+  if (src && typeof src === 'object' && src.tuning && typeof src.tuning === 'object') out.tuning = tuningRecord(src.tuning);
   return out;
 }

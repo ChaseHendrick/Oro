@@ -32,7 +32,8 @@ function initFor(st) {
   init.push({ t: 'watch', part: -1 });
   return init;
 }
-const timed = (evs) => evs.map(e => ({ ...e.msg, time: e.time }));
+// notes carry the sequencer's tag, as the router sends them (a frozen part ignores them)
+const timed = (evs) => evs.map(e => ({ ...e.msg, time: e.time, ...(e.msg.t === 'noteOn' || e.msg.t === 'noteOff' ? { tag: 'seq' } : {}) }));
 
 function liveDSP(st, bars) {
   const dsp = new OroDSP(SR);
@@ -190,5 +191,38 @@ describe('freeze', () => {
     const l0 = freezeSignature(locked, st.global);
     locked.params.centerX = 0.9;
     expect(sameSignature(freezeSignature(locked, st.global), l0)).toBe(true);
+  });
+});
+
+describe('v2.9 playing live over a frozen track', () => {
+  // a silent loop isolates the live notes
+  const silent = { L: new Float32Array(SR), R: new Float32Array(SR), frames: SR, beats: 2 };
+
+  it('keys and MIDI play the track live; its sequencer and arp notes stay in the loop', () => {
+    const st = session();
+    const live = frozenDSP(st, silent);
+    render(live, 0.05);
+    live.handleMessage({ t: 'noteOn', part: 0, note: 60, vel: 0.9 });          // a key, played now
+    const a = render(live, 0.3);
+    expect(rms(a.L)).toBeGreaterThan(0.005);
+    expect(allFinite(a.L)).toBe(true);
+
+    for (const tag of ['seq', 'arp']) {
+      const seq = frozenDSP(st, silent);
+      render(seq, 0.05);
+      seq.handleMessage({ t: 'noteOn', part: 0, note: 60, vel: 0.9, time: seq.lastTime + 0.01, tag });
+      const b = render(seq, 0.3);
+      expect(rms(b.L)).toBe(0);
+    }
+  });
+
+  it('adds the loop under live notes instead of replacing them', () => {
+    const st = session();
+    const tone = { L: new Float32Array(SR).fill(0.1), R: new Float32Array(SR).fill(0.1), frames: SR, beats: 2 };
+    const loopOnly = frozenDSP(st, tone); render(loopOnly, 0.05);
+    const both = frozenDSP(st, tone); render(both, 0.05);
+    both.handleMessage({ t: 'noteOn', part: 0, note: 60, vel: 0.9 });
+    const a = render(loopOnly, 0.3), b = render(both, 0.3);
+    expect(rms(b.L)).toBeGreaterThan(rms(a.L) * 1.05);
   });
 });

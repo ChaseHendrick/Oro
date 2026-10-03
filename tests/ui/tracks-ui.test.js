@@ -171,3 +171,95 @@ describe('sequencer pattern picker', () => {
     seq.dispose();
   });
 });
+
+describe('v2.9 song mode, Lock row and Capture in the Seq tab', () => {
+  async function setup() {
+    const { createEmitter } = await import('../../src/music/emitter.js');
+    const { ctx, store } = makeCtx();
+    const transport = createEmitter();
+    let playing = true;
+    transport.isPlaying = () => playing;
+    ctx.music = { transport, capture: vi.fn(() => ({ ok: true, message: 'Captured 3 notes into Pattern 1 (16 steps of 1/16).' })) };
+    const seq = createSeqPanel(ctx);
+    dom.flush();
+    return { ctx, store, seq, transport, stop: () => { playing = false; } };
+  }
+  const ev = (type, extra = {}) => ({ type, preventDefault() {}, stopPropagation() {}, ...extra });
+
+  it('edits the chain and highlights the entry playing', async () => {
+    const { store, seq, transport } = await setup();
+    const add = seq.el.querySelector('button[aria-label="Add this pattern to the chain"]');
+    add.click();
+    store.set('parts.0.patterns', [...store.get('parts.0.patterns'), { ...store.get('parts.0.patterns.0'), id: 'p2', name: 'Pattern 2' }]);
+    store.set('parts.0.activePattern', 1);
+    add.click();
+    dom.flush();
+    expect(store.get('parts.0.chain')).toEqual({ on: 0, entries: [{ pattern: 0, repeats: 1 }, { pattern: 1, repeats: 1 }] });
+    const list = seq.el.querySelector('ol.seq-chain');
+    expect(list.children.map(li => li.querySelector('button.seq-chain-name').textContent)).toEqual(['Pattern 1', 'Pattern 2']);
+    const reps = list.children[0].querySelector('select');
+    reps.value = '3';
+    list.dispatchEvent(ev('change', { target: reps }));
+    const down = list.children[0].querySelector('button[aria-label="Move entry 1 later"]');
+    list.dispatchEvent(ev('click', { target: { closest: () => down } }));
+    expect(store.get('parts.0.chain.entries')).toEqual([{ pattern: 1, repeats: 1 }, { pattern: 0, repeats: 3 }]);
+    dom.flush();
+    transport.emit('step', { part: 0, step: 2, time: 0, entry: 1, pattern: 0 });
+    dom.flush();
+    expect(list.children.map(li => li.classList.contains('is-play'))).toEqual([false, true]);
+    expect(list.children[1].getAttribute('aria-current')).toBe('step');
+    // pattern 0 plays while pattern 2 (index 1) is shown: no step playhead
+    expect(seq.el.querySelectorAll('div.seq-col').filter(c => c.classList.contains('is-play'))).toHaveLength(0);
+    const remove = list.children[0].querySelector('button[aria-label="Remove entry 1"]');
+    list.dispatchEvent(ev('click', { target: { closest: () => remove } }));
+    expect(store.get('parts.0.chain.entries')).toEqual([{ pattern: 0, repeats: 3 }]);
+    seq.dispose();
+  });
+
+  it('sets, changes and clears a parameter lock without moving the knob', async () => {
+    const { store, seq } = await setup();
+    store.set('parts.0.params.cutoff', 2000);
+    dom.flush();
+    const cell = seq.el.querySelectorAll('span.seq-plock')[4];
+    cell.dispatchEvent(ev('pointerdown', { pointerType: 'mouse', button: 0, pointerId: 1, clientY: 0 }));
+    cell.dispatchEvent(ev('pointerup', { pointerId: 1 }));
+    expect(store.get('parts.0.patterns.0.steps.4.plocks')).toEqual({ cutoff: 2000 });
+    cell.dispatchEvent(ev('keydown', { key: 'ArrowUp' }));
+    expect(store.get('parts.0.patterns.0.steps.4.plocks.cutoff')).toBeGreaterThan(2000);
+    expect(store.get('parts.0.params.cutoff')).toBe(2000);
+    dom.flush();
+    expect(cell.classList.contains('is-set')).toBe(true);
+    cell.dispatchEvent(ev('keydown', { key: 'Delete' }));
+    expect('plocks' in store.get('parts.0.patterns.0.steps.4')).toBe(false);
+    seq.dispose();
+  });
+
+  it('Capture shows what was captured', async () => {
+    const { ctx, seq } = await setup();
+    const btn = seq.el.querySelector('button.seq-capture-btn');
+    btn.click();
+    expect(ctx.music.capture).toHaveBeenCalledWith(0);
+    expect(seq.el.querySelector('p.seq-capture-status').textContent).toBe('Captured 3 notes into Pattern 1 (16 steps of 1/16).');
+    seq.dispose();
+  });
+});
+
+describe('pattern feel sliders (regression: they used to write parts.N.seq.*, which nothing reads)', () => {
+  it('Dot glide and Humanize show and follow the active pattern', () => {
+    const { ctx, store } = makeCtx();
+    store.set('ui.selectedPart', 1);
+    store.set('parts.1.patterns.0.lockGlide', 0.2);
+    store.set('parts.1.patterns.0.humanTime', 0.75);
+    store.set('parts.1.patterns.0.humanVel', 0.4);
+    const seq = createSeqPanel(ctx);
+    dom.flush();
+    const now = (label) => Number(seq.el.querySelectorAll('[role="slider"]').find(e => e.getAttribute('aria-label') === label).getAttribute('aria-valuenow'));
+    expect(now('Humanize timing')).toBeCloseTo(0.75, 3);
+    expect(now('Humanize velocity')).toBeCloseTo(0.4, 3);
+    expect(now('Dot lock glide time')).toBeCloseTo(0.2, 3);
+    store.set('parts.1.patterns.0.humanTime', 0.25);
+    dom.flush();
+    expect(now('Humanize timing')).toBeCloseTo(0.25, 3);
+    expect(store.get('parts.1.seq')).toBeUndefined();
+  });
+});

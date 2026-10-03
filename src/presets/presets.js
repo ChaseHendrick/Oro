@@ -8,6 +8,8 @@ import {
   PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, SEND_PARAM_IDS, defaultPart,
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
+import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
+import { sanitizeOperator } from '../dsp/damage.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from '../core/smart.js';
 import { createEmitter } from '../music/emitter.js';
@@ -78,6 +80,36 @@ export function sanitizePatch(src) {
   // Optional pedal presets (v1.1), sent on load only when the rig allows it.
   const pedalPresets = sanitizePedalPresets(src.pedalPresets);
   if (pedalPresets) patch.pedalPresets = pedalPresets;
+  return patch;
+}
+
+/**
+ * The sound of part object `cur` as a patch (what Save stores, without an id):
+ * no mute / solo, pedal routing or send amounts, which belong to the mix.
+ * v2.9 postcards and share links send this.
+ */
+export function partPatch(cur, { name, category = 'User', author = '', folder = '', tags = [] } = {}) {
+  const src = cur || defaultPart(0);
+  const params = { ...src.params };
+  delete params.mute;
+  delete params.solo;
+  for (const id of PEDAL_PARAM_IDS) delete params[id];
+  for (const id of SEND_PARAM_IDS) delete params[id];
+  const patch = {
+    name: String(name ?? src.patchName ?? 'My patch').slice(0, 60),
+    category, author, folder,
+    trackFx: JSON.parse(JSON.stringify(src.trackFx ?? null)),
+    noiseRecording: src.noiseRecording ? { ...src.noiseRecording } : null,
+    tags,
+    params,
+    mods: compactMods(src.mods),
+    links: sanitizeLinks(src.links),
+    // A deep copy: the dot holds arrays (waypoints) that later edits to the part must not reach.
+    dot: JSON.parse(JSON.stringify(src.dot || {})),
+  };
+  if (src.userTerrain && (src.userTerrain.A || src.userTerrain.B)) patch.userTerrain = { ...src.userTerrain };
+  const smart = sanitizeSmart(src.smart);
+  if (smart) patch.smart = smart;
   return patch;
 }
 
@@ -242,29 +274,16 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     // Saving under the name of one of your own patches updates it in place.
     const existing = user.patches.find(x => x.name === clean);
     const from = allPatches().find(x => x.name === cur.patchName);
-    const params = { ...cur.params };
-    delete params.mute;
-    delete params.solo;
-    for (const id of PEDAL_PARAM_IDS) delete params[id];
-    for (const id of SEND_PARAM_IDS) delete params[id];
     const patch = {
       id: existing ? existing.id : newId(),
-      name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),
-      category: category && typeof category === 'string' ? category.slice(0, 30) : (from ? from.category : 'User'),
-      author: String(author ?? existing?.author ?? '').trim().slice(0, 60),
-      folder: String(folder ?? existing?.folder ?? '').trim().slice(0, 80),
-      trackFx: JSON.parse(JSON.stringify(cur.trackFx)),
-      noiseRecording: cur.noiseRecording ? { ...cur.noiseRecording } : null,
-      tags: from ? (from.tags || []).slice() : [],
-      params,
-      mods: compactMods(cur.mods),
-      links: sanitizeLinks(cur.links),
-      // A deep copy: the dot holds arrays (waypoints) that later edits to the part must not reach.
-      dot: JSON.parse(JSON.stringify(cur.dot || {})),
+      ...partPatch(cur, {
+        name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),
+        category: category && typeof category === 'string' ? category.slice(0, 30) : (from ? from.category : 'User'),
+        author: String(author ?? existing?.author ?? '').trim().slice(0, 60),
+        folder: String(folder ?? existing?.folder ?? '').trim().slice(0, 80),
+        tags: from ? (from.tags || []).slice() : [],
+      }),
     };
-    if (cur.userTerrain && (cur.userTerrain.A || cur.userTerrain.B)) patch.userTerrain = { ...cur.userTerrain };
-    const smart = sanitizeSmart(cur.smart);
-    if (smart) patch.smart = smart;
     const pp = pedalPresets === undefined ? sanitizePedalPresets(existing && existing.pedalPresets) : sanitizePedalPresets(pedalPresets);
     if (pp) patch.pedalPresets = pp;
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;
@@ -319,6 +338,17 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const scene = findScene(idOrIndex);
     if (!scene) return false;
     const state = migrateState(scene);
+    // v2.9: a scene without a tuning record (saved before 2.9) keeps the current tuning
+    if (!(scene.tuning && typeof scene.tuning === 'object')) {
+      const cur = sanitizeTuning(store.get('tuning'));
+      if (cur) state.tuning = cur;
+    }
+    // v2.9: Operator switches belong to the machine, like a cabinet's DIP
+    // switches: a scene only changes them when it was saved with some on
+    if (!(scene.operator && typeof scene.operator === 'object')) {
+      const op = sanitizeOperator(store.get('operator'));
+      if (op) state.operator = op;
+    }
     // The scene's tracks replace the current ones: the engine fades the old
     // tracks out while the new ones start (see REPLACE_TRACKS in tracks.js).
     store.batch(() => {
@@ -340,6 +370,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const existing = user.scenes.find(s => s.name === clean);
     const scene = {
       ...migrateState(store.serialize()),
+      tuning: tuningRecord(store.get('tuning')),
       id: existing ? existing.id : newId(),
       name: existing ? clean : uniqueName(clean, FACTORY_SCENE_LIST),
       description: String(description || '').slice(0, 400),
@@ -399,7 +430,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       const s = id != null ? findScene(id) : null;
       data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: s ? [stripScene(s)] : user.scenes.map(stripScene) };
     } else if (kind === 'current') {
-      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...migrateState(store.serialize()), name: 'Current session', description: '' }] };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...migrateState(store.serialize()), tuning: tuningRecord(store.get('tuning')), name: 'Current session', description: '' }] };
     } else {
       data = { format: FORMAT, version: PRESET_VERSION, patches: user.patches.map(stripPatch), scenes: user.scenes.map(stripScene) };
     }

@@ -22,6 +22,8 @@ import { libraryPcm, LIBRARY_PCM_RATE } from '../dsp/drum-library.js';
 import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { decodeNoiseRecording } from '../dsp/noise-recording.js';
+import { sanitizeTuning, tuningTable, tuningFollowsKey } from '../dsp/tuning.js';
+import { sanitizeOperator } from '../dsp/damage.js';
 
 const MOD_SET = new Set(MOD_PARAM_IDS);
 
@@ -75,6 +77,12 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   let globalAll = false;
   const globals = new Set();
   let watchDirty = false;
+  // v2.9 microtuning: `tuningKey` names the table the DSP has ('default' = none)
+  let tuningDirty = false;
+  let tuningKey = 'default';
+  // v2.9 Operator panel: {t:'operator', cfg} (cfg null = everything off); `opKey` names what the DSP has
+  let opDirty = false;
+  let opKey = 'null';
   let playingDirty = false;
   let lastPlaying = store.get('ui.playing') ? 1 : 0;
   let flushes = 0, posts = 0;
@@ -172,6 +180,18 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
 
   const tracksMsg = () => ({ t: 'tracks', count: partCount(store) });
 
+  /** The session's tuning, the global Key it may follow and a key naming the resulting table. */
+  function tuningState() {
+    const src = store.get('tuning');
+    const t = sanitizeTuning(src);
+    if (!t) return { t: null, key: 'default', root: 0 };
+    const root = Math.round(Number(store.get('global.scaleRoot')) || 0);
+    return { t, root, key: JSON.stringify(t) + (tuningFollowsKey(t) ? `@${root}` : '') };
+  }
+  const tuningMsg = (st) => ({ t: 'tuning', hz: st.t ? tuningTable(st.t, st.root) : null });
+
+  const operatorCfg = () => sanitizeOperator(store.get('operator'));
+
   const ALL_PARAM_IDS = PART_PARAMS.map(p => p.id);
   const ALL_GLOBAL_IDS = GLOBAL_PARAMS.map(p => p.id);
 
@@ -184,6 +204,12 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const out = [tracksMsg()];
     const g = globalMsg(ALL_GLOBAL_IDS);
     if (g) out.push(g);
+    // a fresh DSP plays the default tuning, so only a custom one is sent
+    const tu = tuningState();
+    if (tu.t) out.push(tuningMsg(tu));
+    // likewise the Operator panel, only when a session has changed it
+    const op = operatorCfg();
+    if (op) out.push({ t: 'operator', cfg: op });
     const n = partCount(store);
     for (let i = 0; i < n; i++) {
       const p = partParams(i, ALL_PARAM_IDS);
@@ -202,7 +228,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   }
 
   function reset() {
-    full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false;
+    full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false; tuningDirty = false; opDirty = false;
     partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); funcs.clear(); kits.clear(); trackFx.clear(); noise.clear();
     for (const s of params) s.clear();
     for (const s of mods) s.clear();
@@ -215,8 +241,24 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     let globalChanged = null;
     if (full) {
       out.push(...snapshot(fullExtra));
+      const tu = tuningState();
+      // a loaded session without a tuning resets one the DSP still has
+      if (!tu.t && tuningKey !== 'default') out.push(tuningMsg(tu));
+      tuningKey = tu.key;
+      const op = operatorCfg();
+      if (!op && opKey !== 'null') out.push({ t: 'operator', cfg: null });
+      opKey = JSON.stringify(op);
       globalChanged = ALL_GLOBAL_IDS;
     } else {
+      if (tuningDirty) {
+        const tu = tuningState();
+        if (tu.key !== tuningKey) { out.push(tuningMsg(tu)); tuningKey = tu.key; }
+      }
+      if (opDirty) {
+        const op = operatorCfg();
+        const key = JSON.stringify(op);
+        if (key !== opKey) { out.push({ t: 'operator', cfg: op }); opKey = key; }
+      }
       if (globalAll || globals.size) {
         const ids = globalAll ? ALL_GLOBAL_IDS : [...globals];
         const g = globalMsg(ids);
@@ -331,9 +373,12 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     }
     if (head === 'global') {
       if (k.length === 1) globalAll = true; else globals.add(k[1]);
+      if (k.length === 1 || k[1] === 'scaleRoot') tuningDirty = true;
       mark();
       return;
     }
+    if (head === 'tuning') { tuningDirty = true; mark(); return; }
+    if (head === 'operator') { opDirty = true; mark(); return; }
     if (head === 'ui') {
       if (k.length === 1 || k[1] === 'selectedPart') { watchDirty = true; mark(); }
       if (k.length === 1 || k[1] === 'playing') { playingDirty = true; mark(); }

@@ -3,6 +3,52 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.9.0 (October 2026)
+
+**Sequencing**
+* **Song mode.** Chain a track's patterns (A A B C...) with repeats, and the track plays
+  the whole arrangement.
+* **Parameter locks.** Any step can set its own value for any sound control, in a new
+  Lock row of the step grid.
+* **Capture.** Oro keeps listening while you play; press Capture to turn what you just
+  played into the pattern, even if you weren't recording.
+* **MIDI files.** Export a pattern or the whole session as a .mid (with arpeggiators and
+  the chord trigger), or import one; chords can keep the highest or lowest note or split
+  across tracks, and accents survive the round trip.
+* **Microtuning.** Built-in tunings (just intonation, Pythagorean, meantone, Werckmeister
+  III, 19, 24 and 31 equal) and Scala .scl and .kbm files, with a reference pitch. Pitch
+  bend and Tune move through the tuning's own notes.
+* **Ghost replay.** Record a performance on a track (notes, knob moves and the dot's path)
+  and play it back as a ghost while you play something else.
+
+**Sharing**
+* **Postcards.** A 1080 by 1080 picture of your terrain with the sound hidden inside the
+  file, plus a link that loads the sound in Oro on the web. Share to X, Facebook, Bluesky,
+  Threads, Reddit and LinkedIn, or through your phone's share sheet.
+
+**The Operator panel** (Settings > Operator), all off until you turn it on
+* **Drop damage and water damage:** crackle, cutouts, a knocked-out-of-tune oscillator,
+  a muffled and fizzing sound, mains hum and short-outs. Water dries out unless it stays
+  wet; Repair fixes both. On phones a hard jolt can count as a drop.
+* **Quirks:** Glitch, Slowdown and a Kill screen. **Vintage:** a 12-bit early-sampler sound.
+  **Free Play:** turn it off and Oro wants a coin (press C).
+* **Service:** test tones and a MIDI monitor. **Bookkeeping:** play stats, badges, and how
+  many secrets you have found.
+
+**Play**
+* **Golf:** 9 or 18 holes, or the driving range, rolling the marble across the terrain.
+* **Seed from a word:** any word always gives the same terrain and sound.
+* **Day and night** colours that follow your local time, and **a pet** that lives on the map.
+* There are secrets. Bookkeeping keeps count.
+
+**Fixes**
+* The Dot glide and Humanize sliders now change playback. They saved their values where
+  the sequencer never read them (Dot glide since 1.1.0, Humanize since 2.6.0).
+* Keys and MIDI play a frozen track live on top of its loop.
+* Smart controls can reach envelope times and every other sound setting.
+* Undo can step back through a looper stretch, and the older overdubs after it.
+* Scenes keep your current tuning and Operator switches unless they were saved with them.
+
 ## 2.8.0 (October 2026)
 
 * **Sound map** for drum kits: 128 drum sounds made by Oro, plus your sliced samples, laid

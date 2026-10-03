@@ -37,6 +37,13 @@ import { openHelp } from './help.js';
 import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
 import { icon } from './icons.js';
+import { startOperatorHost } from './operator.js';
+import { installEggs } from './eggs.js';
+import { createCoinSlot } from './coin-slot.js';
+import { installGhost } from './ghost-ui.js';
+import { installPostcards } from './postcard.js';
+
+import { createFunFeatures } from './fun-features.js';
 
 function emitter() {
   const map = new Map();
@@ -283,6 +290,34 @@ export function createUI(root, modules = {}) {
     ctx.looper = null;
   }
 
+  // v2.9 secrets, badges and the coin slot (Free Play off).
+  ctx.eggs = null;
+  ctx.coins = null;
+  try {
+    ctx.eggs = installEggs(ctx);
+    scope.add(ctx.eggs.dispose);
+  } catch (err) {
+    console.warn('[ui] secrets are unavailable', err);
+    ctx.eggs = null;
+  }
+  try {
+    ctx.coins = createCoinSlot(ctx);
+    scope.add(ctx.coins.dispose);
+  } catch (err) {
+    console.warn('[ui] the coin slot is unavailable', err);
+    ctx.coins = null;
+  }
+
+  // v2.9 Operator panel: Real drops, the on-screen damage hint and Bookkeeping run with Settings closed.
+  ctx.operator = null;
+  try {
+    ctx.operator = startOperatorHost(ctx);
+    scope.add(ctx.operator.dispose);
+  } catch (err) {
+    console.warn('[ui] the operator panel is unavailable', err);
+    ctx.operator = null;
+  }
+
   // v2.8 Freeze: per-track loops played instead of the voices. The loop is
   // rendered from the pattern alone (keys held for an arp are not part of it).
   ctx.freeze = null;
@@ -293,19 +328,14 @@ export function createUI(root, modules = {}) {
       scope.add(fz.dispose);
       const trackName = (i) => store.get(`parts.${i}.name`) || `Track ${i + 1}`;
       fz.on('unfrozen', ({ part, reason }) => { if (reason === 'edit') toast(`${trackName(part)} is live again: its sound changed`, { kind: 'info' }); });
-      // A frozen track plays its loop, not the keys: say so once per freeze.
-      const told = new Set();
-      fz.on('change', () => { for (const i of [...told]) if (!fz.isFrozen(i)) told.delete(i); });
-      if (music && music.router) scope.add(listen(music.router, 'sched', (ev) => {
-        if (!ev || !ev.on || ev.source === 'seq' || ev.source === 'arp' || !fz.isFrozen(ev.part) || told.has(ev.part)) return;
-        told.add(ev.part);
-        toast(`${trackName(ev.part)} is frozen, so it plays its loop and not the keys`, { kind: 'info', detail: 'Unfreeze it (the snowflake in Mix, or the track menu) to play it live.' });
-      }));
     } else fz.dispose();
   } catch (err) {
     console.warn('[ui] freeze is unavailable', err);
     ctx.freeze = null;
   }
+
+  // v2.9 ghost replay (the Seq tab and the track menu use ctx.ghost)
+  try { installGhost(ctx, scope); } catch (err) { console.warn('[ui] ghost replay is unavailable', err); ctx.ghost = null; }
 
   ctx.learn = {
     start(target, label, onEnd) {
@@ -383,6 +413,7 @@ export function createUI(root, modules = {}) {
   };
   const topbar = safely('top bar', () => createTopbar(ctx, topbarEl));
   if (topbar) scope.add(topbar.dispose);
+  ctx.viewport = viewport;
   const overlay = safely('viewport overlay', () => createViewportOverlay(ctx, viewport));
   if (overlay) scope.add(overlay.dispose);
   const mapPanel = safely('map panel', () => createMapPanel(ctx, mapEl));
@@ -390,6 +421,8 @@ export function createUI(root, modules = {}) {
   const dock = safely('dock', () => createDock(ctx, dockEl));
   if (dock) scope.add(dock.dispose);
   piano = safely('keyboard', () => createPiano(ctx));
+  const funFeatures = safely('map extras', () => createFunFeatures(ctx));
+  if (funFeatures) scope.add(funFeatures.dispose);
   if (piano) {
     keysEl.append(piano.el, piano.bar);
     scope.add(piano.dispose);
@@ -521,6 +554,9 @@ export function createUI(root, modules = {}) {
       if (engine.context.state === 'running') store.set('ui.audioStarted', 1, { source: 'engine' });
     });
   }
+
+  // v2.9 postcards: ctx.openPostcard, share links (#p=...) and postcard drops on the 3D view
+  try { installPostcards(ctx, scope, viewport); } catch (err) { console.warn('[ui] postcards are unavailable', err); }
 
   root.classList.add('is-ready');
   applyPartColours();

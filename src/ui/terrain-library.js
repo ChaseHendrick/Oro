@@ -4,6 +4,7 @@ import { h, setText } from './dom.js';
 import { openPopover } from './layers.js';
 import { TERRAIN_LIBRARY, TERRAIN_LIBRARY_CATEGORIES, searchTerrainLibrary, terrainLibraryPng } from '../dsp/terrain-library.js';
 import { bytesToBase64, readTerrainFile, addUserTerrain } from '../audio/importers.js';
+import { has } from '../core/fun.js';
 
 const thumbnails = new Map();
 const PAGE_SIZE = 16;
@@ -50,7 +51,8 @@ export function openTerrainLibrary(ctx, anchor, slot) {
   }
   function render(reset = false) {
     if (reset) page = 0;
-    const all = searchTerrainLibrary(search.value, category.value), pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+    // v2.9 the Cabinet appears once its secret is found (src/ui/eggs.js)
+    const all = searchTerrainLibrary(search.value, category.value, { hidden: has('secret', 'konami') }), pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
     page = Math.min(page, pages - 1);
     const visible = all.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), gen = ++generation;
     const selected = ctx.store.get(`parts.${part}.userTerrain.${slot}`)?.libraryId;

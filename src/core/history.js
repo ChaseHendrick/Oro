@@ -45,16 +45,19 @@ export function describeEdit(path, meta = {}) {
   if (meta.source === 'scene') return 'Load scene';
   if (meta.source === 'preset') return 'Load patch';
   if (meta.source === 'import') return 'Import';
+  if (meta.source === 'capture') return 'Capture';
   const k = String(path || '').split('.');
   if (k[0] === 'global' && k[1]) return GLOBAL_PARAM_MAP[k[1]]?.label || 'Global setting';
   if (k[0] === 'parts' && k.length >= 2) {
     const track = `track ${Number(k[1]) + 1}`;
     if (k.length === 2) return `Track ${Number(k[1]) + 1}`;
     if (k[2] === 'params' && k[3]) return `${PART_PARAM_MAP[k[3]]?.label || k[3]}, ${track}`;
-    const names = { mods: 'Modulation', links: 'Links', patterns: 'Sequencer', drum: 'Drum kit', dot: 'Dot', trackFx: 'Track effects', funcPoints: 'Function', userTerrain: 'Terrain', arp: 'Arpeggiator', name: 'Rename', color: 'Colour', smart: 'Smart controls' };
+    const names = { mods: 'Modulation', links: 'Links', patterns: 'Sequencer', drum: 'Drum kit', dot: 'Dot', trackFx: 'Track effects', funcPoints: 'Function', chain: 'Song mode', userTerrain: 'Terrain', arp: 'Arpeggiator', name: 'Rename', color: 'Colour', smart: 'Smart controls' };
     return `${names[k[2]] || 'Edit'}, ${track}`;
   }
   if (k[0] === 'parts') return 'Tracks';
+  if (k[0] === 'tuning') return 'Tuning';
+  if (k[0] === 'operator') return 'Operator panel';
   return 'Edit';
 }
 

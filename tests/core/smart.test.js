@@ -55,11 +55,14 @@ describe('smart control mapping math', () => {
     expect(smartTargetValue({ id: 'nope', min: 0, max: 1 }, 0.5)).toBeNaN();
   });
 
-  it('accepts only modulatable parameters as targets', () => {
+  it('accepts every sound setting as a target, envelope times included, but not the mix controls', () => {
     expect(isSmartTarget('cutoff')).toBe(true);
     expect(isSmartTarget('filter2Cutoff')).toBe(true);
-    expect(isSmartTarget('attack')).toBe(false);
+    expect(isSmartTarget('attack')).toBe(true);
+    expect(isSmartTarget('release')).toBe(true);
     expect(isSmartTarget('mute')).toBe(false);
+    expect(isSmartTarget('solo')).toBe(false);
+    expect(isSmartTarget('pedalSend')).toBe(false);
     expect(smartTargetLabel('filter2Cutoff')).toBe('Filter 2 cutoff');
     expect(smartTargetLabel('cutoff')).toBe('Cutoff');
   });
@@ -78,11 +81,11 @@ describe('smart controls in saved state', () => {
     for (const p of old.parts) expect('smart' in p).toBe(false);
   });
 
-  it('sanitizes: drops unknown, non-modulatable, repeated and extra targets and clamps', () => {
+  it('sanitizes: drops unknown, non-target, repeated and extra targets and clamps', () => {
     const src = { knobs: [
       { name: '  Grit  ', value: 3, maps: [
         { id: 'drive', min: -1, max: 2, curve: 9 },
-        { id: 'attack', min: 0, max: 1 },
+        { id: 'mute', min: 0, max: 1 },
         { id: 'nope', min: 0, max: 1 },
         { id: 'drive', min: 0.5, max: 0.5 },
         { id: 'fold', min: 0.1, max: 0.9, curve: 1 },
@@ -102,7 +105,7 @@ describe('smart controls in saved state', () => {
     expect(sanitizeSmart(null)).toBeNull();
     expect(sanitizeSmart({ knobs: 'x' })).toBeNull();
     expect(sanitizeSmart(defaultSmart())).toBeNull();
-    expect(sanitizeSmart(knobs({ name: '', value: 0.7, maps: [{ id: 'attack' }] }))).toBeNull();
+    expect(sanitizeSmart(knobs({ name: '', value: 0.7, maps: [{ id: 'solo' }] }))).toBeNull();
   });
 
   it('round-trips through a saved session (JSON) unchanged', () => {
@@ -148,7 +151,7 @@ describe('smart controls and the store', () => {
     const before = JSON.stringify(store.serialize());
     expect(applySmartKnob(store, 0, 0, 0.7)).toBe(false);
     expect(applySmartKnob(store, 9, 0, 0.7)).toBe(false);
-    expect(setSmartMap(store, 0, 0, 'attack', 0, 1)).toBe('invalid');
+    expect(setSmartMap(store, 0, 0, 'mute', 0, 1)).toBe('invalid');
     expect(setSmartMap(store, 0, 9, 'cutoff', 0, 1)).toBe('invalid');
     expect(JSON.stringify(store.serialize())).toBe(before);
   });

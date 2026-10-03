@@ -35,7 +35,9 @@
 // change of the loop's audio (a recording, an overdub, an undo, a clear, a
 // replace) so the main thread can tell whether its untouched copy of the
 // loop is still the current one, and a replace made from an older loop is
-// refused. A replace clears the undo layers (they have the old length).
+// refused. A replace is itself an undo step (v2.9): undo brings back the
+// audio from before the stretch, at its own length and tempo, and the older
+// overdub layers after it; Follow tempo then fits what comes back.
 // `loopSpb` is the beat length the loop's audio was recorded or stretched at
 // (0 for a free-length loop).
 //
@@ -423,7 +425,7 @@ export class LooperCore {
     if ((bytes <= this.undoBudget) && this.maxLayers > 0) {
       try {
         if (!L) { L = new Float32Array(this.len); R = new Float32Array(this.len); }
-        this.layers.push({ L, R, done: false, start: this.pos, copied: 0, peak: this.peak });
+        this.layers.push({ L, R, done: false, start: this.pos, copied: 0, peak: this.peak, len: this.len, spb: this.loopSpb, bars: this.loopBars });
       } catch {
         this.emit({ t: 'error', reason: 'memory' });
       }
@@ -468,6 +470,13 @@ export class LooperCore {
     this.od = 0; this.odTarget = 0;
     const prev = this.layers.pop();
     if (this.audible && this.pg > 0 && this.cueFrame < 0) this.xf = { L: this.L, R: this.R, k: 0, p: this.pos, len: this.len };
+    // v2.9 a layer from before a stretch has its own length and tempo
+    if (prev.len > 0 && prev.len !== this.len) {
+      this.pos = Math.min(prev.len - 1, Math.floor((this.pos * prev.len) / this.len));
+      this.len = prev.len;
+      if (prev.spb > 0) this.loopSpb = prev.spb;
+      if (prev.bars > 0) this.loopBars = prev.bars;
+    }
     this.L = prev.L; this.R = prev.R;
     this.peak = prev.peak;
     this.edit++;
@@ -488,7 +497,14 @@ export class LooperCore {
       && (msg.base == null || msg.base === this.edit);
     if (!ok) { this.emit({ t: 'replaced', id: msg.id, ok: false, edit: this.edit }); return; }
     const oldL = this.L, oldR = this.R, oldLen = this.len, oldPos = this.pos;
-    this.layers = [];
+    // v2.9 the audio from before the stretch becomes an undo step (oldest steps make room)
+    this.finishSnapshots();
+    const keep = { L: oldL, R: oldR, done: true, start: 0, copied: oldLen, peak: this.peak, len: oldLen, spb: this.loopSpb, bars: this.loopBars };
+    const size = (layer) => layer.L.length * 8;
+    let total = size(keep);
+    for (const layer of this.layers) total += size(layer);
+    while (this.layers.length && (this.layers.length + 1 > this.maxLayers || total > this.undoBudget)) total -= size(this.layers.shift());
+    if (this.maxLayers > 0 && total <= this.undoBudget) this.layers.push(keep);
     this.od = 0; this.odTarget = 0;
     this.L = L; this.R = R; this.len = len;
     this.pos = Math.min(len - 1, Math.floor((oldPos * len) / oldLen));

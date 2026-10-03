@@ -34,6 +34,7 @@ import { renderFrozenLoop } from './freeze.js';
 import { createPedalHost } from './pedal-host.js';
 import { createVoiceHost } from './voice-host.js';
 import { dryDelaySamples, MAX_COMP_MS } from '../pedals/latency-comp.js';
+import { OPERATOR_ACTIONS } from '../dsp/damage.js';
 
 export { loadWorkletModule };
 
@@ -102,7 +103,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let lastTele = null, lastLoad = null;
   let disposed = false;
 
-  const onTele = (m) => { lastTele = m; events.emit('tele', m); };
+  // v2.9 Operator panel: the latest damage reading, so a rebuilt DSP and a bounce start from it
+  let opReading = null;
+  let notesPlayed = 0;
+  const onTele = (m) => { lastTele = m; if (m.op) opReading = m.op; events.emit('tele', m); };
 
   // Host state the DSP needs that does not live in the persisted store: the
   // quality mode (device setting), the channel controllers and the transport
@@ -132,6 +136,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     });
     marbles.forEach((m) => { if (m) out.push({ ...m }); });
     if (transportMsg && transportMsg.playing) out.push({ ...transportMsg });
+    if (opReading && (opReading.dmg > 0 || opReading.wet > 0)) out.push({ t: 'opState', dmg: opReading.dmg, wet: opReading.wet, dir: opReading.dir });
     return out;
   };
 
@@ -494,6 +499,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     noteOn(part, note, vel = 0.8, time = 0, tag) {
       if (!validPart(part) || part >= partCount(store) || !Number.isFinite(note)) return;
       const msg = { t: 'noteOn', part, note, vel: Number.isFinite(vel) ? vel : 0.8, time: Number.isFinite(time) ? time : 0 };
+      notesPlayed++;
       if (typeof tag === 'string') msg.tag = tag;
       post(msg);
     },
@@ -514,6 +520,14 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       else if (Number.isInteger(sound.synth) && sound.synth >= 0) msg.synth = sound.synth;
       else return;
       post(msg);
+    },
+    /**
+     * v2.9 parameter locks: part parameter values `p` from audio time `time`
+     * (0 = now). Only the engine changes; the store keeps the knob values.
+     */
+    scheduleParams(part, p, time = 0) {
+      if (!validPart(part) || part >= partCount(store) || !p || typeof p !== 'object') return;
+      post({ t: 'params', part, p: { ...p }, time: Number.isFinite(time) ? time : 0 });
     },
     /** Drop queued notes (with `tag`, if given) that would start after audio time `after`. */
     cancelNotes(after, tag) {
@@ -584,6 +598,21 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       const i = marbleQueued.findIndex(x => x.part === part);
       if (i >= 0) marbleQueued[i] = m; else marbleQueued.push(m);
     },
+    /**
+     * v2.9 Operator panel actions: 'drop' | 'spill' (value: strength 0..1),
+     * 'repair' (value: 'drop' | 'water' | 'all'), 'tone' (value: 'off' | 'sine' | 'pink' | 'left' | 'right' | 'polarity').
+     */
+    operator(action, value) {
+      if (!OPERATOR_ACTIONS.includes(action)) return;
+      if (action === 'repair' && opReading) {
+        opReading = { ...opReading, dmg: value === 'water' ? opReading.dmg : 0, wet: value === 'drop' ? opReading.wet : 0 };
+      }
+      post({ t: 'opAction', a: action, v: value });
+    },
+    /** The latest Operator panel reading from the DSP ({dmg, wet, shock, cents, tone}) or null. */
+    operatorState() { return opReading; },
+    /** Notes started since the engine was created (Bookkeeping). */
+    get notesPlayed() { return notesPlayed; },
     /** Oversampling / anti-aliasing mode: 'eco' | 'standard' | 'high' | 'pristine' | 'raw'. Returns the mode in use. */
     setQuality(mode) {
       applyQuality(mode);

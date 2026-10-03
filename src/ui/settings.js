@@ -1,9 +1,11 @@
-// Settings dialog: General, Audio, MIDI & MPC, Shortcuts, About. An accessible
+// Settings dialog: General, Audio, MIDI & MPC, Voice, Pedals, Operator, Shortcuts, Updates, About. An accessible
 // modal with a vertical tab list (horizontal on narrow screens).
 
 import { h, createScope, call, has, listen } from './dom.js';
 import { openModal } from './modal.js';
 import { createSegmented, createToggle } from './controls.js';
+import { getPetName, setPetName } from './fun-features.js';
+import { MAX_PET_NAME } from '../visual/pet.js';
 import { createMidiSettings } from './settings-midi.js';
 import { createPedalSettings } from './settings-pedals.js';
 import { createVoiceSettings } from './settings-voice.js';
@@ -12,7 +14,11 @@ import { SHORTCUTS } from './shortcuts.js';
 import { STYLES, VIEWS } from './viewport-overlay.js';
 import { openBounce, bounceSupported } from './bounce.js';
 import { createPalettePicker } from './palettes.js';
+import { createTuningSettings } from './tuning-settings.js';
 import { icon } from './icons.js';
+import { createOperatorSettings } from './operator.js';
+import { has as hasFun } from '../core/fun.js';
+import { skinOn, setSkin, onSkin } from './eggs.js';
 
 export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -20,12 +26,13 @@ export const SETTINGS_TABS = [
   { id: 'midi', label: 'MIDI & MPC', icon: 'midi' },
   { id: 'voice', label: 'Voice', icon: 'mic' },
   { id: 'pedals', label: 'Pedals', icon: 'pedal' },
+  { id: 'operator', label: 'Operator', icon: 'bolt' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard' },
   { id: 'updates', label: 'Updates', icon: 'save' },
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '2.8.0';
+export const VERSION = '2.9.0';
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
@@ -36,6 +43,19 @@ function prefBinding(ctx, key, fallback) {
     get: () => ctx.prefs.get(key), set: (v) => ctx.prefs.set(key, v), reset() {},
     subscribe: (fn) => ctx.prefs.on((k) => { if (k === key) fn(); }), modPath: () => null, learnTarget: () => null,
   };
+}
+
+/** v2.9 the Phosphor theme switch, listed once its secret is found (src/ui/eggs.js). */
+function phosphorRow(ctx, scope) {
+  if (!hasFun('secret', 'logo-seven')) return null;
+  const binding = {
+    def: { id: 'skin', label: 'Phosphor theme', default: 0 }, id: 'skin', scope: 'pref', part: () => null, path: () => 'skin',
+    get: () => (skinOn() ? 1 : 0), set: (v) => setSkin(!!v), reset() {},
+    subscribe: (fn) => onSkin(fn), modPath: () => null, learnTarget: () => null,
+  };
+  const c = createToggle(ctx, binding, { label: 'Phosphor theme', className: 'toggle--switch' });
+  scope.add(c.dispose);
+  return row('Phosphor theme', 'Soft green and amber on dark, or ink on paper in the light theme. Nothing flickers.', c.el);
 }
 
 function generalTab(ctx, scope) {
@@ -58,23 +78,33 @@ function generalTab(ctx, scope) {
     label: 'Reduce motion', options: [{ value: 'system', label: 'System' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
   });
   const tips = createToggle(ctx, { ...prefBinding(ctx, 'showTips', 1), def: { id: 'showTips', label: 'Show tips', default: 1 } }, { label: 'Show tips', className: 'toggle--switch' });
-  for (const c of [theme, quality, fps, camera, style, palette, rotate, motion, tips]) scope.add(c.dispose);
+  // v2.9 map extras, both off by default
+  const dayNight = createToggle(ctx, { ...prefBinding(ctx, 'dayNight', 0), def: { id: 'dayNight', label: 'Day and night', default: 0 } }, { label: 'Day and night', className: 'toggle--switch' });
+  const pet = createToggle(ctx, { ...prefBinding(ctx, 'pet', 0), def: { id: 'pet', label: 'Pet', default: 0 } }, { label: 'Pet', className: 'toggle--switch' });
+  const petNameInput = h('input', { class: 'field field--sm pet-name', type: 'text', maxlength: String(MAX_PET_NAME), 'aria-label': 'Pet name', value: getPetName(), autocomplete: 'off', spellcheck: 'false' });
+  scope.on(petNameInput, 'change', () => { petNameInput.value = setPetName(petNameInput.value); });
+  for (const c of [theme, quality, fps, camera, style, palette, rotate, motion, tips, dayNight, pet]) scope.add(c.dispose);
   if (!visuals) {
-    for (const c of [quality, fps, camera, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
+    for (const c of [quality, fps, camera, style, rotate, dayNight, pet]) c.setDisabled(true, 'The 3D view is not running');
+    petNameInput.disabled = true;
   }
 
   return h('div', { class: 'settings-pane' },
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Appearance'),
       row('Theme', 'System follows your computer\'s light or dark setting', theme.el),
       row('Reduce motion', 'Calms animations. System follows your computer\'s setting.', motion.el),
-      row('Show tips', 'Hover hints and the map hint', tips.el)),
+      row('Show tips', 'Hover hints and the map hint', tips.el),
+      phosphorRow(ctx, scope)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
       row('Frame rate', 'Uncapped draws the map as often as the screen refreshes. A cap saves battery and heat; the sound is never affected.', fps.el),
       row('Camera view', 'Six angles. Save your own from the map toolbar.', camera.el),
       row('Map style', null, style.el),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),
-      row('Auto-rotate', 'Slowly circles the map in Orbit view', rotate.el)));
+      row('Auto-rotate', 'Slowly circles the map in Orbit view', rotate.el),
+      row('Day and night', 'Slowly tints the land by the time of day where you are: warm at dawn, orange at dusk, deep blue at night. Checks the clock once a minute.', dayNight.el),
+      row('Pet', 'A small creature that wanders the map, naps when it has been quiet for a while and hops when notes play', pet.el),
+      row('Pet name', 'Kept on this computer', petNameInput)));
 }
 
 export const AUDIO_QUALITY = [
@@ -168,10 +198,15 @@ function audioTab(ctx, scope) {
     deviceWrap.append(h('div', { class: 'select' }, sel, h('span', { class: 'select-caret', html: icon('chevron-down') })));
   })();
 
+  // v2.9 microtuning (saved with the session)
+  const tuning = createTuningSettings(ctx);
+  scope.add(tuning.dispose);
+
   return h('div', { class: 'settings-pane' },
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Engine'), status, h('div', { class: 'btn-row' }, startBtn, testBtn, panicBtn)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Quality'),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Oscillator quality'), qText), qSeg.el)),
+    h('section', { class: 'settings-group', 'aria-label': 'Tuning (saved with the session)' }, h('h3', { class: 'group-title' }, 'Tuning'), tuning.el),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Export'),
       row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn)));
@@ -211,6 +246,7 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     midi: () => { const m = createMidiSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     voice: () => { const m = createVoiceSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     pedals: () => { const m = createPedalSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
+    operator: () => { const m = createOperatorSettings(ctx); scope.add(m.dispose); return m.el; },
     shortcuts: () => h('div', { class: 'settings-pane' }, shortcutsList()),
     updates: () => { const m = createUpdatesTab(ctx, { version: VERSION }); scope.add(m.dispose); return m.el; },
     about: () => aboutTab(),

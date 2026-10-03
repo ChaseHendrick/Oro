@@ -71,5 +71,8 @@ export default defineConfig(({ mode }) => ({
   test: {
     include: ['tests/**/*.test.js'],
     environment: 'node',
+    // Offline audio renders take a few seconds on a busy machine or CI runner;
+    // a slow pass is not a failure (a hung test still is, after 30 s).
+    testTimeout: 30000,
   },
 }));

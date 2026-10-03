@@ -4,6 +4,7 @@
 // wheel strips, sustain, octave shift, and the computer keyboard:
 //   A W S E D F T G Y H U J K O L P ; '   play (C to F an octave up)
 //   Z / X  octave down / up,   C / V  velocity down / up
+//   (C inserts a coin instead while Free Play is off, see coin-slot.js)
 
 import { NOTE_NAMES, clamp } from '../core/params.js';
 import { h, createScope, setText, isTypingTarget, call, has } from './dom.js';
@@ -216,6 +217,12 @@ export function createPiano(ctx) {
     if (code === 'KeyZ' || code === 'KeyX') {
       e.preventDefault();
       if (!e.repeat) shiftOctave(code === 'KeyZ' ? -1 : 1);
+      return;
+    }
+    // v2.9 with Free Play off, C inserts a coin (src/ui/coin-slot.js) instead of lowering the velocity
+    if (code === 'KeyC' && ctx.coins && ctx.coins.coinKey()) {
+      e.preventDefault();
+      if (!e.repeat) ctx.coins.insert();
       return;
     }
     if (code === 'KeyC' || code === 'KeyV') {

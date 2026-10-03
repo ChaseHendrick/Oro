@@ -16,11 +16,16 @@
 // each sequencer note plays the chord built on it. The notes a key or step
 // started are remembered, so its release stops exactly those even if the
 // chord changes in between. Arp output is not expanded again.
+//
+// v2.9 Capture (src/music/capture.js): the keys people play (before the chord
+// trigger) are kept for about the last CAPTURE_BARS bars per track id, for
+// turning a phrase into a pattern afterwards.
 
 import { MAX_PARTS, SEQ_RATES, ARP_RHYTHMS, clamp } from '../core/params.js';
 import { partCount, watchTracks, permute, inversePerm } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 import { sanitizeChord, chordNotes } from './chord-trigger.js';
+import { createCaptureBuffer, isPersonSource, CAPTURE_BARS } from './capture.js';
 
 export const ARP = { OFF: 0, UP: 1, DOWN: 2, UPDOWN: 3, RANDOM: 4, PLAYED: 5, CHORD: 6 };
 export const MIN_GAP = 0.003;      // seconds kept between a note-off and the next note-on of the same voice
@@ -41,9 +46,16 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   // part -> seconds its sequenced notes are sent early (pedal latency
   // compensation); null = none. Set by the pedal rig.
   let leadFn = null;
+  // (part, note, source) -> false to keep a note-on from the engine; null = every note plays
+  let gate = null;
   // `${source}:${note}` -> parts the note was sent to, so a note-off reaches the
   // same parts even if the key mode or selected part changed in between.
   const routes = new Map();
+  const captureBuf = createCaptureBuffer({
+    now: () => timebase.perfNow() / 1000,
+    windowSec: () => CAPTURE_BARS * 4 * 60 / clamp(Number(store.get('global.tempo')) || 120, 20, 400),
+  });
+  const trackId = (p) => store.get(`parts.${p}.id`);
 
   const freshPart = () => ({
     down: new Map(),       // physically held keys: note -> { note, vel, order, sources:Set }
@@ -140,10 +152,19 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   function engineOn(part, note, vel, time, source, lead = 0) {
     if (note < 0 || note > 127) return;
+    // v2.9 Free Play off (src/ui/coin-slot.js): no credit, no sound
+    if (gate !== null && !gate(part, note, source)) return;
     const et = engineTime(time, lead);
     try { if (engine) engine.noteOn(part, note, vel, et, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOn failed', err); }
     emitter.emit('sched', { part, note, vel, on: true, time, source });
     announce({ part, note, vel, on: true, source }, time);
+  }
+
+  /** v2.9 parameter locks: part parameter values heard from `time`, sent `lead` early like the notes. */
+  function engineParams(part, p, time, lead = 0) {
+    const et = engineTime(time, lead);
+    try { if (engine && typeof engine.scheduleParams === 'function') engine.scheduleParams(part, p, et); } catch (err) { console.warn('[orograph] params failed', err); }
+    emitter.emit('params', { part, p, time });
   }
 
   function engineOff(part, note, time, source, lead = 0) {
@@ -268,8 +289,10 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
       const prev = routes.get(key);
       routes.set(key, prev ? [...new Set([...prev, ...list])] : list);
     }
+    const person = isPersonSource(source);
     for (const p of list) {
       const ps = parts[p];
+      if (person) captureBuf.on(trackId(p), note, vel);
       ps.raw.set(note, vel);
       const notes = chordFor(p, note);
       if (!notes) { pressKey(p, note, vel, source); continue; }
@@ -288,8 +311,10 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     const key = source + ':' + note;
     const list = routes.get(key) || resolve(target);
     routes.delete(key);
+    const person = isPersonSource(source);
     for (const p of list) {
       const ps = parts[p];
+      if (person) captureBuf.off(trackId(p), note);
       ps.raw.delete(note);
       const notes = ps.chordKeys.get(key);
       if (!notes) { releaseKey(p, note, source); continue; }
@@ -547,6 +572,8 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   return {
     noteOn, noteOff, sustain, allNotesOff, heldNotes, heldEntries, resolve,
+    /** v2.9 coin slot: fn(part, note, source) -> whether a note-on may sound; null removes the gate. */
+    setGate: (fn) => { gate = typeof fn === 'function' ? fn : null; },
     on: (type, fn) => emitter.on(type, fn),
     off: (type, fn) => emitter.off(type, fn),
     // Internal hooks used by the transport.
@@ -573,6 +600,12 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     // The transport's sequencer notes go through the chord trigger here.
     _engineOn: seqOn,
     _engineOff: seqOff,
+    _engineParams: engineParams,
+    /** v2.9 notes people played on track `part` lately (see capture.js): [{ note, vel, on, off }], seconds. */
+    captured(part) {
+      const p = resolve(part)[0];
+      return p == null ? [] : captureBuf.list(trackId(p));
+    },
     /** v2.8 keys physically held on track `part` (before the chord trigger), lowest first: what Learn captures. */
     rawHeld(part) {
       const p = resolve(part)[0];

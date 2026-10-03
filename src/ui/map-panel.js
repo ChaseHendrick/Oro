@@ -13,6 +13,11 @@ import { drawTerrain, downsample, previewTable, prewarmPreviews } from './terrai
 import { pathOutline } from './dsp-bridge.js';
 import { openTerrainLibrary } from './terrain-library.js';
 import { openFormulaTerrain } from './formula-terrain.js';
+import { has as hasFun, found } from '../core/fun.js';
+import { offerPostcardFile } from './postcard.js';
+
+// v2.9 PNG files already checked for a postcard (Use as terrain imports them as usual).
+const postcardChecked = new WeakSet();
 
 const TERRAIN_KNOBS = ['morph', 'warp', 'lift', 'fold', 'seed', 'detail'];
 const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror', 'warpMode', 'warpAmount'];
@@ -193,6 +198,11 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
 
   async function doImport(file, opts) {
     if (!file || !canImport) return;
+    // v2.9 a postcard image: load its sound, or use the picture as terrain
+    if (!opts && !postcardChecked.has(file) && (/\.png$/i.test(file.name || '') || file.type === 'image/png')) {
+      postcardChecked.add(file);
+      if (await offerPostcardFile(ctx, file, () => doImport(file))) return;
+    }
     const isImage = /^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(file.name);
     const isAudio = /^audio\//.test(file.type) || /\.(wav|mp3|m4a|aac|ogg|flac|aiff?)$/i.test(file.name);
     if (isAudio && !opts) { openAudioImportOptions(ctx, importBtn, file, o => doImport(file, o)); return; }
@@ -328,15 +338,33 @@ function openPathPicker(ctx, anchor) {
   }, h('span', { class: 'grid-art' }, s('svg', { class: 'path-icon', viewBox: '0 0 24 24', 'aria-hidden': 'true' }, s('path', { d: pathOutline(i, i === 6 ? 2 : 3, 0.5, 24, 2.5, 200) }))),
   h('span', { class: 'grid-name' }, pth.name)));
   const grid = h('div', { class: 'picker-grid', role: 'listbox', 'aria-label': 'Path shape' }, items);
-  const body = h('div', { class: 'picker-pop' }, h('div', { class: 'popover-title' }, 'Path'), grid, desc);
+  // v2.9 a filter field; a hidden path shows once its name is typed here (src/ui/eggs.js)
+  const filter = h('input', { type: 'search', class: 'field', placeholder: 'Filter paths', 'aria-label': 'Filter path shapes', autocomplete: 'off', spellcheck: 'false' });
+  filter.style.width = '100%';
+  const body = h('div', { class: 'picker-pop' }, h('div', { class: 'popover-title' }, 'Path'), filter, grid, desc);
   const show = (b) => setText(desc, b ? `${PATHS[+b.dataset.index].name}: ${b.dataset.desc}` : '');
+  const listed = (i) => !PATHS[i].hidden || i === current || hasFun('secret', 'oro-path');
+  const shown = [];
+  function applyFilter() {
+    const q = filter.value.trim().toLowerCase();
+    if (q === 'oro' && !hasFun('secret', 'oro-path')) { if (ctx.eggs) ctx.eggs.unlockPath(); else found('secret', 'oro-path'); }
+    shown.length = 0;
+    items.forEach((b, i) => {
+      const ok = listed(i) && (!q || `${PATHS[i].name} ${PATHS[i].desc}`.toLowerCase().includes(q));
+      b.hidden = !ok;
+      if (ok) shown.push(b); else b.tabIndex = -1;
+    });
+    if (shown.length && !shown.some(b => b.tabIndex === 0)) shown.forEach((b, k) => { b.tabIndex = k === 0 ? 0 : -1; });
+  }
+  filter.addEventListener('input', applyFilter);
+  applyFilter();
   let pop;
   items.forEach(b => {
     b.addEventListener('click', () => { store.set(`parts.${part}.params.pathShape`, +b.dataset.index, { source: 'ui' }); pop.close('select'); });
     b.addEventListener('focus', () => show(b));
     b.addEventListener('pointerenter', () => show(b));
   });
-  gridKeys(grid, items, 4);
+  gridKeys(grid, shown, 4);
   show(items[current]);
   pop = openPopover(ctx.layers, anchor, body, { className: 'popover--picker', label: 'Choose path shape', placement: 'bottom-start', focus: '.grid-item[tabindex="0"]' });
   return pop;

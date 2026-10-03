@@ -321,8 +321,14 @@ export function removePattern(store, p, k) {
   if (list.length <= 1 || !(k >= 0 && k < list.length)) return false;
   const active = activePatternIndex(part);
   list.splice(k, 1);
+  const chain = part.chain && Array.isArray(part.chain.entries) ? part.chain : null;
   store.batch(() => {
     store.set(`parts.${p}.patterns`, list, { source: 'tracks' });
+    // v2.9 song mode: entries of the removed pattern go, later ones move down
+    if (chain) {
+      const entries = chain.entries.filter(e => e && e.pattern !== k).map(e => (e.pattern > k ? { ...e, pattern: e.pattern - 1 } : { ...e }));
+      store.set(`parts.${p}.chain`, { ...chain, entries }, { source: 'tracks' });
+    }
     store.set(`parts.${p}.activePattern`, active > k ? active - 1 : Math.min(active, list.length - 1), { source: 'tracks' });
   });
   return true;

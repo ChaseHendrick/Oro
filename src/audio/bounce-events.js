@@ -7,12 +7,14 @@
 //   { time, msg: {t:'transport', playing: true, beatTime: 0, beat: 0, spb} }
 //   { time, msg: {t:'noteOn', part, note, vel} } / { time, msg: {t:'noteOff', part, note} }
 //   { time, msg: {t:'params', part, p: {centerX, centerY}, ramp} }   dot locks
+//   { time, msg: {t:'params', part, p: {cutoff, ...}} }               v2.9 parameter locks
+// v2.9 song mode chains are followed (from Play, like the transport).
 // Swing, slides, ties, gates, accents, probability (the transport's first
 // Play, seed 1) and ratchets follow src/music/transport.js;
 // arpeggiators need held keys and are not rendered here.
 
 import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
-import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, activeSeq, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
 
 const MIN_GAP = 0.003;        // between a note-off and the next note-on (as the router)
 const SLIDE_OVERLAP = 0.004;  // a slid note overlaps the next one (legato)
@@ -52,34 +54,40 @@ export function sequencerEvents(state, bars = 4, { parts } = {}) {
     // the pattern each track plays (its activePattern), on when its seqOn is
     const seq = activeSeq(list[p]);
     if (!include.has(p) || !seq || !seq.enabled || !Array.isArray(seq.steps)) continue;
-    const rateIdx = clamp(Math.round(finite(seq.rate, 3)), 0, SEQ_RATES.length - 1);
-    const rate = SEQ_RATES[rateIdx].beats;
-    const triplet = /T$/.test(SEQ_RATES[rateIdx].name);
-    const len = clamp(Math.round(finite(seq.length, 16)), 1, seq.steps.length || 16);
-    const timeAt = (beat) => (triplet ? beat : swingBeat(beat, g.swing)) * spb;
+    const params = list[p].params || {};
     let tie = null;
-    for (let abs = 0; abs * rate < totalBeats - 1e-9; abs++) {
-      const t = timeAt(abs * rate);
-      const tNext = timeAt((abs + 1) * rate);
-      const step = seq.steps[abs % len] || {};
+    let plocked = null;   // v2.9 parameter ids the previous step locked
+    // One step of `pat` (a pattern with `steps`) at grid count `abs`, from t to tNext.
+    const playStep = (pat, idx, abs, t, tNext, rate) => {
+      const step = pat.steps[idx] || {};
       if (step.lock) {
         push(t, { t: 'params', part: p, p: { centerX: clamp(finite(step.lx, 0.5), 0, 1), centerY: clamp(finite(step.ly, 0.5), 0, 1) },
-          ramp: clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t) });
+          ramp: clamp(finite(pat.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t) });
+      }
+      // v2.9 parameter locks, and the track's own value back where a lock ends
+      if (plocked || step.plocks) {
+        const want = stepPlocks(step);
+        const vals = {};
+        let any = false;
+        if (plocked) for (const id of plocked) if (!want || !(id in want)) { vals[id] = finite(params[id], PART_PARAM_MAP[id].default); any = true; }
+        if (want) for (const id of Object.keys(want)) { vals[id] = want[id]; any = true; }
+        plocked = want ? Object.keys(want) : null;
+        if (any) push(t, { t: 'params', part: p, p: vals });
       }
       // v2.7 a drum kit track plays its lanes instead of its melodic steps
       if (list[p].drum && list[p].drum.on) {
-        const lanes = Array.isArray(seq.drumLanes) ? seq.drumLanes : [];
+        const lanes = Array.isArray(pat.drumLanes) ? pat.drumLanes : [];
         for (let r = 0; r < KIT_PADS; r++) {
-          const v = finite(lanes[r] && lanes[r][abs % len], 0);
+          const v = finite(lanes[r] && lanes[r][idx], 0);
           if (v > 0) { push(t, { t: 'noteOn', part: p, note: KIT_BASE_NOTE + r, vel: clamp(v, 0.01, 1) }); push(t + 0.05, { t: 'noteOff', part: p, note: KIT_BASE_NOTE + r }); }
         }
-        continue;
+        return;
       }
       if (!step.on || !stepPlays(step, PROB_SEED, p, abs)) {
         if (tie !== null) { push(t, { t: 'noteOff', part: p, note: tie }); tie = null; }
-        continue;
+        return;
       }
-      const note = clamp(stepToMidi(step, finite(seq.baseOctave, 3), finite(g.scaleRoot, 0), finite(g.scaleType, 0)), 0, 127);
+      const note = clamp(stepToMidi(step, finite(pat.baseOctave, 3), finite(g.scaleRoot, 0), finite(g.scaleType, 0)), 0, 127);
       const vel = step.accent ? 1 : clamp(finite(step.vel, 0.8), 0.01, 1);
       const gateSec = clamp(finite(step.gate, 0.5), 0.05, 1) * rate * spb;
       const hits = stepRatchet(step);
@@ -97,6 +105,38 @@ export function sequencerEvents(state, bars = 4, { parts } = {}) {
         if (tie !== null) { push(ti + SLIDE_OVERLAP, { t: 'noteOff', part: p, note: tie }); tie = null; }
         if (slide) tie = note;
         else push(gateEnd, { t: 'noteOff', part: p, note });
+      }
+    };
+    const rateOf = (pat) => clamp(Math.round(finite(pat.rate, 3)), 0, SEQ_RATES.length - 1);
+    const timeAt = (beat, rateIdx) => (/T$/.test(SEQ_RATES[rateIdx].name) ? beat : swingBeat(beat, g.swing)) * spb;
+    const chain = activeChain(list[p]);
+    if (!chain) {
+      const rateIdx = rateOf(seq);
+      const rate = SEQ_RATES[rateIdx].beats;
+      const len = clamp(Math.round(finite(seq.length, 16)), 1, seq.steps.length || 16);
+      for (let abs = 0; abs * rate < totalBeats - 1e-9; abs++) {
+        playStep(seq, abs % len, abs, timeAt(abs * rate, rateIdx), timeAt((abs + 1) * rate, rateIdx), rate);
+      }
+    } else {
+      // v2.9 song mode, as the transport plays it from Play: each entry's
+      // pattern `repeats` passes, in order, looping; a new rate continues
+      // from the same musical position.
+      const pats = list[p].patterns;
+      let rateIdx = rateOf(seq), abs = 0, e = 0, rep = 0, pos = 0;
+      for (let guard = 0; guard < 100000; guard++) {
+        if (pos >= clamp(Math.round(finite(pats[chain[e].pattern].length, 16)), 1, 16)) {
+          pos = 0;
+          if (++rep >= chain[e].repeats) { rep = 0; e = (e + 1) % chain.length; }
+        }
+        const pat = pats[chain[e].pattern];
+        if (!Array.isArray(pat.steps)) break;
+        const ri = rateOf(pat);
+        if (ri !== rateIdx) { abs = Math.ceil(abs * SEQ_RATES[rateIdx].beats / SEQ_RATES[ri].beats - 1e-9); rateIdx = ri; }
+        const rate = SEQ_RATES[rateIdx].beats;
+        if (abs * rate >= totalBeats - 1e-9) break;
+        playStep(pat, pos, abs, timeAt(abs * rate, rateIdx), timeAt((abs + 1) * rate, rateIdx), rate);
+        pos++;
+        abs++;
       }
     }
     if (tie !== null) push(end, { t: 'noteOff', part: p, note: tie });

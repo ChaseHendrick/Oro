@@ -63,6 +63,7 @@ import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.j
 import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
 import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
+import { MasterOperator, OPERATOR_ACTIONS } from './damage.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -1015,6 +1016,9 @@ export class OroDSP {
     // computer (outputs 3/4); until then the send bus stays silent and Insert
     // is ignored, so a part can never go quiet with nowhere to go.
     this.pedalOn = false;
+    // v2.9 microtuning: per key, the tuned pitch as a fractional 12-TET note
+    // number (69 = 440 Hz). null = the default tuning, played by the original code.
+    this.tuneSemis = null;
     // Pedal latency compensation: dry delay (host samples) for parts in Send
     // mode (pedal send above 0, Insert off) while the pedal loop runs.
     this.dryDelayN = 0;
@@ -1027,6 +1031,8 @@ export class OroDSP {
     this.sendBufs = null;          // [aL, aR, bL, bR] summed sends of one render call
     this.sendFedA = false; this.sendFedB = false; this.sendDirty = false;
     // v2.8 freeze
+    // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
+    this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
@@ -1105,6 +1111,33 @@ export class OroDSP {
 
   // ---- message protocol ---------------------------------------------------
 
+  /**
+   * v2.9 microtuning: `hz` is the frequency of every key 0..127 (any array
+   * of 128 numbers), or null for the default 12-TET at A4 = 440 Hz.
+   */
+  setTuning(hz) {
+    if (!hz || typeof hz.length !== 'number' || hz.length < 128) { this.tuneSemis = null; return; }
+    const t = new Float64Array(128);
+    for (let i = 0; i < 128; i++) {
+      const f = Number(hz[i]);
+      t[i] = f >= 1 && f <= 24000 ? 69 + 12 * Math.log2(f / 440) : f > 24000 ? 69 + 12 * Math.log2(24000 / 440) : i;
+    }
+    this.tuneSemis = t;
+  }
+
+  /**
+   * A fractional key (gliding, bent or transposed by whole keys) -> its tuned
+   * pitch as a 12-TET note number, interpolated in log frequency between
+   * adjacent keys; beyond 0..127 the end step is extrapolated.
+   */
+  tunedPitch(p) {
+    const t = this.tuneSemis;
+    if (!(p > 0)) return t[0] + (p || 0) * (t[1] - t[0]);
+    if (p >= 127) return t[127] + (p - 127) * (t[127] - t[126]);
+    const i = Math.floor(p), fr = p - i;
+    return fr === 0 ? t[i] : t[i] + (t[i + 1] - t[i]) * fr;
+  }
+
   handleMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
@@ -1146,6 +1179,20 @@ export class OroDSP {
       case 'kitPreview': this.previewKit(msg.part, msg); break;
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
+      case 'tuning': this.setTuning(msg.hz); break;
+      case 'operator':
+        if (msg.cfg && typeof msg.cfg === 'object') { if (this.op === null) this.op = new MasterOperator(this.sr); this.op.configure(msg.cfg); }
+        else if (this.op !== null) this.op.configure(null);
+        break;
+      case 'opAction':
+        if (!OPERATOR_ACTIONS.includes(msg.a)) break;
+        if (this.op === null) this.op = new MasterOperator(this.sr);
+        this.op.action(msg.a, msg.v);
+        break;
+      case 'opState':
+        if (this.op === null) this.op = new MasterOperator(this.sr);
+        this.op.setState(msg);
+        break;
       case 'freeze': this.setFrozen(msg); break;
       case 'capture': { const i = Math.round(finiteOr(msg.part, -1)); this.capture = i >= 0 && i < MAX_PARTS ? i : -1; break; }
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
@@ -1603,7 +1650,7 @@ export class OroDSP {
     const time = finiteOr(msg.time, 0);
     const vel = finiteOr(msg.vel, 0.8);
     if (time <= 0 || time <= this.lastTime) {
-      if (type === 1) this.noteOn(P, note, vel); else this.noteOff(P, note);
+      if (type === 1) this.noteOn(P, note, vel, typeof msg.tag === 'string' ? msg.tag : null); else this.noteOff(P, note);
       return;
     }
     this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0, tag: typeof msg.tag === 'string' ? msg.tag : null });
@@ -1960,8 +2007,10 @@ export class OroDSP {
     P.kit.preview(data, msg.pcm ? finiteOr(msg.rate, this.sr) : this.sr, clamp01(finiteOr(msg.vel, 0.9)), clamp01(finiteOr(msg.gain, 0.8)), Math.max(-24, Math.min(24, finiteOr(msg.pitch, 0))));
   }
 
-  noteOn(P, note, vel) {
-    if (P.frozen !== null && P.fzTarget >= 1) return;   // v2.8 a frozen part plays its loop, not notes
+  noteOn(P, note, vel, tag = null) {
+    // v2.8 a frozen part's sequencer and arpeggiator are in its loop; other
+    // notes (keys, MIDI) play live on top of it (v2.9)
+    if (P.frozen !== null && P.fzTarget >= 1 && (tag === 'seq' || tag === 'arp')) return;
     if (vel > 1) vel /= 127;
     if (P.kitOn && P.kit) { if (vel > 0) { P.kit.trigger(note, vel); this.science.noteOn(); } return; }
     if (!(vel > 0)) { this.noteOff(P, note); return; }
@@ -2450,7 +2499,11 @@ export class OroDSP {
     v.eA = tA; v.eB = tB; v.eC = tC; v.eD = tD;
 
     // pitch
-    const semis = v.pitch + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange];
+    // v2.9 microtuning: bend and Tune move through the tuning by keys; Fine
+    // (cents) and Octave (2/1) stay equal-tempered. The default keeps the original sum.
+    const semis = this.tuneSemis === null
+      ? v.pitch + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange]
+      : this.tunedPitch(v.pitch + prm[PI.tune] + P.bend * prm[PI.bendRange]) + prm[PI.octave] * 12 + MP[M_FINE] / 100;
     let f = 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
     if (!(f > 0)) f = 1;
 
@@ -4276,7 +4329,10 @@ export class OroDSP {
         continue;
       }
       // v2.8 a frozen part plays its loop instead of its voices (both while they crossfade)
-      const live = fz === null || P.fzX < 1 || P.fzTarget < 1;
+      // v2.9 notes played live over a fully frozen part: its voices run (through
+      // its rack) and the loop is added on top
+      const over = fz !== null && P.fzX >= 1 && P.fzTarget >= 1 && (active > 0 || kitBusy || P.tail > 0);
+      const live = fz === null || P.fzX < 1 || P.fzTarget < 1 || over;
       const oL = P.outL, oR = P.outR;
       if (live) {
         if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
@@ -4337,7 +4393,8 @@ export class OroDSP {
           const fx=P.effects.processSample(oL[n],oR[n],side); oL[n]=fx.L; oR[n]=fx.R;
         }
       }
-      if (fz !== null && live) this.frozenBlend(P, oL, oR, pos, seg);
+      if (over) this.frozenAdd(P, oL, oR, pos, seg);
+      else if (fz !== null && live) this.frozenBlend(P, oL, oR, pos, seg);
       if (capture >= 0) {
         // offline freeze: only the captured part's own output, before the fader and the sends
         if (i === capture) for (let n = pos; n < pos + seg; n++) { outL[n] += oL[n]; outR[n] += oR[n]; }
@@ -4442,6 +4499,13 @@ export class OroDSP {
     P.fzGate = gate;
   }
 
+  /** v2.9: add the frozen loop under notes played live on a frozen part. */
+  frozenAdd(P, oL, oR, pos, seg) {
+    const zL = this.fzL, zR = this.fzR;
+    this.frozenFill(P, zL, zR, pos, seg);
+    for (let n = pos; n < pos + seg; n++) { oL[n] += zL[n]; oR[n] += zR[n]; }
+  }
+
   /** v2.8: crossfade the part's live output with its frozen loop (freezing or unfreezing). */
   frozenBlend(P, oL, oR, pos, seg) {
     const zL = this.fzL, zR = this.fzR;
@@ -4524,7 +4588,7 @@ export class OroDSP {
         const P = this.parts[ev.part];
         if (!P || ev.part >= this.count) continue;
         if (ev.type === 2) this.applyParams(P, ev.p, ev.ramp, ev.time, true);
-        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel);
+        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel, ev.tag);
         else this.noteOff(P, ev.note);
       }
       if (this.ctrlRemain <= 0) {
@@ -4570,6 +4634,13 @@ export class OroDSP {
         g.busR.copyWithin(0, GH, GH + gh);
         if (gos === 4) { g.midL.copyWithin(0, 2 * n, 2 * n + HB_HIST); g.midR.copyWithin(0, 2 * n, 2 * n + HB_HIST); }
       }
+    }
+
+    // v2.9 Operator panel on the mix (not while a frozen loop is captured)
+    if (this.op !== null && this.capture < 0) {
+      let voices = 0;
+      if (this.op.cfg.slowdown === 1) for (let i = 0; i < liveN; i++) voices += this.parts[i].activeCount();
+      this.op.process(outL, outR, n, voices, dlyL, dlyR, revL, revR, pedL, pedR);
     }
 
     // last line of defence before the host's limiter: no NaN, never beyond ±4
@@ -4628,6 +4699,7 @@ export class OroDSP {
       t: 'tele', part: this.watch, n: nobj, spinPhase: P.spinPhase, voices, peak: [this.peakL, this.peakR], activeVoices, count: this.count,
       terrainHeight, quality: this.quality,
     };
+    if (this.op !== null) msg.op = this.op.telemetry();
     this.peakL = 0; this.peakR = 0;
     this.postMessage(msg);
   }

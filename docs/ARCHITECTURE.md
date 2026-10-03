@@ -431,3 +431,23 @@ or the 512 terrain/audio source resolution.
   the arpeggiator's pool and sequencer notes (`_engineOn` / `_engineOff` with source
   `'seq'`), remembering per key or per sequenced note which chord notes it started.
   `router.rawHeld(part)` gives the physically held keys for Learn.
+
+## Operator panel (2.9)
+
+* **Session**: `operator` at the root of the state (absent while every setting is at its
+  default), cleaned by `sanitizeOperator` in `src/dsp/damage.js` (called by `migrateState`).
+  The store sync sends `{t:'operator', cfg}` only once a session changes it, and
+  `{t:'operator', cfg: null}` when a loaded session has none.
+* **DSP** (`MasterOperator` in `src/dsp/damage.js`): created by `OroDSP` on the first
+  operator message and run on the dry mix after the internal send returns, before the
+  output guard (not while a freeze is captured). The delay, reverb and pedal sends get the
+  same cutouts. `process()` returns at once while nothing is on and every effect has
+  settled, so the output is bit-identical without it. Actions arrive as
+  `{t:'opAction', a: 'drop' | 'spill' | 'repair' | 'tone', v}`; telemetry carries
+  `op: {dmg, wet, shock, cents, dir, tone}`. The engine keeps the latest reading and replays
+  it as `{t:'opState', dmg, wet, dir}` into a rebuilt DSP and into bounces (test tones are
+  never bounced). Randomness is a seeded xorshift, so renders repeat exactly.
+* **UI** (`src/ui/operator.js`): `startOperatorHost` (in `ctx.operator`) runs Real drops
+  (`devicemotion`), the static on-screen hint and Bookkeeping (`src/core/bookkeeping.js`,
+  localStorage only); `createOperatorSettings` is Settings > Operator. The MIDI module emits
+  `monitor` events (`{bytes, port, time}`) only while someone listens.

@@ -1,3 +1,9 @@
+//    ###   ####    ###
+//   #   #  #   #  #   #
+//   #   #  ####   #   #
+//   #   #  #  #   #   #
+//    ###   #   #   ###
+//
 // Oro bootstrap: builds the store, then wires audio, visuals, music,
 // presets, MIDI and the UI together. Each module owns its own behaviour; this
 // file only decides construction order and session persistence.
@@ -14,6 +20,7 @@ import { createPresets } from './presets/presets.js';
 import { createMidi } from './midi/midi.js';
 import { createUI } from './ui/app.js';
 import { savedContextSampleRate } from './pedals/rig-settings.js';
+import { installConsoleEgg } from './ui/eggs.js';
 
 async function boot() {
   const root = document.getElementById('app');
@@ -74,6 +81,8 @@ async function boot() {
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };
+  // v2.9 a hello for people who open the console (src/ui/eggs.js)
+  installConsoleEgg();
 }
 
 boot().catch(err => {

@@ -5,26 +5,36 @@
 // note names shown here follow the global key and scale. On phones and touch
 // screens the CSS gives every step cell a 44px target and lets the grid scroll
 // sideways with the row names pinned; the code below works either way.
+//
+// v2.9: the Pattern block holds the track's song-mode chain (Chain on/off and
+// the list of entries, the one playing highlighted) and Capture; the grid has
+// a Lock row that edits one chosen parameter's lock on each step.
 
 import {
   SEQ_STEPS, SEQ_RATES, ARP_MODES, ARP_RHYTHMS, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, RATCHET_MAX, stepToMidi, clamp, defaultStep,
   activePatternIndex, patternPath, stepProb, stepRatchet,
+  PLOCK_IDS, PLOCK_MAX, PART_PARAM_MAP, CHAIN_MAX, CHAIN_REPEATS_MAX, toNorm, fromNorm, formatValue,
 } from '../core/params.js';
 import { addPattern, selectPattern, removePattern } from '../core/tracks.js';
+import { createGhostBar } from './ghost-ui.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
 import { schedule } from './frame.js';
 import { createToggle, createSelect, createStepper, createMiniSlider, createSegmented } from './controls.js';
 import { icon } from './icons.js';
 import { createDrumPanel } from './drum-panel.js';
+import { createMidiFileTools } from './midi-file-tools.js';
 import { CHORD_PRESET_NAMES, CHORD_LEARNED, sanitizeChord, chordNotes, learnChord } from '../music/chord-trigger.js';
 
 export function midiName(m) {
   return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
 }
 
-const ROWS = ['on', 'degree', 'octave', 'vel', 'gate', 'prob', 'ratchet', 'accent', 'slide', 'lock'];
-const LABELS = ['Step', 'Note', 'Oct', 'Vel', 'Gate', 'Prob', 'Ratch', 'Accent', 'Slide', 'Dot'];
-const LABEL_TIPS = { Prob: 'Probability', Ratch: 'Ratchet' };
+const ROWS = ['on', 'degree', 'octave', 'vel', 'gate', 'prob', 'ratchet', 'accent', 'slide', 'lock', 'plock'];
+const LABELS = ['Step', 'Note', 'Oct', 'Vel', 'Gate', 'Prob', 'Ratch', 'Accent', 'Slide', 'Dot', 'Lock'];
+const LABEL_TIPS = { Prob: 'Probability', Ratch: 'Ratchet', Lock: 'Parameter lock' };
+const GROUP_NAMES = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', filter2: 'Filter 2', mix: 'Mix' };
+/** Parameter locks are kept tidy: five significant digits. */
+const tidyValue = (v) => Number(v.toPrecision(5));
 
 // Local pattern tools so editing still works if the music module is missing.
 function localClear(store, part) {
@@ -92,19 +102,118 @@ export function createSeqPanel(ctx) {
     patAdd.disabled = list.length >= MAX_PATTERNS;
     patDel.disabled = list.length <= 1;
   }
+  // v2.9 song mode: the chain of patterns the track plays while Chain is on.
+  const chainOn = createToggle(ctx, P('chain.on', { id: 'chainOn', label: 'Chain', curve: 'bool', min: 0, max: 1, default: 0, hint: 'Song mode: play the patterns in the list in order, then loop the list' }), {
+    label: 'Chain', iconName: 'chain', className: 'toggle--sm', tip: 'Song mode: play the patterns in the list in order, then loop the list',
+  });
+  scope.add(chainOn.dispose);
+  const chainAdd = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': 'Add this pattern to the chain', dataset: { tip: 'Add the pattern shown above to the end of the chain' }, html: icon('plus') });
+  const chainList = h('ol', { class: 'seq-chain', 'aria-label': 'Chain entries' });
+  const chainEmpty = h('p', { class: 'seq-chain-empty' }, 'No entries yet. Add patterns to play them in order.');
+  const chainBox = h('div', { class: 'seq-chain-box', role: 'group', 'aria-label': 'Song mode chain' },
+    h('div', { class: 'seq-line' }, chainOn.el, h('span', { class: 'mini-label seq-chain-title' }, 'Song'), chainAdd), chainList, chainEmpty);
+  const chainPath = () => `parts.${sel()}.chain`;
+  const chainEntries = () => {
+    const c = store.get(chainPath());
+    return c && Array.isArray(c.entries) ? c.entries.map(e => ({ ...e })) : [];
+  };
+  let chainFocus = null;   // { i, act } to focus again after the list is rebuilt
+  function writeChain(entries, focus = null) {
+    const c = store.get(chainPath());
+    chainFocus = focus;
+    store.set(chainPath(), { on: c && c.on ? 1 : 0, entries }, { source: 'ui' });
+  }
+  scope.on(chainAdd, 'click', () => {
+    const list = chainEntries();
+    if (list.length >= CHAIN_MAX) return;
+    list.push({ pattern: activePatternIndex(store.get(`parts.${sel()}`)), repeats: 1 });
+    writeChain(list);
+  });
+  scope.on(chainList, 'click', (e) => {
+    const b = e.target.closest && e.target.closest('button[data-act]');
+    if (!b) return;
+    const i = Number(b.dataset.i), act = b.dataset.act;
+    const list = chainEntries();
+    if (!list[i]) return;
+    if (act === 'edit') { selectPattern(store, sel(), list[i].pattern); return; }
+    if (act === 'remove') { list.splice(i, 1); writeChain(list, list.length ? { i: Math.min(i, list.length - 1), act: 'remove' } : null); return; }
+    const j = act === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    writeChain(list, { i: j, act });
+  });
+  scope.on(chainList, 'change', (e) => {
+    const t = e.target;
+    if (!t || t.dataset.act !== 'repeats') return;
+    const i = Number(t.dataset.i);
+    const list = chainEntries();
+    if (!list[i]) return;
+    list[i].repeats = clamp(Math.round(Number(t.value) || 1), 1, CHAIN_REPEATS_MAX);
+    writeChain(list, { i, act: 'repeats' });
+  });
+  let chainPlaying = -1;
+  function markChain(i) {
+    chainPlaying = i;
+    [...chainList.children].forEach((li, k) => { li.classList.toggle('is-play', k === i); setAttr(li, 'aria-current', k === i ? 'step' : null); });
+  }
+  function renderChain() {
+    const part = store.get(`parts.${sel()}`) || {};
+    const pats = Array.isArray(part.patterns) ? part.patterns : [];
+    const list = chainEntries();
+    const btn = (act, i, label, iconName, disabled = false) => h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': label, dataset: { act, i: String(i), tip: label }, html: icon(iconName), disabled });
+    chainList.replaceChildren(...list.map((e, i) => {
+      const name = (pats[e.pattern] && pats[e.pattern].name) || `Pattern ${e.pattern + 1}`;
+      const reps = h('select', { class: 'select-native', 'aria-label': `Entry ${i + 1} repeats`, dataset: { act: 'repeats', i: String(i) } },
+        ...Array.from({ length: CHAIN_REPEATS_MAX }, (_, k) => h('option', { value: String(k + 1) }, `x${k + 1}`)));
+      reps.value = String(clamp(Math.round(e.repeats) || 1, 1, CHAIN_REPEATS_MAX));
+      return h('li', { class: 'seq-chain-item' },
+        h('span', { class: 'seq-chain-num', 'aria-hidden': 'true' }, String(i + 1)),
+        h('button', { type: 'button', class: 'seq-chain-name', 'aria-label': `Entry ${i + 1}: ${name}. Edit this pattern`, dataset: { act: 'edit', i: String(i), tip: 'Edit this pattern' } }, name),
+        h('span', { class: 'select select--xs seq-chain-reps' }, reps),
+        btn('up', i, `Move entry ${i + 1} earlier`, 'chevron-up', i === 0),
+        btn('down', i, `Move entry ${i + 1} later`, 'chevron-down', i === list.length - 1),
+        btn('remove', i, `Remove entry ${i + 1}`, 'close'));
+    }));
+    chainEmpty.hidden = list.length > 0;
+    chainAdd.disabled = list.length >= CHAIN_MAX;
+    markChain(chainPlaying);
+    if (chainFocus) {
+      const f = chainFocus;
+      chainFocus = null;
+      const li = chainList.children[f.i];
+      const target = li && (li.querySelector(`[data-act="${f.act}"]:not([disabled])`) || li.querySelector('.seq-chain-name'));
+      if (target) target.focus();
+    }
+  }
+
+  // v2.9 Capture: the phrase just played on this track becomes the pattern.
+  const captureBtn = h('button', {
+    type: 'button', class: 'toggle toggle--sm has-icon seq-capture-btn', 'aria-label': 'Capture: turn the notes you just played on this track into this pattern',
+    dataset: { tip: 'Turn the notes you just played on this track (keys or MIDI) into this pattern' }, html: icon('resample') + '<span class="toggle-text">Capture</span>',
+  });
+  const captureStatus = h('p', { class: 'seq-capture-status', role: 'status' });
+  scope.on(captureBtn, 'click', () => {
+    const res = has(music, 'capture') ? call(music, 'capture', sel()) : { ok: false, message: 'Capture needs the music engine, which is not available here.' };
+    setText(captureStatus, (res && res.message) || '');
+  });
+  scope.add(store.subscribe('ui.selectedPart', () => setText(captureStatus, '')));
+  // v2.9 Ghost replay
+  const ghostBar = createGhostBar(ctx);
+  scope.add(ghostBar.dispose);
+
   const tool = (name, label, fn) => {
     const b = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': label, dataset: { tip: label }, html: icon(name) });
     scope.on(b, 'click', fn);
     return b;
   };
-  const lockGlide = createMiniSlider(ctx, P('seq.lockGlide', { id: 'lockGlide', label: 'Dot glide', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How long the dot takes to reach a step\'s locked spot (0 jumps)' }), {
+  const lockGlide = createMiniSlider(ctx, PAT('lockGlide', { id: 'lockGlide', label: 'Dot glide', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How long the dot takes to reach a step\'s locked spot (0 jumps)' }), {
     ariaLabel: 'Dot lock glide time', format: v => (v < 0.005 ? 'Jump' : Math.round(v * 100) + '% of a step'),
   });
   // v2.6 humanize
-  const humanTime = createMiniSlider(ctx, P('seq.humanTime', { id: 'humanTime', label: 'Humanize time', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Play each note up to 20 ms late, a little differently every pass' }), {
+  const humanTime = createMiniSlider(ctx, PAT('humanTime', { id: 'humanTime', label: 'Humanize time', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Play each note up to 20 ms late, a little differently every pass' }), {
     ariaLabel: 'Humanize timing', format: v => (v < 0.005 ? 'Off' : `${Math.round(v * 20)} ms`),
   });
-  const humanVel = createMiniSlider(ctx, P('seq.humanVel', { id: 'humanVel', label: 'Humanize velocity', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Vary each note\'s velocity by up to 30% either way' }), {
+  const humanVel = createMiniSlider(ctx, PAT('humanVel', { id: 'humanVel', label: 'Humanize velocity', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Vary each note\'s velocity by up to 30% either way' }), {
     ariaLabel: 'Humanize velocity', format: v => (v < 0.005 ? 'Off' : `±${Math.round(v * 30)}%`),
   });
   // Lock Record goes through the music module when it has one (it owns the
@@ -119,6 +228,9 @@ export function createSeqPanel(ctx) {
     label: 'Rec dot', iconName: 'record', className: 'toggle--sm toggle--rec',
     tip: 'While playing, moving the dot records it into the step that is sounding',
   });
+  // v2.9 MIDI file export / import
+  const midiTools = createMidiFileTools(ctx, sel);
+  scope.add(midiTools.dispose);
   const tools = h('div', { class: 'seq-tools' },
     tool('dice', 'Randomise pattern', () => {
       if (has(music, 'randomizePattern')) call(music, 'randomizePattern', sel(), { density: 0.6 }); else localRandom(store, sel());
@@ -183,6 +295,10 @@ export function createSeqPanel(ctx) {
     h('section', { class: 'seq-block', 'aria-label': 'Pattern' },
       h('header', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'Pattern')),
       h('div', { class: 'seq-line seq-patterns' }, patPick, patAdd, patDel),
+      chainBox,
+      h('div', { class: 'seq-line seq-capture' }, captureBtn),
+      captureStatus,
+      ghostBar.el,
       h('div', { class: 'seq-line' }, seqOn.el, seqRate.el),
       h('div', { class: 'seq-pair' },
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Length'), seqLen.el),
@@ -192,7 +308,8 @@ export function createSeqPanel(ctx) {
       h('div', { class: 'seq-pair' },
         h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Time'), humanTime.el),
         h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Velocity'), humanVel.el)),
-      tools));
+      tools,
+      midiTools.el));
 
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },
     field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el),
@@ -229,22 +346,39 @@ export function createSeqPanel(ctx) {
       type: 'button', class: 'seq-lock', tabindex: i === 0 ? '0' : '-1', 'aria-pressed': 'false', 'aria-label': `Step ${i + 1} dot lock`,
       dataset: { tip: 'Dot lock: the dot glides here when this step plays. Click to lock it to where the dot is now, Shift-click, right-click or long-press to move the lock there, click again to clear.' },
     }, h('span', { class: 'seq-lock-dot' }));
-    cells.on.push(pad); cells.degree.push(note); cells.octave.push(oct); cells.vel.push(vel); cells.gate.push(gate); cells.prob.push(prob); cells.ratchet.push(rat); cells.accent.push(acc); cells.slide.push(slide); cells.lock.push(lock);
-    const col = h('div', { class: ['seq-col', i % 4 === 0 && 'is-beat'], dataset: { step: String(i) } }, num, pad, note, oct, vel, gate, prob, rat, acc, slide, lock);
+    const plock = h('span', {
+      class: 'seq-bar seq-plock', role: 'slider', tabindex: i === 0 ? '0' : '-1', 'aria-valuemin': '0', 'aria-valuemax': '100',
+      dataset: { tip: 'Parameter lock: click to lock the chosen parameter to its knob value for this step, drag up or down to change it, right-click or Delete to clear' },
+    }, h('span', { class: 'seq-bar-fill' }), h('span', { class: 'seq-plock-mark', 'aria-hidden': 'true' }));
+    cells.on.push(pad); cells.degree.push(note); cells.octave.push(oct); cells.vel.push(vel); cells.gate.push(gate); cells.prob.push(prob); cells.ratchet.push(rat); cells.accent.push(acc); cells.slide.push(slide); cells.lock.push(lock); cells.plock.push(plock);
+    const col = h('div', { class: ['seq-col', i % 4 === 0 && 'is-beat'], dataset: { step: String(i) } }, num, pad, note, oct, vel, gate, prob, rat, acc, slide, lock, plock);
     cols.push(col);
   }
   const labels = h('div', { class: 'seq-labels', 'aria-hidden': 'true' },
     h('span', { class: 'seq-num' }, ''), ...LABELS.map(t => h('span', { class: `seq-label seq-label--${t.toLowerCase()}`, title: LABEL_TIPS[t] }, t)));
   const grid = h('div', { class: 'seq-grid', role: 'group', 'aria-label': 'Steps. Use the arrow keys to move along a row and up or down to change a value.' }, labels, ...cols);
+  // v2.9 the parameter the Lock row edits (a view setting, not saved)
+  let plockId = 'cutoff';
+  const groups = {};
+  for (const id of PLOCK_IDS) (groups[PART_PARAM_MAP[id].group] = groups[PART_PARAM_MAP[id].group] || []).push(id);
+  const plockSelect = h('select', { class: 'select-native', 'aria-label': 'Parameter the Lock row edits' },
+    ...Object.keys(groups).map(g => h('optgroup', { label: GROUP_NAMES[g] || g }, ...groups[g].map(id => h('option', { value: id }, PART_PARAM_MAP[id].label)))));
+  plockSelect.value = plockId;
+  const plockHint = h('span', { class: 'seq-plock-hint' });
+  const plockBar = h('div', { class: 'seq-plock-bar', role: 'group', 'aria-label': 'Parameter locks' },
+    h('span', { class: 'mini-label' }, 'Lock row'),
+    h('span', { class: 'select select--sm seq-plock-pick' }, plockSelect, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' })),
+    plockHint);
+  scope.on(plockSelect, 'change', () => { plockId = PLOCK_IDS.includes(plockSelect.value) ? plockSelect.value : 'cutoff'; invalidate(); });
   const playNote = h('span', { class: 'seq-status', 'aria-live': 'off' });
   // v2.7 a drum kit track swaps the melodic grid for the kit's lanes
   const drums = createDrumPanel(ctx);
   scope.add(drums.dispose);
-  const syncDrum = () => { grid.hidden = drums.isOn(); };
+  const syncDrum = () => { grid.hidden = drums.isOn(); plockBar.hidden = drums.isOn(); };
   scope.add(store.subscribe('parts', (p) => { if (!/^parts\.\d+\.(params|mods|dot)\./.test(p)) syncDrum(); }));
   scope.add(store.subscribe('ui.selectedPart', syncDrum));
   syncDrum();
-  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, arpBar, chordBar, playNote);
+  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, plockBar, arpBar, chordBar, playNote);
   const el = h('div', { class: 'dock-pane dock-pane--seq' }, side, main);
   if (!hasMusic) {
     playNote.textContent = 'Playback is unavailable here (the music engine did not start). You can still edit patterns.';
@@ -264,6 +398,7 @@ export function createSeqPanel(ctx) {
 
   function render() {
     renderPatterns();
+    renderChain();
     const st = steps();
     const path = seqPath();
     const len = clamp(store.get(`${path}.length`) || 16, 1, 16);
@@ -303,13 +438,58 @@ export function createSeqPanel(ctx) {
       const dot = cells.lock[i].firstChild;
       dot.style.left = ((s.lx ?? 0.5) * 100).toFixed(1) + '%';
       dot.style.top = ((s.ly ?? 0.5) * 100).toFixed(1) + '%';
+      const def = PART_PARAM_MAP[plockId];
+      const pl = s.plocks && typeof s.plocks === 'object' ? s.plocks : null;
+      const pLocked = !!pl && typeof pl[plockId] === 'number';
+      const cell = cells.plock[i];
+      cell.classList.toggle('is-set', pLocked);
+      cell.classList.toggle('has-locks', !!pl && Object.keys(pl).length > 0);
+      cell.firstChild.style.transform = `scaleY(${pLocked ? toNorm(def, pl[plockId]) : 0})`;
+      setAttr(cell, 'aria-label', `Step ${i + 1} ${def.label} lock`);
+      setAttr(cell, 'aria-valuenow', String(pLocked ? Math.round(toNorm(def, pl[plockId]) * 100) : 0));
+      const others = pl ? Object.keys(pl).filter(k => k !== plockId).map(k => PART_PARAM_MAP[k] ? PART_PARAM_MAP[k].label : k) : [];
+      setAttr(cell, 'aria-valuetext', (pLocked ? formatValue(def, pl[plockId]) : 'No lock') + (others.length ? `. Also locks ${others.join(', ')}` : ''));
     }
+    const kv = knobValue(sel(), plockId);
+    setText(plockHint, `Click a cell to lock ${PART_PARAM_MAP[plockId].label} to the knob (${formatValue(PART_PARAM_MAP[plockId], kv)}). Drag or use the arrow keys to change it, right-click or Delete clears.`);
+  }
+  /** The track's own (knob) value of part parameter `id`. */
+  function knobValue(p, id) {
+    const v = store.get(`parts.${p}.params.${id}`);
+    return typeof v === 'number' && Number.isFinite(v) ? v : PART_PARAM_MAP[id].default;
+  }
+  /** Set (or clear, value null) step i's lock on parameter `id`. */
+  function setPlock(i, id, value) {
+    const path = `${seqPath()}.steps.${i}`;
+    const cur = store.get(path);
+    if (!cur) return;
+    const pl = { ...(cur.plocks && typeof cur.plocks === 'object' ? cur.plocks : {}) };
+    if (value == null) {
+      if (!(id in pl)) return;
+      delete pl[id];
+    } else {
+      if (!(id in pl) && Object.keys(pl).length >= PLOCK_MAX) { setText(playNote, `A step holds at most ${PLOCK_MAX} parameter locks.`); return; }
+      const def = PART_PARAM_MAP[id];
+      const v = tidyValue(clamp(value, Math.min(def.min, def.max), Math.max(def.min, def.max)));
+      if (pl[id] === v) return;
+      pl[id] = v;
+    }
+    const { plocks: _old, ...rest } = cur;
+    store.set(path, Object.keys(pl).length ? { ...rest, plocks: pl } : rest, { source: 'ui' });
+  }
+  /** Step i's lock on the chosen parameter as a 0..1 knob position (the knob's own when it has none). */
+  function plockNorm(i) {
+    const s = steps()[i] || {};
+    const def = PART_PARAM_MAP[plockId];
+    const v = s.plocks && typeof s.plocks[plockId] === 'number' ? s.plocks[plockId] : knobValue(sel(), plockId);
+    return toNorm(def, v);
   }
   const invalidate = () => schedule(render);
-  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || /^parts\.\d+(\.(patterns|activePattern|seqOn).*)?$/.test(path)) invalidate(); }));
+  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || /^parts\.\d+(\.(patterns|activePattern|seqOn|chain).*)?$/.test(path)) invalidate(); }));
   scope.add(store.subscribe('global.scaleRoot', invalidate));
   scope.add(store.subscribe('global.scaleType', invalidate));
-  scope.add(store.subscribe('ui.selectedPart', () => { clearPlayhead(); invalidate(); }));
+  scope.add(store.subscribe('parts', (path) => { if (/^parts\.\d+\.params\./.test(path) && path.endsWith('.' + plockId)) invalidate(); }));
+  scope.add(store.subscribe('ui.selectedPart', () => { clearPlayhead(); chainPlaying = -1; invalidate(); }));
   scope.add(store.subscribe('', (path) => { if (path === '') invalidate(); }));
 
   // ---------------------------------------------------------------- interaction
@@ -490,6 +670,27 @@ export function createSeqPanel(ctx) {
     scope.on(b, 'contextmenu', (e) => { e.preventDefault(); toggleLock(i, true); });
   });
 
+  // Lock row: click sets the knob value, a vertical drag changes it, right-click clears.
+  cells.plock.forEach((cell, i) => {
+    let st = null;
+    scope.on(cell, 'pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      cell.focus({ preventScroll: true });
+      st = { id: e.pointerId, y: e.clientY, v: plockNorm(i), moved: false };
+      try { cell.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    });
+    scope.on(cell, 'pointermove', (e) => {
+      if (!st || st.id !== e.pointerId) return;
+      const dy = st.y - e.clientY;
+      if (Math.abs(dy) > 3) st.moved = true;
+      if (st.moved) setPlock(i, plockId, fromNorm(PART_PARAM_MAP[plockId], clamp(st.v + dy / 80, 0, 1)));
+    });
+    scope.on(cell, 'pointerup', () => { if (st && !st.moved) setPlock(i, plockId, knobValue(sel(), plockId)); st = null; });
+    scope.on(cell, 'pointercancel', () => { st = null; });
+    scope.on(cell, 'contextmenu', (e) => { e.preventDefault(); st = null; setPlock(i, plockId, null); });
+  });
+
   // Keyboard: roving focus within each row.
   for (const row of ROWS) {
     const list = cells[row];
@@ -511,6 +712,7 @@ export function createSeqPanel(ctx) {
             else if (row === 'gate') setStep(i, 'gate', clamp(Math.round((s.gate + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0.05, 1));
             else if (row === 'prob') setStep(i, 'prob', clamp(Math.round((stepProb(s) + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0, 1));
             else if (row === 'ratchet') setStep(i, 'ratchet', clamp(stepRatchet(s) + (big ? dir * RATCHET_MAX : dir), 1, RATCHET_MAX));
+            else if (row === 'plock') setPlock(i, plockId, fromNorm(PART_PARAM_MAP[plockId], clamp(plockNorm(i) + dir * (big ? 0.2 : 0.05), 0, 1)));
             else handled = false;
             break;
           }
@@ -524,7 +726,12 @@ export function createSeqPanel(ctx) {
               setStep(i, 'ratchet', v >= RATCHET_MAX ? 1 : v + 1);
             } else if (row === 'lock') {
               toggleLock(i, e.shiftKey);
+            } else if (row === 'plock') {
+              setPlock(i, plockId, knobValue(sel(), plockId));
             } else handled = false;
+            break;
+          case 'Delete': case 'Backspace':
+            if (row === 'plock') setPlock(i, plockId, null); else handled = false;
             break;
           default: handled = false;
         }
@@ -559,15 +766,20 @@ export function createSeqPanel(ctx) {
   function clearPlayhead() {
     if (lastCol >= 0 && cols[lastCol]) cols[lastCol].classList.remove('is-play');
     lastCol = -1;
+    if (!call(music && music.transport, 'isPlaying') && chainPlaying !== -1) markChain(-1);
   }
   if (hasMusic) {
     scope.add(listen(music.transport, 'step', (ev) => {
       if (!ev || ev.part !== sel()) return;
       const i = ev.step;
+      // v2.9 a chain may be playing another pattern than the one shown: no playhead then
+      const shown = ev.pattern == null || ev.pattern === activePatternIndex(store.get(`parts.${sel()}`));
+      const entry = ev.entry == null ? -1 : ev.entry;
       schedule(() => {
         if (!call(music.transport, 'isPlaying')) return;
         clearPlayhead();
-        if (cols[i]) { cols[i].classList.add('is-play'); lastCol = i; }
+        if (entry !== chainPlaying) markChain(entry);
+        if (shown && cols[i]) { cols[i].classList.add('is-play'); lastCol = i; }
       });
     }));
     scope.add(listen(music.transport, 'state', (ev) => { if (!ev || !ev.playing) schedule(clearPlayhead); }));

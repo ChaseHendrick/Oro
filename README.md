@@ -311,6 +311,13 @@ Oro is free and open source under the [MIT License](LICENSE). The libraries it
 includes, and their licenses, are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+<!--
+Twice to the peaks, twice to the valleys,
+then wander west and east, and west and east again.
+Sign with the second letter, then the first,
+and the cabinet opens on the map.
+-->
+
 ## Credits
 
 Made by Chase ([Hendrick Research](https://www.hendrickresearch.com)), written with

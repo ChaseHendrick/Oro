@@ -9,6 +9,11 @@ import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 import { createPedalPresetFields, openPedalPresetEditor } from './pedal-presets-form.js';
 import { describePedalPresets } from '../pedals/pedal-presets.js';
+import { has as hasFun } from '../core/fun.js';
+import { CABINET_PATCH } from '../presets/hidden-patches.js';
+import { loadPostcardFile } from './postcard.js';
+import { wordPatch, normalizeWord, MAX_WORD } from '../presets/word-seed.js';
+import { found } from '../core/fun.js';
 
 export function matchesQuery(item, q) {
   if (!q) return true;
@@ -25,6 +30,12 @@ export function groupByCategory(items, order = []) {
     groups.get(c).push(it);
   }
   return [...groups].filter(([, list]) => list.length);
+}
+
+/** v2.9 patches unlocked by a secret (src/ui/eggs.js): listed after the factory ones, loaded as objects. */
+export function hiddenPatches(unlocked = hasFun('secret', 'konami')) {
+  if (!unlocked) return [];
+  return [{ id: 'secret-cabinet', name: CABINET_PATCH.name, category: CABINET_PATCH.category, factory: true, tags: [...CABINET_PATCH.tags], author: '', folder: CABINET_PATCH.folder, favoriteSlots: [], pedalPresets: null, patch: CABINET_PATCH }];
 }
 
 export function createPatchBrowser(ctx) {
@@ -108,6 +119,30 @@ export function createPatchBrowser(ctx) {
   });
 
   return { el, step, openBrowser: () => { if (ok) pop = openBrowser(ctx, open); }, dispose: scope.dispose };
+}
+
+/**
+ * Seed from a word (v2.9): the word picks the land and the sound, the same on
+ * any computer. Loading it is one patch load (one undo step).
+ */
+function wordSeedForm(ctx, part) {
+  const { presets } = ctx;
+  const id = uniqueId('word-seed');
+  const input = h('input', { id, class: 'field field--sm', type: 'text', maxlength: String(MAX_WORD), placeholder: 'Any word', autocomplete: 'off', spellcheck: 'false' });
+  const go = h('button', { type: 'submit', class: 'btn btn--ghost btn--xs' }, 'Go');
+  const ok = has(presets, 'loadPatch');
+  if (!ok) { input.disabled = true; go.disabled = true; }
+  const form = h('form', { class: 'word-seed' }, h('label', { class: 'word-seed-label', for: id }, 'Seed from a word'), h('div', { class: 'word-seed-row' }, input, go));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const word = normalizeWord(input.value);
+    const patch = word ? wordPatch(word) : null;
+    if (!ok || !patch) { input.focus(); return; }
+    if (call(presets, 'loadPatch', part, patch) === false) return;
+    found('badge', 'seed-word');
+    ctx.toast(`Seeded from "${word}"`, { kind: 'info' });
+  });
+  return form;
 }
 
 /** Your own scene or patch called `name`, as listed (with its pedal presets), or null. */
@@ -196,7 +231,9 @@ function openBrowser(ctx, anchor) {
   let folderFilter = '';
   const tabScenes = h('button', { type: 'button', class: 'tab-btn', role: 'tab', 'aria-selected': 'false' }, 'Scenes');
   const list = h('div', { class: 'preset-list', id: listId, role: 'listbox', 'aria-label': 'Presets' });
-  const fileInput = h('input', { type: 'file', accept: '.json,application/json', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
+  const fileInput = h('input', { type: 'file', accept: '.json,application/json,.png,image/png', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
+  // v2.9 the selected track's sound as a postcard image and share link
+  const postcardBtn = ctx.openPostcard ? h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('postcard') + '<span>Postcard</span>', dataset: { tip: 'Share this track\'s sound as an image and a link' } }) : null;
   const saveScene = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('scene') + '<span>Save scene</span>' });
   const exportBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('export') + '<span>Export</span>', disabled: !has(presets, 'exportJSON') });
   const importBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('import') + '<span>Import</span>', disabled: !has(presets, 'importJSON') });
@@ -206,10 +243,11 @@ function openBrowser(ctx, anchor) {
       h('div', { class: 'tabs tabs--sm', role: 'tablist', 'aria-label': 'Preset type' }, tabPatches, tabScenes, tabFavorites)),
     folder,
     list,
-    h('footer', { class: 'browser-foot' }, saveScene, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
+    wordSeedForm(ctx, part),
+    h('footer', { class: 'browser-foot' }, saveScene, postcardBtn, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
 
   function items() {
-    if (tab === 'patches') return (call(presets, 'patches') || []).filter(p => matchesQuery(p, query) && (!folderFilter || p.folder === folderFilter));
+    if (tab === 'patches') return [...(call(presets, 'patches') || []), ...hiddenPatches()].filter(p => matchesQuery(p, query) && (!folderFilter || p.folder === folderFilter));
     return (call(presets, 'scenes') || []).filter(sc => matchesQuery(sc, query));
   }
 
@@ -315,7 +353,7 @@ function openBrowser(ctx, anchor) {
 
   function choose(it) {
     if (tab === 'patches') {
-      call(presets, 'loadPatch', part, it.id);
+      call(presets, 'loadPatch', part, it.patch || it.id);
       render();
     } else {
       call(presets, 'loadScene', it.id);
@@ -356,11 +394,17 @@ function openBrowser(ctx, anchor) {
       ctx.toast('Export did not work', { kind: 'error' });
     }
   });
+  if (postcardBtn) scope.on(postcardBtn, 'click', () => { pop.close('postcard'); ctx.openPostcard(part); });
   scope.on(importBtn, 'click', () => fileInput.click());
   scope.on(fileInput, 'change', async () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
     if (!file) return;
+    // v2.9 a postcard image loads its sound onto this track
+    if (/\.png$/i.test(file.name || '') || file.type === 'image/png') {
+      if (!(await loadPostcardFile(ctx, file))) ctx.toast('Import did not work', { kind: 'error', detail: 'This image has no Oro sound in it. Postcards made with Oro carry one.' });
+      return;
+    }
     try {
       const res = await presets.importJSON(file);
       const n = (res && res.patches) || 0, m = (res && res.scenes) || 0;

@@ -248,6 +248,40 @@ While the marble moves, its speed and the height under it are sent to the sound 
 where they are available as modulation sources (**Marble Speed** and **Marble Height**, see
 [Links](#links)).
 
+### Golf (2.9)
+
+A mini-game with the marble. Open the dot settings (the dot button on the map toolbar)
+and click **Golf**, then choose **9 holes** (the front nine, the default), **18 holes**
+(the full 18) or the **Driving range**. Golf plays on the selected track, whatever its
+dot behaviour.
+
+* Each hole has a tee and a hole (a white ring with a small flag, in a dip of the land)
+  with some land between them. The course has 18 holes and is the same every time on the
+  same land; the front nine are its first nine holes. **Par** (shown at the bottom of the
+  map) comes from the distance and how hilly the way is.
+* **Aim with the pointer**: drag from the marble towards where you want it to go. The line
+  shows the direction, and its length shows the power. Let go to shoot. Dragging anywhere
+  else still turns the camera.
+* **Aim with the keyboard**: Left and Right turn the aim (Shift for finer steps), Up and
+  Down turn it in bigger steps. Hold **Space** to charge and let go to shoot.
+* The marble is held still while you aim. After a shot it rolls until it stops. It drops
+  when it stops in the hole or rolls slowly over it; a fast ball skips across. Each hole
+  ends after 10 strokes at most.
+* A sunk ball plays a short chord in the current key on the selected track and shows the
+  result, for example "Hole 3: 4 strokes (par 3)". The next hole starts after a moment, or
+  press **Next hole** (or Enter).
+* At the end a scorecard ("Front nine" or "Full 18") shows each hole, your total and your
+  bests. Your best 9-hole round, your best 18-hole round and your best score on each hole
+  are kept on this computer.
+* **Driving range**: practice shots from a tee, with no par and no strokes. Yellow flags
+  mark 50, 100, 150 and 200 yards (yards here are a game measure, not real ones). When the
+  ball stops, Golf shows how far it ended from the tee and the height of the land there,
+  plays a note that rises with the distance, and puts the ball back on the tee after a
+  moment (press **R** or **Back to the tee** to do it at once). Your longest shot is kept.
+* **Esc** (or **Quit**) ends the game at any time and puts the dot back exactly where it
+  was, with the behaviour it had. Golf never changes your session or adds undo steps: the
+  golf marble's settings are its own, and its moves count like any rolling marble's.
+
 ### Dot locks
 
 The sequencer can also move the dot: each step can carry a **dot lock**, a spot the dot
@@ -455,17 +489,17 @@ filter and the amp envelope shape them too.
 ### Smart controls (2.8)
 
 The **Smart controls** card at the top of the Sound tab holds eight knobs for the selected
-track. Each smart knob can move up to four of the track's modulatable controls at once (the
-same ones Links can reach), each across its own range, so one knob can open the filter,
-lower the resonance and add some Fold together.
+track. Each smart knob can move up to four of the track's sound controls at once, envelope
+times included (since 2.9), each across its own range, so one knob can open the filter,
+lengthen the release and add some Fold together. Mute, solo and the pedal routing belong to
+the mix and cannot be targets.
 
 * **Choose a knob** by clicking it or tabbing to it. The editor beside the knobs shows its
   targets. A knob with no targets is dimmed and does nothing yet.
 * **Learn**: press Learn, then move any sound knob on the track (or drag the dot on the map
   for Dot X and Y). Where that control was when you pressed Learn becomes the smart knob's
   start, and where you leave it becomes its end. Move more controls to add them, up to
-  four, then press **Done** (or Esc). Controls that cannot be modulated, such as the
-  envelope times, cannot be targets.
+  four, then press **Done** (or Esc).
 * **Add a target...** adds a control from a list instead, from its current value to the
   far end of its range.
 * For each target, **Start** and **End** set its value at the knob's two ends. Set Start
@@ -754,6 +788,44 @@ These are shared by all parts:
 * **Swing**: 0 to 60%. It delays every off-beat sixteenth; the maximum is a 3:1 shuffle.
   Triplet rates are not swung.
 
+### Microtuning (2.9)
+
+Every synth part can play in a tuning other than 12-tone equal temperament. The tuning is
+part of the session and lives in **Settings > Audio > Tuning**. Scenes saved from 2.9 on
+record their tuning (12-TET included) and bring it back when loaded; scenes saved before
+2.9, and the factory scenes, have no tuning record and leave the current tuning as it is.
+
+* **Tuning**: 12-TET (the default), Just intonation (5-limit), Pythagorean,
+  Quarter-comma meantone, Werckmeister III, 19-TET, 24-TET (quarter tones), 31-TET and
+  Bohlen-Pierce (13 equal steps of the 3/1 "tritave"), plus any scale you import.
+* **Root**: the key the scale starts on. **Follow key** (the default) uses the global
+  **Key**, so a just-intonation scale stays pure when you change key.
+* **A4 (Hz)**: the reference pitch, 400 to 480 Hz (default 440).
+* **Import .scl / .kbm**: load a Scala scale file (`.scl`: a description, the number of
+  notes, then one pitch per line in cents, such as `386.3`, or as a ratio, such as `5/4`;
+  lines starting with `!` are comments; the last pitch is the period, usually `2/1`).
+  Scales of up to 128 notes are accepted. You can also load a Scala keyboard map
+  (`.kbm`), alone or together with a scale: it sets which keys play which degrees, the
+  middle key, and the reference key and frequency. While a map is loaded, Root and A4
+  are greyed out; **Remove map** drops it. **Reset** returns to 12-TET at 440 Hz.
+* The line under the controls names the scale, its number of notes per period and the
+  reference, and reports any file that could not be loaded and why.
+
+How keys map without a `.kbm`: the scale's first note sits on the root key in the octave
+of middle C, and each key up or down is one scale degree. A 12-note scale is pinned so
+that A4 plays the reference pitch exactly. Scales with another number of notes (19-TET,
+Bohlen-Pierce, most imported scales) keep the root key at its usual pitch, so a 19-TET C4
+is still about 261.6 Hz, and an octave is then 19 keys wide. Tuned pitches are kept
+between 8 Hz and 20 kHz.
+
+In a tuning other than the default, pitch bend and **Tune** move through the tuning by
+keys: a bend or transpose of 2 semitones plays the note two keys up in the tuning (in
+19-TET that is two 19-TET steps), and part of a bend lands smoothly between two keys.
+Past the lowest or highest key the last step size carries on. **Fine** and unison detune
+stay in cents, and the **Octave** switch is always a true 2/1. Glide slides smoothly
+between the tuned pitches. Drum kit tracks are not affected, and notes sent to other MIDI
+gear are unchanged. Bounces use the tuning too.
+
 ### The step sequencer
 
 A track can hold up to 16 **patterns**. The picker at the top of the Pattern block shows the
@@ -909,6 +981,139 @@ of land.
 Locked spots are marked on the 3D map with numbers. If you grab the dot while a lock is
 gliding it, your hand wins.
 
+### MIDI files (2.9)
+
+The **MIDI file** box at the bottom of the Seq tab's Pattern block moves patterns in and
+out as Standard MIDI Files (`.mid`):
+
+* **Export**: with **This pattern** chosen, saves one pass of the selected track's
+  current pattern (even if its sequencer is off). With **All tracks, N bars**, saves N
+  bars of every track whose sequencer is on, one MIDI track each (plus any track whose
+  arpeggiator made notes). Files are type 1 at 480 ticks per beat, with the session
+  tempo, 4/4 and the track names. The notes come from the same offline replay as the WAV
+  bounce, so the file has exactly what a bounce would play: the step sequencer (with
+  swing, ratchets, slides, humanize and probability as on the first Play), the
+  arpeggiator playing the keys that are held or latched with Hold when you export, and
+  the chord trigger. Notes you play live are not included. (If the music engine did not
+  start, only the step sequencers are written.) Accented steps are written at
+  velocity 127. Drum kit tracks are written on channel 10, lane 1 as key 36 (C1) up to
+  lane 8 as key 43.
+  The **Bounce** popover also has **Save MIDI**, for the bars chosen there.
+* **Import**: reads a type 0 or type 1 file into the selected track's current pattern.
+  If the file has several tracks (or channels) with notes, choose one from the list (the
+  busiest is selected); otherwise it is used at once. Notes are quantized to the
+  pattern's step rate, starting at the bar of the first note, and the first *Length*
+  steps are written. Each note becomes a scale degree and octave in the global key and
+  scale; notes outside the scale snap to the nearest scale note (the lower one on a tie).
+  Velocity and length set each step's Vel and Gate, notes at velocity 120 or more are
+  also marked as accents (keeping their velocity), and overlapping notes become slides.
+  The **chords** menu under the buttons decides what happens when several notes land on
+  one step: **Highest note** (the default) or **Lowest note** keeps one, and **Split
+  across tracks** writes the highest notes into this track, the next voice down into the
+  track after it, and so on, each into that track's current pattern. Voices beyond the
+  last track are dropped, and the status line says how many. On a drum kit track the
+  notes fill the lanes instead: keys 36 to 43 go to lanes 1 to 8, and other keys wrap
+  round onto them.
+  Dot locks and the steps after the pattern's length are left as they were.
+* The status line says how many notes came in, how many were snapped, how many were left
+  out and the file's tempo (the session tempo is not changed). An import is one undo
+  step, also when it is split across several tracks.
+
+### Parameter locks (2.9)
+
+The **Lock** row, under **Dot**, lets any step set its own value for a sound parameter, so
+one step can open the filter, another can push the drive, and so on.
+
+* Choose the parameter with the **Lock row** menu under the grid (Cutoff, Reso, Drive, Pan,
+  Fold and every other parameter the modulation can reach). The row shows and edits that
+  parameter's lock on each step. A small dot in a cell means the step holds a lock on some
+  parameter, even if it is not the one chosen.
+* Click a cell to lock the parameter to its knob's current value on that step. Drag up or
+  down (or use the arrow keys, Page Up and Page Down for bigger moves) to change it.
+* Right-click a cell, or press **Delete**, to clear that parameter's lock on the step.
+* A step can hold up to 8 locks.
+
+When a locked step plays, the parameter jumps to the step's value, whether or not the step
+has a note. At the next step without a lock on it, it goes back to the knob's value. The knob
+itself never moves and keeps its own value, and Stop puts every locked parameter back. The
+dot keeps using the **Dot** row, so dot locks and parameter locks work side by side. Bounces
+include the locks.
+
+### Song mode (2.9)
+
+Each track can play a chain of its patterns instead of looping one.
+
+* In the **Pattern** block, **Song** lists the chain. The **+** button adds the pattern
+  shown above to the end of the list (up to 32 entries).
+* Each entry has a **repeats** menu (x1 to x16): how many passes of that pattern play before
+  the next entry. The arrow buttons move an entry earlier or later, and the cross removes it.
+  Click an entry's name to edit that pattern.
+* Turn **Chain** on to play the list: the track plays each entry for its repeats, in order,
+  switching at the end of a pattern pass, and starts again from the top after the last one.
+  The entry playing is highlighted.
+* Turn **Chain** off and the track loops the pattern it has selected, as before.
+
+Each pattern keeps its own rate and length, so an entry can play at 1/8 and the next at 1/16;
+the timing carries on without a gap. When you press Play, the chain starts at its first entry.
+Turned on while playing, it starts at the end of the current pass. The step playhead shows
+while the chain plays the pattern you are editing. Removing a pattern also removes its entries
+from the chain. Bounces follow the chain.
+
+### Capture (2.9)
+
+Played something good without recording? **Capture** turns it into a pattern.
+
+The app keeps the notes you played on each track over about the last 16 bars, from the
+on-screen keyboard, the computer keyboard, MIDI and guitar or voice notes (the sequencer, the arpeggiator and the
+patch preview are not kept). Press **Capture** in the Pattern block and the most recent
+phrase (the notes since the last silence of two bars or more) becomes the selected track's
+pattern:
+
+* Notes are placed on the pattern's step rate at the current tempo. While the transport
+  plays, they land on the step they were played on; otherwise the first note starts step 1.
+* Capture keeps the last steps of the phrase up to the pattern's length (16 by default),
+  ending at the last note you played. Each note lands on its own place in the pattern's loop.
+* Notes become steps in the global key and scale. A note outside the scale moves to the
+  nearest scale note, and the status line says how many moved.
+* Velocity comes from how hard you played, and gate from how long you held the key. A note
+  held over the following empty steps becomes tied steps, and a note held into the next one
+  slides into it.
+* Two notes on one step keep the louder one.
+* On a drum kit track, Capture fills the kit's lanes instead: C2 plays pad 1, C#2 pad 2 and
+  so on up to G2. Other notes are left out.
+
+Dot locks and parameter locks stay on their steps. If the track's sequencer was off, Capture
+switches it on. The status line under the button says what was captured, or why nothing was.
+Undo takes the whole capture back in one step.
+
+### Ghost replay (2.9)
+
+A ghost is a recording of you playing one track: the notes you play on it, the knobs you
+turn on it and the path you drag its dot along. Play it back and the track keeps playing
+your take in a loop while you play something else on top.
+
+The **Ghost** block in the Seq tab (under Capture) works on the selected track, and the
+track menu (the track tab's menu, or the mixer strip's) has the same commands:
+
+* **Record ghost** starts recording (it starts the transport if it is stopped). Play notes
+  on the track from the on-screen keyboard, the computer keyboard or MIDI, turn its knobs
+  and drag its dot. Press **Stop recording** when you are done. The arpeggiator's notes are
+  recorded too, so what you heard is what comes back.
+* The ghost starts at the bar you started recording in and lasts until Stop, rounded up to
+  whole bars (64 bars at most; recording stops by itself there, or when the ghost is full).
+* **Play ghost** plays it on its own track in a loop while the transport runs, lined up with
+  the bar it was recorded from. You can play any track meanwhile, including the same track's
+  keys. The ghost's knob moves and dot path drive the sound without moving your knobs, so
+  your settings stay as they are and Undo is not filled up. A translucent ghost dot shows the
+  recorded path on the map, and the track's dot follows it while you are not holding it.
+* **Stop ghost** (or stopping the transport) silences it and gives the track its own knob
+  values back. A ghost that is on plays again with the next Play.
+* **Clear ghost** removes it. Recording a new ghost replaces the old one.
+
+Ghosts are saved with the session, one per track, and go with the track when it is moved or
+duplicated. Loading a patch onto the track keeps its ghost. Mute, solo and the pedal routing
+are never part of a ghost.
+
 ### Arpeggiator
 
 Each part also has an arpeggiator (the **Arp** row in the Seq tab). Hold a chord and it
@@ -1004,7 +1209,54 @@ work. Your own patches and scenes are kept separately. Both live in the browser'
 for the page you use (or in the desktop app's own storage), so clearing site data in the
 browser also clears them. Export them to a file if you want a backup.
 
+### Postcards and sharing (2.9)
+
+A postcard is one track's sound as a picture you can post, with the sound itself inside.
+Choose **Postcard** at the bottom of the patch browser (it uses the selected track) or
+**Postcard...** in a track's menu. The dialog shows a 1080 x 1080 image of the track's
+terrain and path with the patch name, "Made with Oro" and hendrickresearch.com/music/oro,
+and a share link.
+
+* **Share...** opens your device's share sheet. On a phone it offers the image and the link
+  to apps such as X, Instagram, Facebook, TikTok and Messages; elsewhere it shares the link.
+* **X, Facebook, Bluesky, Threads, Reddit and LinkedIn** open that site's post page in a new
+  tab with the link (and a caption where the site takes one). In the desktop app they open
+  in your browser.
+* **Copy link** copies the link. **Download image** saves the PNG.
+* Instagram posts are made in the Instagram app: download the image (or use Share on a phone)
+  and add the link to your caption or bio.
+
+The caption reads: A sound I made in Oro: "name". Open it: followed by the link.
+
+**What travels.** The image and the link carry the track's sound: its patch, the same as
+Save in the patch browser keeps, plus the patch name and Oro's version. They never carry the
+track's pattern, its mute, solo, sends or pedal routing, the rest of the session, or anything
+about you.
+
+**Opening a link.** A link opens Oro in the browser and asks first: Load the shared sound
+"name" onto track N? You can pick another track before pressing **Load sound**, and Undo
+brings the old sound back. Nothing loads without that answer. A damaged or cut-short link
+shows a message instead. Very large sounds are refused.
+
+**Opening a postcard image.** Drop the PNG on the 3D view, or choose it with **Import** in the
+patch browser, and its sound loads onto the selected track. Dropped on Terrain A or B in the
+map panel, Oro asks whether to load the sound or use the picture as terrain.
+
+Social sites strip hidden data from the images people upload, so on those sites the link is
+what carries the sound; the downloaded image keeps it. A sound with an imported terrain is
+too large for a link: the link carries the rest of the sound and the dialog says so, while the
+image keeps all of it.
+
 ---
+
+### Seed from a word (2.9)
+
+At the bottom of the patch browser, type any word in **Seed from a word** and press **Go**
+(or Enter). The word picks the terrain seed and a whole patch: land, orbit, envelopes and
+modulation. The same word always gives the same land and the same sound, on any computer
+(capitals, accents written either way and extra spaces do not matter). It loads like any
+patch, as one undo step, on the selected track, and Oro confirms it, for example Seeded from "tide". The
+patch is named after the word; save it if you want to keep it.
 
 ## 11. Mixing and effects
 
@@ -1072,8 +1324,9 @@ and strip show the snowflake and "Frozen". Press it again to unfreeze.
   bars (rounded up to whole passes of the pattern). The render plays a few seconds of the
   pattern first, so release and effect tails that cross the end of the loop come back round
   at its start, as they do live.
-* A frozen track plays only while the transport runs. Keys and MIDI do not play it (Oro
-  says so the first time); unfreeze it to play it live.
+* A frozen track's loop plays only while the transport runs. Since 2.9, keys and MIDI
+  still play the track live, through its own track effects, on top of the loop (its
+  sequencer and arpeggiator are already in the loop, so their notes are not played again).
 * **Editing a frozen track unfreezes it.** Changing anything that shapes its sound (any
   sound or path setting, Pan, modulation, Links, the Function, track effects, terrains, the
   pattern, the dot, the chord trigger, or the global tempo, swing, key or scale) makes the
@@ -1195,8 +1448,10 @@ changes. It is used in two places:
   as it was recorded and always stretches from that copy, so moving the tempo back and
   forth does not wear the sound down. The stretch waits until an overdub ends. **Fit to
   tempo** does the same once, on demand; a loop recorded without the transport is fitted
-  to the nearest whole number of bars and follows the tempo from then on. Stretching
-  clears the loop's undo layers, and a loop can last at most 120 seconds. Follow tempo is a
+  to the nearest whole number of bars and follows the tempo from then on. Since 2.9 a
+  stretch is a step in the loop's Undo: Undo brings back the audio from before it (at its
+  own length, which Follow tempo then fits again), then the older overdubs. A loop can last
+  at most 120 seconds. Follow tempo is a
   setting of this computer, off until you turn it on.
 * **Noise recordings** (Sound tab, Noise card): **Stretch...** makes the imported
   recording half as long, 75%, 150% or twice as long, keeping its pitch. Recordings keep at
@@ -1276,6 +1531,24 @@ Open **Settings** with the gear button or the **,** key.
   sound is never affected.
 * **Map style**, **Palette** (the colours of the land from valleys to peaks, shown as
   swatches) and **Auto-rotate**.
+* **Day and night**, **Pet** and **Pet name** (see below).
+
+### Day and night (2.9)
+
+Turn on **Day and night** under **3D map** in **Settings > General** and the colours of
+the land slowly follow the time where you are: warm at dawn, plain through the day,
+orange at dusk and a deep blue at night. Oro checks the clock once a minute and fades to
+the new colours over a few seconds, so the map never flickers. It only changes the map
+colours (and the small map), never the sound. It is off by default.
+
+### The pet (2.9)
+
+Turn on **Pet** under **3D map** in **Settings > General** and a small creature called
+Moss comes to live on the map, near the dot. It wanders slowly, keeps off steep slopes,
+falls asleep (a small "z" appears) after about 20 seconds without notes, and wakes up
+with a little hop when a note plays. With Reduce motion on it walks more slowly and does
+not hop. Give it another name in **Pet name**; the name is kept on this computer. The pet
+only lives on the map and never changes the sound. It is off by default.
 
 ### Audio
 
@@ -1284,6 +1557,8 @@ Open **Settings** with the gear button or the **,** key.
 * **Output device**: choose where the sound goes, in browsers that allow it (Chrome and
   Edge) and in the desktop app. Elsewhere, change the output in your computer's sound
   settings.
+* **Tuning**: built-in tunings, the reference pitch and Scala import (see
+  [Microtuning](#microtuning-29)).
 * **Bounce...** (see above).
 
 <a id="audio-quality"></a>
@@ -1376,6 +1651,97 @@ notes and modulation, but it is not a studio microphone: it picks up the room, t
 the keyboard, and it has little low end. Headphones make the biggest difference, then a USB
 or interface microphone. Monitoring through the browser adds a few milliseconds of delay
 (more with Mic Cleanup and the compressor), which singers notice less with headphones.
+
+### Operator panel (2.9)
+
+**Settings > Operator** imitates a synth that has had a hard life, plus a few service
+tools. Everything except **Free Play** is off until you turn it on, and while it is off Oro
+sounds exactly as before. The switches are saved with the session (and with scenes); the damage itself is
+not, so a reloaded session starts repaired. Bounces include the damage, quirks and
+vintage sound, but never a test tone.
+
+The switches belong to the machine, like a cabinet's DIP switches: loading a scene only
+changes them when the scene was saved with some of them on.
+
+#### Damage
+
+* **Drop damage**: as if the synth fell on the floor. **Drop it** drops it once: you hear
+  a thud and a rattle, and the damage meter goes up. **Severity** sets how hard each drop
+  is. Damage builds up with every drop and stays until **Repair**. The more damage, the
+  more you hear: crackle from a loose connection, brief cutouts, one side cutting in and
+  out, a scratchy control that dulls the tone for a moment, and a pitch knocked out of tune
+  with a slow wobble.
+* **Real drops**: on a phone or tablet with motion sensors, a hard jolt counts as a drop
+  (with a short pause before the next one can count). Some browsers ask first: turn on
+  Real drops, then press **Allow motion sensor**. Desktop computers usually have no motion
+  sensor, and the panel says so.
+* **Water damage**: as if a drink was spilled on it. **Spill** spills once and **Severity**
+  sets how much. The wetter it is, the more muffled the tone, with fizz and crackle from
+  corroded contacts, a low mains hum, short drop-outs and rare bursts of digital errors.
+  It dries out over a few minutes; turn on **Stays wet** to keep it wet until **Repair**.
+  **Mains hum** picks 50 Hz (most of the world) or 60 Hz (the Americas and some other
+  places).
+* **Show on screen**: faint cracks after a drop and droplets while it is wet. They are
+  still pictures that fade slowly; nothing moves or flashes.
+
+The delay and reverb hear the cutouts but are not muffled, so their tails stay clean.
+
+#### Quirks
+
+* **Glitch**: now and then the output stutters, repeating a short slice of what just
+  played. **Amount** sets how often and how many repeats.
+* **Slowdown**: the pitch sags when many notes sound at once, like an overloaded old
+  machine, and recovers as they stop. **Amount** sets how far it sags.
+* **Kill screen**: like an old game that was never meant to be played that long. Once
+  the transport has played a track's pattern 256 times in a row, the pattern starts to
+  break up as it plays: now and then a step plays a different note, at a different
+  velocity, or not at all, a little more often with every pass. It is the same every
+  time, it only changes what you hear (your saved pattern is not touched), and **Stop**
+  resets the count. Off by default.
+
+#### Vintage
+
+* **Vintage sampler**: an early sampler sound on the whole output, 12-bit at about 26 kHz
+  with gentle filtering on each side.
+
+#### Coin slot
+
+* **Free Play** (on by default): Oro plays as usual. Turn it off and Oro stays silent,
+  whether from the keys, MIDI or the sequencer, until you insert a coin: press **C** on
+  the computer keyboard (while Free Play is off, C inserts a coin instead of lowering the
+  keyboard velocity) or **Insert coin**. Each coin is one credit, worth 3 minutes of play
+  counted from the first note. A small status at the top says **INSERT COIN** when no
+  credit is left, or the time left and **Credits: N**. It stays still and never blinks.
+  Credits are not saved; bounces are never blocked.
+
+#### Service
+
+* **Test tones**: **Sine 1 kHz** (-18 dBFS), **Pink noise** (about -20 dBFS), **Left
+  only** and **Right only** (pink noise on one speaker, to check the wiring) and **Polarity
+  pulse** (a short positive pulse twice a second). Press a tone to start it and again (or
+  **Stop tone**) to stop it; closing Settings stops it too. The levels are before the
+  master volume, so turn your speakers or headphones down first.
+* **MIDI monitor**: the last 20 incoming MIDI messages, newest first, in plain words with
+  their bytes and port. Clock and active sensing are left out.
+
+#### Bookkeeping
+
+Time played (while audio is running), notes played, sessions started and patches saved.
+The counters are kept only in this browser and are never sent anywhere. **Reset
+counters** starts them again from zero.
+
+Below the counters are your secrets and badges (see the next section).
+
+### Secrets and badges (2.9)
+
+Oro has a few secrets hidden in it, and badges to earn as you use it. Nothing about them
+gets in the way: they never react while you type in a field, never stop a key doing what it
+normally does, and never change the sound or your session unless you choose to. Nothing
+flashes. When you find a secret or earn a badge, a short message says so.
+
+**Settings > Operator > Bookkeeping** shows how many secrets you have found, with a vague
+hint for each one still hidden, and every badge: the ones you have earned with the date,
+the rest as **???** with a hint. Like the counters, this is kept only in this browser.
 
 ### MIDI & MPC, Pedals, Shortcuts, About
 
