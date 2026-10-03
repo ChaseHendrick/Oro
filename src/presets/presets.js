@@ -9,6 +9,7 @@ import {
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
+import { sanitizeSmart } from '../core/smart.js';
 import { createEmitter } from '../music/emitter.js';
 import { FACTORY_PATCHES, CATEGORIES } from './factory-patches.js';
 import { FACTORY_SCENES } from './factory-scenes.js';
@@ -71,6 +72,9 @@ export function sanitizePatch(src) {
   if (Array.isArray(src.links)) patch.links = sanitizeLinks(src.links);
   if (src.dot) patch.dot = clean.dot;
   if (clean.userTerrain.A || clean.userTerrain.B) patch.userTerrain = clean.userTerrain;
+  // v2.8 smart controls travel with the patch when it has any.
+  const smart = sanitizeSmart(src.smart);
+  if (smart) patch.smart = smart;
   // Optional pedal presets (v1.1), sent on load only when the rig allows it.
   const pedalPresets = sanitizePedalPresets(src.pedalPresets);
   if (pedalPresets) patch.pedalPresets = pedalPresets;
@@ -258,6 +262,8 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       dot: JSON.parse(JSON.stringify(cur.dot || {})),
     };
     if (cur.userTerrain && (cur.userTerrain.A || cur.userTerrain.B)) patch.userTerrain = { ...cur.userTerrain };
+    const smart = sanitizeSmart(cur.smart);
+    if (smart) patch.smart = smart;
     const pp = pedalPresets === undefined ? sanitizePedalPresets(existing && existing.pedalPresets) : sanitizePedalPresets(pedalPresets);
     if (pp) patch.pedalPresets = pp;
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;

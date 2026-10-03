@@ -14,6 +14,7 @@ import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
+import { sanitizeSmart } from './smart.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -204,6 +205,8 @@ export function sanitizePart(src, i) {
     userTerrain: { A: sanitizeUserTerrain(p.userTerrain?.A), B: sanitizeUserTerrain(p.userTerrain?.B) },
     trackFx: sanitizeTrackFx(p.trackFx),
     noiseRecording: sanitizeNoiseRecording(p.noiseRecording),
+    // v2.8 smart controls, absent unless a knob has a target or a name
+    ...(sanitizeSmart(p.smart) ? { smart: sanitizeSmart(p.smart) } : {}),
   };
 }
 

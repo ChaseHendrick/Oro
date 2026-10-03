@@ -50,7 +50,7 @@ export function createLooper(ctx, { input, output, worklet }) {
   let state = {
     state: 'empty', len: 0, pos: 0, bars: DEFAULT_BARS, loopBars: 0, layers: 0, recPos: 0, recTarget: 0,
     cue: false, muted: false, volume: 1, feedback: 1, peak: 0, capturing: false, capture: -1,
-    sampleRate: ctx ? ctx.sampleRate : 48000,
+    sampleRate: ctx ? ctx.sampleRate : 48000, edit: 0, loopSpb: 0,
   };
   let nextId = 1;
   const waiting = new Map();   // id -> {resolve, reject, timer}
@@ -75,7 +75,9 @@ export function createLooper(ctx, { input, output, worklet }) {
         state = { ...state, pos: m.pos, len: m.len, recPos: m.recPos, recTarget: m.recTarget, cue: m.cue, capture: m.capture, peak: m.peak };
         events.emit('pos', { ...state });
       } else if (m.t === 'loop') {
-        settle(m.id, (w) => w.resolve(m.len ? { L: m.L, R: m.R, len: m.len, sampleRate: m.sampleRate, loopBars: m.loopBars || 0 } : null));
+        settle(m.id, (w) => w.resolve(m.len ? { L: m.L, R: m.R, len: m.len, sampleRate: m.sampleRate, loopBars: m.loopBars || 0, edit: m.edit || 0, loopSpb: m.loopSpb || 0 } : null));
+      } else if (m.t === 'replaced') {
+        settle(m.id, (w) => w.resolve({ ok: !!m.ok, edit: m.edit || 0 }));
       } else if (m.t === 'captured') {
         settle(m.id, (w) => {
           if (m.cancelled) w.resolve(null);
@@ -104,7 +106,7 @@ export function createLooper(ctx, { input, output, worklet }) {
     get available() { return !!node; },
     get reason() { return reason; },
     get node() { return node; },
-    /** Latest state from the worklet: {state, len, pos, bars, loopBars, layers, muted, volume, feedback, cue, capturing, ...}. */
+    /** Latest state from the worklet: {state, len, pos, bars, loopBars, layers, muted, volume, feedback, cue, capturing, edit, loopSpb, ...}. */
     status() { return { ...state }; },
     on(name, fn) { return events.on(name, fn); },
     off(name, fn) { events.off(name, fn); },
@@ -120,7 +122,7 @@ export function createLooper(ctx, { input, output, worklet }) {
     setFeedback(v) { post({ t: 'feedback', v }); },
     /** Transport anchor (engine.setTransport forwards it): {playing, beatTime, beat, spb}. */
     transport(t) { post({ t: 'transport', playing: !!t.playing, beatTime: t.beatTime, beat: t.beat, spb: t.spb }); },
-    /** A copy of the current loop: {L, R, len, sampleRate, loopBars} or null when empty. */
+    /** A copy of the current loop: {L, R, len, sampleRate, loopBars, edit, loopSpb} or null when empty. */
     getLoop() { return request({ t: 'get' }, REPLY_TIMEOUT_MS); },
     /**
      * Record `bars` of the master (post-FX, before the limiter) at full rate, untouched,
@@ -129,6 +131,23 @@ export function createLooper(ctx, { input, output, worklet }) {
      */
     capture({ bars = DEFAULT_BARS, frames = 0 } = {}) { return request({ t: 'capture', bars, frames }, 0); },
     cancelCapture() { post({ t: 'cancelCapture' }); },
+    /**
+     * v2.8 Follow tempo: swap the loop's audio for `L`/`R` (a stretched copy;
+     * the buffers are transferred). `base` is the loop's `edit` the copy was
+     * made from: when the loop changed since, nothing happens. `spb` is the
+     * beat length the new audio fits, `bars` its length in bars.
+     * Resolves to {ok, edit}.
+     */
+    replaceLoop({ L, R, base, spb = 0, bars = 0 }) {
+      if (!node) return Promise.reject(new Error(reason));
+      const id = nextId++;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => settle(id, (w) => w.reject(new Error('The looper did not answer (is audio running?)'))), REPLY_TIMEOUT_MS);
+        waiting.set(id, { resolve, reject, timer });
+        try { node.port.postMessage({ t: 'replace', id, L, R, base, spb, bars }, [L.buffer, R.buffer]); }
+        catch (err) { settle(id, (w) => w.reject(err)); }
+      });
+    },
     /** The current loop as a WAV Blob: 24-bit with TPDF dither (default) or 32-bit float. */
     async exportWav({ format = 'pcm24' } = {}) {
       const loop = await api.getLoop();

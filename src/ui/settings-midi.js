@@ -27,7 +27,7 @@ export function noteLabel(n) {
 export function describeTarget(t, store) {
   if (!t) return 'Unknown';
   const def = t.scope === 'global' ? GLOBAL_PARAM_MAP[t.id] : PART_PARAM_MAP[t.id];
-  const label = def ? def.label : t.id;
+  const label = t.scope === 'smart' ? `Smart knob ${String(t.id).replace(/^smart/, '')}` : def ? def.label : t.id;
   if (t.scope === 'global') return `${label} (global)`;
   if (t.part === 'sel' || t.part == null) return `${label} (selected track)`;
   const name = store ? store.get(`parts.${t.part}.name`) : null;

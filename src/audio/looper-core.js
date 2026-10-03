@@ -29,6 +29,16 @@
 // copy is made a chunk at a time ahead of the playhead so no single audio
 // block does a whole-loop copy.
 //
+// Follow tempo (v2.8): `replace` swaps in a time-stretched copy of the loop
+// (made on the main thread, src/dsp/time-stretch.js) with a short crossfade
+// from the old one, keeping the position in proportion. `edit` counts every
+// change of the loop's audio (a recording, an overdub, an undo, a clear, a
+// replace) so the main thread can tell whether its untouched copy of the
+// loop is still the current one, and a replace made from an older loop is
+// refused. A replace clears the undo layers (they have the old length).
+// `loopSpb` is the beat length the loop's audio was recorded or stretched at
+// (0 for a free-length loop).
+//
 // The core never hears itself: its input is the master bus before the point
 // where its output is mixed back in (see engine.js), so the loop only reaches
 // the loop again through overdub, and then at most at unity.
@@ -132,7 +142,9 @@ export class LooperCore {
     this.pg = 0; this.pgTarget = 0;    // play fade 0..1 (linear over fadeLen)
     this.od = 0; this.odTarget = 0;    // overdub ramp 0..1
     this.afterFade = null;             // 'pause' | 'clear' once pg reaches 0
-    this.xf = null;                    // { L, R, k } crossfade from an old buffer (undo)
+    this.xf = null;                    // { L, R, k, p, len } crossfade from an old buffer (undo, replace)
+    this.edit = 0;                     // changes of the loop's audio (v2.8)
+    this.loopSpb = 0;                  // beat length the loop was recorded at (0 = free length)
 
     this.layers = [];                  // undo: [{ L, R, done, start, copied, peak }]
     this.peak = 0;                     // largest |sample| stored in the loop
@@ -165,6 +177,8 @@ export class LooperCore {
       peak: this.peak,
       capturing: !!this.capture,
       sampleRate: this.sr,
+      edit: this.edit,
+      loopSpb: this.loopSpb,
     };
   }
 
@@ -194,6 +208,7 @@ export class LooperCore {
       case 'transport': this.setTransport(msg, frame); break;
       case 'get': this.sendLoop(msg.id); break;
       case 'capture': this.startCapture(msg, frame); break;
+      case 'replace': this.replace(msg); break;
       case 'cancelCapture': if (this.capture) { const id = this.capture.id; this.capture = null; this.emit({ t: 'captured', id, cancelled: true }); this.notify(); } break;
       default: break;
     }
@@ -279,6 +294,8 @@ export class LooperCore {
   }
 
   reset() {
+    if (this.len) this.edit++;
+    this.loopSpb = 0;
     this.state = 'empty';
     this.L = this.R = null;
     this.len = 0; this.pos = 0; this.loopBars = 0;
@@ -381,6 +398,8 @@ export class LooperCore {
     }
     if (r.mode === 'free') this.loopBars = 0;
     else this.loopBars = Math.round(len / (this.barLenExact() / this.bars));
+    this.loopSpb = r.mode === 'free' ? 0 : finite(this.transport.spb, 0.5);
+    this.edit++;
     this.rec = null;
     this.pos = 0;
     this.cueFrame = -1;
@@ -411,6 +430,7 @@ export class LooperCore {
     }
     this.state = 'overdub';
     this.odTarget = 1;
+    this.edit++;
   }
 
   /** Copy `count` frames of the snapshot `s` (from its start, wrapping). */
@@ -447,9 +467,41 @@ export class LooperCore {
     if (this.state === 'overdub') this.state = 'play';
     this.od = 0; this.odTarget = 0;
     const prev = this.layers.pop();
-    if (this.audible && this.pg > 0 && this.cueFrame < 0) this.xf = { L: this.L, R: this.R, k: 0 };
+    if (this.audible && this.pg > 0 && this.cueFrame < 0) this.xf = { L: this.L, R: this.R, k: 0, p: this.pos, len: this.len };
     this.L = prev.L; this.R = prev.R;
     this.peak = prev.peak;
+    this.edit++;
+    this.notify();
+  }
+
+  /**
+   * Swap in new loop audio (Follow tempo): {L, R, id, base, spb, bars}. Only
+   * while the loop plays or is stopped, and only when `base` (when given) is
+   * still the current `edit`. Answers {t:'replaced', id, ok, edit}.
+   */
+  replace(msg) {
+    const L = msg.L, R = msg.R;
+    const len = L && typeof L.length === 'number' ? L.length : 0;
+    const ok = this.len > 0 && (this.state === 'play' || this.state === 'paused')
+      && L instanceof Float32Array && R instanceof Float32Array && R.length === len
+      && len >= Math.max(2 * this.fadeLen, Math.round(MIN_LOOP_SECONDS * this.sr)) && len <= this.maxLoop
+      && (msg.base == null || msg.base === this.edit);
+    if (!ok) { this.emit({ t: 'replaced', id: msg.id, ok: false, edit: this.edit }); return; }
+    const oldL = this.L, oldR = this.R, oldLen = this.len, oldPos = this.pos;
+    this.layers = [];
+    this.od = 0; this.odTarget = 0;
+    this.L = L; this.R = R; this.len = len;
+    this.pos = Math.min(len - 1, Math.floor((oldPos * len) / oldLen));
+    this.xf = this.audible && this.pg > 0 && this.cueFrame < 0 ? { L: oldL, R: oldR, k: 0, p: oldPos, len: oldLen } : null;
+    const bars = Math.round(finite(msg.bars, 0));
+    if (bars > 0) this.loopBars = bars;
+    const spb = finite(msg.spb, 0);
+    if (spb > 0) this.loopSpb = spb;
+    let peak = 0;
+    for (let i = 0; i < len; i++) { const a = Math.max(Math.abs(L[i]), Math.abs(R[i])); if (a > peak) peak = a; }
+    this.peak = peak;
+    this.edit++;
+    this.emit({ t: 'replaced', id: msg.id, ok: true, edit: this.edit });
     this.notify();
   }
 
@@ -495,7 +547,7 @@ export class LooperCore {
   sendLoop(id) {
     if (!this.len) { this.emit({ t: 'loop', id, len: 0, sampleRate: this.sr }); return; }
     const L = this.L.slice(0, this.len), R = this.R.slice(0, this.len);
-    this.emit({ t: 'loop', id, L, R, len: this.len, sampleRate: this.sr, loopBars: this.loopBars }, [L.buffer, R.buffer]);
+    this.emit({ t: 'loop', id, L, R, len: this.len, sampleRate: this.sr, loopBars: this.loopBars, edit: this.edit, loopSpb: this.loopSpb }, [L.buffer, R.buffer]);
   }
 
   /** Record `frames` (or `bars` at the transport tempo) of the raw input, starting on a bar line when playing. */
@@ -580,8 +632,10 @@ export class LooperCore {
           if (x) {
             const t = (x.k + 0.5) / F * HALF_PI;
             const fi = Math.sin(t), fo = Math.cos(t);
-            sl = sl * fi + x.L[p] * fo;
-            sr = sr * fi + x.R[p] * fo;
+            const xp = x.p;
+            sl = sl * fi + x.L[xp] * fo;
+            sr = sr * fi + x.R[xp] * fo;
+            x.p = xp + 1 >= x.len ? 0 : xp + 1;
             if (++x.k >= F) this.xf = null;
           }
           // Overdub ramp and decay glide.

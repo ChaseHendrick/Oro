@@ -452,6 +452,41 @@ one voice is: oscillator (path over terrain, then Lift and Fold) → plus Sub an
 Drive → filter → amp envelope → pan. Because Sub and Air go in before the filter, the
 filter and the amp envelope shape them too.
 
+### Smart controls (2.8)
+
+The **Smart controls** card at the top of the Sound tab holds eight knobs for the selected
+track. Each smart knob can move up to four of the track's modulatable controls at once (the
+same ones Links can reach), each across its own range, so one knob can open the filter,
+lower the resonance and add some Fold together.
+
+* **Choose a knob** by clicking it or tabbing to it. The editor beside the knobs shows its
+  targets. A knob with no targets is dimmed and does nothing yet.
+* **Learn**: press Learn, then move any sound knob on the track (or drag the dot on the map
+  for Dot X and Y). Where that control was when you pressed Learn becomes the smart knob's
+  start, and where you leave it becomes its end. Move more controls to add them, up to
+  four, then press **Done** (or Esc). Controls that cannot be modulated, such as the
+  envelope times, cannot be targets.
+* **Add a target...** adds a control from a list instead, from its current value to the
+  far end of its range.
+* For each target, **Start** and **End** set its value at the knob's two ends. Set Start
+  above End to make the knob turn that control down (the **Invert** button swaps them).
+  The curve menu sets how the knob travels through the range: **Linear**, **Slow start**,
+  **Fast start** or **S-curve**. Ranges follow each control's own scale, so a cutoff range
+  moves evenly in octaves.
+* Type a **name** for the knob, or leave it empty to show its first target's name.
+  **Clear** removes the knob's targets and name.
+
+Turning a smart knob sets its targets directly, like turning them yourself: the values are
+saved with the session, and Undo takes back a turn in one step. If you move a target
+yourself afterwards, the smart knob takes it over again the next time you turn it.
+Right-click a smart knob to **MIDI Learn** it; a mapped knob always works on the track you
+have selected.
+
+Smart controls are saved with the track, in scenes and with patches you save. Loading a
+patch replaces the track's smart controls with the patch's own, or clears them for a patch
+that has none (including the factory patches). Tracks that never use smart controls are
+saved exactly as before.
+
 ### Voice
 
 | Control | What it does |
@@ -1005,6 +1040,30 @@ limit keeps the loop under control instead of clipping it.
 keeps quiet tails clean) or **32-bit float** (every sample exactly as stored).
 
 Loops are not saved with your session: export the ones you want to keep.
+
+### Time stretch (2.8)
+
+Time stretch changes how long a recording lasts without changing its pitch. Oro does it
+offline (the audio is rewritten once, not processed live) with a waveform-similarity
+overlap-add method: it rebuilds the sound from short overlapping pieces of the original,
+each placed where it best continues the one before. Steady tones, voices and textures
+stretch cleanly; sharp drum hits can soften or double slightly, especially at large
+changes. It is used in two places:
+
+* **Looper: Follow tempo and Fit to tempo** (Loop tab, Tempo row). With **Follow tempo**
+  on, a loop recorded in bars (with the transport playing) is stretched to the same number
+  of bars whenever the tempo changes, so it stays in time and in tune. Oro keeps the loop
+  as it was recorded and always stretches from that copy, so moving the tempo back and
+  forth does not wear the sound down. The stretch waits until an overdub ends. **Fit to
+  tempo** does the same once, on demand; a loop recorded without the transport is fitted
+  to the nearest whole number of bars and follows the tempo from then on. Stretching
+  clears the loop's undo layers, and a loop can last at most 120 seconds. Follow tempo is a
+  setting of this computer, off until you turn it on.
+* **Noise recordings** (Sound tab, Noise card): **Stretch...** makes the imported
+  recording half as long, 75%, 150% or twice as long, keeping its pitch. Recordings keep at
+  most 16 seconds, so a longer result is cut. Undo takes it back.
+
+Drum kit pads, imported terrains and live input are not time-stretched.
 
 ### Resample (1.2)
 
