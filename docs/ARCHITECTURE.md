@@ -406,3 +406,28 @@ or the 512 terrain/audio source resolution.
   answering `{t:'replaced', id, ok, edit}`. `state` and `loop` replies now include `edit`
   (changes of the loop audio) and `loopSpb` (beat length the loop fits, 0 for free length).
   `engine.looper.replaceLoop({ L, R, base, spb, bars })` wraps it.
+## Send effects, freeze and chord trigger (2.8)
+
+* **Send effects** (`src/dsp/send-fx.js`): part parameters `sendA` / `sendB` (post-fader,
+  default 0) and the globals `sendA*` (reverb: Size, Decay, Damping, Pre-delay, Return) and
+  `sendB*` (delay: Sync, Time as a `DELAY_DIVS` index or ms, Feedback, Tone, Ping-pong,
+  Return). `OroDSP` sums the sends of every part into two bus inputs and runs
+  `SendReturns.process` once per render call, adding the returns to the dry output (so they
+  pass the master chain and appear in bounces). The buses reuse the track rack's
+  `EffectSlot` reverb and delay. A bus is built on the first send and sleeps after
+  `SEND_IDLE_SECONDS` without input and with silent output; while every send is 0 nothing
+  of it runs and the output is bit-identical.
+* **Freeze** (`src/audio/freeze.js`): `{t:'capture', part}` makes a DSP render only that
+  part's output after its track effects and before its fader; `renderFrozenLoop` uses it on
+  the main thread (in slices) from `engine.renderFreeze`. `{t:'freeze', part, L, R, frames,
+  beats}` makes the part play that loop at `(transport beat × frames/beats) mod frames`,
+  gated by `transport.playing`, instead of its voices, rack and kit (note-ons for it are
+  ignored); `{t:'freeze', part, L: null}` goes back with a 15 ms crossfade. The engine keeps
+  the messages per track slot (permuted with the track list) and replays them into a
+  rebuilt DSP; bounces leave them out. `createFreezeController` (in `ctx.freeze`) keeps the
+  state per slot and unfreezes a track whose `freezeSignature` changes. Not persisted.
+* **Chord trigger** (`src/music/chord-trigger.js`): `parts.N.chord = {on, preset, inKey,
+  notes}` (absent = off, sanitized by `sanitizeChord`). The router expands key input before
+  the arpeggiator's pool and sequencer notes (`_engineOn` / `_engineOff` with source
+  `'seq'`), remembering per key or per sequenced note which chord notes it started.
+  `router.rawHeld(part)` gives the physically held keys for Learn.

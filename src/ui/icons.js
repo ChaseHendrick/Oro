@@ -101,6 +101,9 @@ const P = {
   resample: '<path d="M2.8 10.2c1.4-4.4 2.9-4.4 4.3 0s2.9 4.4 4.3 0"/><rect x="13.4" y="11.4" width="7.6" height="7.6" rx="1.4"/><path d="M13.4 15.2h7.6M17.2 11.4V19"/><path d="M8.6 15.8h2.8M10 14.4l1.4 1.4-1.4 1.4"/>',
   mic: '<rect x="9" y="3.2" width="6" height="11" rx="3"/><path d="M5.8 11.2a6.2 6.2 0 0 0 12.4 0"/><path d="M12 17.4v3.4"/><path d="M8.8 20.8h6.4"/>',
   pedal: '<rect x="5.4" y="3.6" width="13.2" height="16.8" rx="2.2"/><circle cx="9.2" cy="7.6" r="1.3"/><circle cx="14.8" cy="7.6" r="1.3"/><circle cx="12" cy="15.2" r="2.4"/><path d="M5.4 11.2h13.2"/>',
+  // v2.8 freeze (six-armed flake) and chord (three stacked note heads)
+  freeze: '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><path d="M9.6 4.6L12 7l2.4-2.4M9.6 19.4L12 17l2.4 2.4M4.6 10.9l3.3.9-.9 3.3M19.4 13.1l-3.3-.9.9-3.3M7 8.9l.9 3.3M17 15.1l-.9-3.3"/>',
+  chord: '<ellipse cx="9" cy="17.6" rx="2.6" ry="1.9"/><ellipse cx="9" cy="12" rx="2.6" ry="1.9"/><ellipse cx="9" cy="6.4" rx="2.6" ry="1.9"/><path d="M11.6 17.4V4.2M11.6 4.2l5.2 1.8"/>',
 };
 
 export function icon(name, { size, cls = '' } = {}) {

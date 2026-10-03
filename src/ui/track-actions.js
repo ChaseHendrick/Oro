@@ -57,7 +57,7 @@ export function openRenameTrack(ctx, anchor, i) {
   return pop;
 }
 
-/** The track menu for track `i` (Rename, Duplicate, Move, Remove, Add). */
+/** The track menu for track `i` (Rename, Duplicate, Move, Freeze, Remove, Add). */
 export function openTrackMenu(ctx, anchor, i) {
   const { store } = ctx;
   const n = partCount(store);
@@ -69,7 +69,22 @@ export function openTrackMenu(ctx, anchor, i) {
     { label: 'Move left', icon: icon('arrow-left'), hint: 'Alt+Left', disabled: i <= 0, onSelect: () => moveTrack(store, i, i - 1) },
     { label: 'Move right', icon: icon('arrow-right'), hint: 'Alt+Right', disabled: i >= n - 1, onSelect: () => moveTrack(store, i, i + 1) },
     { separator: true },
+    // v2.8 Freeze
+    ...(ctx.freeze ? [{ label: ctx.freeze.isFrozen(i) ? 'Unfreeze' : ctx.freeze.isBusy(i) ? 'Cancel freezing' : 'Freeze', icon: icon('freeze'), onSelect: () => toggleFreeze(ctx, i) }] : []),
     { label: 'Add track', icon: icon('plus'), disabled: full, onSelect: () => addTrackAction(ctx) },
     { label: 'Remove track', icon: icon('trash'), danger: true, disabled: n <= MIN_PARTS, onSelect: () => removeTrackAction(ctx, i) },
   ], { label: `Track ${i + 1} options` });
+}
+
+/**
+ * v2.8 Freeze or unfreeze track i (the strip button and the track menu).
+ * The loop length is the Freeze length chosen in Send effects (Auto by default).
+ */
+export function toggleFreeze(ctx, i) {
+  const fz = ctx.freeze;
+  if (!fz) return;
+  const bars = Number(ctx.store.get('ui.freezeBars')) || 0;
+  fz.toggle(i, { bars }).then((r) => {
+    if (r && !r.ok && !r.unfrozen && r.reason && r.reason !== 'cancelled') ctx.toast(r.reason, { kind: 'info' });
+  });
 }

@@ -5,14 +5,18 @@
 // (delay, reverb, chorus, warmth, volume with a stereo meter). While the pedal
 // send is switched on in Settings > Pedals (v1.1), each strip also shows its
 // Pedal send with Pre and Insert.
+// v2.8: each strip also has Send A and Send B (post-fader sends to the two
+// shared return buses, see src/dsp/send-fx.js) and a Freeze button
+// (src/audio/freeze.js); the Send effects section below sets up the returns.
 
 import { createVectorMix } from './vector-mix.js';
 import { createTrackFxPanel } from './track-fx-panel.js';
 import { MAX_PARTS, PART_COLORS, GLOBAL_PARAM_MAP, PART_PARAM_MAP, formatValue, clamp } from '../core/params.js';
+import { FREEZE_BAR_CHOICES } from '../audio/freeze.js';
 import { partCount } from '../core/tracks.js';
 import { h, createScope, setText } from './dom.js';
 import { icon } from './icons.js';
-import { addTrackAction, openTrackMenu } from './track-actions.js';
+import { addTrackAction, openTrackMenu, toggleFreeze } from './track-actions.js';
 import { schedule, addLoop } from './frame.js';
 import { createKnob } from './knob.js';
 import { createToggle, createMiniSlider, createSelect } from './controls.js';
@@ -90,7 +94,8 @@ export function createMixPanel(ctx) {
 
   const vector = createVectorMix(ctx), trackFx = createTrackFxPanel(ctx);
   scope.add(vector.dispose); scope.add(trackFx.dispose);
-  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, vector.el, trackFx.el, master);
+  const sends = createSendSection(ctx, scope, g);
+  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, vector.el, trackFx.el, master, sends);
 
   // ---- meters (one loop for everything)
   const levels = new Float32Array(MAX_PARTS);
@@ -143,7 +148,19 @@ function createStrip(ctx, i) {
   const knobs = ['pan', 'delaySend', 'reverbSend'].map(id => createKnob(ctx, P(id), { size: 'sm', ariaLabel: (l) => `Track ${i + 1} ${l}` }));
   const mute = createToggle(ctx, P('mute'), { label: 'M', className: 'toggle--mute', ariaLabel: `Mute track ${i + 1}`, tip: 'Mute' });
   const solo = createToggle(ctx, P('solo'), { label: 'S', className: 'toggle--solo', ariaLabel: `Solo track ${i + 1}`, tip: 'Solo' });
-  for (const c of [level, ...knobs, mute, solo]) parentScope.add(c.dispose);
+  // v2.8 Send A (reverb) and Send B (delay), post-fader
+  const sendKnobs = [['sendA', 'Send A, to the shared reverb'], ['sendB', 'Send B, to the shared delay']]
+    .map(([id, what]) => createKnob(ctx, P(id), { size: 'sm', ariaLabel: () => `Track ${i + 1} ${what}` }));
+  for (const c of [level, ...knobs, ...sendKnobs, mute, solo]) parentScope.add(c.dispose);
+  // v2.8 Freeze
+  const fz = ctx.freeze || null;
+  const freezeBtn = h('button', {
+    type: 'button', class: 'toggle toggle--freeze has-icon', 'aria-pressed': 'false', 'aria-label': `Freeze track ${i + 1}`,
+    dataset: { tip: fz ? 'Freeze: play this track from a rendered loop of its pattern to save processing. Editing its sound makes it live again' : 'Freeze needs the audio engine, which is not available here' },
+    html: icon('freeze'),
+  });
+  if (!fz) freezeBtn.disabled = true;
+  parentScope.on(freezeBtn, 'click', () => toggleFreeze(ctx, i));
   // Pedal send (v1.1): only shown while the pedal send runs, so the mixer is unchanged otherwise.
   const hasPedal = !!PART_PARAM_MAP.pedalSend;
   const pedalKnob = hasPedal ? createKnob(ctx, P('pedalSend'), { size: 'sm', ariaLabel: () => `Track ${i + 1} pedal send` }) : null;
@@ -156,14 +173,22 @@ function createStrip(ctx, i) {
     h('div', { class: 'strip-body' },
       h('div', { class: 'strip-fader' }, h('div', { class: 'fader-wrap' }, level.el, meter), levelVal),
       h('div', { class: 'strip-knobs' }, knobs.map(k => k.el), pedalKnob ? pedalKnob.el : null)),
-    h('footer', { class: 'strip-foot' }, mute.el, solo.el, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
+    h('div', { class: 'strip-sends', role: 'group', 'aria-label': `Track ${i + 1} sends to the shared returns` }, sendKnobs.map(k => k.el)),
+    h('footer', { class: 'strip-foot' }, mute.el, solo.el, freezeBtn, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
 
   function render() {
     if (!store.get(`parts.${i}`)) return;  // the track was just removed; this strip is going too
     const name = store.get(`parts.${i}.name`) || `Track ${i + 1}`;
     setText(nameBtn, name);
     nameBtn.setAttribute('aria-label', `${name}: select this track`);
-    setText(patch, store.get(`parts.${i}.patchName`) || 'Init');
+    const frozen = !!(fz && fz.isFrozen(i)), busy = !!(fz && fz.isBusy(i));
+    setText(patch, (frozen ? 'Frozen: ' : busy ? 'Freezing: ' : '') + (store.get(`parts.${i}.patchName`) || 'Init'));
+    el.classList.toggle('is-frozen', frozen);
+    freezeBtn.classList.toggle('is-on', frozen);
+    freezeBtn.classList.toggle('is-busy', busy);
+    freezeBtn.setAttribute('aria-pressed', String(frozen));
+    freezeBtn.setAttribute('aria-busy', String(busy));
+    freezeBtn.setAttribute('aria-label', `${frozen ? 'Unfreeze' : busy ? 'Cancel freezing' : 'Freeze'} track ${i + 1}`);
     const color = store.get(`parts.${i}.color`) || PART_COLORS[i % PART_COLORS.length];
     colorInput.value = color;
     applyVars(el, partVars(color, document.documentElement.dataset.theme, ctx.panelBg()));
@@ -182,6 +207,7 @@ function createStrip(ctx, i) {
   parentScope.add(store.subscribe('ui.selectedPart', invalidate));
   parentScope.on(window, 'orograph:theme', invalidate);
   if (hasPedal && ctx.pedals) parentScope.add(ctx.pedals.on('change', invalidate));
+  if (fz) parentScope.add(fz.on('change', invalidate));
 
   parentScope.on(nameBtn, 'click', () => store.set('ui.selectedPart', i, { source: 'ui' }));
   parentScope.on(nameBtn, 'dblclick', () => rename());
@@ -221,3 +247,51 @@ function createStrip(ctx, i) {
   };
 }
 
+
+/**
+ * The Send effects section: Send A (reverb) and Send B (delay) return
+ * settings, and the length of new frozen loops.
+ */
+function createSendSection(ctx, scope, g) {
+  const { store, binder } = ctx;
+  const toggle = (id, label) => {
+    const t = createToggle(ctx, binder.globalParam(id), { label, className: 'toggle--sm', ariaLabel: `Send B ${label}` });
+    scope.add(t.dispose);
+    return t;
+  };
+  const syncT = toggle('sendBSync', 'Sync');
+  const pingT = toggle('sendBPingPong', 'Ping-pong');
+  const div = createSelect(ctx, binder.globalParam('sendBDiv'), { label: 'Send B delay time (note value)', className: 'select--sm' });
+  scope.add(div.dispose);
+  const msKnob = g('sendBTime', { ariaLabel: () => 'Send B delay time in milliseconds' });
+  const timeBox = h('div', { class: 'sends-time' }, h('span', { class: 'mini-label' }, 'Time'), div.el);
+  const renderSync = () => {
+    const on = !!store.get('global.sendBSync');
+    timeBox.hidden = !on;
+    msKnob.hidden = on;
+  };
+  scope.add(binder.globalParam('sendBSync').subscribe(() => schedule(renderSync)));
+  renderSync();
+  const lengthBinding = { ...binder.uiValue('freezeBars', FREEZE_BAR_CHOICES, 0), def: { id: 'freezeBars', label: 'Freeze length', default: 0 } };
+  const lengthSel = createSelect(ctx, lengthBinding, {
+    label: 'Length of new frozen loops',
+    className: 'select--sm',
+    options: FREEZE_BAR_CHOICES.map(b => ({ value: b, label: b === 0 ? 'Auto' : `${b} bar${b > 1 ? 's' : ''}` })),
+  });
+  scope.add(lengthSel.dispose);
+  const A = (id, label) => g(id, { ariaLabel: () => `Send A ${label}` });
+  const B = (id, label) => g(id, { ariaLabel: () => `Send B ${label}` });
+  return h('section', { class: 'mix-sends', 'aria-labelledby': 'sec-sends' },
+    h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-sends' }, 'Send effects')),
+    h('div', { class: 'sends-body' },
+      h('div', { class: 'fx-card fx-card--send' },
+        h('div', { class: 'fx-title' }, h('span', null, 'Send A reverb')),
+        h('div', { class: 'knob-row' }, A('sendASize', 'size'), A('sendADecay', 'decay'), A('sendADamp', 'damping'), A('sendAPredelay', 'pre-delay'), A('sendAReturn', 'return level'))),
+      h('div', { class: 'fx-card fx-card--send' },
+        h('div', { class: 'fx-title' }, h('span', null, 'Send B delay'), h('span', { class: 'sends-toggles' }, syncT.el, pingT.el)),
+        h('div', { class: 'knob-row' }, timeBox, msKnob, B('sendBFeedback', 'feedback'), B('sendBTone', 'tone'), B('sendBReturn', 'return level'))),
+      h('div', { class: 'fx-card fx-card--freeze' },
+        h('div', { class: 'fx-title' }, h('span', null, 'Freeze')),
+        h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Loop length'), lengthSel.el),
+        h('p', { class: 'sends-note' }, 'Auto: whole passes of the pattern that fill whole bars.'))));
+}

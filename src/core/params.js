@@ -241,11 +241,17 @@ export const PART_PARAMS = [
   P('funcSync', 'Sync', 'func', 'bool', 0, 1, 0, { hint: 'Lock the Function to the tempo' }),
   P('funcDiv', 'Length', 'func', 'enum', 0, SYNC_DIVS.length - 1, 2, { options: SYNC_DIVS.map(d => d.name), hint: 'One cycle when synced' }),
   P('funcSmooth', 'Smooth', 'func', 'lin', 0, 1, 0, { hint: 'Straight lines (0) to S curves between the points (1)' }),
+  // v2.8 send effects (src/dsp/send-fx.js): post-fader sends to the two shared
+  // return buses. At 0 (the default) the buses do not run at all.
+  P('sendA', 'Send A', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the shared Send A reverb, after the level fader' }),
+  P('sendB', 'Send B', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the shared Send B delay, after the level fader' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
 // values (like Mute and Solo) and patches never store them.
 export const PEDAL_PARAM_IDS = Object.freeze(['pedalSend', 'pedalPre', 'pedalInsert']);
+// v2.8 Send A and Send B amounts belong to the mix as well: a patch load keeps them.
+export const SEND_PARAM_IDS = Object.freeze(['sendA', 'sendB']);
 
 export const GLOBAL_PARAMS = [
   P('masterVolume', 'Volume',   'master', 'lin', 0, 1, 0.8),
@@ -288,6 +294,20 @@ export const GLOBAL_PARAMS = [
   P('sciTuringChance', 'Chance', 'science', 'lin', 0, 1, 0.1, { hint: 'How often a step of the Turing loop changes: 0 locks the loop, 1 is always new' }),
   P('sciTuringLength', 'Length', 'science', 'int', 2, 16, 8, { hint: 'Steps in the Turing loop' }),
   P('sciTuringDiv', 'Step', 'science', 'enum', 0, SYNC_DIVS.length - 1, 11, { options: SYNC_DIVS.map(d => d.name), hint: 'How long each Turing step lasts' }),
+  // v2.8 send effects: the two shared return buses (src/dsp/send-fx.js).
+  // Send A is a reverb, Send B a delay; each runs once for the whole mix.
+  P('sendASize', 'Size', 'sendA', 'lin', 0, 1, 0.55, { hint: 'Room size: longer reflection paths' }),
+  P('sendADecay', 'Decay', 'sendA', 'exp', 0.3, 12, 2.5, { unit: 's', hint: 'Time for the reverb to fall by 60 dB' }),
+  P('sendADamp', 'Damping', 'sendA', 'lin', 0, 1, 0.45, { hint: 'How quickly the high frequencies die away' }),
+  P('sendAPredelay', 'Pre-delay', 'sendA', 'lin', 0, 250, 20, { unit: 'ms', hint: 'Gap before the reverb starts' }),
+  P('sendAReturn', 'Return', 'sendA', 'lin', 0, 1, 0.8, { hint: 'Level of the Send A reverb in the mix' }),
+  P('sendBSync', 'Sync', 'sendB', 'bool', 0, 1, 1, { hint: 'Delay time in note values at the tempo (on) or in milliseconds (off)' }),
+  P('sendBDiv', 'Time', 'sendB', 'enum', 0, DELAY_DIVS.length - 1, 3, { options: DELAY_DIVS.map(d => d.name), hint: 'Delay time as a note value at the tempo' }),
+  P('sendBTime', 'Time', 'sendB', 'exp', 20, 2000, 375, { unit: 'ms', hint: 'Delay time in milliseconds (when Sync is off)' }),
+  P('sendBFeedback', 'Feedback', 'sendB', 'lin', 0, 0.9, 0.4, { hint: 'How much of each echo comes round again' }),
+  P('sendBTone', 'Tone', 'sendB', 'lin', 0, 1, 0.6, { hint: 'Dark to bright echoes' }),
+  P('sendBPingPong', 'Ping-pong', 'sendB', 'bool', 0, 1, 1, { hint: 'Echoes alternate between left and right' }),
+  P('sendBReturn', 'Return', 'sendB', 'lin', 0, 1, 0.8, { hint: 'Level of the Send B delay in the mix' }),
 ];
 
 export const PART_PARAM_MAP = Object.fromEntries(PART_PARAMS.map(p => [p.id, p]));
