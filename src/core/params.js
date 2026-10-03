@@ -483,6 +483,54 @@ export function stepPlays(step, seed, part, absStep) {
   if (pr <= 0) return false;
   return stepChance(seed, part, absStep) < pr;
 }
+/**
+ * v2.9 parameter locks: a step may hold values for up to PLOCK_MAX part
+ * parameters in `plocks` ({ cutoff: 1200, resonance: 0.6 }, absent when it
+ * has none). The dot has its own lock (lock/lx/ly), so Dot X and Dot Y are
+ * left out.
+ */
+export const PLOCK_MAX = 8;
+export const PLOCK_IDS = Object.freeze(MOD_PARAM_IDS.filter(id => id !== 'centerX' && id !== 'centerY'));
+const PLOCK_SET = new Set(PLOCK_IDS);
+/** A step's parameter locks as { id: value } (known ids, clamped to range, at most PLOCK_MAX), or null. */
+export function stepPlocks(step) {
+  const src = step && step.plocks;
+  if (!src || typeof src !== 'object') return null;
+  let out = null, n = 0;
+  for (const id of Object.keys(src)) {
+    if (n >= PLOCK_MAX) break;
+    const v = src[id];
+    if (!PLOCK_SET.has(id) || typeof v !== 'number' || !Number.isFinite(v)) continue;
+    const d = PART_PARAM_MAP[id];
+    if (!out) out = {};
+    out[id] = clamp(v, Math.min(d.min, d.max), Math.max(d.min, d.max));
+    n++;
+  }
+  return out;
+}
+
+/**
+ * v2.9 song mode: a track may hold `chain` = { on, entries: [{ pattern, repeats }] }
+ * (absent until used). While it is on, the track plays the entries in order,
+ * each pattern `repeats` passes, and loops the list.
+ */
+export const CHAIN_MAX = 32;
+export const CHAIN_REPEATS_MAX = 16;
+/** The chain a track plays (entries with valid pattern indices), or null when it is off or empty. */
+export function activeChain(part) {
+  const c = part && part.chain;
+  if (!c || !c.on || !Array.isArray(c.entries) || !c.entries.length) return null;
+  const n = Array.isArray(part.patterns) ? part.patterns.length : 0;
+  const out = [];
+  for (const e of c.entries.slice(0, CHAIN_MAX)) {
+    if (!e || typeof e !== 'object') continue;
+    const k = Math.round(finiteOr(e.pattern, -1));
+    if (!(k >= 0 && k < n)) continue;
+    out.push({ pattern: k, repeats: clamp(Math.round(finiteOr(e.repeats, 1)), 1, CHAIN_REPEATS_MAX) });
+  }
+  return out.length ? out : null;
+}
+
 /** Patterns a track can hold (the arrangement picks between them). */
 export const MAX_PATTERNS = 16;
 /**

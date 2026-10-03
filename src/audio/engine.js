@@ -515,6 +515,14 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       else return;
       post(msg);
     },
+    /**
+     * v2.9 parameter locks: part parameter values `p` from audio time `time`
+     * (0 = now). Only the engine changes; the store keeps the knob values.
+     */
+    scheduleParams(part, p, time = 0) {
+      if (!validPart(part) || part >= partCount(store) || !p || typeof p !== 'object') return;
+      post({ t: 'params', part, p: { ...p }, time: Number.isFinite(time) ? time : 0 });
+    },
     /** Drop queued notes (with `tag`, if given) that would start after audio time `after`. */
     cancelNotes(after, tag) {
       const msg = { t: 'cancelNotes', after: Number.isFinite(after) ? after : 0 };

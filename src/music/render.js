@@ -10,6 +10,7 @@
 //   { t: 'transport', playing: true, beatTime: 0, beat: 0, spb } at 0, so synced LFOs line up
 //   { t: 'noteOn', part, note, vel, time } / { t: 'noteOff', part, note, time }
 //   { t: 'params', part, p: { centerX, centerY }, time, ramp }    dot-lock glides (ramp in seconds)
+//   { t: 'params', part, p: { cutoff, ... }, time }               v2.9 parameter locks and their returns
 // Every note that starts inside the render is released by its end, and
 // nothing starts at or after the end.
 
@@ -55,11 +56,13 @@ export function renderSessionEvents(store, bars = 4, { parts, held = null, rando
 
   const clock = { t: 0 };
   const raw = [];
+  const plocks = [];
   let order = 0;
   const engine = {
     context: { get currentTime() { return clock.t; }, state: 'running' },
     noteOn(part, note, vel, time) { raw.push({ kind: 'on', part, note, vel, time, order: order++ }); },
     noteOff(part, note, time) { raw.push({ kind: 'off', part, note, time, order: order++ }); },
+    scheduleParams(part, p, time) { plocks.push({ part, p: { ...p }, time }); },
     allNotesOff() {}, panic() {}, bend() {}, wheel() {},
   };
   const timebase = createTimebase(engine, { perfNow: () => clock.t * 1000 });
@@ -119,6 +122,11 @@ export function renderSessionEvents(store, bars = 4, { parts, held = null, rando
     if (!include.has(g.part) || g.time >= end - EPS) continue;
     const t = tidy(Math.max(0, g.time - start));
     events.push({ time: t, msg: { t: 'params', part: g.part, p: { centerX: wrap01(g.x), centerY: wrap01(g.y) }, time: t, ramp: tidy(Math.min(g.ramp, end - g.time)) } });
+  }
+  for (const e of plocks) {
+    if (!include.has(e.part) || e.time >= end - EPS) continue;
+    const t = tidy(Math.max(0, e.time - start));
+    events.push({ time: t, msg: { t: 'params', part: e.part, p: e.p, time: t } });
   }
   // Stable: same-time events keep scheduling order (a slide's next note-on before the old note-off).
   return events.sort((a, b) => a.time - b.time);

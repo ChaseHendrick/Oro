@@ -909,6 +909,73 @@ of land.
 Locked spots are marked on the 3D map with numbers. If you grab the dot while a lock is
 gliding it, your hand wins.
 
+### Parameter locks (2.9)
+
+The **Lock** row, under **Dot**, lets any step set its own value for a sound parameter, so
+one step can open the filter, another can push the drive, and so on.
+
+* Choose the parameter with the **Lock row** menu under the grid (Cutoff, Reso, Drive, Pan,
+  Fold and every other parameter the modulation can reach). The row shows and edits that
+  parameter's lock on each step. A small dot in a cell means the step holds a lock on some
+  parameter, even if it is not the one chosen.
+* Click a cell to lock the parameter to its knob's current value on that step. Drag up or
+  down (or use the arrow keys, Page Up and Page Down for bigger moves) to change it.
+* Right-click a cell, or press **Delete**, to clear that parameter's lock on the step.
+* A step can hold up to 8 locks.
+
+When a locked step plays, the parameter jumps to the step's value, whether or not the step
+has a note. At the next step without a lock on it, it goes back to the knob's value. The knob
+itself never moves and keeps its own value, and Stop puts every locked parameter back. The
+dot keeps using the **Dot** row, so dot locks and parameter locks work side by side. Bounces
+include the locks.
+
+### Song mode (2.9)
+
+Each track can play a chain of its patterns instead of looping one.
+
+* In the **Pattern** block, **Song** lists the chain. The **+** button adds the pattern
+  shown above to the end of the list (up to 32 entries).
+* Each entry has a **repeats** menu (x1 to x16): how many passes of that pattern play before
+  the next entry. The arrow buttons move an entry earlier or later, and the cross removes it.
+  Click an entry's name to edit that pattern.
+* Turn **Chain** on to play the list: the track plays each entry for its repeats, in order,
+  switching at the end of a pattern pass, and starts again from the top after the last one.
+  The entry playing is highlighted.
+* Turn **Chain** off and the track loops the pattern it has selected, as before.
+
+Each pattern keeps its own rate and length, so an entry can play at 1/8 and the next at 1/16;
+the timing carries on without a gap. When you press Play, the chain starts at its first entry.
+Turned on while playing, it starts at the end of the current pass. The step playhead shows
+while the chain plays the pattern you are editing. Removing a pattern also removes its entries
+from the chain. Bounces follow the chain.
+
+### Capture (2.9)
+
+Played something good without recording? **Capture** turns it into a pattern.
+
+The app keeps the notes you played on each track over about the last 16 bars, from the
+on-screen keyboard, the computer keyboard, MIDI and guitar or voice notes (the sequencer, the arpeggiator and the
+patch preview are not kept). Press **Capture** in the Pattern block and the most recent
+phrase (the notes since the last silence of two bars or more) becomes the selected track's
+pattern:
+
+* Notes are placed on the pattern's step rate at the current tempo. While the transport
+  plays, they land on the step they were played on; otherwise the first note starts step 1.
+* Capture keeps the last steps of the phrase up to the pattern's length (16 by default),
+  ending at the last note you played. Each note lands on its own place in the pattern's loop.
+* Notes become steps in the global key and scale. A note outside the scale moves to the
+  nearest scale note, and the status line says how many moved.
+* Velocity comes from how hard you played, and gate from how long you held the key. A note
+  held over the following empty steps becomes tied steps, and a note held into the next one
+  slides into it.
+* Two notes on one step keep the louder one.
+* On a drum kit track, Capture fills the kit's lanes instead: C2 plays pad 1, C#2 pad 2 and
+  so on up to G2. Other notes are left out.
+
+Dot locks and parameter locks stay on their steps. If the track's sequencer was off, Capture
+switches it on. The status line under the button says what was captured, or why nothing was.
+Undo takes the whole capture back in one step.
+
 ### Arpeggiator
 
 Each part also has an arpeggiator (the **Arp** row in the Seq tab). Hold a chord and it
