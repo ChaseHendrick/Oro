@@ -156,7 +156,7 @@ export function createViewportOverlay(ctx, viewportEl) {
   let flat = null;
   if (!visuals) {
     viewportEl.classList.add('is-flat');
-    flat = createFlatMap(viewportEl, { store, terrains: ctx.terrains, tele: ctx.tele, source: 'ui' });
+    flat = createFlatMap(viewportEl, { store, terrains: ctx.terrains, tele: ctx.tele, ghost: () => ctx.ghost, source: 'ui' });
     viewportEl.insertBefore(flat.el, overlay);
     const notice = h('div', { class: 'vp-notice', role: 'status' }, h('span', { html: icon('info') }),
       'The 3D view could not start here (WebGL may be off), so this flat map stands in. Click it to move the dot.');

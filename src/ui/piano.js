@@ -16,6 +16,22 @@ const QWERTY_LABEL = ['A', 'W', 'S', 'E', 'D', 'F', 'T', 'G', 'Y', 'H', 'U', 'J'
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
 /** MIDI note for a physical key code at a keyboard octave (C4 = 60 at octave 4), or null. */
+/**
+ * Octaves the on-screen keyboard shows for a strip `width` CSS px wide (2.11:
+ * wide and ultrawide screens get more octaves instead of ever wider keys).
+ */
+export function octavesFor(width) {
+  if (width < 520) return 1;
+  if (width < 860) return 2;
+  return Math.max(3, Math.min(7, Math.floor(width / 340)));
+}
+
+/** First octave shown: the computer keyboard's octave near the middle, inside MIDI 0..127. */
+export function keyboardStart(oct, span) {
+  const start = span >= 3 ? oct - Math.floor((span - 1) / 2) : oct;
+  return Math.max(-1, Math.min(start, Math.floor(128 / 12) - 1 - span));
+}
+
 export function qwertyNote(code, octave) {
   const i = QWERTY.indexOf(code);
   return i < 0 ? null : 12 * (octave + 1) + i;
@@ -107,11 +123,10 @@ export function createPiano(ctx) {
   // ---- layout
   let keyEls = new Map();
   let lo = 48, hi = 84;
-  function octavesFor(width) { return width < 520 ? 1 : width < 860 ? 2 : 3; }
   function build() {
     const oct = clamp(Math.round(store.get('ui.keyboardOctave') ?? 4), 1, 7);
     const span = octavesFor(keysEl.clientWidth || 1000);
-    const startOct = span === 3 ? oct - 1 : oct;
+    const startOct = keyboardStart(oct, span);
     lo = 12 * (startOct + 1);
     hi = lo + 12 * span;
     keysEl.textContent = '';

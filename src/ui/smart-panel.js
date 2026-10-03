@@ -264,10 +264,27 @@ export function createSmartPanel(ctx) {
   scope.add(() => { learn = null; });
 
   renderEditor();
+  // 2.11: the card folds away (remembered on this computer, Settings prefs 'smartOpen').
+  const prefs = ctx.prefs || null;
+  const body = h('div', { class: 'smart-body', id: 'smart-body' }, knobRow, editor);
+  const toggle = h('button', {
+    type: 'button', class: 'section-toggle', 'aria-expanded': 'true', 'aria-controls': 'smart-body',
+    dataset: { tip: 'Show or hide the smart controls' },
+  }, h('span', { class: 'section-toggle-icon', html: icon('chevron-down'), 'aria-hidden': 'true' }), 'Smart controls');
   const el = h('section', { class: ['dock-card', 'dock-card--smart'], 'aria-labelledby': 'sec-smart-controls' },
     h('header', { class: 'section-head' },
-      h('h3', { class: 'section-title', id: 'sec-smart-controls' }, 'Smart controls'),
+      h('h3', { class: 'section-title', id: 'sec-smart-controls' }, toggle),
       h('span', { class: 'section-aside' }, 'Eight knobs, each moving up to four sound controls')),
-    h('div', { class: 'smart-body' }, knobRow, editor));
+    body);
+  const renderOpen = () => {
+    const open = !prefs || !!prefs.get('smartOpen');
+    body.hidden = !open;
+    el.classList.toggle('is-collapsed', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    if (!open && learn) stopLearn('Learn finished.');
+  };
+  scope.on(toggle, 'click', () => { if (prefs) prefs.set('smartOpen', prefs.get('smartOpen') ? 0 : 1); else { body.hidden = !body.hidden; toggle.setAttribute('aria-expanded', String(!body.hidden)); } });
+  if (prefs && typeof prefs.on === 'function') scope.add(prefs.on(renderOpen));
+  renderOpen();
   return { el, dispose: scope.dispose };
 }

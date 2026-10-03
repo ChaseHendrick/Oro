@@ -25,7 +25,11 @@
       root.dataset.theme = theme;
       root.dataset.themePref = pref;
       root.style.colorScheme = theme;
-      root.style.background = theme === 'light' ? '#efe7d8' : '#070a12';
+      // The hidden Phosphor theme (src/ui/eggs.js applySkin), also before first paint.
+      var skin = false;
+      try { var fun = JSON.parse(localStorage.getItem('oro.fun.v1') || 'null'); skin = !!(fun && fun.data && fun.data.skin === 'phosphor' && fun.secret && fun.secret['logo-seven']); } catch (e) { /* storage blocked or unreadable */ }
+      if (skin) root.dataset.skin = 'phosphor';
+      root.style.background = skin ? (theme === 'light' ? '#f1eedf' : '#040805') : (theme === 'light' ? '#efe7d8' : '#070a12');
     })();
   </script>
 </head>

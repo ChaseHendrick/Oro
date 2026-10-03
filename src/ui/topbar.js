@@ -24,7 +24,7 @@ export function createTopbar(ctx, container) {
   const { store, binder, music, midi } = ctx;
 
   // ---------------------------------------------------------------- brand
-  const brand = h('div', { class: 'brand' }, h('span', { class: 'brand-mark', html: brandGlyph(26) }), h('span', { class: 'brand-word' }, 'OROGRAPH'));
+  const brand = h('div', { class: 'brand' }, h('span', { class: 'brand-mark', html: brandGlyph(26) }), h('span', { class: 'brand-word' }, 'ORO'));
 
   // ---------------------------------------------------------------- tracks
   // Tabs, add and track menu: src/ui/track-tabs.js.

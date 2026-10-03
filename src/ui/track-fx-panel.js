@@ -2,6 +2,10 @@ import { FX_TYPES, FX_TYPE_MAP, FX_ROUTINGS, defaultFxSlot, sanitizeTrackFx, for
 import { fromNorm, toNorm } from '../core/params.js';
 import { h, createScope, setText } from './dom.js';
 import { createKnob } from './knob.js';
+import { icon } from './icons.js';
+
+/** A native select dressed like the app's other selects. */
+const selectBox = (select) => h('div', { class: 'select select--sm' }, select, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }));
 
 /** The selected track's persisted four-slot rack. The existing knobs provide
  * keyboard, wheel, drag, typed values and reset, just like the sound panel. */
@@ -13,23 +17,23 @@ export function createTrackFxPanel(ctx) {
   const config = () => sanitizeTrackFx(store.get(path()));
   const change = (edit) => { const fx = config(); edit(fx); store.set(path(), fx, { source: 'track-fx' }); };
   const title = h('h3', { class: 'section-title' }, 'Track effects');
-  const routing = h('select', { class: 'select select--sm', 'aria-label': 'Track effects routing' }, FX_ROUTINGS.map(r => option(r.id, r.name)));
-  const sidechain = h('select', { class: 'select select--sm', 'aria-label': 'Track effects sidechain' });
-  const diagram = h('div', { class: 'mini-label', style: 'font-family:var(--font-mono,monospace);line-height:1.6' });
+  const routing = h('select', { class: 'select-native', 'aria-label': 'Track effects routing' }, FX_ROUTINGS.map(r => option(r.id, r.name)));
+  const sidechain = h('select', { class: 'select-native', 'aria-label': 'Track effects sidechain' });
+  const diagram = h('div', { class: 'tfx-diagram', 'aria-label': 'Signal flow' });
   scope.on(routing, 'change', () => change(fx => { fx.routing = Number(routing.value); }));
   scope.on(sidechain, 'change', () => change(fx => { fx.sidechain = sidechain.value; }));
   const cards = [];
-  const row = h('div', { class: 'track-fx-slots', style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px' });
+  const row = h('div', { class: 'track-fx-slots' });
   for (let slotIndex = 0; slotIndex < 4; slotIndex++) {
     const letter = String.fromCharCode(65 + slotIndex);
-    const select = h('select', { class: 'select select--sm', 'aria-label': `Slot ${letter} effect` }, FX_TYPES.map(type => option(type.id, type.name)));
-    const hint = h('p', { class: 'mini-label', style: 'margin:8px 0;min-height:2.8em;line-height:1.4' });
-    const knobs = h('div', { class: 'knob-row', style: 'flex-wrap:wrap;justify-content:center;gap:4px' });
+    const select = h('select', { class: 'select-native', 'aria-label': `Slot ${letter} effect` }, FX_TYPES.map(type => option(type.id, type.name)));
+    const hint = h('p', { class: 'tfx-hint' });
+    const knobs = h('div', { class: 'knob-row tfx-knobs' });
     const card = { select, hint, knobs, controls: [], type: '', key: '', slotIndex, letter };
     cards.push(card);
     scope.on(select, 'change', () => change(fx => { fx.slots[slotIndex] = defaultFxSlot(select.value); }));
-    row.appendChild(h('section', { class: 'fx-card', 'aria-label': `Effect slot ${letter}`, style: 'min-width:0' },
-      h('div', { class: 'fx-title', style: 'gap:8px' }, h('span', null, letter), select), hint, knobs));
+    row.appendChild(h('section', { class: 'fx-card tfx-card', 'aria-label': `Effect slot ${letter}` },
+      h('div', { class: 'fx-title' }, h('span', null, `Slot ${letter}`), selectBox(select)), hint, knobs));
   }
 
   function affected(changed) {
@@ -87,10 +91,10 @@ export function createTrackFxPanel(ctx) {
     if (affected(changed) || /^parts\.\d+\.(name|id)$/.test(changed)) render();
   }));
   scope.add(() => { for (const card of cards) for (const control of card.controls) control.dispose(); });
-  const el = h('section', { class: 'track-fx-panel', 'aria-label': 'Selected track effects', style: 'padding:14px 0' },
-    h('header', { class: 'section-head', style: 'flex-wrap:wrap;gap:12px' }, title,
-      h('label', { class: 'mini-label' }, 'Routing ', routing), h('label', { class: 'mini-label' }, 'Sidechain ', sidechain)),
-    diagram, h('p', { class: 'mini-label', style: 'line-height:1.5;margin:6px 0 12px' }, 'Four slots run before the track fader and sends. Parallel branches are averaged. Ducking uses the selected sidechain; other-track sidechains follow the previous audio block.'), row);
+  const el = h('section', { class: 'track-fx-panel', 'aria-label': 'Selected track effects' },
+    h('header', { class: 'section-head tfx-head' }, title,
+      h('label', { class: 'tfx-field' }, h('span', { class: 'mini-label' }, 'Routing'), selectBox(routing)), h('label', { class: 'tfx-field' }, h('span', { class: 'mini-label' }, 'Sidechain'), selectBox(sidechain))),
+    diagram, h('p', { class: 'tfx-note' }, 'Four slots run before the track fader and sends. Parallel branches are averaged. Ducking uses the selected sidechain; other-track sidechains follow the previous audio block.'), row);
   render();
   return { el, dispose: scope.dispose };
 }

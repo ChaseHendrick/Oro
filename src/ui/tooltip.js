@@ -39,7 +39,20 @@ export function createTooltips(host, { enabled = () => true } = {}) {
     timer = setTimeout(() => show(el), el.dataset.tipDelay ? +el.dataset.tipDelay : 520);
   }
 
+  // Opt-in for keyboard focus (data-tip-focus): text that may be cut short on screen, like the patch name.
+  function onFocus(e) {
+    const el = e.target;
+    if (!el || !el.dataset || !el.dataset.tipFocus || !el.dataset.tip) return;
+    try { if (!el.matches(':focus-visible')) return; } catch { return; }
+    hide();
+    current = el;
+    show(el);
+  }
+  const onBlur = (e) => { if (e.target === current) hide(); };
+
   document.addEventListener('pointerover', onOver);
+  document.addEventListener('focusin', onFocus);
+  document.addEventListener('focusout', onBlur);
   document.addEventListener('pointerdown', hide, true);
   document.addEventListener('wheel', hide, { passive: true, capture: true });
   document.addEventListener('keydown', hide, true);
@@ -49,6 +62,8 @@ export function createTooltips(host, { enabled = () => true } = {}) {
     hide,
     dispose() {
       document.removeEventListener('pointerover', onOver);
+      document.removeEventListener('focusin', onFocus);
+      document.removeEventListener('focusout', onBlur);
       document.removeEventListener('pointerdown', hide, true);
       document.removeEventListener('wheel', hide, { capture: true });
       document.removeEventListener('keydown', hide, true);

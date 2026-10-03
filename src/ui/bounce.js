@@ -4,7 +4,7 @@
 // -trackN plus the track's name (-track3-bass).
 
 import { partCount } from '../core/tracks.js';
-import { SEQ_RATES, activeChain, activePatternIndex } from '../core/params.js';
+import { SEQ_RATES, LINK_SOURCES, activeChain, activePatternIndex } from '../core/params.js';
 import { h, createScope, setText, listen, has, downloadBlob } from './dom.js';
 import { openPopover } from './layers.js';
 import { recordingName } from './record.js';
@@ -31,6 +31,18 @@ export function slug(s) {
 /** Seconds of music in `bars` 4/4 bars at `bpm`. */
 export function bounceSeconds(bars, bpm) {
   return (Math.max(1, bars) * 4 * 60) / Math.max(1, bpm || 120);
+}
+
+const WEATHER_FIRST = LINK_SOURCES.indexOf('Weather Wind');
+
+/** True when any track has a link from a live weather source (held still during a bounce). */
+export function usesWeatherLinks(store) {
+  const n = partCount(store);
+  for (let i = 0; i < n; i++) {
+    const links = store.get(`parts.${i}.links`);
+    if (Array.isArray(links) && links.some(l => l && Number(l.src) >= WEATHER_FIRST && Number(l.amt) !== 0)) return true;
+  }
+  return false;
 }
 
 export function bounceSupported(ctx) {
@@ -102,6 +114,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
     h('p', { class: 'popover-note' }, ok
       ? 'Renders the sequencers and arpeggiators offline at the current tempo, sample-exact and faster than real time. Parts without a pattern stay silent.'
       : 'Bouncing needs the audio and music engines, which are not available here yet. Record still captures everything you play.'),
+    ok && usesWeatherLinks(store) ? h('p', { class: 'popover-note bounce-weather' }, 'Live weather links hold still at their current readings while the bounce renders.') : null,
     h('div', { class: 'bounce-grid' }, field('Length', sel(barsSel)), field('Tail', sel(tailSel))),
     field('Files', outSeg.el),
     h('div', { class: 'bounce-row' }, h('span', { class: 'bounce-row-text' }, 'Effects', h('span', { class: 'setting-hint' }, 'Delay, reverb, chorus and warmth')), fxToggle.el),

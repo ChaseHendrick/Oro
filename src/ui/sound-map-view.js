@@ -3,7 +3,7 @@
 // together (src/dsp/sound-map.js). Hover or arrow keys audition, click or
 // Enter puts the sound on the chosen pad, Similar swaps the pad for a close
 // neighbour and Shuffle kit picks a matching kit for all eight pads.
-import { h, createScope, setText, uniqueId } from './dom.js';
+import { h, createScope, setText, uniqueId, pixelRatioOf } from './dom.js';
 import { openModal } from './modal.js';
 import { ensureContrast } from './color.js';
 import { sanitizeDrum, base64ToPcm, KIT_PADS, SYNTH_DRUMS } from '../dsp/drum-kit.js';
@@ -122,7 +122,7 @@ export function openSoundMap(ctx, { part, pad = 0, onPad } = {}) {
   function draw() {
     const g = canvas.getContext && canvas.getContext('2d');
     if (!g) return;
-    const W = canvas.clientWidth, H = canvas.clientHeight, dpr = globalThis.devicePixelRatio || 1;
+    const W = canvas.clientWidth, H = canvas.clientHeight, dpr = pixelRatioOf(3);
     if (!W || !H) return;
     if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
     const cs = getComputedStyle(canvas);

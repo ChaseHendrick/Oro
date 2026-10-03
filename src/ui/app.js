@@ -290,7 +290,7 @@ export function createUI(root, modules = {}) {
   // v1.2 looper: one control shared by the top bar, the Loop tab, shortcuts and MIDI.
   ctx.looper = null;
   try {
-    ctx.looper = createLooperControl({ store, engine, music, toast, startAudio: () => ctx.startAudio(), download: downloadBlob });
+    ctx.looper = createLooperControl({ store, engine, music, toast, quietUndo: () => !!(ctx.eggs && ctx.eggs.undoKeyClaimed()), startAudio: () => ctx.startAudio(), download: downloadBlob });
     scope.add(ctx.looper.dispose);
     if (midi) scope.add(listen(midi, 'action', (e) => { if (e && typeof e.id === 'string' && e.id.startsWith('looper.')) ctx.looper.action(e.id); }));
   } catch (err) {

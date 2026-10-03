@@ -616,6 +616,9 @@ yourself afterwards, the smart knob takes it over again the next time you turn i
 Right-click a smart knob to **MIDI Learn** it; a mapped knob always works on the track you
 have selected.
 
+Click the **Smart controls** heading to fold the card away when you do not need it, and
+again to open it (2.11). This computer remembers whether it is open.
+
 Smart controls are saved with the track, in scenes and with patches you save. Loading a
 patch replaces the track's smart controls with the patch's own, or clears them for a patch
 that has none (including the factory patches). Tracks that never use smart controls are
@@ -1227,7 +1230,7 @@ track menu (the track tab's menu, or the mixer strip's) has the same commands:
   the bar it was recorded from. You can play any track meanwhile, including the same track's
   keys. The ghost's knob moves and dot path drive the sound without moving your knobs, so
   your settings stay as they are and Undo is not filled up. A translucent ghost dot shows the
-  recorded path on the map, and the track's dot follows it while you are not holding it.
+  recorded path on the map (the 3D view and the flat map), and the track's dot follows it while you are not holding it.
 * **Stop ghost** (or stopping the transport) silences it and gives the track its own knob
   values back. A ghost that is on plays again with the next Play.
 * **Clear ghost** removes it. Recording a new ghost replaces the old one.
@@ -1385,8 +1388,10 @@ patch is named after the word; save it if you want to keep it.
 The **Mix** tab has a channel strip for each part:
 
 * **Level** fader with an activity meter.
-* **Pan**, **Delay** send and **Reverb** send.
-* **Send A** and **Send B**: sends to the two shared send effects (2.8, below).
+* **Pan**, **Delay** send and **Reverb** send: these feed the **Master delay** and **Master
+  reverb** (the Master section).
+* **Send A** and **Send B**, the row under them: these feed a second reverb and delay, the
+  **Send effects A and B** at the end of the tab (2.8, below), with their own settings.
 * **M** (mute), **S** (solo) and the **Freeze** button (the snowflake, 2.8, below).
 * **Pedal** send with **Pre** and **Ins**, shown only while the pedal send is switched on
   (see [Guitar pedals](#15-guitar-pedals)).
@@ -1397,8 +1402,8 @@ The **Master** section:
 
 | Effect | Controls |
 |---|---|
-| **Delay** | A stereo ping-pong delay synced to the tempo. **Time** (1/2 down to 1/32, including dotted and triplet values), **Feedback**, **Tone** (dark and full to thin and bright) and **Return**. Changing the time bends the pitch smoothly, like a tape delay, instead of clicking. |
-| **Reverb** | A convolution reverb whose impulse response Oro generates itself. **Size**, **Damp** (how quickly the highs die away) and **Return**. |
+| **Master delay** | A stereo ping-pong delay synced to the tempo. **Time** (1/2 down to 1/32, including dotted and triplet values), **Feedback**, **Tone** (dark and full to thin and bright) and **Return**. Changing the time bends the pitch smoothly, like a tape delay, instead of clicking. |
+| **Master reverb** | A convolution reverb whose impulse response Oro generates itself. **Size**, **Damp** (how quickly the highs die away) and **Return**. |
 | **Colour** | **Chorus** (on the whole mix) and **Warmth** (soft saturation that keeps the loudness about the same as you turn it up). |
 | **Volume** | The master fader, with a stereo peak meter. |
 | **Ceiling** | The output limiter's ceiling, from −6 dB to 0 dB (default −0.3 dB). Peaks never go above it, and quieter material passes at the same level whatever the ceiling. |
@@ -1413,12 +1418,12 @@ A** is a reverb and **Send B** a delay. Turn up a track's **Send A** or **Send B
 its strip to send it there. The sends are taken after the level fader, so they follow the
 fader, mute, solo and the vector mix. Both start at 0.
 
-Their settings are in the **Send effects** section at the end of the Mix tab:
+Their settings are in the **Send effects A and B** section at the end of the Mix tab:
 
 | Effect | Controls |
 |---|---|
-| **Send A reverb** | **Size**, **Decay** (0.3 s to 12 s: the time the reverb takes to fall by 60 dB, before Damping takes the highs away sooner), **Damping**, **Pre-delay** (0 to 250 ms of silence before the reverb starts) and **Return** (its level in the mix). |
-| **Send B delay** | **Sync** on: **Time** is a note value (1/2 down to 1/32, with dotted and triplet values) at the tempo. Sync off: **Time** in milliseconds (20 ms to 2 s). Times longer than 2 s are held at 2 s. **Feedback**, **Tone** (dark to bright echoes), **Ping-pong** (echoes alternate left and right; off, they stay where the sound was) and **Return**. |
+| **Send A: reverb** | **Size**, **Decay** (0.3 s to 12 s: the time the reverb takes to fall by 60 dB, before Damping takes the highs away sooner), **Damping**, **Pre-delay** (0 to 250 ms of silence before the reverb starts) and **Return** (its level in the mix). |
+| **Send B: delay** | **Sync** on: **Time** is a note value (1/2 down to 1/32, with dotted and triplet values) at the tempo. Sync off: **Time** in milliseconds (20 ms to 2 s). Times longer than 2 s are held at 2 s. **Feedback**, **Tone** (dark to bright echoes), **Ping-pong** (echoes alternate left and right; off, they stay where the sound was) and **Return**. |
 
 The returns join the mix before chorus, warmth, volume and the limiter, so recordings,
 bounces and stems include them (a stem carries that track's own sends). They are separate
@@ -1489,7 +1494,12 @@ offline, faster than real time and sample-exact, without you having to play alon
 
 Only what the sequencers, arpeggiators and dot locks play is rendered; parts without a
 pattern stay silent. Files are 24-bit WAVs named like
-`orograph-bounce-20261002-143015.wav`, and stems add `-part1`, `-part2` and so on.
+`oro-bounce-20261002-143015.wav`, and stems add the track number and name
+(`-track1-bass`, `-track2-pad` and so on).
+
+Live weather sources (Mod tab, Links) hold still at their latest readings while a bounce
+renders, so the file does not depend on when you made it. The Bounce popover says so when
+any track links from a weather source.
 
 ### Bounce reminders (2.11)
 

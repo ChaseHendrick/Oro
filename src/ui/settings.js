@@ -238,7 +238,7 @@ export function shortcutsList() {
 function aboutTab() {
   return h('div', { class: 'settings-pane about' },
     h('div', { class: 'about-head' },
-      h('div', { class: 'about-word' }, 'OROGRAPH'),
+      h('div', { class: 'about-word' }, 'ORO'),
       h('div', { class: 'about-version' }, `Version ${VERSION}`)),
     h('p', null, 'Wave terrain synthesis traces a closed path across a landscape once per cycle, and the height under the moving point becomes the sound. Pitch is how fast the path is traced; timbre is the shape of the land it crosses.'),
     h('p', null, 'Oro is an independent, clean-room implementation inspired by the idea of a terrain synthesizer. Terrain Synth is a trademark of Conductive Labs; Oro is not affiliated with or endorsed by Conductive Labs.'),
