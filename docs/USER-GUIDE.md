@@ -801,6 +801,33 @@ plays the notes one at a time.
 * **Hold**: latches the chord so it keeps playing after you let go. Playing a new chord
   replaces it.
 
+### Chord trigger (2.8)
+
+The **Chord** row in the Seq tab turns every note a track receives into a whole chord built
+on that note: keys on the on-screen and computer keyboard, MIDI, the track's sequencer steps
+and the keys going into its arpeggiator (so the arp plays the chord's notes one at a time).
+Preview phrases and Explore notes still play single notes. It is off until you switch it on,
+and a track with it off plays exactly as before.
+
+* **Chord**: on or off for this track.
+* **Type**: **Triad**, **7th**, **Sus2**, **Sus4**, **Power** (root, fifth and octave),
+  **Octaves** (root and octave) or **Learned**.
+* **In key**: off, the chord keeps its shape on every note (Triad is a major triad, 7th a
+  dominant seventh). On, it is built from the steps of the global key and scale instead, so
+  its quality follows the note: in C major, D plays D minor, G plays G7 with 7th, and B plays
+  B diminished. A note outside the scale plays the chord of the scale note below it, moved up
+  to the note. With a scale of other than seven notes the chord still steps through that
+  scale.
+* **Learn**: hold two or more keys (on screen, on the computer keyboard or on a MIDI
+  controller) and press Learn. The chord is kept as its notes above the lowest one (up to 8
+  notes within three octaves), Type switches to **Learned** and the chord trigger turns on.
+  With In key on, a learned chord moves by scale steps too.
+* The line at the end shows what the key's root note plays with the current settings.
+
+Each key or step releases exactly the notes it started, even if you change the chord while
+it sounds. Drum kit tracks ignore the chord trigger. The setting belongs to the track: it is
+saved with the session, copied when you duplicate the track and kept when you load a patch.
+
 ### Preview
 
 **Shift + P** plays a short phrase, about two bars long, on the selected part. The phrase
@@ -864,7 +891,8 @@ The **Mix** tab has a channel strip for each part:
 
 * **Level** fader with an activity meter.
 * **Pan**, **Delay** send and **Reverb** send.
-* **M** (mute) and **S** (solo).
+* **Send A** and **Send B**: sends to the two shared send effects (2.8, below).
+* **M** (mute), **S** (solo) and the **Freeze** button (the snowflake, 2.8, below).
 * **Pedal** send with **Pre** and **Ins**, shown only while the pedal send is switched on
   (see [Guitar pedals](#15-guitar-pedals)).
 * Click the part's name to select it, double-click (or press F2) to rename it, and click the
@@ -882,6 +910,62 @@ The **Master** section:
 
 The chain is: parts → sends into delay and reverb → chorus → warmth → volume → limiter →
 output. The limiter is always on, so the output never goes above the ceiling.
+
+### Send effects (2.8)
+
+Two more effects that every track can share, each running once for the whole mix: **Send
+A** is a reverb and **Send B** a delay. Turn up a track's **Send A** or **Send B** knob on
+its strip to send it there. The sends are taken after the level fader, so they follow the
+fader, mute, solo and the vector mix. Both start at 0.
+
+Their settings are in the **Send effects** section at the end of the Mix tab:
+
+| Effect | Controls |
+|---|---|
+| **Send A reverb** | **Size**, **Decay** (0.3 s to 12 s: the time the reverb takes to fall by 60 dB, before Damping takes the highs away sooner), **Damping**, **Pre-delay** (0 to 250 ms of silence before the reverb starts) and **Return** (its level in the mix). |
+| **Send B delay** | **Sync** on: **Time** is a note value (1/2 down to 1/32, with dotted and triplet values) at the tempo. Sync off: **Time** in milliseconds (20 ms to 2 s). Times longer than 2 s are held at 2 s. **Feedback**, **Tone** (dark to bright echoes), **Ping-pong** (echoes alternate left and right; off, they stay where the sound was) and **Return**. |
+
+The returns join the mix before chorus, warmth, volume and the limiter, so recordings,
+bounces and stems include them (a stem carries that track's own sends). They are separate
+from the **Delay** and **Reverb** sends and the master Delay and Reverb, which work as
+before. When no track sends to one of them and it has been silent for 2.5 seconds, it stops
+running and costs nothing, so a session that never uses them sounds exactly as it did.
+Loading a patch keeps a track's Send A and Send B amounts, and saved patches do not store
+them.
+
+### Freeze (2.8)
+
+Freezing a track renders its pattern into an audio loop and plays that loop in time with
+the transport instead of running its voices, which saves processing for other tracks.
+Press the snowflake on the track's strip (or choose **Freeze** in the track menu); the
+button shows a dashed outline while the loop renders, then lights up, and the track's tab
+and strip show the snowflake and "Frozen". Press it again to unfreeze.
+
+* The track needs its pattern on (**Seq on**) with notes in it, and its dot set to **Pin**
+  (a moving dot cannot be captured in a loop). Oro tells you if one of these is missing.
+* The loop holds the track's sound after its track effects. Its **level** fader, **mute**,
+  **solo**, the **Delay**, **Reverb**, **Send A** and **Send B** sends, the vector mix and the
+  pedal send still apply live. **Pan** is part of the loop.
+* **Loop length** (Mix > Send effects > Freeze) applies to the next freeze: **Auto** uses
+  whole passes of the pattern that fill whole bars (up to 8 passes), or choose 1, 2, 4 or 8
+  bars (rounded up to whole passes of the pattern). The render plays a few seconds of the
+  pattern first, so release and effect tails that cross the end of the loop come back round
+  at its start, as they do live.
+* A frozen track plays only while the transport runs. Keys and MIDI do not play it (Oro
+  says so the first time); unfreeze it to play it live.
+* **Editing a frozen track unfreezes it.** Changing anything that shapes its sound (any
+  sound or path setting, Pan, modulation, Links, the Function, track effects, terrains, the
+  pattern, the dot, the chord trigger, or the global tempo, swing, key or scale) makes the
+  track live again at once with a short crossfade, and a message tells you. Mixer moves
+  (level, sends, mute, solo) and renaming do not. Moving a macro or a science source does
+  not unfreeze a track; its loop keeps the values they had when you froze it.
+* The loop repeats one pass of the pattern, so steps with probability or humanize play the
+  same way every time while the track is frozen.
+* Freezing is not saved: a session always opens with every track live, and a bounce plays
+  frozen tracks from their patterns as usual.
+
+In the built-in test (one track with two unison copies), rendering a frozen track took
+about 90% less processing than the same track live.
 
 ---
 

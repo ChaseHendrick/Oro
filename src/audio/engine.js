@@ -30,6 +30,7 @@ import { wavHeader } from './wav.js';
 import { loadWorkletModule, withTimeout } from './worklet-loader.js';
 import { bounceOptions, normaliseEvents, stemParts, passInit, renderPass, encodeBuffer } from './bounce.js';
 import { sequencerEvents } from './bounce-events.js';
+import { renderFrozenLoop } from './freeze.js';
 import { createPedalHost } from './pedal-host.js';
 import { createVoiceHost } from './voice-host.js';
 import { dryDelaySamples, MAX_COMP_MS } from '../pedals/latency-comp.js';
@@ -109,6 +110,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let quality = QUALITY_MODES.includes(store.get('ui.audioQuality')) ? store.get('ui.audioQuality') : 'standard';
   let controllers = Array.from({ length: MAX_PARTS }, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }));
   let marbles = Array.from({ length: MAX_PARTS }, () => null);
+  // v2.8 frozen loops ({t:'freeze'} messages) per track slot, replayed into a rebuilt DSP
+  let frozenMsgs = Array.from({ length: MAX_PARTS }, () => null);
   let transportMsg = null;
   // v1.1 pedal loop state the DSP needs back after a rebuild.
   let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
@@ -145,8 +148,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   const offTracks = watchTracks(store, ({ perm, fresh }) => {
     controllers = permute(controllers, perm, fresh, () => ({ bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }));
     marbles = permute(marbles, perm, fresh, () => null);
-    for (let p = partCount(store); p < MAX_PARTS; p++) { controllers[p] = { bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }; marbles[p] = null; }
+    frozenMsgs = permute(frozenMsgs, perm, fresh, () => null);
+    for (let p = partCount(store); p < MAX_PARTS; p++) { controllers[p] = { bend: 0, wheel: 0, pressure: 0, slide: 0, expression: 0, sustainLevel: 0, breath: 0 }; marbles[p] = null; frozenMsgs[p] = null; }
     marbles.forEach((m, p) => { if (m) marbles[p] = { ...m, part: p }; });
+    frozenMsgs.forEach((m, p) => { if (m) frozenMsgs[p] = { ...m, part: p }; });
   });
 
   function buildWorkletSource(init) {
@@ -237,7 +242,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     if (!rebuilding) {
       rebuilding = (async () => {
         teardownSource();
-        const init = [...sync.snapshot(), ...(terrain ? terrain.messages() : [])];
+        const init = [...sync.snapshot(), ...(terrain ? terrain.messages() : []), ...frozenMsgs.filter(Boolean)];
         try {
           if (dspMode === 'worklet' && recoveries <= MAX_RECOVERIES) buildWorkletSource(init);
           else { dspMode = 'script'; await buildScriptSource(init); }
@@ -420,6 +425,17 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let bouncing = false;
   let lastBounce = null;
 
+  // The session for an offline render at rate `sr`, starting at beat 0. The
+  // live transport anchor is in live context seconds; an offline render
+  // starts its bar at 0 (events from music.renderEvents say so too). The
+  // pedals are hardware and cannot take part in an offline render: it plays
+  // every part dry (Insert ignored, no pedal send).
+  function offlineSnapshot(sr) {
+    const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay').map(m => m.t === 'noiseRecording' ? { ...m, data: decodeNoiseRecording(store.get(`parts.${m.part}.noiseRecording`), sr) } : m);
+    snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
+    return snapshot;
+  }
+
   const engine = {
     get context() { return ctx; },
     get analyser() { return fx ? fx.analyser : null; },
@@ -594,12 +610,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         const evs = normaliseEvents(Array.isArray(opts.events) ? opts.events : sequencerEvents(store.serialize(), o.bars), o.songSeconds);
         await terrain.whenIdle();
         sync.flush();
-        // The live transport anchor is in live context seconds; an offline
-        // render starts its bar at 0 (events from music.renderEvents say so too).
-        // The pedals are hardware and cannot take part in an offline render:
-        // the bounce plays every part dry (Insert ignored, no pedal send).
-        const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay').map(m => m.t === 'noiseRecording' ? { ...m, data: decodeNoiseRecording(store.get(`parts.${m.part}.noiseRecording`), sr) } : m);
-        snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
+        // Frozen tracks render live here: a bounce does not need the CPU saving.
+        const snapshot = offlineSnapshot(sr);
         if (opts.quality && QUALITY_MODES.includes(opts.quality)) snapshot.push({ t: 'quality', mode: opts.quality });
         const terrains = terrain.messages();
         const global = { ...(store.get('global') || {}) };
@@ -643,6 +655,38 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       }
     },
     get bouncing() { return bouncing; },
+
+    /**
+     * v2.8 Freeze: render track `part`'s loop offline (src/audio/freeze.js):
+     * `events` from music.renderEvents starting at beat 0, `beats` the loop
+     * length at `tempo`, `warmLoops` passes before the one kept, `others`
+     * renders the other tracks too (for a sidechain). Resolves to the loop
+     * for setFrozen(); nothing is played until then.
+     */
+    async renderFreeze(part, { events = [], beats, tempo, warmLoops = 1, others = false, isCancelled, onProgress } = {}) {
+      if (disposed) throw new Error('The audio engine was shut down');
+      if (!validPart(part)) throw new Error('There is no such track');
+      const sr = ctx ? ctx.sampleRate : 48000;
+      await terrain.whenIdle();
+      sync.flush();
+      const evs = normaliseEvents(events);
+      const parts = new Set(others ? Array.from({ length: partCount(store) }, (_, i) => i) : [part]);
+      const init = [...offlineSnapshot(sr), ...terrain.messages().filter(m => parts.has(m.part))];
+      for (const e of evs) if (!Number.isInteger(e.msg.part) || parts.has(e.msg.part)) init.push(e.msg);
+      return renderFrozenLoop({ sampleRate: sr, init, part, beats, tempo: tempo || Number(store.get('global.tempo')) || 112, warmLoops, isCancelled, onProgress });
+    },
+    /** v2.8: play `loop` (from renderFreeze) for track `part` instead of its voices; null goes back to the voices. */
+    setFrozen(part, loop) {
+      if (!validPart(part)) return;
+      if (loop && loop.L && loop.R) {
+        const msg = { t: 'freeze', part, L: loop.L, R: loop.R, frames: loop.frames, beats: loop.beats };
+        frozenMsgs[part] = msg;
+        post(msg);
+      } else {
+        frozenMsgs[part] = null;
+        post({ t: 'freeze', part, L: null });
+      }
+    },
 
     async startRecording() {
       if (!recorder) throw new Error('Recording needs Web Audio, which this browser does not provide');

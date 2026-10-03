@@ -63,6 +63,10 @@
 .part-tab[aria-checked="true"] .part-patch { color: var(--text-2); }
 .part-mute { display: none; margin-left: auto; font-size: 9px; font-weight: 800; color: var(--warn); }
 .part-tab.is-muted .part-mute { display: block; }
+/* v2.8 a frozen track shows a flake on its tab */
+.part-frozen { display: none; flex: none; width: 12px; height: 12px; color: var(--part-ink); }
+.part-frozen svg { width: 12px; height: 12px; }
+.part-tab.is-frozen .part-frozen { display: inline-flex; }
 .part-tab.is-muted .part-texts { opacity: .55; }
 .part-led { flex: none; }
 
@@ -742,7 +746,7 @@
   scrollbar-width: thin;
 }
 .strip {
-  display: grid; grid-template-rows: auto 1fr auto; gap: 6px;
+  display: grid; grid-template-rows: auto 1fr auto auto; gap: 6px;
   flex: 1 0 118px; scroll-snap-align: start;
   padding: 8px; min-width: 0;
   background: var(--panel-2);
@@ -1224,3 +1228,34 @@
 .drum-cell:focus-visible, .drum-name:focus-visible { outline: 2px solid var(--focus, var(--part-line)); outline-offset: 1px; }
 @media (pointer: coarse) { .drum-cell, .drum-name { height: 40px; } .drum-cell { min-width: 40px; } }
 .seq-grid[hidden] { display: none; }
+
+/* ================================================================== v2.8 send effects, freeze, chord trigger */
+.strip-sends { display: flex; justify-content: space-around; gap: 2px; padding-top: 4px; border-top: 1px solid var(--divider); }
+.strip-sends .knob--sm { --knob-size: 26px; width: 52px; }
+.strip-sends .knob-label, .strip-sends .knob-value { font-size: 10px; line-height: 14px; }
+.toggle--freeze { flex: 0 0 26px !important; padding: 0; display: inline-grid; place-items: center; }
+.toggle--freeze svg { width: 14px; height: 14px; }
+.toggle--freeze.is-on { background: var(--part-soft); color: var(--part-ink); border-color: var(--part-line); }
+.toggle--freeze.is-busy { border-style: dashed; color: var(--text-2); }
+.strip.is-frozen .strip-patch { color: var(--part-ink); }
+.mix-sends {
+  grid-column: 1 / -1; display: flex; flex-direction: column; min-width: 0;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 8px 10px; box-shadow: var(--inset-hi);
+}
+.mix-sends .section-head { margin-bottom: 4px; }
+.sends-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 18px; }
+.fx-card--send .knob-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px 4px; }
+.sends-toggles { display: inline-flex; gap: 4px; letter-spacing: 0; text-transform: none; }
+.sends-time { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; align-self: center; }
+.sends-time .select { width: 82px; }
+.fx-card--freeze { max-width: 220px; }
+.fx-card--freeze .field-col { display: flex; flex-direction: column; gap: 2px; }
+.fx-card--freeze .select { width: 104px; }
+.sends-note { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.35; }
+.seq-chord .chord-readout { flex: 1 1 auto; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seq-chord .toggle.is-on { background: var(--part-soft); color: var(--part-ink); border-color: var(--part-line); }
+@media (pointer: coarse) {
+  .toggle--freeze { flex-basis: 44px !important; min-height: 44px; }
+  .strip-sends .knob--sm { --knob-size: 40px; width: 64px; }
+  .seq-chord .toggle, .sends-toggles .toggle { min-height: 44px; min-width: 44px; }
+}
