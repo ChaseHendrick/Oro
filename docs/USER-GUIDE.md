@@ -767,9 +767,40 @@ unchanged.
 
 ### Humanize (2.6)
 
-**Humanize time** plays each note up to 20 ms late and **Humanize vel** moves each note's
-velocity up to 30% up or down, a little differently on every pass, so a pattern stops
-sounding machine-tight. Both are per pattern and start at Off. Dot locks stay on the grid.
+Under **Humanize**, **Time** plays each note up to 20 ms late and **Velocity** moves each
+note's velocity up to 30% up or down, a little differently on every pass, so a pattern
+stops sounding machine-tight. Both are per pattern and start at Off. Dot locks stay on
+the grid.
+
+### Drum kit (2.7)
+
+Press **Drum kit** at the top of the Seq tab to turn the selected track into an eight-pad
+drum kit. Its notes then play pads instead of the synth voice, and the step grid is
+replaced by eight lanes, one per pad. Turn it off to get the synth (and its step grid)
+back; the kit and lanes are kept.
+
+* **Lanes.** Click a cell to add a hit at 80% velocity. Click it again for 100%, again
+  for 45%, and once more to clear it. The pattern's Rate and Length apply, and so do
+  Swing and Humanize. Prob and Ratchet belong to the melodic step grid.
+* **Pads.** Click a pad's name to hear it and edit it below the lanes: **Pitch** (up to
+  24 semitones either way), **Decay** (1 plays the whole sound, lower fades it sooner),
+  **Level**, **Pan** and **Choke**. Pads in the same choke group cut each other off, the
+  way a closed hi-hat stops an open one; 0 means no group.
+* **The synth kit.** A new kit is synthesized in Oro, not recorded: Kick, Snare, Closed
+  hat, Open hat, Clap, Low tom, High tom and Rim, with the two hats in choke group 1.
+  **Synth kit** puts it back on every pad (and resets the pad settings).
+* **Import & slice.** Choose an audio file. Oro finds the strongest hits in it (sudden
+  jumps in loudness), up to eight, and puts one on each pad from pad 1, in the order
+  they happen. Each slice runs to the next hit, up to 1.5 seconds. Pads beyond the hits
+  found keep their sound.
+* **Record 4 s & slice.** Records four seconds from your microphone (the browser asks
+  first) and slices it the same way, so tapping on a desk, clicking and knocking becomes
+  a kit.
+* **Playing pads live.** MIDI notes 36 to 43 (C2 to G2 in Oro's note names) play pads 1
+  to 8; other notes wrap round onto the pads, so the on-screen keyboard plays them too.
+
+Sliced sounds are saved with the session as 16-bit audio, so a session with a recorded
+kit is larger than one without.
 
 ### Dot locks in the sequencer
 

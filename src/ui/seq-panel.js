@@ -157,9 +157,10 @@ export function createSeqPanel(ctx) {
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Length'), seqLen.el),
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Octave'), seqOct.el)),
       h('div', { class: 'seq-line seq-dotline' }, lockRec.el, h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Dot glide'), lockGlide.el)),
+      h('span', { class: 'mini-label seq-human-label' }, 'Humanize'),
       h('div', { class: 'seq-pair' },
-        h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Humanize time'), humanTime.el),
-        h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Humanize vel'), humanVel.el)),
+        h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Time'), humanTime.el),
+        h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Velocity'), humanVel.el)),
       tools));
 
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },
@@ -207,7 +208,7 @@ export function createSeqPanel(ctx) {
   const drums = createDrumPanel(ctx);
   scope.add(drums.dispose);
   const syncDrum = () => { grid.hidden = drums.isOn(); };
-  scope.add(store.subscribe('parts', syncDrum));
+  scope.add(store.subscribe('parts', (p) => { if (!/^parts\.\d+\.(params|mods|dot)\./.test(p)) syncDrum(); }));
   scope.add(store.subscribe('ui.selectedPart', syncDrum));
   syncDrum();
   const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, arpBar, playNote);

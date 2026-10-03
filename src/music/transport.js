@@ -215,6 +215,8 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     // v2.7 a drum kit track plays its lanes instead of its melodic steps (humanize applies to them too)
     const drum = store.get(`parts.${p}.drum`);
     if (drum && drum.on) {
+      // a note held by a slide before the kit was switched on still ends
+      if (st.tie) { router._engineOff(p, st.tie.note, t, 'seq', st.tie.lead); st.tie = null; }
       if (!seq.enabled || !Array.isArray(seq.drumLanes)) return;
       const hT = clamp(finite(seq.humanTime, 0), 0, 1), hV = clamp(finite(seq.humanVel, 0), 0, 1);
       for (let r = 0; r < KIT_PADS; r++) {
@@ -224,7 +226,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         if (hT > 0) tr += hT * HUMAN_TIME_MAX * stepChance(((probSeed | 0) + runs) ^ (0x51ed + r), p, abs);
         if (hV > 0) v *= 1 + hV * HUMAN_VEL_MAX * (2 * stepChance(((probSeed | 0) + runs) ^ (0x2a7c + r), p, abs) - 1);
         router._engineOn(p, KIT_BASE_NOTE + r, clamp(v, 0.01, 1), tr, 'seq', lead);
-        router._engineOff(p, KIT_BASE_NOTE + r, Math.min(tr + 0.05, tNext - MIN_GAP), 'seq', lead);
+        router._engineOff(p, KIT_BASE_NOTE + r, Math.max(tr + 0.005, Math.min(tr + 0.05, tNext - MIN_GAP)), 'seq', lead);
       }
       return;
     }

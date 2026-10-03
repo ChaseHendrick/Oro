@@ -3,6 +3,15 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.7.0 (October 2026)
+
+* **Drum kit mode.** Any track can become an eight-pad drum kit with eight sequencer
+  lanes. It starts with a synthesized kit, and each pad has pitch, decay, level, pan and
+  a choke group.
+* **Import & slice** and **Record 4 s & slice** cut a recording at its hits into up to
+  eight pads, so a phone recording of tapping on a desk becomes a kit.
+* The Humanize controls in the Seq tab no longer overlap.
+
 ## 2.6.0 (October 2026)
 
 * **Undo and redo** with a history list (top bar, Cmd/Ctrl+Z, Shift+Cmd+Z or Ctrl+Y). Drags

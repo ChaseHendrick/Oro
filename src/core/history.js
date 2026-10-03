@@ -1,7 +1,8 @@
 // Undo history (v2.6): snapshots of the saved state (everything but `ui`)
 // taken after each edit settles, so a knob drag or a burst of key presses is
 // one step. Imported terrains and recordings are large and are always
-// replaced, never edited in place, so snapshots share them by reference.
+// replaced, never edited in place, so snapshots share them by reference, and
+// drum pad samples (base64 strings) are shared the same way.
 //
 // Edits from people (the UI, MIDI, scene and patch loads, imports) are
 // recorded; the moving dot, the engine and preference writes are not, and a
@@ -13,6 +14,12 @@ import { PART_PARAM_MAP, GLOBAL_PARAM_MAP } from './params.js';
 const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock']);
 const SHARED = ['userTerrain', 'noiseRecording'];
 
+/** A drum kit with each pad's sample string shared (strings are immutable). */
+function cloneDrum(d) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.pads)) return deepClone(d);
+  return { ...deepClone({ ...d, pads: [] }), pads: d.pads.map((p) => (p && typeof p === 'object' ? { ...p, sample: p.sample && typeof p.sample === 'object' ? { ...p.sample } : p.sample ?? null } : p)) };
+}
+
 export function snapshotState(store) {
   const root = store.get('') || {};
   const out = {};
@@ -22,9 +29,10 @@ export function snapshotState(store) {
       out.parts = root.parts.map((p) => {
         if (!p || typeof p !== 'object') return deepClone(p);
         const rest = {};
-        for (const key of Object.keys(p)) if (!SHARED.includes(key)) rest[key] = p[key];
+        for (const key of Object.keys(p)) if (!SHARED.includes(key) && key !== 'drum') rest[key] = p[key];
         const copy = deepClone(rest);
         for (const key of SHARED) if (key in p) copy[key] = p[key];
+        if ('drum' in p) copy.drum = cloneDrum(p.drum);
         return copy;
       });
     } else out[k] = deepClone(root[k]);

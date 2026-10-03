@@ -1862,8 +1862,18 @@ export class OroDSP {
     const pads = Array.isArray(msg.pads) ? msg.pads : [];
     pads.forEach((pd, i) => {
       if (!pd) return;
-      const data = pd.pcm instanceof Float32Array ? pd.pcm : Number.isInteger(pd.synth) && pd.synth >= 0 ? synthDrum(pd.synth, this.sr) : undefined;
-      P.kit.setPad(i, { data: data === undefined ? null : data, rate: pd.pcm ? pd.rate : this.sr, gain: pd.gain, pitch: pd.pitch, decay: pd.decay, pan: pd.pan, choke: pd.choke });
+      const set = { gain: pd.gain, pitch: pd.pitch, decay: pd.decay, pan: pd.pan, choke: pd.choke };
+      // keep: the pad's sound is unchanged, so only its settings move
+      if (!pd.keep) {
+        if (pd.pcm instanceof Float32Array) { set.data = pd.pcm; set.rate = pd.rate; }
+        else if (Number.isInteger(pd.synth) && pd.synth >= 0) {
+          // synthesized once per engine and shared, never on every knob move
+          if (!this.drumCache) this.drumCache = new Map();
+          if (!this.drumCache.has(pd.synth)) this.drumCache.set(pd.synth, synthDrum(pd.synth, this.sr));
+          set.data = this.drumCache.get(pd.synth); set.rate = this.sr;
+        } else set.data = null;
+      }
+      P.kit.setPad(i, set);
     });
   }
 

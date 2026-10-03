@@ -3,7 +3,7 @@
 // its transients into a kit, the way a phone recording of tapping on a desk
 // becomes drums.
 //
-// KitPlayer runs in the audio engine at the host rate. Notes 36..43 (C1..G1)
+// KitPlayer runs in the audio engine at the host rate. MIDI notes 36..43 (C2..G2
 // play pads 1..8; other notes wrap onto the pads.
 
 export const KIT_PADS = 8;

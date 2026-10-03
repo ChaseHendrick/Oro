@@ -121,7 +121,7 @@ export function createDrumPanel(ctx) {
     padEl.replaceChildren(
       h('div', { class: 'mini-label' }, `Pad ${i + 1}: ${pad.name}${pad.synth >= 0 ? ' (synth)' : ' (sample)'}`),
       h('div', { class: 'knob-row' },
-        knob('pitch', { label: 'Pitch', curve: 'lin', min: -24, max: 24, default: 0, unit: 'st' }),
+        knob('pitch', { label: 'Pitch', curve: 'int', min: -24, max: 24, default: 0, unit: 'st' }),
         knob('decay', { label: 'Decay', curve: 'lin', min: 0.02, max: 1, default: 1 }),
         knob('level', { label: 'Level', curve: 'lin', min: 0, max: 1, default: 0.8 }),
         knob('pan', { label: 'Pan', curve: 'lin', min: -1, max: 1, default: 0 }),
@@ -131,8 +131,11 @@ export function createDrumPanel(ctx) {
   // A pad knob edit only redraws the grid, so the knob being dragged survives.
   const gridOnly = () => renderGrid(false);
   const knobEdit = /^parts\.\d+\.drum\.pads\.\d+\.(pitch|decay|level|pan|choke)$/;
+  // Only kit and pattern edits redraw; the moving dot writes to the track every frame.
   scope.add(store.subscribe('parts', (p) => {
-    if (p !== 'parts' && !new RegExp(`^parts\\.${sel()}(\\.|$)`).test(p)) return;
+    const pre = `parts.${sel()}`;
+    if (p === 'parts' || p === pre) { schedule(renderGrid); return; }
+    if (!p.startsWith(pre + '.') || !/^(drum|patterns|activePattern)(\.|$)/.test(p.slice(pre.length + 1))) return;
     schedule(knobEdit.test(p) ? gridOnly : renderGrid);
   }));
   scope.add(store.subscribe('ui.selectedPart', () => { padSel = 0; schedule(renderGrid); }));

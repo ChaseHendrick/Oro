@@ -1224,3 +1224,4 @@
 .drum-cell:focus-visible, .drum-name:focus-visible { outline: 2px solid var(--focus, var(--part-line)); outline-offset: 1px; }
 @media (pointer: coarse) { .drum-cell, .drum-name { height: 40px; } .drum-cell { min-width: 40px; } }
 .seq-grid[hidden] { display: none; }
+.seq-human-label { margin-bottom: -4px; }

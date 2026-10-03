@@ -68,6 +68,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   const funcs = new Set();   // v2.4 Function points
   const kits = new Set();    // v2.7 drum kits
   const pcmCache = new Map(); // base64 sample -> Float32Array (decoded once)
+  const kitSent = new Map();  // part -> the sound each pad last sent, so knob edits don't resend samples
   const trackFx = new Set();
   const noise = new Set();
   let globalAll = false;
@@ -110,11 +111,17 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     return { t: 'links', part: i, links: sanitizeLinks(src) };
   }
 
-  function kitMsg(i) {
+  // `full` sends every pad's sound; otherwise a pad whose sound has not
+  // changed since the last message sends only its settings (keep: 1).
+  function kitMsg(i, full = false) {
     const d = sanitizeDrum(store.get(`parts.${i}.drum`));
     if (!d.on) return { t: 'kit', part: i, on: 0 };
-    const pads = d.pads.map((p) => {
+    const sent = (!full && kitSent.get(i)) || [];
+    const now = [];
+    const pads = d.pads.map((p, k) => {
       const base = { gain: p.level, pitch: p.pitch, decay: p.decay, pan: p.pan, choke: p.choke };
+      now[k] = p.sample ? p.sample.data : `synth:${p.synth}`;
+      if (sent[k] === now[k]) return { ...base, keep: 1 };
       if (p.sample) {
         let pcm = pcmCache.get(p.sample.data);
         if (!pcm) { pcm = base64ToPcm(p.sample.data); if (pcmCache.size > 64) pcmCache.clear(); pcmCache.set(p.sample.data, pcm); }
@@ -122,6 +129,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       }
       return { ...base, synth: p.synth };
     });
+    kitSent.set(i, now);
     return { t: 'kit', part: i, on: 1, pads };
   }
 
@@ -178,7 +186,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       if (m) out.push(m);
       const l = linksMsg(i);
       if (l) out.push(l);
-      out.push(funcMsg(i), kitMsg(i), fxMsg(i), noiseMsg(i));
+      out.push(funcMsg(i), kitMsg(i, true), fxMsg(i), noiseMsg(i));
     }
     out.push(watchMsg());
     if (withExtra) {
@@ -226,7 +234,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
           if (l) out.push(l);
         }
         if (partAll.has(i) || funcs.has(i)) out.push(funcMsg(i));
-        if (partAll.has(i) || kits.has(i)) out.push(kitMsg(i));
+        if (partAll.has(i) || kits.has(i)) out.push(kitMsg(i, partAll.has(i)));
         if (partAll.has(i) || trackFx.has(i)) out.push(fxMsg(i));
         if (partAll.has(i) || noise.has(i)) out.push(noiseMsg(i));
       }
