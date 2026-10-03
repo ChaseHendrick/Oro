@@ -1305,6 +1305,7 @@
   .toggle--freeze { flex-basis: 44px !important; min-height: 44px; }
   .strip-sends .knob--sm { --knob-size: 40px; width: 64px; }
   .seq-chord .toggle, .sends-toggles .toggle { min-height: 44px; min-width: 44px; }
+}
 /* v2.8 drum generators */
 .drum-gen { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-start; }
 .drum-gen[hidden], .drum-bar .btn[hidden] { display: none; }
