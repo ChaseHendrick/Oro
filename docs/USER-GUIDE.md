@@ -1506,6 +1506,13 @@ same length, so placing them at bar 1 (time 0) lines them up sample for sample.
 * **Stems**: **Wet** keeps each track's delay, reverb, Send A and Send B; **Dry** leaves them
   out. With dry stems you can add the **send returns** as their own files (Send A reverb,
   Send B delay, and the master delay and reverb), so stems plus returns add up to the mix.
+  Returns are only offered with dry stems: wet stems already hold their sends, so separate
+  returns would count them twice.
+* **Master processing on stems** (off by default): when off, every stem and return is taken
+  before the master chorus, warmth, volume and limiter, so they add up exactly to
+  `Mix (no master processing)`, which is saved next to the normal full mix for comparison.
+  When on, every file goes through the master chain like the mix; warmth and the limiter
+  are not linear, so the sum is then close to the mix but not exact.
 * **Fader**: **Post-fader** uses each track's level; **Pre-fader** renders every track at
   full level.
 * **Normalise**: **Off** keeps the session's levels; **Peak, common gain** raises every file
@@ -1514,13 +1521,12 @@ same length, so placing them at bar 1 (time 0) lines them up sample for sample.
 * **File names**: a pattern such as `{index} {track name} {tempo}bpm {key}`, made safe for
   every computer (for example `01 Bass 112bpm A Minor.wav`). The full mix is `00`.
 
-Each track plays through its own track effects; every file goes through the master chorus,
-warmth and limiter like the mix, so a mix that drives the limiter hard can sum slightly
-differently. The zip also holds a MIDI file of every track, `Tempo map.mid` (Oro's tempo is
+Each track plays through its own track effects. The zip also holds a MIDI file of every track, `Tempo map.mid` (Oro's tempo is
 constant, so this is one tempo event at bar 1) and a `README.txt` with the tempo, key,
 tuning, format, length and each track's settings. The dialog shows the expected size, warns
-above 1.5 GB and refuses past 3.5 GB. Files are rendered and encoded one at a time; **Cancel**
-stops after the current file.
+above 1.5 GB and refuses past 3.5 GB. Files are rendered and encoded one at a time;
+**Cancel** stops within moments, even in the middle of a file, and nothing is saved. In the
+desktop app a save dialog asks where to put the zip; in a browser it downloads.
 
 ### Looper (1.2)
 
@@ -1662,7 +1668,8 @@ own undo.
 The **clock button** next to Undo and Redo opens **Version history**: earlier saves of your
 session, grouped by day (Today, Yesterday, then dates). Oro saves a version when the session
 has changed and then rested for about two minutes (or after ten minutes of steady changes),
-when you close Oro, and when you press **Save version** (with an optional name). An
+when you switch away from Oro or close it with unsaved changes (at most once a minute), and
+when you press **Save version** (with an optional name). An
 unchanged session never makes a new automatic version.
 
 Each version shows its time, name, track count, tempo and key, and what changed since the

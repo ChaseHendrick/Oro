@@ -422,16 +422,37 @@ export function createVersions({ store, backend, timers = globalThis, now = () =
   };
 }
 
+export const HIDDEN_GAP_MS = 60 * 1000;
+/**
+ * Versions when the app goes away. visibilitychange to hidden fires first
+ * and most reliably (tab switch, minimise, close, phone lock): it saves
+ * unsaved changes, at most once per `minGapMs`, and leaves a preview alone.
+ * pagehide (closing or reloading) leaves any preview and saves too; it runs
+ * in the capture phase, before the session autosave flush, so a preview is
+ * never saved as the session. Returns a function that removes the hooks.
+ */
+export function installCloseHooks({ versions, win = globalThis.window, doc = globalThis.document, now = () => Date.now(), minGapMs = HIDDEN_GAP_MS } = {}) {
+  let last = -Infinity;
+  const onHidden = () => {
+    if (doc.visibilityState !== 'hidden' || versions.previewing || !versions.scheduler.pending()) return;
+    const t = now();
+    if (t - last < minGapMs) return;
+    last = t;
+    versions.scheduler.flush('close');
+  };
+  const onPageHide = () => { try { versions.close(); } catch { /* ignore */ } };
+  doc.addEventListener('visibilitychange', onHidden, true);
+  win.addEventListener('pagehide', onPageHide, true);
+  return () => { doc.removeEventListener('visibilitychange', onHidden, true); win.removeEventListener('pagehide', onPageHide, true); };
+}
+
 let current = null, starting = null;
 /** Start version history for the app (main.js, after the UI). Safe to call again. */
 export function startVersions({ store, migrate } = {}) {
   if (!starting) starting = (async () => {
     const mig = migrate || (await import('./migrate.js')).migrateState;
     current = createVersions({ store, backend: await durableBackend(), migrate: mig });
-    const onHide = () => { try { current.close(); } catch { /* ignore */ } };
-    // capture: runs before the session autosave flush, so a preview is never saved as the session
-    window.addEventListener('pagehide', onHide, true);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && !current.previewing && current.scheduler.pending()) current.scheduler.flush('close'); }, true);
+    installCloseHooks({ versions: current });
     return current;
   })();
   return starting;

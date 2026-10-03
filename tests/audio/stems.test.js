@@ -142,10 +142,10 @@ describe('names, options and sizes', () => {
     st.parts[0].seqOn = 1;
     st.parts[0].patterns[0].steps[0].on = 1;
     const small = exportSize(st, { bars: 4 });
-    expect(small).toMatchObject({ bars: 4, files: 2, warn: false, refuse: false });
+    expect(small).toMatchObject({ bars: 4, files: 3, warn: false, refuse: false });
     st.parts[1].seqOn = 1;
     st.parts[1].patterns[0].steps[0].on = 1;
-    const big = exportSize(st, { bars: 200, sampleRate: 96000, bits: 32, tail: 0 });   // 800 s, 3 files of ~614 MB
+    const big = exportSize(st, { bars: 200, sampleRate: 96000, bits: 32, tail: 0 });   // 800 s, 4 files of ~614 MB
     expect(big.bytes).toBeGreaterThan(SIZE_WARN);
     expect(big.warn).toBe(true);
     expect(big.refuse).toBe(big.bytes > SIZE_MAX);
@@ -187,18 +187,20 @@ describe('stem passes', () => {
 
   it('plans the mix, one stem per audible track, and the returns', () => {
     const wet = planStems(st(), evs, {});
-    expect(wet.map(p => p.id)).toEqual(['mix', 'track1', 'track2']);
-    expect(wet[1].extra).toEqual([]);
+    expect(wet.map(p => p.id)).toEqual(['mix', 'mixraw', 'track1', 'track2']);
+    expect(wet.map(p => p.tap)).toEqual([null, 'bus', 'bus', 'bus']);
+    expect(planStems(st(), evs, { master: true }).map(p => [p.id, p.tap])).toEqual([['mix', null], ['track1', null], ['track2', null]]);
+    expect(wet[2].extra).toEqual([{ t: 'stemTap', streams: 1 }]);
     const pre = planStems(st(), evs, { fader: 'pre' });
-    expect(pre[1].extra[0]).toEqual({ t: 'params', part: 0, p: { level: 1 } });
+    expect(pre[2].extra[1]).toEqual({ t: 'params', part: 0, p: { level: 1 } });
     const dry = planStems(st(), evs, { wet: false, returns: true });
-    expect(dry.map(p => p.id)).toEqual(['mix', 'track1', 'track2', 'sendA', 'delay', 'reverb']);
-    expect(dry[1].extra[0].p).toEqual({ delaySend: 0, reverbSend: 0, sendA: 0, sendB: 0 });
+    expect(dry.map(p => p.id)).toEqual(['mix', 'mixraw', 'track1', 'track2', 'sendA', 'delay', 'reverb']);
+    expect(dry[2].extra[1].p).toEqual({ delaySend: 0, reverbSend: 0, sendA: 0, sendB: 0 });
     // a parameter lock cannot bring a dry stem's send back
-    const lock = dry[1].events.find(e => e.msg.t === 'params');
+    const lock = dry[2].events.find(e => e.msg.t === 'params');
     expect(lock.msg.p).toEqual({ cutoff: 0.2 });
     const rev = dry.find(p => p.id === 'reverb');
-    expect(rev.extra[0]).toEqual({ t: 'stemTap', dry: 0 });
+    expect(rev.extra[0]).toEqual({ t: 'stemTap', dry: 0, streams: 1 });
     expect(rev.extra[1].p).toEqual({ delaySend: 0, sendA: 0, sendB: 0 });
     expect(rev.events.find(e => e.msg.t === 'params').msg.p).toEqual({ reverbSend: 1, cutoff: 0.2 });
   });
@@ -232,7 +234,10 @@ describe('stems export with the real DSP', { timeout: 120000 }, () => {
           const pass = passes[i];
           this.seen.push(frames(i));
           const { init, late } = passInit({ snapshot: sync.snapshot(), terrains, events: pass.events, solo: pass.solo, extra: pass.extra });
-          const [dry] = await renderDspHere(fakeCtx, init, late, Math.round(frames(i)));
+          this.progress = 0;
+          const [dry] = await renderDspHere(fakeCtx, init, late, Math.round(frames(i)), (f) => { this.progress = f; }, isCancelled);
+          // a stand-in for the master chain: not linear, skipped by the 'bus' tap
+          if (pass.tap !== 'bus') for (let c = 0; c < 2; c++) { const d = dry.getChannelData(c); for (let k = 0; k < d.length; k++) d[k] = 0.5 * Math.tanh(2 * d[k]); }
           await onPass(dry, pass, i);
         }
         return true;
@@ -247,16 +252,17 @@ describe('stems export with the real DSP', { timeout: 120000 }, () => {
     // the fake engine renders at its own rate; lengths come from the request
     const files = readZip(new Uint8Array(await res.blob.arrayBuffer()));
     const names = files.map(f => f.name);
-    expect(names.filter(n => n.endsWith('.wav'))).toHaveLength(3);
+    expect(names.filter(n => n.endsWith('.wav'))).toHaveLength(4);
+    expect(names[1]).toMatch(/^00 Mix \(no master processing\) 240bpm /);
     expect(names[0]).toMatch(/^00 Full mix 240bpm /);
-    expect(names[1]).toMatch(/^01 Track 1|^01 /);
+    expect(names[2]).toMatch(/^01 Track 1|^01 /);
     expect(names).toContain('README.txt');
     expect(names).toContain('Tempo map.mid');
     expect(names.some(n => /^Oro session 240bpm .*\.mid$/.test(n))).toBe(true);
     const wavs = files.filter(f => f.name.endsWith('.wav')).map(f => decodeWav(f.data));
     expect(new Set(wavs.map(w => w.frames)).size).toBe(1);   // all the same length
     expect(wavs[0].frames).toBe(Math.round(48000 * 1.5));
-    const [mix, a, b] = wavs;
+    const [, mix, a, b] = wavs;
     let err = 0, energy = 0;
     for (let c = 0; c < 2; c++) for (let i = 0; i < mix.frames; i++) {
       const d = mix.channels[c][i] - a.channels[c][i] - b.channels[c][i];
@@ -279,12 +285,12 @@ describe('stems export with the real DSP', { timeout: 120000 }, () => {
     const res = await exportStems({ state: store.serialize(), engine, options: { bars: 1, bits: 24, wet: false, returns: true, normalise: 'common', sampleRate: 48000 } });
     const files = readZip(new Uint8Array(await res.blob.arrayBuffer()));
     const wavs = files.filter(f => f.name.endsWith('.wav'));
-    expect(wavs.map(f => f.name.replace(/ 240bpm.*$/, ''))).toEqual(['00 Full mix', '01 Track 1', '02 Track 2', '03 Send A reverb return']);
+    expect(wavs.map(f => f.name.replace(/ 240bpm.*$/, ''))).toEqual(['00 Full mix', '00 Mix (no master processing)', '01 Track 1', '02 Track 2', '03 Send A reverb return']);
     expect(engine.seen[0]).toBe(48000 + 30 * 48000);   // the mix renders the longest tail ...
     expect(res.frames).toBeLessThan(engine.seen[0]);   // ... and is cut where it falls silent
     expect(res.frames).toBeGreaterThan(48000);
     expect(engine.seen.slice(1).every(f => f === res.frames)).toBe(true);
-    const [mix, a, b, ret] = wavs.map(f => decodeWav(f.data));
+    const [, mix, a, b, ret] = wavs.map(f => decodeWav(f.data));
     let retEnergy = 0, err = 0, energy = 0, peak = 0;
     for (let c = 0; c < 2; c++) for (let i = 0; i < mix.frames; i++) {
       retEnergy += ret.channels[c][i] ** 2;
@@ -295,6 +301,39 @@ describe('stems export with the real DSP', { timeout: 120000 }, () => {
     expect(retEnergy).toBeGreaterThan(0.01);
     expect(err / energy).toBeLessThan(1e-5);          // dry stems + return = mix
     expect(peak).toBeCloseTo(10 ** (-1 / 20), 3);       // common gain: the loudest file peaks at -1 dBFS
+  });
+
+  it('with master processing off, dry stems plus returns sum to the no-master mix within 1e-6', async () => {
+    // unison with random spread: each track's voices draw random phases, so this also checks that a track
+    // alone draws the same ones as in the mix (per-track random streams)
+    const edit = (s) => { for (const p of [0, 1]) { s.set(`parts.${p}.params.delaySend`, 0); s.set(`parts.${p}.params.reverbSend`, 0); s.set(`parts.${p}.params.unison`, 6); s.set(`parts.${p}.params.unisonMode`, 3); } s.set('parts.1.params.sendA', 0.7); };
+    const sum = async (master) => {
+      const { engine, store } = setup(edit);
+      const res = await exportStems({ state: store.serialize(), engine, options: { bars: 1, bits: 32, tail: 0.25, wet: false, returns: true, master } });
+      const w = readZip(new Uint8Array(await res.blob.arrayBuffer())).filter(f => f.name.endsWith('.wav')).map(f => ({ name: f.name, ...decodeWav(f.data) }));
+      const mixes = w.filter(x => x.name.startsWith('00 ')), stems = w.filter(x => !x.name.startsWith('00 '));
+      let worst = 0;
+      const ref = mixes[mixes.length - 1];
+      for (let c = 0; c < 2; c++) for (let i = 0; i < ref.frames; i++) worst = Math.max(worst, Math.abs(ref.channels[c][i] - stems.reduce((acc, x) => acc + x.channels[c][i], 0)));
+      return { names: w.map(x => x.name.replace(/ 240bpm.*$/, '')), worst };
+    };
+    const off = await sum(false);
+    expect(off.names).toEqual(['00 Full mix', '00 Mix (no master processing)', '01 Track 1', '02 Track 2', '03 Send A reverb return']);
+    expect(off.worst).toBeLessThan(1e-6);
+    const on = await sum(true);
+    expect(on.names).toEqual(['00 Full mix', '01 Track 1', '02 Track 2', '03 Send A reverb return']);
+    expect(on.worst).toBeGreaterThan(1e-5);    // each file through the (not linear) master chain
+  });
+
+  it('cancels in the middle of a stem and keeps nothing', async () => {
+    const { engine, store } = setup();
+    let cancel = false;
+    const t0 = Date.now();
+    const run = exportStems({ state: store.serialize(), engine, options: { bars: 16, tail: 0 }, isCancelled: () => { if (engine.progress > 4096) cancel = true; return cancel; } });
+    await expect(run).rejects.toMatchObject({ cancelled: true, message: 'Export cancelled' });
+    expect(engine.seen).toHaveLength(1);                  // stopped inside the first pass
+    expect(engine.progress).toBeLessThan(engine.seen[0] / 4);
+    expect(Date.now() - t0).toBeLessThan(5000);
   });
 
   it('stops when cancelled', async () => {

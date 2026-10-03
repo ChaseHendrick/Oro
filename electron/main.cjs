@@ -17,6 +17,7 @@ const { buildMenuTemplate } = require('./menu.cjs');
 const { MIN_SIZE, fitToDisplays, createWindowStateFile } = require('./window-state.cjs');
 const { updateCapability, createUpdateController } = require('./updates.cjs');
 const { createUpdatePreferencesFile, fetchLatestRelease, installUpdateIpc } = require('./updates-host.cjs');
+const { installFileIpc } = require('./files-host.cjs');
 
 const isMac = process.platform === 'darwin';
 // Same colours index.html paints before the app loads, so there is no flash.
@@ -265,7 +266,8 @@ function start() {
       },
     });
     const removeUpdateIpc = installUpdateIpc({ ipcMain, getContents: () => mainWindow?.webContents, controller: updates });
-    app.once('will-quit', () => { removeUpdateIpc(); updates.dispose(); });
+    const removeFileIpc = installFileIpc({ ipcMain, dialog, fs, getWindow: () => mainWindow, getContents: () => mainWindow?.webContents });
+    app.once('will-quit', () => { removeUpdateIpc(); removeFileIpc(); updates.dispose(); });
 
     app.setAboutPanelOptions({
       applicationName: 'Oro',

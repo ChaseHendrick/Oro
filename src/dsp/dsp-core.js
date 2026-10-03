@@ -50,6 +50,7 @@ import {
   travelBlock, prepareEven, evenPhase, pingPong, shapePathPoint,
 } from './paths.js';
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
+const STREAM_SEEDS = { rng: 0x6f726f67, extensionRng: 0x82edfe, unisonRng: 0x5e1f22, linkRng: 0x11c5 };
 import { generateTerrain, buildMipChain } from './terrains.js';
 import { subWave, PROFILE_PARTIALS, profileRatio, ColourNoise, noiseTextures, fadeLoop, loopSample, KarplusStrong } from './oscillator-extras.js';
 import { AnalogFilter } from './analog-filters.js';
@@ -1044,6 +1045,7 @@ export class OroDSP {
     this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
     this.dryOut = 1;               // v2.12 stems export: 0 renders only the sends (a send-return stem)
+    this.partStreams = false;      // v2.12 stems export: per-part random streams (streamOf)
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
     this.kGate = 1 / (this.sr * FREEZE_GATE_TIME);
@@ -1210,7 +1212,7 @@ export class OroDSP {
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
-      case 'stemTap': this.dryOut = msg.dry === 0 ? 0 : 1; break;
+      case 'stemTap': if (msg.dry !== undefined) this.dryOut = msg.dry === 0 ? 0 : 1; if (msg.streams !== undefined) this.partStreams = !!msg.streams; break;
       case 'tracks': this.setTracks(msg); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
@@ -2134,7 +2136,7 @@ export class OroDSP {
       v.note = note;
       v.gate = true;
       v.order = ++this.voiceCounter;
-      v.rand = this.linkRng() * 2 - 1;
+      v.rand = this.streamOf(P, 'linkRng')() * 2 - 1;
       v.press = 0; v.slide = 0;
       if (!legato) {
         v.vel = vel;
@@ -2195,10 +2197,21 @@ export class OroDSP {
     v.order = ++this.voiceCounter;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
-    v.rand = this.linkRng() * 2 - 1;
+    v.rand = this.streamOf(P, 'linkRng')() * 2 - 1;
     this.triggerExtraEnvelopes(P,v,true);
     v.stringOn=false;
     if (P.resoMode === 1) this.resoStrike(P, v);
+  }
+
+  /**
+   * The random stream a note of part P draws from: the shared one, or (v2.12
+   * stems export, {t:'stemTap', streams: 1}) the part's own, so a track
+   * sounds the same rendered alone as in the mix.
+   */
+  streamOf(P, name) {
+    if (!this.partStreams) return this[name];
+    const s = P.stemStreams || (P.stemStreams = {});
+    return s[name] || (s[name] = mulberry32((STREAM_SEEDS[name] + Math.imul(P.index + 1, 0x9e3779b1)) >>> 0));
   }
 
   startVoice(P, v, note, vel, glideFrom) {
@@ -2211,13 +2224,14 @@ export class OroDSP {
     v.order = ++this.voiceCounter;
     v.pitch = glideFrom >= 0 ? glideFrom : note;
     v.phase[0] = 0;
-    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? this.rng() : k < 8 ? this.extensionRng() : this.unisonRng();
-    if (P.uniMode === 3) for (let k = 0; k < MAX_UNISON; k++) v.uPos[k] = this.unisonRng() * 2 - 1;
+    const r0 = this.streamOf(P, 'rng'), r1 = this.streamOf(P, 'extensionRng'), r2 = this.streamOf(P, 'unisonRng');
+    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? r0() : k < 8 ? r1() : r2();
+    if (P.uniMode === 3) for (let k = 0; k < MAX_UNISON; k++) v.uPos[k] = r2() * 2 - 1;
     v.fnPh = 0;
     v.uniPrev = 0;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
-    v.rand = this.linkRng() * 2 - 1;
+    v.rand = this.streamOf(P, 'linkRng')() * 2 - 1;
     v.press = 0; v.slide = 0;
     v.sPress = P.pressure; v.sSlide = P.slide;
     // a fresh noise stream per note, so stacked voices never hiss in unison

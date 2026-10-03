@@ -208,3 +208,51 @@ describe('preview, restore and go back', () => {
     expect(g.map(x => [x.label, x.items.length])).toEqual([['Today', 2], ['Yesterday', 0], [g[1].label, 1]].filter(x => x[1]));
   });
 });
+
+describe('versions when the app goes away', () => {
+  function fakeTarget() {
+    const l = {};
+    return { l, visibilityState: 'visible', addEventListener: (t, fn, cap) => { l[t] = { fn, cap }; }, removeEventListener: (t) => { delete l[t]; }, fire(t) { l[t] && l[t].fn(); } };
+  }
+  it('saves unsaved changes when the page is hidden (rate-limited) and on pagehide', async () => {
+    const { installCloseHooks } = await import('../../src/core/versions.js');
+    const clock = fakeTimers();
+    const store = createStore(defaultState());
+    const v = createVersions({ store, backend: memoryBackend(), timers: clock, now: () => clock.now() + 1e12 });
+    await v.ready;
+    const doc = fakeTarget(), win = fakeTarget();
+    let t = 0;
+    const off = installCloseHooks({ versions: v, win, doc, now: () => t, minGapMs: 60000 });
+    expect(doc.l.visibilitychange.cap).toBe(true);
+    expect(win.l.pagehide.cap).toBe(true);
+    doc.visibilityState = 'hidden';
+    doc.fire('visibilitychange');
+    await v.store.settled();
+    expect(v.list()).toHaveLength(0);              // nothing changed: nothing to save
+    store.set('global.tempo', 101);
+    doc.fire('visibilitychange');
+    await v.store.settled();
+    expect(v.list().map(x => x.kind)).toEqual(['close']);
+    store.set('global.tempo', 102);
+    t = 30000;
+    doc.fire('visibilitychange');                  // too soon after the last one
+    await v.store.settled();
+    expect(v.list()).toHaveLength(1);
+    t = 61000;
+    doc.fire('visibilitychange');
+    await v.store.settled();
+    expect(v.list()).toHaveLength(2);
+    // a preview is left alone when hidden, and left (not saved) on pagehide
+    await v.preview(v.list()[0].id);
+    store.set('global.tempo', 103);
+    t = 200000;
+    doc.fire('visibilitychange');
+    expect(v.previewing).not.toBe(null);
+    win.fire('pagehide');
+    await v.store.settled();
+    expect(v.previewing).toBe(null);
+    expect(store.get('global.tempo')).toBe(102);
+    off();
+    expect(doc.l.visibilitychange).toBeUndefined();
+  });
+});

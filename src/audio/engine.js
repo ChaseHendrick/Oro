@@ -735,7 +735,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
           const { init, late } = passInit({ snapshot, terrains, events: pass.events || [], solo: pass.solo ?? null, extra: pass.extra || [] });
           const r = await renderPass({
             sampleRate: sr, frames: Math.max(QUANTUM_FRAMES, Math.round(typeof frames === 'function' ? frames(i) : frames)),
-            init, late, global, fx: true, workletCode, computeIR,
+            init, late, global, fx: true, workletCode, computeIR, tap: pass.tap || null, isCancelled,
             forceMainThread: dspMode !== 'worklet',
             onFrames: (f) => onFrames(i, f),
           });

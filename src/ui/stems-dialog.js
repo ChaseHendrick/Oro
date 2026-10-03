@@ -3,7 +3,8 @@
 // offline and saves one .zip (src/audio/stems.js).
 
 import '../styles/archive.css';
-import { h, setText, downloadBlob, has } from './dom.js';
+import { h, setText, has } from './dom.js';
+import { saveBlob } from './save-file.js';
 import { openModal } from './modal.js';
 import {
   exportStems, exportSize, STEM_RATES, STEM_TAILS, DEFAULT_PATTERN, SIZE_MAX, songBars,
@@ -37,7 +38,8 @@ export function openStemsDialog(ctx) {
   const wet = select('Send effects on the stems', [['wet', 'Wet: with sends'], ['dry', 'Dry: no sends']], 'wet');
   const fader = select('Fader', [['post', 'Post-fader'], ['pre', 'Pre-fader']], 'post');
   const dither = check('Dither', true, 'TPDF, for 16 and 24-bit');
-  const returns = check('Send returns as their own files', false, 'Send A, Send B, delay and reverb (with dry stems)');
+  const returns = check('Send returns as their own files', false, 'Send A, Send B, delay and reverb. Only with dry stems: wet stems already hold their sends, so separate returns would count them twice.');
+  const master = check('Master processing on stems', false, 'Off: stems are taken before the master chorus, warmth, volume and limiter, so they add up exactly to "Mix (no master processing)", which is saved too. On: every file goes through them like the mix.');
   const pattern = h('input', { type: 'text', class: 'input stems-pattern', value: DEFAULT_PATTERN, 'aria-label': 'File name pattern', spellcheck: 'false' });
 
   const bar = h('div', { class: 'bounce-progress', hidden: true, role: 'progressbar', 'aria-label': 'Export progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, h('span', { class: 'bounce-fill' }));
@@ -58,7 +60,7 @@ export function openStemsDialog(ctx) {
       field('Stems', h('div', { class: 'select select--sm' }, wet)),
       field('Fader', h('div', { class: 'select select--sm' }, fader)),
       field('Normalise', h('div', { class: 'select select--sm' }, norm))),
-    dither.el, returns.el,
+    dither.el, returns.el, master.el,
     field('File names', pattern, 'Use {index}, {track name}, {tempo} and {key}'),
     info, bar, status,
     h('div', { class: 'bounce-actions' }, cancel, go));
@@ -66,7 +68,7 @@ export function openStemsDialog(ctx) {
   const options = () => ({
     length: length.value === 'song' ? 'song' : 'bars', bars: Number(length.value) || 4,
     sampleRate: Number(rate.value), bits: Number(bits.value), dither: dither.input.checked,
-    normalise: norm.value, wet: wet.value === 'wet', returns: returns.input.checked,
+    normalise: norm.value, wet: wet.value === 'wet', returns: returns.input.checked, master: master.input.checked,
     tail: tail.value === 'auto' ? 'auto' : Number(tail.value), fader: fader.value, pattern: pattern.value,
   });
 
@@ -89,7 +91,7 @@ export function openStemsDialog(ctx) {
       setText(status, err && err.message ? err.message : 'These settings do not work.');
     }
   };
-  for (const el of [length, rate, bits, tail, norm, wet, fader, dither.input, returns.input]) el.addEventListener('change', refresh);
+  for (const el of [length, rate, bits, tail, norm, wet, fader, dither.input, returns.input, master.input]) el.addEventListener('change', refresh);
   refresh();
 
   const setProgress = (f) => {
@@ -99,13 +101,13 @@ export function openStemsDialog(ctx) {
   };
   const setBusy = (on) => {
     busy = on;
-    for (const el of [length, rate, bits, tail, norm, wet, fader, pattern]) el.disabled = on;
+    for (const el of [length, rate, bits, tail, norm, wet, fader, pattern, master.input]) el.disabled = on;
     cancel.hidden = !on;
     bar.hidden = !on && bar.hidden;
     refresh();
   };
 
-  cancel.addEventListener('click', () => { cancelled = true; setText(status, 'Stopping after this file...'); });
+  cancel.addEventListener('click', () => { cancelled = true; setText(status, 'Stopping...'); });
   go.addEventListener('click', async () => {
     if (busy || !ok || (size && size.refuse)) return;
     cancelled = false;
@@ -121,10 +123,13 @@ export function openStemsDialog(ctx) {
         isCancelled: () => cancelled || !modal.isOpen(),
         onProgress: (p) => { setProgress(p.fraction); if (p.label) setText(status, `${p.stage === 'encode' ? 'Saving' : 'Rendering'} ${p.label}... ${Math.round(p.fraction * 100)}%`); },
       });
-      downloadBlob(res.blob, res.name);
       setProgress(1);
-      setText(status, `Done: ${res.files.length} files in ${res.name} (${gb(res.bytes)}).`);
-      ctx.toast('Stems saved', { kind: 'success', detail: res.name });
+      const how = await saveBlob(res.blob, res.name);
+      if (how === 'cancelled') setText(status, 'Not saved: the save dialog was closed.');
+      else {
+        setText(status, `Done: ${res.files.length} files in ${res.name} (${gb(res.bytes)}).`);
+        ctx.toast('Stems saved', { kind: 'success', detail: res.name });
+      }
     } catch (err) {
       if (err && err.cancelled) setText(status, 'Export cancelled.');
       else {

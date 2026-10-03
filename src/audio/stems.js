@@ -14,9 +14,13 @@
 //            DSP ({t:'stemTap', dry: 0}) and all sends but one at 0, so only
 //            that effect's return is heard: Send A reverb, Send B delay, or
 //            the master delay or reverb.
-// Every pass goes through the same master chain (chorus, warmth, volume,
-// limiter) as the mix. Warmth and the limiter are not linear, so summed
-// stems match the mix closely, not bit for bit, when a mix drives them hard.
+//   mixraw   the mix tapped before the master chain (when Master processing
+//            is off), so the stems can be checked against it.
+// Master processing off (the default): track and return stems are tapped
+// before the master chorus, warmth, volume and limiter, so they add up to
+// "Mix (no master processing)" exactly (within float rounding). On: every
+// file goes through the master chain like the mix; warmth and the limiter
+// are not linear, so the sum is then close to the mix, not exact.
 //
 // Encoding happens straight after each pass (16- or 24-bit integer with
 // optional TPDF dither, or 32-bit float). With common normalisation every
@@ -64,6 +68,7 @@ export function stemOptions(o = {}) {
     returns: o.wet === false && !!o.returns,
     tail,
     fader: o.fader === 'pre' ? 'pre' : 'post',
+    master: !!o.master,
     pattern: typeof o.pattern === 'string' && o.pattern.trim() ? o.pattern.slice(0, 200) : DEFAULT_PATTERN,
   };
 }
@@ -175,15 +180,20 @@ export function planStems(state, events, options = {}) {
   const count = Math.min(partCount(state), MAX_PARTS);
   const g = (state && state.global) || {};
   const playing = stemParts(state, events);
-  const passes = [{ kind: 'mix', id: 'mix', label: 'Full mix', part: null, solo: null, extra: [], events }];
+  const tap = o.master ? null : 'bus';
+  // Every pass draws each track's random voice phases from that track's own
+  // stream, so a track alone sounds exactly as it does in the mix.
+  const streams = { t: 'stemTap', streams: 1 };
+  const passes = [{ kind: 'mix', id: 'mix', label: 'Full mix', part: null, solo: null, extra: [streams], events, tap: null }];
+  if (!o.master) passes.push({ kind: 'mixraw', id: 'mixraw', label: 'Mix (no master processing)', part: null, solo: null, extra: [streams], events, tap });
   for (const p of playing) {
     const over = {};
     if (!o.wet) for (const k of SEND_IDS) over[k] = 0;
     if (o.fader === 'pre') over.level = 1;
     const ov = new Map(Object.keys(over).length ? [[p, over]] : []);
     passes.push({
-      kind: 'track', id: `track${p + 1}`, label: (parts[p] && parts[p].name) || `Track ${p + 1}`, part: p, solo: p,
-      extra: ov.size ? [{ t: 'params', part: p, p: over }] : [], events: stripEvents(events, ov),
+      kind: 'track', id: `track${p + 1}`, label: (parts[p] && parts[p].name) || `Track ${p + 1}`, part: p, solo: p, tap,
+      extra: ov.size ? [streams, { t: 'params', part: p, p: over }] : [streams], events: stripEvents(events, ov),
     });
   }
   if (o.returns) {
@@ -195,8 +205,8 @@ export function planStems(state, events, options = {}) {
       const ov = new Map();
       for (let p = 0; p < count; p++) ov.set(p, over);
       passes.push({
-        kind: 'return', id: r.id, label: r.label, part: null, solo: null,
-        extra: [{ t: 'stemTap', dry: 0 }, ...[...ov.keys()].map(p => ({ t: 'params', part: p, p: { ...over } }))],
+        kind: 'return', id: r.id, label: r.label, part: null, solo: null, tap,
+        extra: [{ t: 'stemTap', dry: 0, streams: 1 }, ...[...ov.keys()].map(p => ({ t: 'params', part: p, p: { ...over } }))],
         events: stripEvents(events, ov),
       });
     }
@@ -274,8 +284,9 @@ export async function encodeStemPieces(chans, frames, sampleRate, { bits = 24, d
   const pieces = [wavHeader({ sampleRate, channels: chans.length, bitsPerSample: bits, frames, format: bits === 32 ? 3 : 1 })];
   let t0 = nowMs();
   for (let f = 0; f < frames; f += ENCODE_FRAMES) {
+    if (isCancelled()) throw new CancelError();
     pieces.push(encodeSlice(chans, f, Math.min(ENCODE_FRAMES, frames - f), { bits, gain, rng }));
-    if (nowMs() - t0 > YIELD_MS) { await yieldTask(); t0 = nowMs(); if (isCancelled()) throw new CancelError(); }
+    if (nowMs() - t0 > YIELD_MS) { await yieldTask(); t0 = nowMs(); }
   }
   if (((frames * chans.length * (bits >> 3)) & 1) === 1) pieces.push(new Uint8Array(1));
   return pieces;
@@ -337,11 +348,13 @@ export function readmeText({ state, options, bars, songSeconds, frames, sampleRa
   L.push(`Length: ${bars} bar${bars === 1 ? '' : 's'} (${songSeconds.toFixed(3)} s) plus ${(seconds - songSeconds).toFixed(3)} s tail = ${seconds.toFixed(3)} s, ${frames} samples per file`);
   L.push(`Stems: ${o.wet ? 'wet (each track with its delay, reverb and send effects)' : 'dry (no delay, reverb or send effects on the tracks)'}, ${o.fader === 'pre' ? 'pre-fader (track level ignored)' : 'post-fader'}`);
   L.push(`Send returns: ${o.returns ? 'included as their own files' : 'not included'}`);
+  L.push(`Master processing on stems: ${o.master ? 'on (each file through the master chorus, warmth, volume and limiter)' : 'off (stems taken before the master chorus, warmth, volume and limiter, so they add up to the no-master mix)'}`);
   L.push(`Normalise: ${norm}`);
   L.push('', 'Files');
   for (const f of files) {
     if (f.kind === 'track') L.push(`${f.name}: track ${f.part + 1} "${f.label}" (${trackLine(state, f.part)})`);
     else if (f.kind === 'mix') L.push(`${f.name}: the full mix, as Bounce renders it`);
+    else if (f.kind === 'mixraw') L.push(`${f.name}: the same mix before the master chorus, warmth, volume and limiter; the stems add up to this one`);
     else L.push(`${f.name}: ${f.label}, every track's send into it`);
   }
   if (midiName) L.push(`${midiName}: the notes of every track whose sequencer or arpeggiator plays, one MIDI track each`);
@@ -350,7 +363,10 @@ export function readmeText({ state, options, bars, songSeconds, frames, sampleRa
   L.push(`1. Make a project at ${tempoText(g.tempo)} BPM in 4/4, at ${sampleRate} Hz if you can.`);
   L.push('2. Place every WAV file at bar 1 (time 0). They all start on the first beat and have the same length, so they line up sample for sample.');
   L.push('3. Drag the MIDI file in at bar 1 too if you want the notes; its tempo matches.');
-  if (!o.wet && o.returns) L.push('4. The dry stems plus the return files add up to the mix. The master warmth and limiter act on the whole mix, so the sum can differ slightly when the mix drives them.');
+  if (!o.wet && o.returns) L.push(o.master
+    ? '4. The dry stems plus the return files add up to the mix. The master warmth and limiter act on the whole mix, so the sum can differ slightly when the mix drives them.'
+    : '4. The dry stems plus the return files add up to "Mix (no master processing)". Put your own master processing on their sum.');
+  else if (!o.master) L.push('4. The stems add up to "Mix (no master processing)". Put your own master processing on their sum.');
   L.push('');
   return L.join('\r\n');
 }
@@ -400,7 +416,7 @@ export async function exportStems({ state, engine, render = null, options = {}, 
 
   const key = keyName(state);
   let index = 0;
-  const rawNames = passes.map((p) => stemFileName(o.pattern, { index: p.kind === 'mix' ? 0 : ++index, name: p.label, tempo, key }));
+  const rawNames = passes.map((p) => stemFileName(o.pattern, { index: p.kind === 'mix' || p.kind === 'mixraw' ? 0 : ++index, name: p.label, tempo, key }));
   const names = uniqueNames(rawNames);
   const zip = createZipWriter();
   const files = [];
