@@ -375,3 +375,26 @@ untested).
 - **Tests**: schema validation (every action references real params, paths, terrains and
   tabs from the catalogs), check predicates, progress persistence, snapshot and restore
   around a lesson, and a scan that fails on em dashes in lesson text.
+
+### 10.4 GPU Resonator (work in progress on its own branch)
+
+- **Code**: branch `claude/gpu-resonator-wip` (commit `a6ab926`, based on 2.10.0). It was
+  pushed unfinished on purpose so the work isn't lost; merge or rebase it onto the current
+  main before continuing.
+- **Idea**: run the 2.10 Resonator's 2D FDTD membrane on the GPU (WebGPU compute shaders in
+  WGSL) at 128², 192² or 256² grids instead of the CPU's 24² to 36², from a worker (the
+  AudioWorklet thread can't use WebGPU). The GPU advances many samples per dispatch, reads
+  back the pickup signal and streams it to the worklet through a ring buffer. The CPU
+  Resonator stays the zero-latency default; Oro falls back to it if WebGPU is missing, the
+  adapter is lost, or the GPU falls behind real time.
+- **Done on the branch**: the WGSL kernel and a JS mirror of it, the block planner, the ring
+  buffer, the fallback rules, the worklet feed with a crossfade, the GPU host and worker,
+  the engine hookup (bounces included), the Resonator card's Engine (CPU / GPU) and GPU
+  detail controls, and a user-guide section. 13 new tests pass; the JS mirror matches the
+  CPU membrane within 1e-4.
+- **Measured**: pitch ceiling about 1.4 kHz at every GPU detail (the CPU version tops out
+  near 650 Hz); added latency 32 ms by design.
+- **Remaining**: run the full test suite and the build on the branch; a GPU-vs-JS
+  comparison in a browser with WebGPU (the headless run here was interrupted, so the GPU
+  path itself has not been verified on a real GPU); check the controls at the 5K2K and
+  MacBook sizes; then changelog and release.
