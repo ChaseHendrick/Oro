@@ -74,7 +74,7 @@
 .patch-browser.is-disabled { opacity: .55; }
 .patch-main {
   display: flex; align-items: center; gap: 0;
-  flex: 1; min-width: 0;
+  flex: 1; min-width: min(168px, 100%);
   height: 42px; padding: 3px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -520,6 +520,12 @@
 @container dock (max-width: 899px) {
   .dock-pane--sound { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Wide and ultrawide docks (2.11): more cards per row instead of ever wider
+   cards, and the smart knobs keep their spacing. */
+@container dock (min-width: 1800px) {
+  .dock-pane--sound { grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
+  .smart-body { grid-template-columns: minmax(0, 720px) minmax(0, 860px); }
+}
 
 /* MOD */
 .dock-pane--mod { padding: 8px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -748,7 +754,7 @@
 .strip {
   display: grid; grid-template-rows: auto 1fr auto auto; gap: 6px;
   flex: 1 0 118px; scroll-snap-align: start;
-  padding: 8px; min-width: 0;
+  padding: 8px; min-width: 0; max-width: 220px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -1071,6 +1077,15 @@
 
 @media (max-width: 899px) {
   .macros-btn { display: none; }
+}
+/* Phones: undo and redo (2.6) made the top row wider than the screen, so the
+   transport slid over the logo. The theme switch stays in Settings > General. */
+@media (max-width: 479px) {
+  .utils .theme-btn { display: none; }
+  .utils .icon-btn { width: 36px; }
+  .transport { padding-left: 2px; padding-right: 2px; }
+}
+@media (max-width: 899px) {
   /* MOD rows on phones: give the parameter name room; rate stays readable. */
   .mod-switch { flex-wrap: wrap; row-gap: 6px; }
   .mod-switch .mod-top { flex-basis: 100%; }
@@ -1163,7 +1178,7 @@
 }
 
 /* Expanded sound, modulation and performance editors. */
-.popover--mod { width: min(480px, calc(100vw - 16px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.popover--mod { width: min(480px, calc(100vw - 16px)); max-height: calc(100dvh / var(--ui-zoom, 1) - 24px); overflow-y: auto; }
 .modpop-extra { border-top: 1px solid var(--border); padding-top: 8px; }
 .modpop-extra summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; padding: 4px 0 10px; }
 .modpop-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -1299,6 +1314,18 @@
 .fx-card--freeze .field-col { display: flex; flex-direction: column; gap: 2px; }
 .fx-card--freeze .select { width: 104px; }
 .sends-note { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.35; }
+.sends-intro { margin: 0 0 8px; max-width: 72ch; }
+/* Selected track's effect rack (Mix tab) */
+.track-fx-panel { min-width: 0; padding: 8px 2px; }
+.tfx-head { flex-wrap: wrap; gap: 8px 14px; justify-content: flex-start; }
+.tfx-field { display: inline-flex; align-items: center; gap: 6px; }
+.tfx-diagram { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.6; overflow-wrap: anywhere; }
+.tfx-note { margin: 4px 0 10px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.45; max-width: 72ch; }
+.track-fx-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 10px; }
+.tfx-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; }
+.tfx-card .fx-title .select { width: auto; min-width: 0; max-width: 70%; }
+.tfx-hint { margin: 4px 0 6px; min-height: 2.9em; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.45; }
+.tfx-knobs { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 .seq-chord .chord-readout { flex: 1 1 auto; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seq-chord .toggle.is-on { background: var(--part-soft); color: var(--part-ink); border-color: var(--part-line); }
 @media (pointer: coarse) {
@@ -1335,7 +1362,7 @@
 .smap-pad.is-on { border-color: var(--part-line); background: var(--part-soft); color: var(--part-ink); }
 .smap-pad:focus-visible, .smap-canvas:focus-visible { outline: 2px solid var(--focus, var(--part-line)); outline-offset: 2px; }
 .smap-stage { width: 100%; }
-.smap-canvas { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 52vh; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--panel-3); cursor: pointer; touch-action: manipulation; }
+.smap-canvas { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: calc(52vh / var(--ui-zoom, 1)); border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--panel-3); cursor: pointer; touch-action: manipulation; }
 .smap-info { margin: 0; min-height: 1.4em; font-size: var(--fs-sm); color: var(--text); }
 .smap-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .smap-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; font-size: var(--fs-xs); color: var(--text-2); }
@@ -1410,7 +1437,8 @@
 }
 
 /* v2.9 Ghost replay (Seq tab) */
-.seq-ghost { display: flex; flex-direction: column; gap: 4px; }
+.seq-ghost { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.seq-ghost .seq-capture { flex-wrap: wrap; row-gap: 4px; }
 .seq-ghost-btn:focus-visible { outline: 2px solid var(--focus, var(--part)); outline-offset: 1px; }
 @media (pointer: coarse) { .seq-ghost-btn { min-height: 44px; min-width: 44px; } }
 /* 2.10 Resonator card and Imprint popover */

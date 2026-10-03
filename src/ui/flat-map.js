@@ -16,7 +16,7 @@ import { partCount } from '../core/tracks.js';
 const RES = 112;
 const REBUILD_MS = 120;
 
-export function createFlatMap(container, { store, terrains, tele = null, source = 'ui' }) {
+export function createFlatMap(container, { store, terrains, tele = null, ghost = null, source = 'ui' }) {
   const scope = createScope();
   const canvas = h('canvas', { class: 'flatmap-canvas', 'aria-label': 'Map of the terrain. Click or drag to move the dot.', role: 'img' });
   const el = h('div', { class: 'flatmap' }, canvas);
@@ -128,6 +128,22 @@ export function createFlatMap(container, { store, terrains, tele = null, source 
     g.lineWidth = 2 * dpr;
     g.strokeStyle = theme === 'light' ? '#fffaf0' : '#0b1020';
     g.stroke();
+    // v2.9 ghost replay: where the ghost has the dot, translucent with a dashed rim (as on the 3D map)
+    const gh = typeof ghost === 'function' ? ghost() : ghost;
+    const gp = gh && typeof gh.dotAt === 'function' ? gh.dotAt(part) : null;
+    if (gp && Number.isFinite(gp.u) && Number.isFinite(gp.v)) {
+      const gx = L + (gp.u - Math.floor(gp.u)) * S, gy = T + (gp.v - Math.floor(gp.v)) * S;
+      g.globalAlpha = theme === 'light' ? 0.5 : 0.4;
+      g.fillStyle = color;
+      g.beginPath(); g.arc(gx, gy, 6 * dpr, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 0.9;
+      g.setLineDash([2.5 * dpr, 2.5 * dpr]);
+      g.lineWidth = 1.5 * dpr;
+      g.strokeStyle = color;
+      g.beginPath(); g.arc(gx, gy, 10 * dpr, 0, Math.PI * 2); g.stroke();
+      g.setLineDash([]);
+      g.globalAlpha = 1;
+    }
     g.restore();
   }
 

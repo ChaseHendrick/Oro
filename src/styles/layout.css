@@ -10,8 +10,8 @@
   padding: 0 var(--gutter) max(var(--gutter), env(safe-area-inset-bottom));
   padding-left: max(var(--gutter), env(safe-area-inset-left));
   padding-right: max(var(--gutter), env(safe-area-inset-right));
-  grid-template-columns: minmax(0, 1fr) var(--map-w);
-  grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--dock-h) auto;
+  grid-template-columns: minmax(0, 1fr) calc(var(--map-w) * var(--ui-zoom));
+  grid-template-rows: calc(var(--topbar-h) * var(--ui-zoom)) minmax(0, 1fr) calc(var(--dock-h) * var(--ui-zoom)) auto;
   grid-template-areas:
     "top top"
     "stage map"
@@ -80,6 +80,22 @@
 .map-rail { display: none; }
 .app.map-collapsed .mappanel > :not(.map-rail) { display: none; }
 .app.map-collapsed .map-rail { display: flex; }
+
+/* Large and ultrawide screens (2.11). On a 5K2K monitor at 100% the CSS
+   viewport is 5120 px wide, so the panels, top bar, keyboard and floating
+   layers are drawn larger with CSS zoom; the map itself is not zoomed (it
+   fills the stage at full resolution and its overlays follow the dot in
+   screen pixels). Canvases inside zoomed areas size their backing store by
+   devicePixelRatio times the zoom (pixelRatioOf in src/ui/dom.js), and
+   placeFloating() places popovers in zoomed coordinates. */
+:root { --ui-zoom: 1; }
+@media (min-width: 2800px) and (min-height: 1380px) { :root { --ui-zoom: 1.15; } }
+@media (min-width: 3600px) and (min-height: 1650px) { :root { --ui-zoom: 1.3; } }
+@media (min-width: 4400px) and (min-height: 2000px) { :root { --ui-zoom: 1.5; } }
+.topbar, .mappanel, .dock, .keys, .layer-host,
+.vp-toolbar, .vp-bottom, .vp-notice, .vp-edit-chip, .golf-hud, .start-card, .coin-status { zoom: var(--ui-zoom); }
+/* Tall screens: a taller dock, so the Sound and Mix tabs scroll less. */
+@media (min-width: 1600px) and (min-height: 1100px) { :root { --dock-h: 330px; } }
 
 /* Shorter screens: give the stage more room. */
 @media (max-height: 860px) and (min-width: 900px) {

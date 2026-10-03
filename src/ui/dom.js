@@ -236,3 +236,29 @@ export function watchSize(el, onChange) {
   ro.observe(el);
   return { size, dispose: () => ro.disconnect() };
 }
+
+/**
+ * The large-screen UI zoom (2.11, --ui-zoom in src/styles/layout.css) that the
+ * panels, keyboard, floating layers and map overlays are drawn with. Cached,
+ * and read again after the window resizes, so per-frame callers stay cheap.
+ */
+let zoomCache = 0;
+export function uiZoom() {
+  if (zoomCache) return zoomCache;
+  let z = 1;
+  try {
+    if (typeof document !== 'undefined' && globalThis.CSS && CSS.supports && CSS.supports('zoom', '1.5')) {
+      z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1;
+    }
+  } catch { z = 1; }
+  zoomCache = z > 0 ? z : 1;
+  return zoomCache;
+}
+if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', () => { zoomCache = 0; });
+
+/** Device pixels per CSS pixel for a canvas drawn inside a zoomed area: devicePixelRatio times the UI zoom, at most `cap` times the zoom. */
+export function pixelRatioOf(cap = 2) {
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const z = uiZoom();
+  return Math.min(cap, dpr) * z;
+}

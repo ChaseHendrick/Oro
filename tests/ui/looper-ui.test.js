@@ -214,3 +214,19 @@ describe('Loop tab', () => {
     panel.dispose();
   });
 });
+
+describe('looper undo toast (2.11)', () => {
+  it('stays quiet while quietUndo() says the key belonged to something else', () => {
+    const looper = fakeLooper();
+    const ev = createEmitter();
+    looper.on = (n, fn) => ev.on(n, fn);
+    let quiet = true;
+    const toast = vi.fn();
+    createLooperControl({ store: createStore(defaultState()), engine: { looper }, toast, quietUndo: () => quiet, storage: createMemoryStorage() });
+    ev.emit('info', { reason: 'nothing-to-undo' });
+    expect(toast).not.toHaveBeenCalled();
+    quiet = false;
+    ev.emit('info', { reason: 'nothing-to-undo' });
+    expect(toast).toHaveBeenCalledWith('Nothing to undo', expect.anything());
+  });
+});

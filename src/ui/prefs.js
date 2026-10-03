@@ -26,6 +26,7 @@ export const PREF_DEFAULTS = Object.freeze({
   lastCamera: null,   // the camera when the app was last closed (v2.1)
   dayNight: 0,        // tint the map by the local hour (v2.9)
   pet: 0,             // the pet on the map (v2.9)
+  smartOpen: 1,       // the Smart controls card in the Sound tab is open (2.11)
 });
 
 const VALID = {
@@ -46,6 +47,7 @@ const VALID = {
   lastCamera: v => v === null || !!sanitizeCameraView(v),
   dayNight: v => v === 0 || v === 1,
   pet: v => v === 0 || v === 1,
+  smartOpen: v => v === 0 || v === 1,
 };
 
 /** Keep only known keys with valid values; fill the rest from defaults. */

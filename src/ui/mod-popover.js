@@ -5,7 +5,7 @@
 import { skewLfoPhase, steppedLfo, previewLfo } from '../dsp/modulation-extras.js';
 import { LFO_SHAPES, SYNC_DIVS, MOD_DEFAULT, PART_PARAM_MAP, toNorm, clamp, formatValue, ENV_MODES, LINK_SOURCES, LINK_CURVES } from '../core/params.js';
 import * as paramsModule from '../core/params.js';
-import { h, createScope, setText, prefersReducedMotion } from './dom.js';
+import { h, createScope, setText, prefersReducedMotion, pixelRatioOf } from './dom.js';
 import { openPopover } from './layers.js';
 import { addLoop, schedule } from './frame.js';
 import { createKnob } from './knob.js';
@@ -167,7 +167,7 @@ export function openModPopover(ctx, binding, anchor) {
   const t0 = performance.now();
   scope.add(addLoop(() => {
     if (!preview.isConnected) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = pixelRatioOf(2);
     const W = Math.round(preview.clientWidth * dpr), H = Math.round(preview.clientHeight * dpr);
     if (!W || !H) return;
     if (preview.width !== W || preview.height !== H) { preview.width = W; preview.height = H; }

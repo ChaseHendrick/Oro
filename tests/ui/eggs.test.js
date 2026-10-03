@@ -233,3 +233,26 @@ describe('fun catalog', () => {
     view.dispose();
   });
 });
+
+describe('Konami B and the looper undo toast (2.11)', () => {
+  it('claims B only while it continues the sequence', () => {
+    const k = eggs.createKonami(() => {});
+    const guard = eggs.createUndoKeyGuard(k);
+    const press = (x, more) => { const e = key(x, more); guard.note(e); k.feed(e); };
+    press('b');
+    expect(guard.claimed()).toBe(false);               // B on its own is a plain undo
+    SEQ.slice(0, 8).forEach(x => press(x));
+    press('b');
+    expect(guard.claimed()).toBe(true);                // the B of the code
+    press('a');
+    expect(guard.claimed()).toBe(true);                // A does not touch it
+    press('b');
+    expect(guard.claimed()).toBe(false);               // the next B is a real undo again
+    SEQ.slice(0, 5).forEach(x => press(x));
+    press('b');
+    expect(guard.claimed()).toBe(false);               // B out of turn breaks the sequence
+    SEQ.slice(0, 8).forEach(x => press(x));
+    press('b', { ctrlKey: true });
+    expect(guard.claimed()).toBe(false);
+  });
+});

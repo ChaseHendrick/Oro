@@ -1,13 +1,14 @@
 import { h, createScope, setText } from './dom.js';
 import { createKnob } from './knob.js';
+import { icon } from './icons.js';
 export function createVectorMix(ctx) {
   const scope = createScope(), { store, binder } = ctx;
   const pad = h('div', { class: 'vector-pad', tabindex: '0', role: 'group', 'aria-label': 'Vector mixing pad. Arrow keys move, shift moves faster.' });
   const dot = h('span', { class: 'vector-dot', 'aria-hidden': 'true' });
   const corners = Array.from({ length: 4 }, (_, i) => h('span', { class: `vector-corner vector-corner--${i}` }));
   pad.append(...corners, dot);
-  const bank = h('select', { class: 'select select--sm', 'aria-label': 'Vector track bank' });
-  const amount = createKnob(ctx, binder.globalParam('vectorMix'), { size: 'sm', caption: 'both' });
+  const bank = h('select', { class: 'select-native', 'aria-label': 'Vector track bank' });
+  const amount = createKnob(ctx, binder.globalParam('vectorMix'), { size: 'sm', caption: 'both', label: 'Amount', ariaLabel: () => 'Vector mix amount' });
   scope.add(amount.dispose);
   const readout = h('span', { class: 'section-aside', 'aria-live': 'polite' });
   let drag = null;
@@ -50,7 +51,7 @@ export function createVectorMix(ctx) {
   }
   scope.add(store.subscribe('global', render)); scope.add(store.subscribe('parts', render)); render();
   return { el: h('section', { class: 'dock-card vector-mix' },
-    h('header', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'Vector mix'), bank),
+    h('header', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'Vector mix'), h('div', { class: 'select select--sm' }, bank, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }))),
     h('div', { class: 'vector-body' }, pad, amount.el),
     h('p', { class: 'popover-note' }, 'Blend four tracks with equal-power corner weights. Set Vector mix to 100% for the full crossfade.'), readout), dispose: scope.dispose };
 }
