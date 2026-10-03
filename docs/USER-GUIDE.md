@@ -1582,12 +1582,20 @@ effect menu, Mix amount and four controls named for that algorithm. Bypass or Mi
 passes dry audio through. Effects are applied after voice pan and before the track's level and sends,
 and their tails continue after notes release. Patches include the rack.
 
-The 27 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
+The 30 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
 Phaser, Overdrive, Distortion, Decimator, Granular pitch shift, Four-band EQ, Sidechain
 ducking, Multiband compression, Compressor, Limiter, Tremolo, Auto pan, Ring modulation,
 Envelope wah, Low-pass filter, High-pass filter, Comb resonator, Stereo width, Warmth,
-Noise gate and Tape colour. Multiband compression uses three bands with upward and downward
-compression; it is not a copy of any branded compressor.
+Noise gate, Tape colour, Frequency shifter, Hyper dimension and Filter sequencer. Multiband
+compression uses three bands with upward and downward compression; it is not a copy of any
+branded compressor.
+
+**Frequency shifter** moves every partial by the same number of hertz (up to 2000 Hz up
+or down, or left up and right down), with Feedback and Delay for spiralling echoes.
+**Hyper dimension** spreads six detuned delay voices and short cross reflections across the
+stereo field to widen and thicken even a mono track. **Filter sequencer** steps a resonant
+low-pass through one of eight eight-step patterns in sixteenth notes, synced to the song
+tempo and position.
 
 Routing offers Serial, Four parallel, Parallel pairs, Middle split, Input split, Output
 fan, Input fan, Mid/side, Low/high and Left/right splits. Parallel branches are averaged.

@@ -31,7 +31,22 @@ export const FX_TYPES = Object.freeze([
   effect('warmth', 'Warmth', ['Drive', 'Body', 'Tone', 'Bias'], [0.35, 0.55, 0.65, 0.5], 'A rounded cubic saturator adds low-order harmonics and body.'),
   effect('gate', 'Noise gate', ['Threshold', 'Hold', 'Release', 'Floor'], [0.4, 0.25, 0.35, 0], 'Stereo-linked gating with hold, release and a finite floor.'),
   effect('tape', 'Tape colour', ['Drive', 'Wow', 'Tone', 'Noise'], [0.35, 0.3, 0.6, 0.1], 'Saturation, wow, flutter, high-frequency loss and tape noise.'),
+  effect('freqshift', 'Frequency shifter', ['Shift', 'Feedback', 'Direction', 'Delay'], [0.65, 0.2, 0, 0.3], 'A Hilbert transformer moves every partial by the same number of hertz.'),
+  effect('hyper', 'Hyper dimension', ['Rate', 'Detune', 'Width', 'Dimension'], [0.35, 0.4, 0.8, 0.4], 'Six detuned delay voices spread across the stereo field, plus short cross reflections.'),
+  effect('filterseq', 'Filter sequencer', ['Pattern', 'Glide', 'Resonance', 'Depth'], [0, 0.2, 0.45, 0.75], 'A resonant low-pass steps through an eight-step pattern in sixteenth notes at the song tempo.'),
 ]);
+/** Eight-step cutoff patterns of the filter sequencer (0 closed, 1 open). */
+export const FILTER_SEQ_PATTERNS = Object.freeze([
+  { name: 'Ramp up', steps: [0, .14, .29, .43, .57, .71, .86, 1] },
+  { name: 'Ramp down', steps: [1, .86, .71, .57, .43, .29, .14, 0] },
+  { name: 'Pulse', steps: [1, 0, 1, 0, 1, 0, 1, 0] },
+  { name: 'Gallop', steps: [1, .15, .15, 1, .15, .15, 1, .5] },
+  { name: 'Offbeat', steps: [.1, .1, 1, .1, .1, .1, 1, .35] },
+  { name: 'Arch', steps: [0, .33, .67, 1, .67, .33, 0, .5] },
+  { name: 'Accent', steps: [1, .3, .6, .3, .9, .3, .6, .2] },
+  { name: 'Scatter', steps: [.8, .1, .55, .95, .25, .7, .05, .4] },
+]);
+export const FREQ_SHIFT_DIRECTIONS = Object.freeze(['Up', 'Down', 'Both']);
 export const FX_TYPE_MAP = Object.freeze(Object.fromEntries(FX_TYPES.map((type, index) => [type.id, { ...type, index }])));
 export const FX_ROUTINGS = Object.freeze([
   { id: 0, name: 'Serial', diagram: 'A → B → C → D' },
@@ -79,6 +94,12 @@ export function fxParamScale(type, parameter) {
   else if (type === 'duck' && parameter === 1) { min = -48; max = -6; unit = 'dB'; }
   else if (['chorus', 'flanger', 'phaser'].includes(type) && parameter === 0) { min = .05; max = 5; curve = 'exp'; unit = 'Hz'; }
   else if (['tremolo', 'autopan'].includes(type) && parameter === 0) { min = .1; max = 20; curve = 'exp'; unit = 'Hz'; }
+  else if (type === 'freqshift' && parameter === 0) return { min: -2000, max: 2000, curve: 'bipow', k: 3, unit: 'Hz' };
+  else if (type === 'freqshift' && parameter === 2) return { min: 0, max: 2, curve: 'int', unit: '', options: FREQ_SHIFT_DIRECTIONS.slice() };
+  else if (type === 'freqshift' && parameter === 3) { min = .001; max = .5; curve = 'exp'; unit = 's'; }
+  else if (type === 'hyper' && parameter === 0) { min = .05; max = 5; curve = 'exp'; unit = 'Hz'; }
+  else if (type === 'hyper' && parameter === 1) { min = 0; max = 25; unit = 'ct'; }
+  else if (type === 'filterseq' && parameter === 0) return { min: 0, max: FILTER_SEQ_PATTERNS.length - 1, curve: 'int', unit: '', options: FILTER_SEQ_PATTERNS.map(pattern => pattern.name) };
   return { min, max, curve, unit };
 }
 export function formatFxParam(type, parameter, value) {
@@ -94,5 +115,14 @@ export function formatFxParam(type, parameter, value) {
   if (type === 'duck' && parameter === 1) return Math.round(-48 + p * 42) + ' dB';
   if (['chorus', 'flanger', 'phaser'].includes(type) && parameter === 0) return (0.05 * Math.pow(100, p)).toFixed(2) + ' Hz';
   if (['tremolo', 'autopan'].includes(type) && parameter === 0) return (0.1 * Math.pow(200, p)).toFixed(2) + ' Hz';
+  if (type === 'freqshift' && parameter === 0) { const hz = freqShiftHz(p); return (hz > 0 ? '+' : hz < 0 ? '-' : '') + (Math.abs(hz) < 100 ? Math.abs(hz).toFixed(1) : Math.round(Math.abs(hz))) + ' Hz'; }
+  if (type === 'freqshift' && parameter === 2) return FREQ_SHIFT_DIRECTIONS[Math.round(p * 2)];
+  if (type === 'freqshift' && parameter === 3) { const ms = Math.pow(500, p); return (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + ' ms'; }
+  if (type === 'hyper' && parameter === 0) return (0.05 * Math.pow(100, p)).toFixed(2) + ' Hz';
+  if (type === 'hyper' && parameter === 1) return (p * 25).toFixed(1) + ' ct';
+  if (type === 'filterseq' && parameter === 0) return FILTER_SEQ_PATTERNS[Math.round(p * (FILTER_SEQ_PATTERNS.length - 1))].name;
   return Math.round(p * 100) + '%';
 }
+/** Frequency shifter amount: a cubic curve around the centre gives fine
+ * control near 0 Hz and reaches +-2000 Hz at the ends. */
+export function freqShiftHz(p) { const x = 2 * Math.max(0, Math.min(1, p)) - 1; return x * x * x * 2000; }
