@@ -6,9 +6,9 @@
 // it the knob's end) or from the list; then edit each range, invert it or
 // give it a curve. Smart knobs can be MIDI-learned like any knob.
 
-import { PART_PARAM_MAP, MOD_PARAM_IDS, toNorm, fromNorm, formatValue, clamp } from '../core/params.js';
+import { PART_PARAM_MAP, toNorm, fromNorm, formatValue, clamp } from '../core/params.js';
 import {
-  SMART_KNOBS, SMART_MAX_TARGETS, SMART_CURVES, readSmart, applySmartKnob, setSmartMap, editSmartMap,
+  SMART_KNOBS, SMART_TARGET_IDS, SMART_MAX_TARGETS, SMART_CURVES, readSmart, applySmartKnob, setSmartMap, editSmartMap,
   removeSmartMap, renameSmartKnob, clearSmartKnob, smartKnobLabel, smartTargetLabel, isSmartTarget,
 } from '../core/smart.js';
 import { h, createScope, setText, setAttr } from './dom.js';
@@ -25,11 +25,11 @@ function selectBox(select) {
   return h('div', { class: 'select select--xs' }, select, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }));
 }
 
-/** The "Add a target" list: every modulatable parameter, grouped. */
+/** The "Add a target" list: every sound setting, grouped. */
 function targetOptions(select) {
   select.appendChild(h('option', { value: '' }, 'Add a target...'));
   const groups = new Map();
-  for (const id of MOD_PARAM_IDS) {
+  for (const id of SMART_TARGET_IDS) {
     const g = GROUPS[PART_PARAM_MAP[id].group] || 'Other';
     if (!groups.has(g)) groups.set(g, h('optgroup', { label: g }));
     groups.get(g).appendChild(h('option', { value: id }, smartTargetLabel(id)));
@@ -227,7 +227,7 @@ export function createSmartPanel(ctx) {
     if (!m || Number(m[1]) !== learn.part || !PART_PARAM_MAP[m[2]]) return;
     const id = m[2];
     if (!isSmartTarget(id)) {
-      if (learn.warned !== id) { learn.warned = id; setText(status, `${PART_PARAM_MAP[id].label} cannot be a smart control target: choose a knob that can be modulated.`); }
+      if (learn.warned !== id) { learn.warned = id; setText(status, `${PART_PARAM_MAP[id].label} cannot be a smart control target (mute, solo and pedal routing belong to the mix).`); }
       return;
     }
     if (typeof value !== 'number') return;

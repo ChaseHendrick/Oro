@@ -293,14 +293,6 @@ export function createUI(root, modules = {}) {
       scope.add(fz.dispose);
       const trackName = (i) => store.get(`parts.${i}.name`) || `Track ${i + 1}`;
       fz.on('unfrozen', ({ part, reason }) => { if (reason === 'edit') toast(`${trackName(part)} is live again: its sound changed`, { kind: 'info' }); });
-      // A frozen track plays its loop, not the keys: say so once per freeze.
-      const told = new Set();
-      fz.on('change', () => { for (const i of [...told]) if (!fz.isFrozen(i)) told.delete(i); });
-      if (music && music.router) scope.add(listen(music.router, 'sched', (ev) => {
-        if (!ev || !ev.on || ev.source === 'seq' || ev.source === 'arp' || !fz.isFrozen(ev.part) || told.has(ev.part)) return;
-        told.add(ev.part);
-        toast(`${trackName(ev.part)} is frozen, so it plays its loop and not the keys`, { kind: 'info', detail: 'Unfreeze it (the snowflake in Mix, or the track menu) to play it live.' });
-      }));
     } else fz.dispose();
   } catch (err) {
     console.warn('[ui] freeze is unavailable', err);

@@ -455,17 +455,17 @@ filter and the amp envelope shape them too.
 ### Smart controls (2.8)
 
 The **Smart controls** card at the top of the Sound tab holds eight knobs for the selected
-track. Each smart knob can move up to four of the track's modulatable controls at once (the
-same ones Links can reach), each across its own range, so one knob can open the filter,
-lower the resonance and add some Fold together.
+track. Each smart knob can move up to four of the track's sound controls at once, envelope
+times included (since 2.9), each across its own range, so one knob can open the filter,
+lengthen the release and add some Fold together. Mute, solo and the pedal routing belong to
+the mix and cannot be targets.
 
 * **Choose a knob** by clicking it or tabbing to it. The editor beside the knobs shows its
   targets. A knob with no targets is dimmed and does nothing yet.
 * **Learn**: press Learn, then move any sound knob on the track (or drag the dot on the map
   for Dot X and Y). Where that control was when you pressed Learn becomes the smart knob's
   start, and where you leave it becomes its end. Move more controls to add them, up to
-  four, then press **Done** (or Esc). Controls that cannot be modulated, such as the
-  envelope times, cannot be targets.
+  four, then press **Done** (or Esc).
 * **Add a target...** adds a control from a list instead, from its current value to the
   far end of its range.
 * For each target, **Start** and **End** set its value at the knob's two ends. Set Start
@@ -1133,8 +1133,9 @@ and strip show the snowflake and "Frozen". Press it again to unfreeze.
   bars (rounded up to whole passes of the pattern). The render plays a few seconds of the
   pattern first, so release and effect tails that cross the end of the loop come back round
   at its start, as they do live.
-* A frozen track plays only while the transport runs. Keys and MIDI do not play it (Oro
-  says so the first time); unfreeze it to play it live.
+* A frozen track's loop plays only while the transport runs. Since 2.9, keys and MIDI
+  still play the track live, through its own track effects, on top of the loop (its
+  sequencer and arpeggiator are already in the loop, so their notes are not played again).
 * **Editing a frozen track unfreezes it.** Changing anything that shapes its sound (any
   sound or path setting, Pan, modulation, Links, the Function, track effects, terrains, the
   pattern, the dot, the chord trigger, or the global tempo, swing, key or scale) makes the
@@ -1256,8 +1257,10 @@ changes. It is used in two places:
   as it was recorded and always stretches from that copy, so moving the tempo back and
   forth does not wear the sound down. The stretch waits until an overdub ends. **Fit to
   tempo** does the same once, on demand; a loop recorded without the transport is fitted
-  to the nearest whole number of bars and follows the tempo from then on. Stretching
-  clears the loop's undo layers, and a loop can last at most 120 seconds. Follow tempo is a
+  to the nearest whole number of bars and follows the tempo from then on. Since 2.9 a
+  stretch is a step in the loop's Undo: Undo brings back the audio from before it (at its
+  own length, which Follow tempo then fits again), then the older overdubs. A loop can last
+  at most 120 seconds. Follow tempo is a
   setting of this computer, off until you turn it on.
 * **Noise recordings** (Sound tab, Noise card): **Stretch...** makes the imported
   recording half as long, 75%, 150% or twice as long, keeping its pitch. Recordings keep at

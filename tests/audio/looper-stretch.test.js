@@ -52,7 +52,7 @@ describe('looper core: replace (Follow tempo)', () => {
     expect(r.core.info()).toMatchObject({ edit: 1, loopSpb: 0.5 });
   });
 
-  it('swaps in stretched audio, keeps the position in proportion and drops undo layers', () => {
+  it('swaps in stretched audio, keeps the position in proportion and keeps the undo layers', () => {
     const r = recorded();
     r.send({ t: 'main' }); r.run(1024); r.send({ t: 'main' });   // one overdub layer
     expect(r.core.layers.length).toBe(1);
@@ -63,7 +63,7 @@ describe('looper core: replace (Follow tempo)', () => {
     expect(r.msgs.filter(m => m.t === 'replaced').pop()).toEqual({ t: 'replaced', id: 7, ok: true, edit: edit + 1 });
     expect(r.core.len).toBe(72000);
     expect(r.core.pos).toBe(Math.floor(pos * 72000 / 96000));
-    expect(r.core.layers).toEqual([]);
+    expect(r.core.layers).toHaveLength(2);   // the overdub, then the audio from before the stretch
     expect(r.core.loopSpb).toBe(0.375);
     expect(r.core.loopBars).toBe(1);
     // crossfades without a click and then plays the new audio
@@ -75,6 +75,28 @@ describe('looper core: replace (Follow tempo)', () => {
     expect(jump).toBeLessThan(0.08);
     r.run(80000);
     expect(r.core.pos).toBeLessThan(72000);
+  });
+
+  it('undo after a stretch brings back the audio from before it, then the older overdubs (v2.9)', () => {
+    const r = recorded();
+    const original = Float32Array.from(r.core.L);
+    r.send({ t: 'main' }); r.run(1024, () => 0.2); r.send({ t: 'main' });   // an overdub
+    r.run(256);
+    const overdubbed = Float32Array.from(r.core.L);
+    const L = sine(200, 72000), R = sine(200, 72000);
+    r.send({ t: 'replace', id: 1, L, R, base: r.core.edit, spb: 0.375, bars: 1 });
+    expect(r.core.len).toBe(72000);
+    r.send({ t: 'undo' });
+    expect(r.core.len).toBe(96000);
+    expect(r.core.loopSpb).toBe(0.5);
+    expect(Array.from(r.core.L)).toEqual(Array.from(overdubbed));
+    expect(r.core.pos).toBeLessThan(96000);
+    r.send({ t: 'undo' });
+    expect(r.core.len).toBe(96000);
+    expect(Array.from(r.core.L)).toEqual(Array.from(original));
+    expect(r.core.layers).toHaveLength(0);
+    r.run(4096);
+    expect(r.out.every(Number.isFinite)).toBe(true);
   });
 
   it('refuses a stale copy, a wrong shape and a loop that is recording or overdubbing', () => {

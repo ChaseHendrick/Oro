@@ -1630,7 +1630,7 @@ export class OroDSP {
     const time = finiteOr(msg.time, 0);
     const vel = finiteOr(msg.vel, 0.8);
     if (time <= 0 || time <= this.lastTime) {
-      if (type === 1) this.noteOn(P, note, vel); else this.noteOff(P, note);
+      if (type === 1) this.noteOn(P, note, vel, typeof msg.tag === 'string' ? msg.tag : null); else this.noteOff(P, note);
       return;
     }
     this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0, tag: typeof msg.tag === 'string' ? msg.tag : null });
@@ -1987,8 +1987,10 @@ export class OroDSP {
     P.kit.preview(data, msg.pcm ? finiteOr(msg.rate, this.sr) : this.sr, clamp01(finiteOr(msg.vel, 0.9)), clamp01(finiteOr(msg.gain, 0.8)), Math.max(-24, Math.min(24, finiteOr(msg.pitch, 0))));
   }
 
-  noteOn(P, note, vel) {
-    if (P.frozen !== null && P.fzTarget >= 1) return;   // v2.8 a frozen part plays its loop, not notes
+  noteOn(P, note, vel, tag = null) {
+    // v2.8 a frozen part's sequencer and arpeggiator are in its loop; other
+    // notes (keys, MIDI) play live on top of it (v2.9)
+    if (P.frozen !== null && P.fzTarget >= 1 && (tag === 'seq' || tag === 'arp')) return;
     if (vel > 1) vel /= 127;
     if (P.kitOn && P.kit) { if (vel > 0) { P.kit.trigger(note, vel); this.science.noteOn(); } return; }
     if (!(vel > 0)) { this.noteOff(P, note); return; }
@@ -4304,7 +4306,10 @@ export class OroDSP {
         continue;
       }
       // v2.8 a frozen part plays its loop instead of its voices (both while they crossfade)
-      const live = fz === null || P.fzX < 1 || P.fzTarget < 1;
+      // v2.9 notes played live over a fully frozen part: its voices run (through
+      // its rack) and the loop is added on top
+      const over = fz !== null && P.fzX >= 1 && P.fzTarget >= 1 && (active > 0 || kitBusy || P.tail > 0);
+      const live = fz === null || P.fzX < 1 || P.fzTarget < 1 || over;
       const oL = P.outL, oR = P.outR;
       if (live) {
         if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
@@ -4365,7 +4370,8 @@ export class OroDSP {
           const fx=P.effects.processSample(oL[n],oR[n],side); oL[n]=fx.L; oR[n]=fx.R;
         }
       }
-      if (fz !== null && live) this.frozenBlend(P, oL, oR, pos, seg);
+      if (over) this.frozenAdd(P, oL, oR, pos, seg);
+      else if (fz !== null && live) this.frozenBlend(P, oL, oR, pos, seg);
       if (capture >= 0) {
         // offline freeze: only the captured part's own output, before the fader and the sends
         if (i === capture) for (let n = pos; n < pos + seg; n++) { outL[n] += oL[n]; outR[n] += oR[n]; }
@@ -4470,6 +4476,13 @@ export class OroDSP {
     P.fzGate = gate;
   }
 
+  /** v2.9: add the frozen loop under notes played live on a frozen part. */
+  frozenAdd(P, oL, oR, pos, seg) {
+    const zL = this.fzL, zR = this.fzR;
+    this.frozenFill(P, zL, zR, pos, seg);
+    for (let n = pos; n < pos + seg; n++) { oL[n] += zL[n]; oR[n] += zR[n]; }
+  }
+
   /** v2.8: crossfade the part's live output with its frozen loop (freezing or unfreezing). */
   frozenBlend(P, oL, oR, pos, seg) {
     const zL = this.fzL, zR = this.fzR;
@@ -4552,7 +4565,7 @@ export class OroDSP {
         const P = this.parts[ev.part];
         if (!P || ev.part >= this.count) continue;
         if (ev.type === 2) this.applyParams(P, ev.p, ev.ramp, ev.time, true);
-        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel);
+        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel, ev.tag);
         else this.noteOff(P, ev.note);
       }
       if (this.ctrlRemain <= 0) {

@@ -16,12 +16,16 @@
 // without smart controls has no `smart` key at all, so sessions and patches
 // saved before 2.8, and tracks that never use them, are unchanged.
 
-import { MOD_PARAM_IDS, PART_PARAM_MAP, toNorm, fromNorm, clamp } from './params.js';
+import { PART_PARAMS, PEDAL_PARAM_IDS, PART_PARAM_MAP, toNorm, fromNorm, clamp } from './params.js';
 
 export const SMART_KNOBS = 8;
 export const SMART_MAX_TARGETS = 4;
 export const SMART_CURVES = ['Linear', 'Slow start', 'Fast start', 'S-curve'];
-const MOD_SET = new Set(MOD_PARAM_IDS);
+// v2.9 every sound setting can be a target (envelope times included), not
+// just the modulatable ones; mute, solo and the pedal routing are the mix's.
+const NOT_TARGETS = new Set(['mute', 'solo', ...PEDAL_PARAM_IDS]);
+export const SMART_TARGET_IDS = Object.freeze(PART_PARAMS.filter(d => !NOT_TARGETS.has(d.id) && d.curve !== 'bool').map(d => d.id));
+const MOD_SET = new Set(SMART_TARGET_IDS);
 
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const round4 = (v) => Math.round(v * 10000) / 10000;
