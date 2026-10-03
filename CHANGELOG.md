@@ -3,6 +3,13 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.6.0 (October 2026)
+
+* **Undo and redo** with a history list (top bar, Cmd/Ctrl+Z, Shift+Cmd+Z or Ctrl+Y). Drags
+  count as one step; up to 60 steps.
+* **Humanize** for each pattern: notes up to 20 ms late and velocity up to ±30%, different
+  every pass.
+
 ## 2.5.0 (October 2026)
 
 * **Probability and ratchets.** Each sequencer step has a chance to play (0 to 100%) and
