@@ -837,6 +837,61 @@ back; the kit and lanes are kept.
 Sliced sounds are saved with the session as 16-bit audio, so a session with a recorded
 kit is larger than one without.
 
+### Sound map (2.8)
+
+With a track's drum kit on, **Sound map** (next to **Synth kit**) opens a map of drum
+sounds. Each dot is a sound, and sounds that sound alike sit close together: darker sounds
+to the left, brighter ones to the right, longer ones higher up. The colour shows the kind
+of sound (Kick, Snare, Hat, Open hat, Clap, Tom, Rim, Perc); squares are your samples.
+
+* **The library.** 128 sounds made by Oro, none of them recordings: the eight of the
+  synth kit plus 120 variations (18 kicks, 16 snares, 14 closed hats, 10 open hats, 10
+  claps, 14 toms, 10 rims and 28 percussion sounds: cowbells, shakers, congas, zaps,
+  blocks, cymbals and noise bursts). Each is built from a few settings worked out from
+  its number, so the same number always gives the same sound.
+* **Your samples.** Sounds sliced onto the pads of any track in the session appear as
+  squares, placed by the same measurements.
+* **Choosing a pad.** The numbered buttons above the map pick the pad to fill. Each
+  pad's sound is marked on the map with its number; the chosen pad's ring is in the
+  track colour.
+* **Hearing sounds.** Hover over a dot, or move with the arrow keys (each press jumps to
+  the nearest sound in that direction), to hear it at the pad's level and pitch. Space
+  or **Play** plays it again, and Home goes back to the pad's own sound.
+* **Using a sound.** Click a dot, press Enter or press **Use on pad N**. The pad keeps its
+  pitch, decay, level, pan and choke settings.
+* **Similar** swaps the pad's sound for the closest sound of the same kind. Press it
+  again for the next closest.
+* **Shuffle kit** fills all eight pads with sounds that belong together: one kick, snare,
+  closed hat, open hat, clap, tom, percussion sound (pad 7) and rim, each among the
+  closest of its kind to one sound picked at random. Every shuffle has a number, shown
+  under the map, and the same number always gives the same kit.
+
+The map measures each sound's brightness, length, low end, noisiness, main pitch and
+attack the first time it opens, which takes a moment, then lays them out with principal
+component analysis. A library sound is saved in the session as its number, so it does
+not make the session bigger. Every change can be undone, and kits from earlier versions
+sound the same.
+
+### Fills and groove pad (2.8)
+
+Below the pad settings of a drum kit track are two ways to write lanes for you. Every
+change they make is one step in Undo.
+
+* **Euclid** fills the selected pad's lane with **Hits** spread as evenly as possible
+  over the pattern length (Bjorklund's method: 3 hits over 8 steps gives a hit on steps
+  1, 4 and 7). **Rotate** moves them later by whole steps. Each change rewrites that lane
+  at 80% velocity. A lane you have not set here shows how many hits it has now.
+* **Groove** writes all eight lanes at once, laid out for the synth kit's pad order (kick,
+  snare, closed hat, open hat, clap, low tom, high tom, rim). Drag in the square, or
+  focus it and use the arrow keys (Shift for bigger steps): left to right raises
+  complexity, bottom to top raises loudness. More complexity only adds hits (extra
+  kicks, ghost snares, sixteenth hats, toms and rim), so the core beat stays.
+  * **Style**: Straight, Half-time, Broken or Four on the floor.
+  * **Fill** replaces the last four steps (fewer on patterns under 8 steps) with a snare
+    and tom run that builds to the end.
+  * **Vary** gives the optional hits a different order, so the same settings make a new
+    pattern. The same settings and Vary count always give the same pattern.
+
 ### Dot locks in the sequencer
 
 The **Dot** row lets the sequencer move the dot, so each step can sit on a different patch

@@ -57,7 +57,8 @@ import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
 import { Filter2 } from './filter2.js';
-import { KitPlayer, synthDrum } from './drum-kit.js';
+import { KitPlayer } from './drum-kit.js';
+import { renderLibraryDrum } from './drum-library.js';
 import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.js';
 import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
@@ -1142,6 +1143,7 @@ export class OroDSP {
       }
       case 'links': this.setLinks(msg.part, msg.links); break;
       case 'kit': this.setKit(msg.part, msg); break;
+      case 'kitPreview': this.previewKit(msg.part, msg); break;
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
       case 'freeze': this.setFrozen(msg); break;
@@ -1925,14 +1927,37 @@ export class OroDSP {
       if (!pd.keep) {
         if (pd.pcm instanceof Float32Array) { set.data = pd.pcm; set.rate = pd.rate; }
         else if (Number.isInteger(pd.synth) && pd.synth >= 0) {
-          // synthesized once per engine and shared, never on every knob move
-          if (!this.drumCache) this.drumCache = new Map();
-          if (!this.drumCache.has(pd.synth)) this.drumCache.set(pd.synth, synthDrum(pd.synth, this.sr));
-          set.data = this.drumCache.get(pd.synth); set.rate = this.sr;
+          set.data = this.drumSound(pd.synth); set.rate = this.sr;
         } else set.data = null;
       }
       P.kit.setPad(i, set);
     });
+  }
+
+  /**
+   * Drum library sound i (v2.8; 0..7 are the 2.7 synth drums), synthesized
+   * once per engine and shared, never on every knob move. Past 64 sounds the
+   * oldest leaves the cache (pads holding it keep playing).
+   */
+  drumSound(i) {
+    if (!this.drumCache) this.drumCache = new Map();
+    let d = this.drumCache.get(i);
+    if (!d) {
+      d = renderLibraryDrum(i, this.sr);
+      if (!d) return null;
+      if (this.drumCache.size >= 64) this.drumCache.delete(this.drumCache.keys().next().value);
+      this.drumCache.set(i, d);
+    }
+    return d;
+  }
+
+  /** v2.8: audition a sound ({synth: i} or {pcm, rate}) on a track whose drum kit is on, without changing its pads. */
+  previewKit(part, msg) {
+    const P = this.partAt(part);
+    if (!P || !P.kitOn || !P.kit || !msg) return;
+    const data = msg.pcm instanceof Float32Array ? msg.pcm : Number.isInteger(msg.synth) && msg.synth >= 0 ? this.drumSound(msg.synth) : null;
+    if (!data) return;
+    P.kit.preview(data, msg.pcm ? finiteOr(msg.rate, this.sr) : this.sr, clamp01(finiteOr(msg.vel, 0.9)), clamp01(finiteOr(msg.gain, 0.8)), Math.max(-24, Math.min(24, finiteOr(msg.pitch, 0))));
   }
 
   noteOn(P, note, vel) {

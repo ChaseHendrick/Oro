@@ -503,6 +503,18 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       if (typeof tag === 'string') msg.tag = tag;
       post(msg);
     },
+    /**
+     * v2.8 audition a drum sound on a drum kit track without putting it on a
+     * pad: `sound` is { synth } (a drum library index) or { pcm, rate }.
+     */
+    previewDrum(part, sound, { vel = 0.9, gain = 0.8, pitch = 0 } = {}) {
+      if (!validPart(part) || part >= partCount(store) || !sound) return;
+      const msg = { t: 'kitPreview', part, vel: Number.isFinite(vel) ? vel : 0.9, gain: Number.isFinite(gain) ? gain : 0.8, pitch: Number.isFinite(pitch) ? pitch : 0 };
+      if (sound.pcm instanceof Float32Array) { msg.pcm = sound.pcm; msg.rate = Number.isFinite(sound.rate) ? sound.rate : 48000; }
+      else if (Number.isInteger(sound.synth) && sound.synth >= 0) msg.synth = sound.synth;
+      else return;
+      post(msg);
+    },
     /** Drop queued notes (with `tag`, if given) that would start after audio time `after`. */
     cancelNotes(after, tag) {
       const msg = { t: 'cancelNotes', after: Number.isFinite(after) ? after : 0 };

@@ -5,11 +5,19 @@
 //
 // KitPlayer runs in the audio engine at the host rate. MIDI notes 36..43 (C2..G2
 // play pads 1..8; other notes wrap onto the pads.
+//
+// v2.8: a pad's `synth` indexes the drum library (src/dsp/drum-library.js).
+// Indices 0..7 are exactly the eight SYNTH_DRUMS below; the rest are
+// generated from their index, so a saved index always gives the same sound.
 
 export const KIT_PADS = 8;
 export const KIT_BASE_NOTE = 36;
 export const KIT_VOICES = 16;
 export const SYNTH_DRUMS = ['Kick', 'Snare', 'Closed hat', 'Open hat', 'Clap', 'Low tom', 'High tom', 'Rim'];
+/** v2.8 number of sounds in the drum library (SYNTH_DRUMS first, then generated variants). */
+export const DRUM_LIBRARY_SIZE = 128;
+/** v2.8 two extra player slots (after the eight pads) for auditioning sounds. */
+const PREVIEW_SLOTS = 2;
 
 /** Deterministic noise in -1..1. */
 function noiseGen(seed) {
@@ -140,9 +148,10 @@ export function base64ToPcm(str) {
 export class KitPlayer {
   constructor(sr) {
     this.sr = sr;
-    this.pads = Array.from({ length: KIT_PADS }, () => ({ data: null, rate: sr, gain: 1, pitch: 0, decay: 1, pan: 0, choke: 0 }));
+    this.pads = Array.from({ length: KIT_PADS + PREVIEW_SLOTS }, () => ({ data: null, rate: sr, gain: 1, pitch: 0, decay: 1, pan: 0, choke: 0 }));
     this.voices = Array.from({ length: KIT_VOICES }, () => ({ on: false, pad: 0, pos: 0, inc: 1, g: 0, gl: 0, gr: 0, k: 1, age: 0 }));
     this.counter = 0;
+    this.previewSlot = 0;
   }
   get busy() { return this.voices.some(v => v.on); }
   setPad(i, p) {
@@ -166,6 +175,28 @@ export class KitPlayer {
     const len = pad.data.length / Math.max(1e-6, v.inc);
     v.k = pad.decay >= 0.999 ? 1 : Math.exp(-6.9 / Math.max(1, len * Math.max(0.02, pad.decay)));
   }
+  /**
+   * v2.8: play a sound that is not on a pad (the sound map's audition). It
+   * uses one of two spare slots in turn; an earlier audition fades out in
+   * about 4 ms, so moving across many sounds never piles them up.
+   */
+  preview(data, rate, vel = 0.9, gain = 0.8, pitch = 0) {
+    if (!data || !data.length || !(vel > 0)) return;
+    const fast = Math.exp(-1 / (0.004 * this.sr));
+    this.previewSlot = (this.previewSlot + 1) % PREVIEW_SLOTS;
+    const i = KIT_PADS + this.previewSlot;
+    for (const v of this.voices) {
+      if (!v.on || v.pad < KIT_PADS) continue;
+      if (v.pad === i) v.on = false; else v.k = Math.min(v.k, fast);
+    }
+    const pad = this.pads[i];
+    pad.data = data; pad.rate = rate || this.sr;
+    let v = this.voices.find(x => !x.on);
+    if (!v) v = this.voices.reduce((a, b) => (a.age < b.age ? a : b));
+    v.on = true; v.pad = i; v.pos = 0; v.age = ++this.counter;
+    v.inc = pad.rate / this.sr * Math.pow(2, (Number.isFinite(pitch) ? pitch : 0) / 12);
+    v.g = (Number.isFinite(gain) ? gain : 0.8) * Math.min(1, vel); v.gl = 1; v.gr = 1; v.k = 1;
+  }
   /** Add the sounding pads into L/R from `off` for `n` samples. */
   render(L, R, off, n) {
     for (const v of this.voices) {
@@ -186,8 +217,8 @@ export class KitPlayer {
 }
 
 // ---- saved data ----------------------------------------------------------
-// part.drum = { on, pads: [8 x { name, synth (index into SYNTH_DRUMS, -1 for
-// a sample), sample: null | { rate, data (base64 16-bit PCM) }, pitch (st),
+// part.drum = { on, pads: [8 x { name, synth (index into the drum library,
+// 0..7 = SYNTH_DRUMS, -1 for a sample), sample: null | { rate, data (base64 16-bit PCM) }, pitch (st),
 // decay (0..1), level (0..1), pan (-1..1), choke (0 none, 1..4) }] }
 // pattern.drumLanes = 8 rows of SEQ_STEPS velocities (0 = off), absent until used.
 
@@ -210,7 +241,7 @@ export function sanitizeDrum(src) {
       ? { rate: clampN(p.sample.rate, 8000, 96000, 48000), data: p.sample.data } : null;
     return {
       name: typeof p.name === 'string' && p.name.trim() ? p.name.slice(0, 24) : b.name,
-      synth: sample ? -1 : Math.round(clampN(p.synth, 0, SYNTH_DRUMS.length - 1, b.synth)),
+      synth: sample ? -1 : Math.round(clampN(p.synth, 0, DRUM_LIBRARY_SIZE - 1, b.synth)),
       sample,
       pitch: clampN(p.pitch, -24, 24, 0), decay: clampN(p.decay, 0.02, 1, 1), level: clampN(p.level, 0, 1, 0.8),
       pan: clampN(p.pan, -1, 1, 0), choke: Math.round(clampN(p.choke, 0, 4, b.choke)),
