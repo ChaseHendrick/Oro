@@ -115,7 +115,7 @@ export function openBounce(ctx, anchor) {
   }));
 
   scope.on(midiBtn, 'click', () => {
-    try { setText(status, saveSessionMidi(store, Number(barsSel.value))); } catch (err) { console.warn('[ui] MIDI export failed', err); setText(status, 'The MIDI file could not be made.'); }
+    try { setText(status, saveSessionMidi(store, Number(barsSel.value), music)); } catch (err) { console.warn('[ui] MIDI export failed', err); setText(status, 'The MIDI file could not be made.'); }
   });
 
   scope.on(go, 'click', async () => {

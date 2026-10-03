@@ -1122,11 +1122,15 @@ export class OroDSP {
     this.tuneSemis = t;
   }
 
-  /** A (possibly gliding, fractional) key -> its tuned pitch as a 12-TET note number. */
+  /**
+   * A fractional key (gliding, bent or transposed by whole keys) -> its tuned
+   * pitch as a 12-TET note number, interpolated in log frequency between
+   * adjacent keys; beyond 0..127 the end step is extrapolated.
+   */
   tunedPitch(p) {
     const t = this.tuneSemis;
-    if (!(p > 0)) return t[0] + (p || 0);
-    if (p >= 127) return t[127] + (p - 127);
+    if (!(p > 0)) return t[0] + (p || 0) * (t[1] - t[0]);
+    if (p >= 127) return t[127] + (p - 127) * (t[127] - t[126]);
     const i = Math.floor(p), fr = p - i;
     return fr === 0 ? t[i] : t[i] + (t[i + 1] - t[i]) * fr;
   }
@@ -2479,8 +2483,11 @@ export class OroDSP {
     v.eA = tA; v.eB = tB; v.eC = tC; v.eD = tD;
 
     // pitch
-    // the tuned key (v2.9 microtuning) or, by default, the key itself
-    const semis = (this.tuneSemis === null ? v.pitch : this.tunedPitch(v.pitch)) + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange];
+    // v2.9 microtuning: bend and Tune move through the tuning by keys; Fine
+    // (cents) and Octave (2/1) stay equal-tempered. The default keeps the original sum.
+    const semis = this.tuneSemis === null
+      ? v.pitch + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange]
+      : this.tunedPitch(v.pitch + prm[PI.tune] + P.bend * prm[PI.bendRange]) + prm[PI.octave] * 12 + MP[M_FINE] / 100;
     let f = 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
     if (!(f > 0)) f = 1;
 

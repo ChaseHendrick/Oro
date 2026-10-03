@@ -3,8 +3,8 @@
 // selected track's pattern (one undo step). See src/music/midi-file.js.
 
 import { patternPath, activePatternIndex, SEQ_RATES } from '../core/params.js';
-import { exportMidi, parseMidi, midiChoices, notesToPattern } from '../music/midi-file.js';
-import { h, createScope, setText, downloadBlob } from './dom.js';
+import { exportMidi, parseMidi, midiChoices, importMidiNotes, CHORD_MODES } from '../music/midi-file.js';
+import { h, createScope, setText, downloadBlob, has } from './dom.js';
 import { recordingName } from './record.js';
 import { icon } from './icons.js';
 
@@ -16,25 +16,31 @@ export function midiFileName(date, label) {
   return recordingName(date).replace('oro-', `oro-${tag}-`).replace(/\.wav$/, '.mid');
 }
 
+/** The music module's offline replay (sequencers, arps, chord trigger), when there is one. */
+const renderWith = (music) => (has(music, 'renderEvents') ? (bars, o) => music.renderEvents(bars, o) : null);
+
 /**
  * Save `bars` bars of every track whose sequencer is on. Returns a status
  * sentence for the caller to show.
  */
-export function saveSessionMidi(store, bars) {
-  const res = exportMidi(store.serialize(), { mode: 'session', bars });
+export function saveSessionMidi(store, bars, music = null) {
+  const res = exportMidi(store.serialize(), { mode: 'session', bars, render: renderWith(music) });
   if (!res.tracks) return 'No track has its sequencer on, so there is nothing to export.';
   downloadBlob(new Blob([res.bytes], { type: 'audio/midi' }), midiFileName(new Date(), 'session'));
   return `Saved ${plural(res.tracks, 'track')} and ${plural(res.notes, 'note')} (${plural(bars, 'bar')}) as a MIDI file.`;
 }
 
 export function createMidiFileTools(ctx, selected) {
-  const { store } = ctx;
+  const { store, music } = ctx;
   const scope = createScope();
   const scopeSel = h('select', { class: 'select-native', 'aria-label': 'What to export' },
     h('option', { value: '0' }, 'This pattern'), ...EXPORT_BARS.map((b) => h('option', { value: String(b) }, `All tracks, ${plural(b, 'bar')}`)));
   const exportBtn = h('button', { type: 'button', class: 'btn btn--xs', 'aria-label': 'Export MIDI file', dataset: { tip: 'Save the pattern, or every track whose sequencer is on, as a .mid file' }, html: icon('save') + '<span>Export</span>' });
   const importBtn = h('button', { type: 'button', class: 'btn btn--xs', 'aria-label': 'Import MIDI file into this pattern', dataset: { tip: 'Read a .mid file into this track\'s pattern' }, html: icon('plus') + '<span>Import</span>' });
   const fileIn = h('input', { type: 'file', accept: '.mid,.midi,audio/midi,audio/x-midi', hidden: true, tabindex: '-1', 'aria-hidden': 'true' });
+  const chordSel = h('select', { class: 'select-native', 'aria-label': 'Chords in an imported file' },
+    ...CHORD_MODES.map((m) => h('option', { value: m.id }, m.name)));
+  chordSel.value = 'high';
   const pickSel = h('select', { class: 'select-native', 'aria-label': 'Track in the MIDI file to import' });
   const pickGo = h('button', { type: 'button', class: 'btn btn--xs btn--primary' }, 'Use track');
   const pickCancel = h('button', { type: 'button', class: 'btn btn--xs btn--ghost' }, 'Cancel');
@@ -51,10 +57,10 @@ export function createMidiFileTools(ctx, selected) {
     closePick();
     const bars = Number(scopeSel.value);
     try {
-      if (bars > 0) { say(saveSessionMidi(store, bars)); return; }
+      if (bars > 0) { say(saveSessionMidi(store, bars, music)); return; }
       const p = selected();
       const part = store.get(`parts.${p}`) || {};
-      const res = exportMidi(store.serialize(), { mode: 'pattern', part: p });
+      const res = exportMidi(store.serialize(), { mode: 'pattern', part: p, render: renderWith(music) });
       if (!res.notes) { say('This pattern has no notes to export.'); return; }
       const pat = (part.patterns || [])[activePatternIndex(part)] || {};
       downloadBlob(new Blob([res.bytes], { type: 'audio/midi' }), midiFileName(new Date(), `${part.name || `track ${p + 1}`} ${pat.name || ''}`));
@@ -67,24 +73,18 @@ export function createMidiFileTools(ctx, selected) {
 
   function apply(choice, parsed) {
     const p = selected();
-    const path = patternPath(store, p);
-    const pattern = store.get(path);
-    if (!pattern) { say('This track has no pattern to import into.'); return; }
-    const drum = !!store.get(`parts.${p}.drum.on`);
-    const res = notesToPattern(choice.notes, pattern, {
-      root: store.get('global.scaleRoot') ?? 0, scaleType: store.get('global.scaleType') ?? 0, drum,
-    });
-    store.batch(() => {
-      if (drum) store.set(`${path}.drumLanes`, res.drumLanes, { source: 'import' });
-      else store.set(`${path}.steps`, res.steps, { source: 'import' });
-    });
+    const pattern = store.get(patternPath(store, p));
+    const res = pattern ? importMidiNotes(store, choice.notes, { part: p, chord: chordSel.value }) : null;
+    if (!res) { say('This track has no pattern to import into.'); return; }
     const rate = SEQ_RATES[pattern.rate] ? SEQ_RATES[pattern.rate].name : '1/16';
-    const parts = [`Imported ${plural(res.used, drum ? 'hit' : 'note')} from ${choice.label.replace(/:.*$/, '')} into ${pattern.name || 'the pattern'}, quantized to ${rate}.`];
-    if (res.snapped) parts.push(`${plural(res.snapped, 'out-of-scale note')} snapped to the scale.`);
-    if (res.dropped) parts.push(`${plural(res.dropped, 'note')} shared a step and ${res.dropped === 1 ? 'was' : 'were'} left out.`);
-    if (res.outside) parts.push(`${plural(res.outside, 'note')} past step ${pattern.length || 16} ${res.outside === 1 ? 'was' : 'were'} left out.`);
-    parts.push(`File tempo ${Math.round(parsed.bpm)} BPM.`);
-    say(parts.join(' '));
+    const where = res.tracks > 1 ? `${res.pattern} and the next ${plural(res.tracks - 1, 'track')}` : res.pattern;
+    const out = [`Imported ${plural(res.used, res.drum ? 'hit' : 'note')} from ${choice.label.replace(/:.*$/, '')} into ${where}, quantized to ${rate}.`];
+    if (res.snapped) out.push(`${plural(res.snapped, 'out-of-scale note')} snapped to the scale.`);
+    if (res.dropped) out.push(`${plural(res.dropped, 'chord note')} left out (one note per step).`);
+    if (res.voicesDropped) out.push(`${plural(res.voicesDropped, 'chord voice')} dropped: there were no more tracks.`);
+    if (res.outside) out.push(`${plural(res.outside, 'note')} past step ${pattern.length || 16} ${res.outside === 1 ? 'was' : 'were'} left out.`);
+    out.push(`File tempo ${Math.round(parsed.bpm)} BPM.`);
+    say(out.join(' '));
   }
 
   scope.on(importBtn, 'click', () => fileIn.click());
@@ -123,6 +123,7 @@ export function createMidiFileTools(ctx, selected) {
     h('span', { class: 'mini-label' }, 'MIDI file'),
     h('div', { class: 'select select--sm' }, scopeSel, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' })),
     h('div', { class: 'seq-midi-row' }, exportBtn, importBtn),
+    h('div', { class: 'select select--sm', dataset: { tip: 'Several notes on one import step: keep the highest or the lowest, or put each voice on its own track (this one and the ones after it)' } }, chordSel, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' })),
     pickRow, status, fileIn);
   return { el, dispose: () => scope.dispose() };
 }

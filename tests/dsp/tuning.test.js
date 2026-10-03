@@ -195,10 +195,26 @@ describe('engine plays the tuning', () => {
     expect(Math.abs(f / mtof(61) - 1)).toBeGreaterThan(0.01);
   });
 
-  it('pitch bend is applied in semitones on top of the tuned key', () => {
-    const hz = tuningTable({ id: 'just5', root: 0 });
-    const f = pitch(tone(64, hz, [{ t: 'params', part: 0, p: { bendRange: 2 } }, { t: 'bend', part: 0, v: 1 }]), 300, 400);
-    const want = mtof(60) * 1.25 * Math.pow(2, 2 / 12) * (440 / (mtof(60) * 5 / 3));
-    expect(Math.abs(f / want - 1)).toBeLessThan(0.002);
+  it('bend and Tune move by keys through the tuning; Fine and Octave stay equal-tempered', () => {
+    const hz = tuningHz({ id: 'just5', root: 0 });
+    const tab = tuningTable({ id: 'just5', root: 0 });
+    const near = (f, want) => expect(Math.abs(f / want - 1)).toBeLessThan(0.002);
+    // a full bend of 2 semitones plays two keys up: E -> F#, the tuned 45/32
+    near(pitch(tone(64, tab, [{ t: 'params', part: 0, p: { bendRange: 2 } }, { t: 'bend', part: 0, v: 1 }]), 300, 420), hz[66]);
+    // half of a 1 semitone bend lands halfway (in log frequency) between E and F
+    near(pitch(tone(64, tab, [{ t: 'params', part: 0, p: { bendRange: 1 } }, { t: 'bend', part: 0, v: 0.5 }]), 300, 400), Math.sqrt(hz[64] * hz[65]));
+    // Tune +2 is two keys; Fine 50 is 50 cents; Octave +1 is 2/1
+    near(pitch(tone(64, tab, [{ t: 'params', part: 0, p: { tune: 2 } }]), 300, 420), hz[66]);
+    near(pitch(tone(64, tab, [{ t: 'params', part: 0, p: { fine: 50 } }]), 300, 400), hz[64] * Math.pow(2, 50 / 1200));
+    near(pitch(tone(64, tab, [{ t: 'params', part: 0, p: { octave: 1 } }]), 600, 800), hz[64] * 2);
+  });
+
+  it('beyond the table ends the end step is extrapolated', () => {
+    const dsp = makeDSP({});
+    dsp.setTuning(tuningTable({ id: 'equal19', root: 0 }));
+    const t = dsp.tuneSemis;
+    expect(dsp.tunedPitch(129)).toBeCloseTo(t[127] + 2 * (t[127] - t[126]), 9);
+    expect(dsp.tunedPitch(-1)).toBeCloseTo(t[0] - (t[1] - t[0]), 9);
+    expect(dsp.tunedPitch(60.5)).toBeCloseTo((t[60] + t[61]) / 2, 12);
   });
 });

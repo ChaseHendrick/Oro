@@ -39,8 +39,9 @@ const tidy = (v) => Math.round(v * 1e9) / 1e9;
  *   held    (part) => [{ note, vel }] keys held or latched live; parts whose
  *           arpeggiator is on replay them so an arp hold ends up in the bounce
  *   random  RNG for the Random arp mode
+ *   forceOn part indices whose sequencer plays even if switched off (MIDI export of one pattern)
  */
-export function renderSessionEvents(store, bars = 4, { parts, held = null, random = Math.random } = {}) {
+export function renderSessionEvents(store, bars = 4, { parts, held = null, random = Math.random, forceOn = null } = {}) {
   const nBars = clamp(Math.round(Number(bars) || 4), 1, 512);
   const n = Math.min(partCount(store), MAX_PARTS);
   const include = new Set((Array.isArray(parts) && parts.length ? parts : Array.from({ length: n }, (_, i) => i))
@@ -51,6 +52,7 @@ export function renderSessionEvents(store, bars = 4, { parts, held = null, rando
   const off = createStore({ ...state, ui: { selectedPart: Math.round(store.get('ui.selectedPart') || 0) } });
   for (let p = 0; p < n; p++) {
     if (!include.has(p) && off.get(`parts.${p}`)) off.set(`parts.${p}.seqOn`, 0);
+    else if (Array.isArray(forceOn) && forceOn.includes(p) && off.get(`parts.${p}`)) off.set(`parts.${p}.seqOn`, 1);
   }
 
   const clock = { t: 0 };

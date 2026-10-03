@@ -1,10 +1,12 @@
 // Standard MIDI Files (v2.9): write the sequencers out as a type 1 file and
 // read a type 0 or 1 file back into a pattern.
 //
-// Export reuses sequencerEvents() (src/audio/bounce-events.js), the offline
-// sequencer the WAV bounce falls back on, so swing, ratchets and probability
-// (the first Play's seed) come out exactly as a bounce plays them. Drum kit
-// tracks go out on channel 10 as keys 36..43, one per lane.
+// Export takes its notes from the same offline replay as the WAV bounce
+// (music.renderEvents: sequencers, arpeggiators on held or latched keys,
+// chord trigger), or from sequencerEvents() (src/audio/bounce-events.js)
+// when the music module is not there, so swing, ratchets and probability
+// come out as a bounce plays them. Drum kit tracks go out on channel 10 as
+// keys 36..43, one per lane.
 //
 // Import quantizes one track's notes to the pattern's step rate, starting at
 // the bar of its first note, and writes the first `length` steps as scale
@@ -111,10 +113,13 @@ function trackChannel(part, i) {
  * MIDI bytes for the sequencers of `state` (store.serialize()).
  * mode 'pattern': one pass of the active pattern of track `part` (whether or
  * not its sequencer is on). mode 'session': `bars` bars of every track whose
- * sequencer is on, one MIDI track each.
+ * sequencer is on, one MIDI track each. Accented steps come out at velocity
+ * 127. `render(bars, {parts, forceOn})` is the music module's offline replay
+ * (music.renderEvents, which adds the arpeggiators and the chord trigger);
+ * without it the plain step sequencers (sequencerEvents) are written.
  * @returns {{bytes: Uint8Array, tracks: number, notes: number}}
  */
-export function exportMidi(state, { mode = 'pattern', part = 0, bars = 4 } = {}) {
+export function exportMidi(state, { mode = 'pattern', part = 0, bars = 4, render = null } = {}) {
   const parts = (state && Array.isArray(state.parts) ? state.parts : []).slice(0, MAX_PARTS);
   const g = (state && state.global) || {};
   const bpm = clamp(finite(g.tempo, 112), 20, 400);
@@ -132,15 +137,18 @@ export function exportMidi(state, { mode = 'pattern', part = 0, bars = 4 } = {})
     list = [part];
   } else {
     nBars = clamp(Math.round(finite(bars, 4)), 1, 512);
-    list = parts.map((q, i) => i).filter((i) => parts[i] && parts[i].seqOn && Array.isArray(parts[i].patterns) && parts[i].patterns.length);
+    // tracks whose sequencer is on, plus any whose arpeggiator plays (kept only if it made notes)
+    list = parts.map((q, i) => i).filter((i) => parts[i] && (parts[i].seqOn || (render && parts[i].arp && parts[i].arp.mode)) && Array.isArray(parts[i].patterns) && parts[i].patterns.length);
   }
-  const events = sequencerEvents(src, nBars, { parts: list });
+  const forceOn = mode === 'pattern' ? list : [];
+  const events = typeof render === 'function' ? render(nBars, { parts: list, forceOn }) : sequencerEvents(src, nBars, { parts: list });
   const tracks = [];
   let total = 0;
   for (const i of list) {
     const p = parts[i];
     let notes = eventsToNotes(events, spb, i, PPQ).filter((n) => n.tick < endTick);
     if (Number.isFinite(endTick)) notes = notes.map((n) => ({ ...n, dur: Math.max(1, Math.min(n.dur, endTick - n.tick)) }));
+    if (!notes.length && mode !== 'pattern' && !p.seqOn) continue;
     total += notes.length;
     const pat = p.patterns[activePatternIndex(p)];
     const trackName = mode === 'pattern' ? `${p.name || `Track ${i + 1}`}, ${pat.name || 'Pattern'}` : (p.name || `Track ${i + 1}`);
@@ -302,42 +310,56 @@ export function noteToDegree(note, { root = 0, scaleType = 0, baseOctave = 3 } =
   return { degree, octave: so, snapped };
 }
 
+/** Import velocity at or above this (of 127) marks a step as accented. */
+export const ACCENT_VEL = 120;
+/** How chords (several notes on one step) are imported. */
+export const CHORD_MODES = Object.freeze([
+  { id: 'high', name: 'Highest note' }, { id: 'low', name: 'Lowest note' }, { id: 'split', name: 'Split across tracks' },
+]);
+
 /**
  * Turn one note group of a parsed file into the pattern's new content.
+ * `chord` picks the note a step keeps when several land on it: 'high' or
+ * 'low' (the others are dropped), or 'split' with `voice` k (0 = highest):
+ * the k-th note from the top of each step, for writing voice k to another
+ * track. A drum kit pattern keeps every note (in 'split', only voice k).
+ * Notes with velocity >= ACCENT_VEL become accented steps (velocity kept).
  * @param {object[]} notes from midiChoices()
  * @param {object} pattern the pattern being replaced (rate, length, baseOctave, steps, drumLanes)
- * @param {{root: number, scaleType: number, drum: boolean}} o
- * @returns {{steps?: object[], drumLanes?: number[][], used: number, snapped: number, dropped: number, outside: number}}
+ * @param {{root: number, scaleType: number, drum: boolean, chord: string, voice: number}} o
+ * @returns {{steps?: object[], drumLanes?: number[][], used: number, snapped: number, dropped: number, outside: number, voices: number}}
  */
-export function notesToPattern(notes, pattern, { root = 0, scaleType = 0, drum = false } = {}) {
+export function notesToPattern(notes, pattern, { root = 0, scaleType = 0, drum = false, chord = 'high', voice = 0 } = {}) {
   const rate = SEQ_RATES[clamp(Math.round(finite(pattern.rate, 3)), 0, SEQ_RATES.length - 1)].beats;
   const len = clamp(Math.round(finite(pattern.length, 16)), 1, SEQ_STEPS);
   const baseOctave = clamp(Math.round(finite(pattern.baseOctave, 3)), 0, 7);
-  const sorted = [...notes].sort((a, b) => a.beat - b.beat || b.note - a.note);
+  const split = chord === 'split';
+  const sorted = [...notes].sort((a, b) => a.beat - b.beat || (chord === 'low' ? a.note - b.note : b.note - a.note));
   const start = sorted.length ? Math.floor(sorted[0].beat / 4 + 1e-9) * 4 : 0;
-  const slot = (n) => Math.round((n.beat - start) / rate);
+  // the notes of each step, in chord order (highest first, or lowest for 'low')
+  const groups = Array.from({ length: len }, () => []);
   let used = 0, snapped = 0, dropped = 0, outside = 0;
+  for (const n of sorted) {
+    const s = Math.round((n.beat - start) / rate);
+    if (s < 0 || s >= len) outside++;
+    else groups[s].push(n);
+  }
+  const voices = groups.reduce((m, g) => Math.max(m, g.length), 0);
+  const k = Math.max(0, Math.round(finite(voice, 0)));
   if (drum) {
     const old = Array.isArray(pattern.drumLanes) ? pattern.drumLanes : [];
     const lanes = Array.from({ length: KIT_PADS }, (_, r) => Array.from({ length: SEQ_STEPS }, (_, c) => (c >= len ? finite(old[r] && old[r][c], 0) : 0)));
-    for (const n of sorted) {
-      const s = slot(n);
-      if (s < 0 || s >= len) { outside++; continue; }
-      const r = (((n.note - KIT_BASE_NOTE) % KIT_PADS) + KIT_PADS) % KIT_PADS;
-      const v = Math.max(0.01, Math.round((n.vel / 127) * 100) / 100);
-      if (lanes[r][s] > 0) dropped++; else used++;
-      lanes[r][s] = Math.max(lanes[r][s], v);
-    }
-    return { drumLanes: lanes, used, snapped, dropped, outside };
+    groups.forEach((g, s) => {
+      for (const n of split ? g.slice(k, k + 1) : g) {
+        const r = (((n.note - KIT_BASE_NOTE) % KIT_PADS) + KIT_PADS) % KIT_PADS;
+        if (lanes[r][s] > 0) dropped++; else used++;
+        lanes[r][s] = Math.max(lanes[r][s], Math.max(0.01, Math.round((n.vel / 127) * 100) / 100));
+      }
+    });
+    return { drumLanes: lanes, used, snapped, dropped, outside, voices };
   }
-  const chosen = new Array(len).fill(null);
-  for (const n of sorted) {
-    const s = slot(n);
-    if (s < 0 || s >= len) { outside++; continue; }
-    // one note per step: the highest wins (sorted puts it first)
-    if (chosen[s]) { dropped++; continue; }
-    chosen[s] = n;
-  }
+  const chosen = groups.map((g) => (split ? g[k] || null : g[0] || null));
+  if (!split) for (const g of groups) dropped += Math.max(0, g.length - 1);
   const old = Array.isArray(pattern.steps) ? pattern.steps : [];
   const steps = Array.from({ length: SEQ_STEPS }, (_, i) => {
     const prev = old[i] && typeof old[i] === 'object' ? old[i] : defaultStep();
@@ -354,8 +376,49 @@ export function notesToPattern(notes, pattern, { root = 0, scaleType = 0, drum =
       ...defaultStep(), on: 1, degree: d.degree, octave: d.octave,
       vel: Math.max(0.01, Math.round((n.vel / 127) * 1000) / 1000),
       gate: clamp(Math.round((n.beats / rate) * 100) / 100, 0.05, 1),
-      slide, ...keep,
+      slide, accent: n.vel >= ACCENT_VEL ? 1 : 0, ...keep,
     };
   });
-  return { steps, used, snapped, dropped, outside };
+  return { steps, used, snapped, dropped, outside, voices };
+}
+
+/**
+ * Write one note group into the session in `store`, as one undo step: into
+ * track `part`'s active pattern, and with chord 'split' chord voice k
+ * (highest first) into the active pattern of track part + k while there is
+ * one. A drum kit track as the target keeps every note in its lanes.
+ * @returns {{used: number, snapped: number, dropped: number, outside: number, voices: number, tracks: number, voicesDropped: number, pattern: string}|null}
+ */
+export function importMidiNotes(store, notes, { part = 0, chord = 'high' } = {}) {
+  const parts = store.get('parts') || [];
+  const target = (q) => {
+    const p = parts[q];
+    if (!p || !Array.isArray(p.patterns) || !p.patterns.length) return null;
+    const idx = activePatternIndex(p);
+    return { path: `parts.${q}.patterns.${idx}`, pattern: p.patterns[idx], drum: !!(p.drum && p.drum.on) };
+  };
+  const first = target(part);
+  if (!first) return null;
+  const o = { root: finite(store.get('global.scaleRoot'), 0), scaleType: finite(store.get('global.scaleType'), 0) };
+  const r0 = notesToPattern(notes, first.pattern, { ...o, drum: first.drum, chord: first.drum && chord === 'split' ? 'high' : chord, voice: 0 });
+  const writes = [[first, r0]];
+  let voicesDropped = 0;
+  if (chord === 'split' && !first.drum) {
+    for (let k = 1; k < r0.voices; k++) {
+      const t = target(part + k);
+      if (!t) { voicesDropped = r0.voices - k; break; }
+      writes.push([t, notesToPattern(notes, t.pattern, { ...o, drum: t.drum, chord, voice: k })]);
+    }
+  }
+  store.batch(() => {
+    for (const [t, r] of writes) {
+      if (t.drum) store.set(`${t.path}.drumLanes`, r.drumLanes, { source: 'import' });
+      else store.set(`${t.path}.steps`, r.steps, { source: 'import' });
+    }
+  });
+  const sum = (f) => writes.reduce((a, [, r]) => a + r[f], 0);
+  return {
+    used: sum('used'), snapped: sum('snapped'), dropped: r0.dropped, outside: r0.outside, voices: r0.voices,
+    tracks: writes.length, voicesDropped, pattern: first.pattern.name || 'the pattern', drum: first.drum,
+  };
 }

@@ -8,6 +8,7 @@ import {
   PART_PARAMS, PART_PARAM_MAP, NOTE_NAMES, SCALE_NAMES, MOD_PARAM_IDS, PEDAL_PARAM_IDS, SEND_PARAM_IDS, defaultPart,
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
+import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from '../core/smart.js';
 import { createEmitter } from '../music/emitter.js';
@@ -319,6 +320,11 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const scene = findScene(idOrIndex);
     if (!scene) return false;
     const state = migrateState(scene);
+    // v2.9: a scene without a tuning record (saved before 2.9) keeps the current tuning
+    if (!(scene.tuning && typeof scene.tuning === 'object')) {
+      const cur = sanitizeTuning(store.get('tuning'));
+      if (cur) state.tuning = cur;
+    }
     // The scene's tracks replace the current ones: the engine fades the old
     // tracks out while the new ones start (see REPLACE_TRACKS in tracks.js).
     store.batch(() => {
@@ -340,6 +346,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const existing = user.scenes.find(s => s.name === clean);
     const scene = {
       ...migrateState(store.serialize()),
+      tuning: tuningRecord(store.get('tuning')),
       id: existing ? existing.id : newId(),
       name: existing ? clean : uniqueName(clean, FACTORY_SCENE_LIST),
       description: String(description || '').slice(0, 400),
@@ -399,7 +406,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       const s = id != null ? findScene(id) : null;
       data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: s ? [stripScene(s)] : user.scenes.map(stripScene) };
     } else if (kind === 'current') {
-      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...migrateState(store.serialize()), name: 'Current session', description: '' }] };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...migrateState(store.serialize()), tuning: tuningRecord(store.get('tuning')), name: 'Current session', description: '' }] };
     } else {
       data = { format: FORMAT, version: PRESET_VERSION, patches: user.patches.map(stripPatch), scenes: user.scenes.map(stripScene) };
     }
