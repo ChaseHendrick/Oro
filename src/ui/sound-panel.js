@@ -1,5 +1,5 @@
-// SOUND tab: smart controls (v2.8), voice, filter, amp envelope and Envelope 2
-// for the selected part.
+// SOUND tab: smart controls (v2.8), voice, the Resonator (2.10), filter, amp
+// envelope and Envelope 2 for the selected part.
 
 import { INHARMONIC_PROFILES } from '../core/params.js';
 import { h, createScope } from './dom.js';
@@ -119,6 +119,9 @@ export function createSoundPanel(ctx) {
       h('div', { class: 'knob-grid knob-grid--4' }, ...['phaseMod','phaseRatio','ringMod','ringRatio'].map(id => k(id, { size: 'sm' })))),
     card('Karplus-Strong pluck', null,
       h('div', { class: 'knob-grid knob-grid--4' }, ...['pluck','pluckDecay','pluckTone','pluckDispersion'].map(id => k(id, { size: 'sm' })))),
+    card('Resonator', select('resoOn', 'Resonator mode'),
+      h('p', { class: 'reso-note' }, 'The land rings like a drum skin: peaks are stiff, valleys slack. Uses noticeable CPU while it rings.'),
+      h('div', { class: 'knob-grid knob-grid--5' }, ...['resoMix', 'resoDecay', 'resoTone', 'resoSize', 'resoListen'].map(id => k(id, { size: 'sm', ariaLabel: (l) => `Resonator ${l}` })))),
     card('Filter', ftype.el,
       h('div', { class: 'filter-grid' },
         k('cutoff', { size: 'lg', className: 'is-hero' }), k('resonance'), k('drive'), k('filterEnv'), k('keyTrack'), formantKnob)),

@@ -1413,3 +1413,12 @@
 .seq-ghost { display: flex; flex-direction: column; gap: 4px; }
 .seq-ghost-btn:focus-visible { outline: 2px solid var(--focus, var(--part)); outline-offset: 1px; }
 @media (pointer: coarse) { .seq-ghost-btn { min-height: 44px; min-width: 44px; } }
+/* 2.10 Resonator card and Imprint popover */
+.reso-note { margin: 0 0 6px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+.imprint-pop { display: flex; flex-direction: column; gap: 8px; min-width: 260px; max-width: 320px; }
+.imprint-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.imprint-drop { border: 1px dashed var(--border-strong); border-radius: 8px; padding: 10px; text-align: center; color: var(--text-2); font-size: var(--fs-sm); }
+.imprint-drop.is-drop { border-color: var(--accent); color: var(--text); }
+.imprint-field { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); }
+.imprint-field input[type="range"] { flex: 1; accent-color: var(--accent); }
+.imprint-status { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; min-height: 1.4em; }

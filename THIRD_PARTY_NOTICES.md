@@ -24,6 +24,63 @@ The copyright holder of that code is also Oro's author, who releases this JavaSc
 version with the rest of Oro under the MIT licence. The papers themselves are not
 included.
 
+## Real places, night sky and live weather data (v2.10)
+
+The web app and the desktop apps include small elevation maps and a star list in
+`public/places/` (built by `scripts/build-places.mjs`; `places.json` lists each source URL).
+They are data, not code.
+
+**Earth: AWS Terrain Tiles** (https://registry.opendata.aws/terrain-tiles/, terrarium
+encoding). Required attribution, as given at
+https://github.com/tilezen/joerd/blob/master/docs/attribution.md:
+
+```
+* ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and
+  funded under National Science Foundation awards 1043681, 1559691, and 1542736;
+* Australia terrain data © Commonwealth of Australia (Geoscience Australia) 2017;
+* Austria terrain data © offene Daten Österreichs – Digitales Geländemodell (DGM)
+  Österreich;
+* Canada terrain data contains information licensed under the Open Government
+  Licence – Canada;
+* Europe terrain data produced using Copernicus data and information funded by the
+  European Union - EU-DEM layers;
+* Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration
+* Mexico terrain data source: INEGI, Continental relief, 2016;
+* New Zealand terrain data Copyright 2011 Crown copyright (c) Land Information New
+  Zealand and the New Zealand Government (All rights reserved);
+* Norway terrain data © Kartverket;
+* United Kingdom terrain data © Environment Agency copyright and/or database right
+  2015. All rights reserved;
+* United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data
+  courtesy of the U.S. Geological Survey.
+```
+
+The maps were cropped, resampled to 256 x 256 and rescaled to 16 bits; the real range of
+each is kept in `places.json`.
+
+**Moon: LRO LOLA.** Lunar Reconnaissance Orbiter, Lunar Orbiter Laser Altimeter global
+DEM (LDEM_256, 118 m per pixel, March 2014), NASA Goddard Space Flight Center LOLA team;
+mosaic `Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014.tif` by the USGS Astrogeology Science
+Center (https://planetarymaps.usgs.gov/mosaic/). NASA data, not subject to copyright in
+the United States.
+
+**Mars: MGS MOLA.** Mars Global Surveyor, Mars Orbiter Laser Altimeter global DEM
+(463 m per pixel, MEGDR merge), NASA Goddard Space Flight Center MOLA team; mosaic
+`Mars_MGS_MOLA_DEM_mosaic_global_463m.tif` by the USGS Astrogeology Science Center
+(https://planetarymaps.usgs.gov/mosaic/). NASA data, not subject to copyright in the
+United States.
+
+**Stars: Yale Bright Star Catalogue**, 5th revised edition, D. Hoffleit and W. H. Warren
+Jr. (Yale University Observatory, 1991), as distributed by the NASA Astronomical Data
+Center and CDS (catalogue V/50, https://cdsarc.cds.unistra.fr/ftp/V/50/). `stars.json`
+holds the J2000 position, V magnitude and HR number of each star to magnitude 5.5.
+
+**Live weather: Open-Meteo** (https://open-meteo.com/), opt-in and off by default.
+Weather data by Open-Meteo.com, licensed under CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/). Oro calls the free API from the
+person's own browser; it is free for non-commercial use under Open-Meteo's terms
+(https://open-meteo.com/en/terms). No weather data ships with Oro.
+
 ## three.js 0.186.1
 
 3D rendering. https://threejs.org, MIT License.

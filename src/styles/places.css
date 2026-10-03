@@ -1,0 +1,23 @@
+/* v2.10 Real places, night sky, data and live weather popovers. Theme tokens only. */
+.popover--places { width: 400px; }
+.places-pop { display: grid; gap: 10px; }
+.places-tabs { display: flex; flex-wrap: wrap; }
+.places-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 240px; overflow: auto; }
+.places-item { text-align: left; padding: 7px 9px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-size: var(--fs-sm); line-height: 1.25; }
+.places-item:hover, .places-item:focus-visible { border-color: var(--accent); }
+.places-item.is-current { border-color: var(--accent); background: var(--panel-active); }
+.places-item small { display: block; color: var(--text-3); font-size: var(--fs-xs); }
+.places-detail { display: grid; gap: 4px; min-height: 3.6em; font-size: var(--fs-sm); color: var(--text-2); }
+.places-detail strong { color: var(--text); }
+.places-detail ul { margin: 0; padding-left: 1.1em; }
+.places-credit { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.35; }
+.places-credit a { color: var(--accent); }
+.data-text { width: 100%; min-height: 110px; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-sm); resize: vertical; }
+.data-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.data-row > .select-native { flex: 1 1 140px; min-width: 0; }
+.weather-values { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: var(--fs-sm); }
+.weather-values dt { color: var(--text-3); }
+.weather-values dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+.weather-results { display: grid; gap: 4px; }
+.weather-status[data-kind="error"] { color: var(--error); }
+@media (max-width: 899px) { .popover--places { width: calc(100vw - 16px); } .places-list { grid-template-columns: minmax(0, 1fr); } }

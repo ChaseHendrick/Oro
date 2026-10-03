@@ -3,6 +3,26 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.10.0 (October 2026)
+
+* **Resonator: hear the shape of the land.** The track's terrain also becomes a vibrating
+  drumhead. **Strike** plays each note by striking it where the dot is; **Resonate** lets the
+  voice drive it. Peaks and craters change how it rings. The lowest mode follows the note;
+  very high notes ring an octave or more lower (the guide explains the limits and CPU cost).
+* **Imprint.** Turn a recording into a landscape: one cycle of it is written along the
+  dot's orbit, so on the path you hear the sound itself, and the land around it blends into
+  the old terrain. **Time** mode lays successive cycles on rings, so a bigger orbit plays
+  later in the recording.
+* **Real places.** Play real terrain: 10 places on Earth (including the Grand Canyon,
+  Everest and the Mariana Trench), 4 on the Moon (Tycho, Copernicus, Montes Apenninus,
+  Shackleton) and 4 on Mars (Olympus Mons, Valles Marineris, Hellas, Gale), from AWS Terrain
+  Tiles and NASA and USGS elevation data. They load only when you choose one.
+* **Night sky.** A terrain made from 2,887 real stars (Yale Bright Star Catalogue), brighter
+  stars as higher peaks, with Orion, Ursa Major, Cassiopeia, Scorpius and the Southern Cross.
+* **Live weather.** Pick a city and its wind, rain, temperature and cloud become four new
+  Links sources (weather data by Open-Meteo.com). Off until you turn it on.
+* **Sonify your data.** Paste numbers or a CSV and turn them into a terrain or a melody.
+
 ## 2.9.0 (October 2026)
 
 **Sequencing**

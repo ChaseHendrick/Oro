@@ -19,6 +19,7 @@ import { icon } from './icons.js';
 import { createOperatorSettings } from './operator.js';
 import { has as hasFun } from '../core/fun.js';
 import { skinOn, setSkin, onSkin } from './eggs.js';
+import { REAL_DATA_CREDITS } from '../audio/places.js';
 
 export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -32,7 +33,7 @@ export const SETTINGS_TABS = [
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '2.9.0';
+export const VERSION = '2.10.0';
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
@@ -231,6 +232,7 @@ function aboutTab() {
     h('dl', { class: 'about-facts' },
       h('dt', null, 'License'), h('dd', null, 'MIT'),
       h('dt', null, 'Built with'), h('dd', null, 'three.js (MIT), Rapier physics (Apache-2.0), Web Audio and Web MIDI'),
+      h('dt', null, 'Real data'), h('dd', null, REAL_DATA_CREDITS),
       h('dt', null, 'Source'), h('dd', null, h('a', { href: 'https://github.com/ChaseHendrick/synth', target: '_blank', rel: 'noopener noreferrer' }, 'github.com/ChaseHendrick/synth', h('span', { html: icon('link') })))));
 }
 

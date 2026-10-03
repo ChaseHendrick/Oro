@@ -44,6 +44,7 @@ import { installGhost } from './ghost-ui.js';
 import { installPostcards } from './postcard.js';
 
 import { createFunFeatures } from './fun-features.js';
+import { initWeather } from './weather-panel.js';
 
 function emitter() {
   const map = new Map();
@@ -249,6 +250,8 @@ export function createUI(root, modules = {}) {
   };
   live.region = h('div', { class: 'visually-hidden', 'aria-live': 'polite' });
   layers.host.appendChild(live.region);
+  // v2.10 live weather: resumes polling only if it was turned on before (off by default).
+  try { initWeather(ctx); } catch (err) { console.warn('[ui] weather', err); }
 
   // MIDI learn: one at a time, Esc cancels, toasts report the result.
   let learning = null;

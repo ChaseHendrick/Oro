@@ -26,6 +26,8 @@ export function sanitizeUserTerrain(src) {
   }
   if (out.kind === 'formula' && typeof src.formula === 'string') out.formula = src.formula.slice(0, 400);
   if (typeof src.libraryId === 'string' && /^original-[a-z]+-\d{3}$/.test(src.libraryId)) out.libraryId = src.libraryId;
+  // v2.10 Real places and the night sky: which one this terrain came from (places.json id)
+  if (typeof src.placeId === 'string' && /^(earth|moon|mars|sky)-[a-z0-9-]{1,40}$/.test(src.placeId)) out.placeId = src.placeId;
   if (src.audio && Number.isFinite(src.audio.sampleRate) && Number.isFinite(src.audio.duration)) {
     out.audio = { sampleRate: Math.max(8000, Math.min(384000, src.audio.sampleRate)), duration: Math.max(0, src.audio.duration) };
   }
