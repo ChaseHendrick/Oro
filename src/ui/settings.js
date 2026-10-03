@@ -4,6 +4,8 @@
 import { h, createScope, call, has, listen } from './dom.js';
 import { openModal } from './modal.js';
 import { createSegmented, createToggle } from './controls.js';
+import { getPetName, setPetName } from './fun-features.js';
+import { MAX_PET_NAME } from '../visual/pet.js';
 import { createMidiSettings } from './settings-midi.js';
 import { createPedalSettings } from './settings-pedals.js';
 import { createVoiceSettings } from './settings-voice.js';
@@ -76,9 +78,15 @@ function generalTab(ctx, scope) {
     label: 'Reduce motion', options: [{ value: 'system', label: 'System' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
   });
   const tips = createToggle(ctx, { ...prefBinding(ctx, 'showTips', 1), def: { id: 'showTips', label: 'Show tips', default: 1 } }, { label: 'Show tips', className: 'toggle--switch' });
-  for (const c of [theme, quality, fps, camera, style, palette, rotate, motion, tips]) scope.add(c.dispose);
+  // v2.9 map extras, both off by default
+  const dayNight = createToggle(ctx, { ...prefBinding(ctx, 'dayNight', 0), def: { id: 'dayNight', label: 'Day and night', default: 0 } }, { label: 'Day and night', className: 'toggle--switch' });
+  const pet = createToggle(ctx, { ...prefBinding(ctx, 'pet', 0), def: { id: 'pet', label: 'Pet', default: 0 } }, { label: 'Pet', className: 'toggle--switch' });
+  const petNameInput = h('input', { class: 'field field--sm pet-name', type: 'text', maxlength: String(MAX_PET_NAME), 'aria-label': 'Pet name', value: getPetName(), autocomplete: 'off', spellcheck: 'false' });
+  scope.on(petNameInput, 'change', () => { petNameInput.value = setPetName(petNameInput.value); });
+  for (const c of [theme, quality, fps, camera, style, palette, rotate, motion, tips, dayNight, pet]) scope.add(c.dispose);
   if (!visuals) {
-    for (const c of [quality, fps, camera, style, rotate]) c.setDisabled(true, 'The 3D view is not running');
+    for (const c of [quality, fps, camera, style, rotate, dayNight, pet]) c.setDisabled(true, 'The 3D view is not running');
+    petNameInput.disabled = true;
   }
 
   return h('div', { class: 'settings-pane' },
@@ -93,7 +101,10 @@ function generalTab(ctx, scope) {
       row('Camera view', 'Six angles. Save your own from the map toolbar.', camera.el),
       row('Map style', null, style.el),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),
-      row('Auto-rotate', 'Slowly circles the map in Orbit view', rotate.el)));
+      row('Auto-rotate', 'Slowly circles the map in Orbit view', rotate.el),
+      row('Day and night', 'Slowly tints the land by the time of day where you are: warm at dawn, orange at dusk, deep blue at night. Checks the clock once a minute.', dayNight.el),
+      row('Pet', 'A small creature that wanders the map, naps when it has been quiet for a while and hops when notes play', pet.el),
+      row('Pet name', 'Kept on this computer', petNameInput)));
 }
 
 export const AUDIO_QUALITY = [

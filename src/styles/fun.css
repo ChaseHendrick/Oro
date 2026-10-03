@@ -84,4 +84,57 @@
   --accent-contrast: #f7f4e8;
   --focus: #9a6200;
   --warn: #9a6200;
+
+/* v2.9 extras: Golf panel, Seed from a word, the pet name field. */
+
+.golf-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(360px, calc(100% - 24px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: blur(10px);
+  font-size: var(--fs);
+}
+.golf-hud:focus, .golf-hud:focus-visible { outline: none; box-shadow: var(--shadow-2); }
+.golf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.golf-title { font-size: var(--fs-md); }
+.golf-status { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.golf-msg { margin: 4px 0 0; font-weight: 600; }
+.golf-aim { margin: 2px 0 0; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.golf-aim:empty { display: none; }
+.golf-hint { margin: 4px 0 0; color: var(--text-3); font-size: var(--fs-xs); }
+.golf-menu { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.golf-menu[hidden] { display: none; }
+.golf-choice { height: auto; min-height: 44px; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px; white-space: normal; text-align: center; }
+.golf-choice span { font-size: var(--fs-xs); color: var(--text-2); }
+.golf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.golf-card { margin-top: 8px; }
+.golf-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.golf-table caption { text-align: left; color: var(--text-2); padding-bottom: 4px; }
+.golf-table th, .golf-table td { padding: 2px 6px; text-align: right; border-bottom: 1px solid var(--divider); }
+.golf-table th:first-child { text-align: left; }
+.golf-table thead th { color: var(--text-2); font-weight: 600; }
+.golf-total th, .golf-total td { font-weight: 700; border-bottom: none; }
+
+.dot-fun { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--divider); }
+
+.word-seed { display: grid; gap: 4px; padding: 8px 10px; border-top: 1px solid var(--divider); }
+.word-seed-label { font-size: var(--fs-xs); color: var(--text-2); }
+.word-seed-row { display: flex; gap: 6px; }
+.word-seed-row .field { flex: 1; min-width: 0; }
+
+.pet-name { width: 160px; max-width: 100%; }
+
+@media (pointer: coarse) {
+  .golf-hud .btn, .golf-start, .word-seed .btn, .word-seed .field, .pet-name { min-height: 44px; }
 }

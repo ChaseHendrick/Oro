@@ -8,6 +8,7 @@
 //   sim.isActive(p); sim.state(p)       is the dot simulated, and where is it
 //   sim.hold(p, u, v); sim.release(p, vx, vz); sim.teleport(p, u, v)
 //   sim.userWrite(p, u, v, force)       a person moved the dot
+//   sim.setOverride(p, dot | null)      dot settings on top of the stored ones
 //
 // Store writes carry who moved the dot, so dot-lock recording and the lock
 // glides can tell people from simulations:
@@ -62,7 +63,7 @@ export function createDotSim({
         pt: { u: 0, v: 0, leg: 0, k: 0, done: false },
       },
       pendU: 0, pendV: 0, pending: false, meta: SIM_META, lastWrite: -Infinity, wroteU: NaN, wroteV: NaN,
-      marbleAt: -Infinity, marbleOn: false,
+      marbleAt: -Infinity, marbleOn: false, override: null,
     });
   }
   let sel = 0;
@@ -121,7 +122,8 @@ export function createDotSim({
 
   function syncPart(p, force) {
     const s = P[p];
-    const dot = store.get(`parts.${p}.dot`) || {};
+    const stored = store.get(`parts.${p}.dot`) || {};
+    const dot = s.override ? { ...stored, ...s.override } : stored;
     s.dot = dot;
     const mode = Math.round(num(dot.mode, MODE_PIN));
     storeCenter(p, _c);
@@ -400,6 +402,22 @@ export function createDotSim({
     },
 
     flush(p, now = clock()) { flush(p, now, true); },
+
+    /** A simulated move to (u, v), written now (like a marble's, never an edit). */
+    simWrite(p, u, v, now = clock()) {
+      queue(p, u, v, SIM_META);
+      flush(p, now, true);
+    },
+
+    /**
+     * Play part p with these dot settings on top of the stored ones (v2.9
+     * Golf), without writing them to the session; null goes back.
+     */
+    setOverride(p, dot) {
+      if (!(p >= 0 && p < parts)) return;
+      P[p].override = dot && typeof dot === 'object' ? { ...dot } : null;
+      syncPart(p, true);
+    },
 
     dispose() {
       offStore();

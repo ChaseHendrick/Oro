@@ -43,6 +43,8 @@ import { createCoinSlot } from './coin-slot.js';
 import { installGhost } from './ghost-ui.js';
 import { installPostcards } from './postcard.js';
 
+import { createFunFeatures } from './fun-features.js';
+
 function emitter() {
   const map = new Map();
   return {
@@ -411,6 +413,7 @@ export function createUI(root, modules = {}) {
   };
   const topbar = safely('top bar', () => createTopbar(ctx, topbarEl));
   if (topbar) scope.add(topbar.dispose);
+  ctx.viewport = viewport;
   const overlay = safely('viewport overlay', () => createViewportOverlay(ctx, viewport));
   if (overlay) scope.add(overlay.dispose);
   const mapPanel = safely('map panel', () => createMapPanel(ctx, mapEl));
@@ -418,6 +421,8 @@ export function createUI(root, modules = {}) {
   const dock = safely('dock', () => createDock(ctx, dockEl));
   if (dock) scope.add(dock.dispose);
   piano = safely('keyboard', () => createPiano(ctx));
+  const funFeatures = safely('map extras', () => createFunFeatures(ctx));
+  if (funFeatures) scope.add(funFeatures.dispose);
   if (piano) {
     keysEl.append(piano.el, piano.bar);
     scope.add(piano.dispose);

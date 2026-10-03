@@ -12,6 +12,7 @@ import { createKnob } from './knob.js';
 import { createSegmented, createToggle, createStepper } from './controls.js';
 import { openPopover } from './layers.js';
 import { icon } from './icons.js';
+import { startGolf, golfActive } from './golf.js';
 
 const pct = (v) => Math.round(v * 100) + '%';
 
@@ -94,7 +95,17 @@ export function openDotSettings(ctx, anchor) {
     list,
     h('div', { class: 'dot-line dot-line--end' }, h('span', { class: 'waypoint-count' }), clearBtn));
 
-  const body = h('div', { class: 'dot-pop' }, title, note, physics, drift, explore, tour, pendulum);
+  // Golf (v2.9): 9 or 18 holes, or the driving range, with the marble, on any dot mode.
+  const golfBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs golf-start', dataset: { tip: 'Play 9 or 18 holes with the marble, or practise on the driving range. Esc quits and puts the dot back.' } }, 'Golf');
+  if (!ctx.visuals || !ctx.visuals.fun) { golfBtn.disabled = true; golfBtn.dataset.tip = 'Golf needs the 3D map, which is not running'; }
+  scope.on(golfBtn, 'click', () => {
+    if (golfActive()) return;
+    if (pop) pop.close();
+    startGolf(ctx);
+  });
+  const fun = h('div', { class: 'dot-line dot-line--end dot-fun' }, golfBtn);
+
+  const body = h('div', { class: 'dot-pop' }, title, note, physics, drift, explore, tour, pendulum, fun);
   const wpPath = () => `parts.${binder.selected()}.dot.waypoints`;
 
   function renderWaypoints() {

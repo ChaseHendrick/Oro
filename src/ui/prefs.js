@@ -24,6 +24,8 @@ export const PREF_DEFAULTS = Object.freeze({
   audioQuality: 'standard',
   lastTrack: '',      // id of the track that was selected (v2.1)
   lastCamera: null,   // the camera when the app was last closed (v2.1)
+  dayNight: 0,        // tint the map by the local hour (v2.9)
+  pet: 0,             // the pet on the map (v2.9)
 });
 
 const VALID = {
@@ -42,6 +44,8 @@ const VALID = {
   audioQuality: v => ['eco', 'standard', 'high', 'pristine', 'raw'].includes(v),
   lastTrack: v => typeof v === 'string' && v.length <= 64,
   lastCamera: v => v === null || !!sanitizeCameraView(v),
+  dayNight: v => v === 0 || v === 1,
+  pet: v => v === 0 || v === 1,
 };
 
 /** Keep only known keys with valid values; fill the rest from defaults. */
