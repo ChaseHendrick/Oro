@@ -9,6 +9,7 @@ import { schedule } from './frame.js';
 import { createMacroKnobs } from './macros.js';
 import { createMiniSlider, createSelect } from './controls.js';
 import { createKnob } from './knob.js';
+import { createFunctionEditor } from './function-editor.js';
 import { icon } from './icons.js';
 
 const { PART_PARAM_MAP, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, clamp } = params;
@@ -25,6 +26,7 @@ export function sanitizeLink(l) {
     dst,
     amt: clamp(Number(l && l.amt) || 0, -1, 1),
     curve: clamp(Math.round(Number(l && l.curve) || 0), 0, LINK_CURVES.length - 1),
+    ...(l && Number.isFinite(Number(l.via)) && l.via !== null && Number(l.via) >= 0 && Number(l.via) < LINK_SOURCES.length ? { via: Math.round(Number(l.via)) } : {}),
   };
 }
 
@@ -98,6 +100,7 @@ export function createLinksPanel(ctx) {
       sciGroup('Lorenz', ['sciLorenzRate'], 'The classic chaotic attractor: never repeats.'),
       sciGroup('Pendulum', ['sciPendEnergy', 'sciPendRate'], 'A double pendulum: Pendulum 1 and 2 are its two arms.'),
       sciGroup('Smooth random', ['sciSmoothTime', 'sciSmoothness'], 'Random wandering, as smooth as you like.'),
+      sciGroup('Turing', ['sciTuringChance', 'sciTuringLength', 'sciTuringDiv'], 'A looping random sequence: Chance 0 repeats the same Length steps forever, 1 is new every step. The source is Turing.'),
       sciGroup('Collapse', ['sciCollapseShape', 'sciCollapseBars', 'sciCollapseDir'], 'Point vortices spiralling to a collapse, in time with the tempo. Collapse is how far in; Swirl X and Y place each voice on its own vortex.')));
 
   const rowsEl = h('div', { class: 'links-rows' });
@@ -108,11 +111,13 @@ export function createLinksPanel(ctx) {
       h('div', { class: 'mod-top-text' }, h('h3', { class: 'section-title', id: 'sec-links' }, 'Links'), count),
       addBtn),
     h('div', { class: 'links-row links-row--head', 'aria-hidden': 'true' },
-      h('span', null, 'Source'), h('span', null, 'Curve'), h('span', null, 'Amount'), h('span', null, ''), h('span', null, 'Destination'), h('span', null, '')),
+      h('span', null, 'Source'), h('span', null, 'Via'), h('span', null, 'Curve'), h('span', null, 'Amount'), h('span', null, ''), h('span', null, 'Destination'), h('span', null, '')),
     rowsEl);
 
   const dests = destinationOptions();
   const sources = LINK_SOURCES.map((label, value) => ({ value, label }));
+  // v2.4 Via: a second source that scales the link
+  const vias = [{ value: -1, label: 'No via' }, ...LINK_SOURCES.map((label, value) => ({ value, label: `× ${label}` }))];
   const curves = LINK_CURVES.map((label, value) => ({ value, label }));
 
   let rowScope = createScope();
@@ -148,6 +153,7 @@ export function createLinksPanel(ctx) {
       del.addEventListener('click', () => putLinks(getLinks().filter((_, k) => k !== i)));
       rowsEl.appendChild(h('div', { class: 'links-row', role: 'group', 'aria-label': `Link ${i + 1}: ${LINK_SOURCES[l.src]} to ${PART_PARAM_MAP[l.dst]?.label}` },
         selectEl(`Link ${i + 1} source`, sources, l.src, v => update({ src: Number(v) })),
+        selectEl(`Link ${i + 1} via`, vias, l.via ?? -1, v => update({ via: Number(v) })),
         selectEl(`Link ${i + 1} curve`, curves, l.curve, v => update({ curve: Number(v) })),
         h('span', { class: 'mod-depth' }, amt.el, amtVal),
         h('span', { class: 'links-arrow', html: icon('arrow-right'), 'aria-hidden': 'true' }),
@@ -163,7 +169,7 @@ export function createLinksPanel(ctx) {
   });
   // Rebuild rows only when the list's shape changes; an amount drag just
   // updates the numbers, so the slider being dragged is never replaced.
-  const shapeKey = () => `${binder.selected()}|${JSON.stringify(getLinks().map(l => [l.src, l.dst, l.curve]))}`;
+  const shapeKey = () => `${binder.selected()}|${JSON.stringify(getLinks().map(l => [l.src, l.via ?? -1, l.dst, l.curve]))}`;
   let renderedFor = shapeKey();
   const refreshAmounts = () => getLinks().forEach((l, i) => { if (amtVals[i]) setText(amtVals[i], `${l.amt > 0 ? '+' : ''}${Math.round(l.amt * 100)}%`); });
   const onChange = () => {
@@ -175,6 +181,8 @@ export function createLinksPanel(ctx) {
   scope.add(store.subscribe('', (p) => { if (p === '') onChange(); }));
   render();
 
-  const el = h('div', { class: 'links-pane' }, macroCard, listCard, sciCard);
+  const fn = createFunctionEditor(ctx);
+  scope.add(fn.dispose);
+  const el = h('div', { class: 'links-pane' }, macroCard, listCard, fn.el, sciCard);
   return { el, dispose: scope.dispose };
 }

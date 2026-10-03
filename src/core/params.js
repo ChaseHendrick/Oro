@@ -7,6 +7,7 @@ import { defaultTrackFx } from '../dsp/track-fx-config.js';
 import { TERRAIN_NAMES, PATH_NAMES, TERRAIN_INDEX, PATH_INDEX } from '../dsp/catalog.js';
 import { COLLAPSE_NAMES, COLLAPSE_BARS } from '../dsp/science-sources.js';
 import { FILTER2_TYPES, FILTER_ROUTES } from '../dsp/filter2.js';
+import { defaultFuncPoints } from '../dsp/function-gen.js';
 
 // v2.2 unison: how detune positions are spread, and transposing stacks
 // (semitones cycled across the copies from the outside in; the centre copy
@@ -233,6 +234,12 @@ export const PART_PARAMS = [
   // v2.3: warp modes on the path read (Laps already does hard sync and Pace bend/asym)
   P('warpMode', 'Warp mode', 'path', 'enum', 0, WARP_MODES.length - 1, 0, { options: WARP_MODES, hint: 'PWM traces the path in part of the cycle and waits; Quantize steps the point along the path; Flip turns the end of the path through the centre; Spiral shrinks the loop through each cycle' }),
   P('warpAmount', 'Warp amt', 'path', 'lin', 0, 1, 0, { mod: true }),
+  // v2.4: the track's Function (src/dsp/function-gen.js); its points live in part.funcPoints
+  P('funcMode', 'Mode', 'func', 'enum', 0, 1, 0, { options: ['Loop', 'Once'], hint: 'Loop repeats the curve; Once plays it from each note start and holds the end' }),
+  P('funcRate', 'Rate', 'func', 'exp', 0.05, 20, 1, { unit: 'Hz', hint: 'Cycles per second (when not synced)' }),
+  P('funcSync', 'Sync', 'func', 'bool', 0, 1, 0, { hint: 'Lock the Function to the tempo' }),
+  P('funcDiv', 'Length', 'func', 'enum', 0, SYNC_DIVS.length - 1, 2, { options: SYNC_DIVS.map(d => d.name), hint: 'One cycle when synced' }),
+  P('funcSmooth', 'Smooth', 'func', 'lin', 0, 1, 0, { hint: 'Straight lines (0) to S curves between the points (1)' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
@@ -277,6 +284,9 @@ export const GLOBAL_PARAMS = [
   P('sciCollapseShape', 'Shape', 'science', 'enum', 0, COLLAPSE_NAMES.length - 1, 0, { options: COLLAPSE_NAMES, hint: 'Which vortex collapse: each spirals inward at its own winding' }),
   P('sciCollapseBars', 'Cycle', 'science', 'enum', 0, COLLAPSE_BARS.length - 1, 3, { options: COLLAPSE_BARS.map(b => `${b} bar${b === 1 ? '' : 's'}`), hint: 'One collapse per this many bars' }),
   P('sciCollapseDir', 'Direction', 'science', 'enum', 0, 1, 0, { options: ['Collapse', 'Expand'] }),
+  P('sciTuringChance', 'Chance', 'science', 'lin', 0, 1, 0.1, { hint: 'How often a step of the Turing loop changes: 0 locks the loop, 1 is always new' }),
+  P('sciTuringLength', 'Length', 'science', 'int', 2, 16, 8, { hint: 'Steps in the Turing loop' }),
+  P('sciTuringDiv', 'Step', 'science', 'enum', 0, SYNC_DIVS.length - 1, 11, { options: SYNC_DIVS.map(d => d.name), hint: 'How long each Turing step lasts' }),
 ];
 
 export const PART_PARAM_MAP = Object.fromEntries(PART_PARAMS.map(p => [p.id, p]));
@@ -316,7 +326,9 @@ export const MOD_FIELDS = Object.keys(MOD_DEFAULT);
 export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
   'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height', 'Guitar Level', 'Voice Level', 'Expression pedal', 'Sustain pedal', 'Breath',
   // v2.1 science sources (global; Swirl X and Y are per voice)
-  'Neuron', 'Neuron Spike', 'Lorenz', 'Pendulum 1', 'Pendulum 2', 'Smooth Random', 'Collapse', 'Swirl X', 'Swirl Y'];
+  'Neuron', 'Neuron Spike', 'Lorenz', 'Pendulum 1', 'Pendulum 2', 'Smooth Random', 'Collapse', 'Swirl X', 'Swirl Y',
+  // v2.4: the Turing looping random source (global) and the track's Function (per voice)
+  'Turing', 'Function'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {
@@ -474,6 +486,7 @@ export function defaultPart(i = 0, { id, name, color } = {}) {
     dot: { mode: 0, gravity: 0.5, friction: 0.25, driftSpeed: 0.3, bounce: 0.25, tiltX: 0, tiltY: 0, flick: 0.5,
       exploreRate: 0.5, exploreRange: 2, exploreNotes: 1, waypoints: [], tourMode: 0,
       pendEnergy: 0.5, pendReach: 0.4, pendRate: 0.5 },
+    funcPoints: defaultFuncPoints(),
     links: defaultLinks(),
     userTerrain: { A: null, B: null },
     trackFx: defaultTrackFx(),

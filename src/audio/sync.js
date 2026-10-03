@@ -16,6 +16,7 @@ import {
   MAX_PARTS, PART_PARAMS, PART_PARAM_MAP, GLOBAL_PARAMS, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, MOD_FIELDS, LFO_STEP_COUNT,
 } from '../core/params.js';
 import { sanitizeLinks } from '../core/migrate.js';
+import { sanitizeFuncPoints } from '../dsp/function-gen.js';
 import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { decodeNoiseRecording } from '../dsp/noise-recording.js';
@@ -63,6 +64,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   let mods = Array.from({ length: MAX_PARTS }, () => new Set());
   let ids = trackIds(store.get('parts'));
   const links = new Set();
+  const funcs = new Set();   // v2.4 Function points
   const trackFx = new Set();
   const noise = new Set();
   let globalAll = false;
@@ -103,6 +105,10 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const src = store.get(`parts.${i}.links`);
     if (!Array.isArray(src)) return null;
     return { t: 'links', part: i, links: sanitizeLinks(src) };
+  }
+
+  function funcMsg(i) {
+    return { t: 'func', part: i, points: sanitizeFuncPoints(store.get(`parts.${i}.funcPoints`)) };
   }
 
   function fxMsg(i) {
@@ -154,7 +160,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       if (m) out.push(m);
       const l = linksMsg(i);
       if (l) out.push(l);
-      out.push(fxMsg(i), noiseMsg(i));
+      out.push(funcMsg(i), fxMsg(i), noiseMsg(i));
     }
     out.push(watchMsg());
     if (withExtra) {
@@ -165,7 +171,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
 
   function reset() {
     full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false;
-    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); trackFx.clear(); noise.clear();
+    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); funcs.clear(); trackFx.clear(); noise.clear();
     for (const s of params) s.clear();
     for (const s of mods) s.clear();
   }
@@ -201,6 +207,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
           const l = linksMsg(i);
           if (l) out.push(l);
         }
+        if (partAll.has(i) || funcs.has(i)) out.push(funcMsg(i));
         if (partAll.has(i) || trackFx.has(i)) out.push(fxMsg(i));
         if (partAll.has(i) || noise.has(i)) out.push(noiseMsg(i));
       }
@@ -273,6 +280,9 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         mark();
       } else if (k[2] === 'links') {
         links.add(i);
+        mark();
+      } else if (k[2] === 'funcPoints') {
+        funcs.add(i);
         mark();
       } else if (k[2] === 'trackFx') {
         trackFx.add(i);

@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.3.0, including the guitar pedal features
+going on under the hood. It describes version 2.4.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -611,6 +611,13 @@ controls, with an amount and a response curve. Each part can have up to 8.
 | **Smooth Random** | −1 to +1, a random wander, as smooth as you set it |
 | **Collapse** | 0 to 1, how far a set of point vortices has spiralled in (0 = wide) |
 | **Swirl X**, **Swirl Y** | −1 to +1, per voice: each voice rides its own vortex of the collapse |
+| **Turing** | 0 to 1, a looping random sequence (see [Science sources](#science-sources)) |
+| **Function** | −1 to +1, per voice: the track's drawn Function curve (see [Function](#function-24)) |
+
+**Via** (2.4) picks a second source that scales the link: the link's amount is
+multiplied by the Via source's value, so for example Mod Wheel → Cutoff via Velocity only
+opens the filter as far as you played the note hard, and LFO-style sources via Env 2 fade
+in and out with the envelope. **No via** is the plain link.
 
 **Curve** shapes the response: **Linear**, **Soft** (squared: gentle at first, strong at the
 end) or **Hard** (square root: strong at first). **Amount** runs from −100% to +100%. Links
@@ -618,6 +625,16 @@ are added after the LFO and Envelope 2, per voice.
 
 Every new part starts with one link, **Mod Wheel → Morph** at +100%, so the mod wheel
 morphs between the two terrains. You can change or delete it like any other link.
+
+### Function (2.4)
+
+The **Function** card (Links + Macros) is a curve you draw: click to add a point (up to
+16), drag to move one, double-click or right-click to remove one; the first and last
+points stay at the edges. **Mode** Loop repeats it like an LFO; **Once** plays it from each
+note start, like an envelope, and holds the last point. **Rate** sets the speed, or turn on
+**Sync** and choose a **Length** from 4 bars down to 1/16. **Smooth** turns the straight
+lines between points into S curves. Every voice runs its own copy, so chords stay
+independent. Pick **Function** as a Link source to use it.
 
 ### Macros
 
@@ -649,6 +666,10 @@ a Link source to let it move any knob.
 * **Smooth random**: random wandering with a set smoothness. **Time** is roughly how long it
   takes to change its mind; **Smooth** picks Rough (jittery), Smooth or Silky (very gentle
   curves). Technically these are Matérn processes with ν = 1/2, 3/2 and 5/2.
+* **Turing**: a looping random sequence, like a shift-register "Turing machine". It steps
+  once per **Step** (4 bars to 1/16, on the tempo); **Length** is how many steps loop (2 to
+  16) and **Chance** how often a step changes as it comes round: 0 repeats the same pattern
+  forever, 1 makes every step new, and small values let a melody slowly mutate.
 * **Collapse**: a few point vortices (tiny whirlpools) that spiral inward together and
   shrink to a point, then start again, in time with the tempo: one collapse every **Cycle**
   (half a bar to 16 bars), or the reverse with **Direction** set to Expand. **Shape** picks

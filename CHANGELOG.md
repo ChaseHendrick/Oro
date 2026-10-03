@@ -3,6 +3,14 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.4.0 (October 2026)
+
+* **Via for Links.** Each link can be scaled by a second source (for example Mod Wheel →
+  Cutoff via Velocity).
+* **Function.** Draw a curve of up to 16 points per track and use it as a looping LFO or a
+  one-shot envelope from each note (per voice), free or tempo-synced, with Smooth S curves.
+* **Turing.** A new global source: a looping random sequence with Chance, Length and Step.
+
 ## 2.3.0 (October 2026)
 
 * **Orograph is now Oro.** The app, window, installers (Oro-mac-arm64.dmg and so on), offline

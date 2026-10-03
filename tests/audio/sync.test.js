@@ -82,7 +82,7 @@ describe('store sync', () => {
 
     store.set('parts.2', { ...store.get('parts.2'), params: { ...store.get('parts.2.params'), fold: 0.9 } });
     run();
-    expect(batches[1].map(m => m.t)).toEqual(['params', 'mods', 'links', 'trackFx', 'noiseRecording']);
+    expect(batches[1].map(m => m.t)).toEqual(['params', 'mods', 'links', 'func', 'trackFx', 'noiseRecording']);
     expect(batches[1][0].p.fold).toBe(0.9);
     expect(Object.keys(batches[1][0].p).length).toBe(PART_PARAMS.length);
   });
