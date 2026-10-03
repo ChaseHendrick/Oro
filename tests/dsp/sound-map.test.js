@@ -2,7 +2,7 @@
 // Shuffle kit), the engine side of library pads and auditions, saved data.
 import { describe, it, expect } from 'vitest';
 import { SYNTH_DRUMS, synthDrum, DRUM_LIBRARY_SIZE, KIT_PADS, KIT_BASE_NOTE, KitPlayer, defaultDrum, sanitizeDrum, pcmToBase64 } from '../../src/dsp/drum-kit.js';
-import { renderLibraryDrum, libraryInfo, libraryList, DRUM_CATEGORIES } from '../../src/dsp/drum-library.js';
+import { renderLibraryDrum, libraryInfo, libraryList, DRUM_CATEGORIES, LIBRARY_PCM_RATE } from '../../src/dsp/drum-library.js';
 import {
   measureDrum, featureVector, fitProjection, libraryMap, libraryMapAsync, buildSoundMap, projectVector,
   nearestInDirection, similarTo, shuffleKit, KIT_ROLES, SAMPLE_CAT,
@@ -172,7 +172,7 @@ describe('saved data and the engine', () => {
     expect(sanitizeDrum(defaultDrum())).toEqual(defaultDrum());
   });
 
-  it('sync sends a library index like any synth pad', () => {
+  it('sync renders library sounds past the first eight on the main thread and sends them as audio', () => {
     const store = createStore(defaultState());
     const batches = [];
     let pending = null;
@@ -181,8 +181,15 @@ describe('saved data and the engine', () => {
     store.set('parts.0.drum', d);
     pending();
     const kit = batches.at(-1).find(m => m.t === 'kit');
-    expect(kit.pads[2].synth).toBe(50);
-    expect(kit.pads[0].synth).toBe(0);
+    expect(kit.pads[2].pcm).toBeInstanceOf(Float32Array);
+    expect(kit.pads[2].rate).toBe(LIBRARY_PCM_RATE);
+    expect(same(kit.pads[2].pcm, renderLibraryDrum(50, LIBRARY_PCM_RATE))).toBe(true);
+    expect(kit.pads[0].synth).toBe(0);           // the original eight are still built by the engine
+    store.set('parts.0.drum.pads.2.pitch', 3);    // a knob move resends settings only
+    pending();
+    const next = batches.at(-1).find(m => m.t === 'kit');
+    expect(next.pads[2]).toMatchObject({ keep: 1, pitch: 3 });
+    expect(next.pads[2].pcm).toBeUndefined();
   });
 
   it('the engine plays library pads, renders each sound once and keeps 0..7 as before', () => {

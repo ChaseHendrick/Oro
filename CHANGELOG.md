@@ -5,6 +5,13 @@ explains every feature in detail.
 
 ## 2.8.0 (October 2026)
 
+* **Sound map** for drum kits: 128 drum sounds made by Oro, plus your sliced samples, laid
+  out so similar sounds sit together. Hover or use the arrow keys to hear them, click to
+  put one on a pad. **Similar** finds a close alternative and **Shuffle kit** picks eight
+  that belong together.
+* **Euclid fills and the groove pad.** Euclid spreads a number of hits evenly along a
+  lane. The groove pad writes a whole beat from complexity and loudness, in four styles,
+  with an optional fill at the end.
 * **Smart controls.** Eight knobs at the top of the Sound tab for each track. Each knob
   moves up to four settings at once, each over its own range (reversed ranges work), with
   a choice of curve. Add settings with **Learn** or from a list. Saved with the track,
@@ -19,7 +26,6 @@ explains every feature in detail.
   instead, which uses far less processing. Editing the sound unfreezes it.
 * **Chord trigger.** One key plays a whole chord: learn your own or pick a preset, and
   optionally keep it in the song's key.
-<!-- SOUND-MAP -->
 
 ## 2.7.0 (October 2026)
 
