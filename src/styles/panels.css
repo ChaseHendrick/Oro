@@ -71,6 +71,7 @@
 .part-led { flex: none; }
 
 .patch-browser { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 430px; }
+@media (min-width: 900px) { .patch-browser { min-width: 300px; flex-shrink: 0.4; } }
 .patch-browser.is-disabled { opacity: .55; }
 .patch-main {
   display: flex; align-items: center; gap: 0;
@@ -525,6 +526,11 @@
 @container dock (min-width: 1800px) {
   .dock-pane--sound { grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
   .smart-body { grid-template-columns: minmax(0, 720px) minmax(0, 860px); }
+  /* 16 steps no wider than about 96 px each, left-aligned with the rows above */
+  .dock-pane--seq .seq-grid { grid-template-columns: 42px repeat(16, minmax(26px, 96px)); }
+  /* capped strips: keep the vector mix next to them instead of across a gap */
+  .dock-body .dock-pane--mix { grid-template-columns: minmax(0, max-content) auto; justify-content: start; }
+  .dock-body .strip { flex-basis: 180px; }
 }
 
 /* MOD */
