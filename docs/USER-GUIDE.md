@@ -1525,6 +1525,69 @@ the keyboard, and it has little low end. Headphones make the biggest difference,
 or interface microphone. Monitoring through the browser adds a few milliseconds of delay
 (more with Mic Cleanup and the compressor), which singers notice less with headphones.
 
+### Operator panel (2.9)
+
+**Settings > Operator** imitates a synth that has had a hard life, plus a few service
+tools. Everything is off until you turn it on, and while it is off Oro sounds exactly as
+before. The switches are saved with the session (and with scenes); the damage itself is
+not, so a reloaded session starts repaired. Bounces include the damage, quirks and
+vintage sound, but never a test tone.
+
+The Operator switches belong to the machine, like a cabinet's DIP switches: loading a scene
+only changes them when the scene was saved with some of them on. Damage itself (how
+broken or wet Oro is right now) is not saved, so a reload starts repaired.
+
+#### Damage
+
+* **Drop damage**: as if the synth fell on the floor. **Drop it** drops it once: you hear
+  a thud and a rattle, and the damage meter goes up. **Severity** sets how hard each drop
+  is. Damage builds up with every drop and stays until **Repair**. The more damage, the
+  more you hear: crackle from a loose connection, brief cutouts, one side cutting in and
+  out, a scratchy control that dulls the tone for a moment, and a pitch knocked out of tune
+  with a slow wobble.
+* **Real drops**: on a phone or tablet with motion sensors, a hard jolt counts as a drop
+  (with a short pause before the next one can count). Some browsers ask first: turn on
+  Real drops, then press **Allow motion sensor**. Desktop computers usually have no motion
+  sensor, and the panel says so.
+* **Water damage**: as if a drink was spilled on it. **Spill** spills once and **Severity**
+  sets how much. The wetter it is, the more muffled the tone, with fizz and crackle from
+  corroded contacts, a low mains hum, short drop-outs and rare bursts of digital errors.
+  It dries out over a few minutes; turn on **Stays wet** to keep it wet until **Repair**.
+  **Mains hum** picks 50 Hz (most of the world) or 60 Hz (the Americas and some other
+  places).
+* **Show on screen**: faint cracks after a drop and droplets while it is wet. They are
+  still pictures that fade slowly; nothing moves or flashes.
+
+The delay and reverb hear the cutouts but are not muffled, so their tails stay clean.
+
+#### Quirks
+
+* **Glitch**: now and then the output stutters, repeating a short slice of what just
+  played. **Amount** sets how often and how many repeats.
+* **Slowdown**: the pitch sags when many notes sound at once, like an overloaded old
+  machine, and recovers as they stop. **Amount** sets how far it sags.
+
+#### Vintage
+
+* **Vintage sampler**: an early sampler sound on the whole output, 12-bit at about 26 kHz
+  with gentle filtering on each side.
+
+#### Service
+
+* **Test tones**: **Sine 1 kHz** (-18 dBFS), **Pink noise** (about -20 dBFS), **Left
+  only** and **Right only** (pink noise on one speaker, to check the wiring) and **Polarity
+  pulse** (a short positive pulse twice a second). Press a tone to start it and again (or
+  **Stop tone**) to stop it; closing Settings stops it too. The levels are before the
+  master volume, so turn your speakers or headphones down first.
+* **MIDI monitor**: the last 20 incoming MIDI messages, newest first, in plain words with
+  their bytes and port. Clock and active sensing are left out.
+
+#### Bookkeeping
+
+Time played (while audio is running), notes played, sessions started and patches saved.
+The counters are kept only in this browser and are never sent anywhere. **Reset
+counters** starts them again from zero.
+
 ### MIDI & MPC, Pedals, Shortcuts, About
 
 Covered in the next sections. **About** shows the version and licence.

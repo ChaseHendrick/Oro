@@ -723,6 +723,8 @@ export async function createMidi({
     const data = e && e.data;
     if (!data || !data.length) return;
     const ms = e.timeStamp > 0 ? e.timeStamp : now();
+    // v2.9 Operator panel MIDI monitor (nothing is copied while no one listens)
+    if (emitter.has('monitor')) emitter.emit('monitor', { bytes: Array.from(data), port: (input && input.name) || '', time: ms });
     try {
       const status = data[0];
       if (status >= 0xf0) { systemIn(input, data, ms); return; }

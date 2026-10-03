@@ -9,6 +9,7 @@ import {
 } from '../core/params.js';
 import { sanitizeParams, sanitizeMods, sanitizePart, sanitizeLinks, migrateState, migrateScene } from '../core/migrate.js';
 import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
+import { sanitizeOperator } from '../dsp/damage.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from '../core/smart.js';
 import { createEmitter } from '../music/emitter.js';
@@ -324,6 +325,12 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     if (!(scene.tuning && typeof scene.tuning === 'object')) {
       const cur = sanitizeTuning(store.get('tuning'));
       if (cur) state.tuning = cur;
+    }
+    // v2.9: Operator switches belong to the machine, like a cabinet's DIP
+    // switches: a scene only changes them when it was saved with some on
+    if (!(scene.operator && typeof scene.operator === 'object')) {
+      const op = sanitizeOperator(store.get('operator'));
+      if (op) state.operator = op;
     }
     // The scene's tracks replace the current ones: the engine fades the old
     // tracks out while the new ones start (see REPLACE_TRACKS in tracks.js).

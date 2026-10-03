@@ -17,6 +17,7 @@ import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from './smart.js';
 import { sanitizeChord } from '../music/chord-trigger.js';
 import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
+import { sanitizeOperator } from '../dsp/damage.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -258,11 +259,14 @@ export function migrateState(src) {
   uniqueIds(parts);
   // v2.9 microtuning, absent for the default tuning
   const tuning = sanitizeTuning(src.tuning);
+  // v2.9 Operator panel (damage, quirks, vintage), absent while everything is at its default
+  const operator = sanitizeOperator(src.operator);
   return {
     version: STATE_VERSION,
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
     parts,
     ...(tuning ? { tuning } : {}),
+    ...(operator ? { operator } : {}),
   };
 }
 

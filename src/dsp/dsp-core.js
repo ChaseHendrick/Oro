@@ -63,6 +63,7 @@ import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.j
 import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
 import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
+import { MasterOperator, OPERATOR_ACTIONS } from './damage.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -1030,6 +1031,8 @@ export class OroDSP {
     this.sendBufs = null;          // [aL, aR, bL, bR] summed sends of one render call
     this.sendFedA = false; this.sendFedB = false; this.sendDirty = false;
     // v2.8 freeze
+    // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
+    this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
@@ -1177,6 +1180,19 @@ export class OroDSP {
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
       case 'tuning': this.setTuning(msg.hz); break;
+      case 'operator':
+        if (msg.cfg && typeof msg.cfg === 'object') { if (this.op === null) this.op = new MasterOperator(this.sr); this.op.configure(msg.cfg); }
+        else if (this.op !== null) this.op.configure(null);
+        break;
+      case 'opAction':
+        if (!OPERATOR_ACTIONS.includes(msg.a)) break;
+        if (this.op === null) this.op = new MasterOperator(this.sr);
+        this.op.action(msg.a, msg.v);
+        break;
+      case 'opState':
+        if (this.op === null) this.op = new MasterOperator(this.sr);
+        this.op.setState(msg);
+        break;
       case 'freeze': this.setFrozen(msg); break;
       case 'capture': { const i = Math.round(finiteOr(msg.part, -1)); this.capture = i >= 0 && i < MAX_PARTS ? i : -1; break; }
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
@@ -4620,6 +4636,13 @@ export class OroDSP {
       }
     }
 
+    // v2.9 Operator panel on the mix (not while a frozen loop is captured)
+    if (this.op !== null && this.capture < 0) {
+      let voices = 0;
+      if (this.op.cfg.slowdown === 1) for (let i = 0; i < liveN; i++) voices += this.parts[i].activeCount();
+      this.op.process(outL, outR, n, voices, dlyL, dlyR, revL, revR, pedL, pedR);
+    }
+
     // last line of defence before the host's limiter: no NaN, never beyond ±4
     let pl = this.peakL, pr = this.peakR;
     for (let i = 0; i < n; i++) {
@@ -4676,6 +4699,7 @@ export class OroDSP {
       t: 'tele', part: this.watch, n: nobj, spinPhase: P.spinPhase, voices, peak: [this.peakL, this.peakR], activeVoices, count: this.count,
       terrainHeight, quality: this.quality,
     };
+    if (this.op !== null) msg.op = this.op.telemetry();
     this.peakL = 0; this.peakR = 0;
     this.postMessage(msg);
   }

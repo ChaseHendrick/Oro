@@ -37,6 +37,7 @@ import { openHelp } from './help.js';
 import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
 import { icon } from './icons.js';
+import { startOperatorHost } from './operator.js';
 
 function emitter() {
   const map = new Map();
@@ -281,6 +282,16 @@ export function createUI(root, modules = {}) {
   } catch (err) {
     console.warn('[ui] the looper is unavailable', err);
     ctx.looper = null;
+  }
+
+  // v2.9 Operator panel: Real drops, the on-screen damage hint and Bookkeeping run with Settings closed.
+  ctx.operator = null;
+  try {
+    ctx.operator = startOperatorHost(ctx);
+    scope.add(ctx.operator.dispose);
+  } catch (err) {
+    console.warn('[ui] the operator panel is unavailable', err);
+    ctx.operator = null;
   }
 
   // v2.8 Freeze: per-track loops played instead of the voices. The loop is
