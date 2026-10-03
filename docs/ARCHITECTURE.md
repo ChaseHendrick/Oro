@@ -370,8 +370,16 @@ access. `src/ui/updates-tab.js` awaits `ctx.prepareUpdate()` before requesting a
 restart. That callback flushes and awaits both session and preset storage.
 
 NSIS installed copies and AppImage copies use electron-updater. Other current packages
-use the fixed public GitHub release endpoint and manual download link. macOS remains a
-manual path while the app lacks the signing identity required for automatic installation.
+use the fixed public GitHub release endpoint and manual download link. macOS lacks the
+signing identity Squirrel.Mac requires, so by default it is a manual path. From 2.12 the
+opt-in `autoInstall` preference uses `electron/mac-update.cjs` instead: it downloads the
+release zip for `process.arch`, verifies its sha512 against `latest-mac.yml`, unpacks it
+with `ditto`, checks `CFBundleShortVersionString`, and on quit or Restart now starts a
+detached shell script that swaps the bundle after the app exits (restoring a backup on
+failure, logging to `mac-update.log` in userData). It refuses translocated, read-only or
+unwritable locations. The swap has not yet been exercised on every macOS version.
+`electron/close-guard.cjs` adds the bounce reminder to the window close flow; the preload
+exposes `orographDesktop.session` for it.
 `.github/workflows/desktop.yml` validates and publishes the three platform update manifests
 and relevant differential blockmaps beside the existing downloads. A new release is
 assembled as a draft before its binary and metadata assets become visible to clients.

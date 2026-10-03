@@ -4,6 +4,7 @@
 // -trackN plus the track's name (-track3-bass).
 
 import { partCount } from '../core/tracks.js';
+import { SEQ_RATES, activeChain, activePatternIndex } from '../core/params.js';
 import { h, createScope, setText, listen, has, downloadBlob } from './dom.js';
 import { openPopover } from './layers.js';
 import { recordingName } from './record.js';
@@ -37,7 +38,7 @@ export function bounceSupported(ctx) {
 }
 
 /** A throwaway binding over a local value, so the shared controls can drive popover options. */
-function localBinding(def, initial) {
+export function localBinding(def, initial) {
   let value = initial;
   const fns = new Set();
   return {
@@ -49,14 +50,32 @@ function localBinding(def, initial) {
   };
 }
 
-export function openBounce(ctx, anchor) {
+/**
+ * Bars that cover the whole pattern, or the whole song when a track's song
+ * mode is on: the longest sequenced track, rounded up to a Length choice.
+ */
+export function suggestedBounceBars(state) {
+  let beats = 0;
+  for (const part of (state && Array.isArray(state.parts) ? state.parts : [])) {
+    if (!part || !part.seqOn || !Array.isArray(part.patterns) || !part.patterns.length) continue;
+    const patternBeats = (k) => { const p = part.patterns[k] || {}; return (Number(p.length) || 16) * (SEQ_RATES[p.rate]?.beats ?? 0.25); };
+    const chain = activeChain(part);
+    const b = chain ? chain.reduce((sum, e) => sum + patternBeats(e.pattern) * e.repeats, 0) : patternBeats(activePatternIndex(part));
+    beats = Math.max(beats, b);
+  }
+  if (!beats) return 4;
+  const bars = Math.ceil(beats / 4 - 1e-9);
+  return BOUNCE_BARS.find(b => b >= bars) || BOUNCE_BARS[BOUNCE_BARS.length - 1];
+}
+
+export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
   const scope = createScope();
   const { store, engine, music } = ctx;
   const ok = bounceSupported(ctx);
   let busy = false;
 
   const barsSel = h('select', { class: 'select-native', 'aria-label': 'Bars to render' }, BOUNCE_BARS.map(b => h('option', { value: String(b) }, `${b} bar${b > 1 ? 's' : ''}`)));
-  barsSel.value = '4';
+  barsSel.value = BOUNCE_BARS.includes(wantBars) ? String(wantBars) : '4';
   const tailSel = h('select', { class: 'select-native', 'aria-label': 'Reverb and delay tail' }, BOUNCE_TAILS.map(t => h('option', { value: String(t) }, t ? `${t} s tail` : 'No tail')));
   tailSel.value = '2';
   const output = localBinding({ id: 'bounceOutput', label: 'Files', default: 'mix' }, 'mix');
@@ -144,6 +163,7 @@ export function openBounce(ctx, anchor) {
       setProgress(1);
       setText(status, saved > 1 ? `Done. ${saved} files are on their way to your downloads.` : 'Done. Check your downloads.');
       ctx.toast('Bounce saved', { kind: 'success', detail: bounceName(started) });
+      ctx.bus?.emit?.('bounce:done');
     } catch (err) {
       console.warn('[ui] bounce failed', err);
       setText(status, 'The render did not finish. Try fewer bars, or use Record instead.');

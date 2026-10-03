@@ -1491,6 +1491,22 @@ Only what the sequencers, arpeggiators and dot locks play is rendered; parts wit
 pattern stay silent. Files are 24-bit WAVs named like
 `orograph-bounce-20261002-143015.wav`, and stems add `-part1`, `-part2` and so on.
 
+### Bounce reminders (2.12)
+
+Playing live through a struggling computer can glitch; a bounce renders offline and
+can't. With **Settings > Audio > Remind me to bounce** on (the default, kept on this
+computer), Oro suggests a bounce with a small note that has **Bounce now** and **Not now**.
+It never opens a dialog by itself, and it shows at most one note every 15 minutes:
+
+* when the audio drops out while the transport is playing;
+* after 20 minutes of playing with changes since your last bounce.
+
+In the desktop app, closing the window with changes since your last bounce asks once
+whether to bounce first; **Close** closes as usual, and your session is saved either way.
+The browser version does not add a leave-page prompt for this. **Bounce now** opens Bounce
+with a length that covers the whole pattern, or the whole song when song mode is on.
+Turn the setting off and none of these appear.
+
 ### Looper (1.2)
 
 The looper records what you hear and plays it back in a loop, so you can layer parts on top
@@ -1690,10 +1706,23 @@ computer, not part of a patch.
 | Mode | What it does | Cost |
 |---|---|---|
 | **Eco** | Runs the oscillator at the output rate (no oversampling) and reads slightly smoother terrain. | Lightest. Some aliasing on high notes. |
-| **Standard** | Two times oversampling. The default. | Balanced. |
+| **Standard** | Two times oversampling. The default before 2.12. | Balanced. |
 | **High** | Four times oversampling in two stages. | Roughly twice the oscillator work of Standard. Cleaner high notes. |
 | **Pristine** | Standard, plus a band-limited single cycle per voice, rebuilt about every 256 samples and crossfaded, whenever the loop is steady. Falls back to Standard for a voice whose loop is being moved at audio rate. | Extra work per voice. The cleanest tone. |
 | **Raw** | Two times oversampling with the terrain smoothing switched off. | Like Standard. Deliberately gritty and digital: aliasing on purpose. |
+
+**New defaults in 2.12.** A new install (a computer with no saved Oro session or
+settings) starts at **Pristine** quality and a **96 kHz** sample rate (Settings > Pedals >
+Sample rate). If you already used Oro, nothing changes: your quality and sample rate stay
+as they were, including the old defaults (Standard and Auto). If the browser or audio
+device does not accept 96 kHz, Oro runs at the device's own rate without an error, and
+Settings > Audio shows the rate actually in use.
+
+If this computer cannot keep up (more than three dropouts within 10 seconds, or the DSP
+load above 90% for 5 seconds), Oro shows a small note once per session: "Audio is
+struggling at Pristine, 96 kHz. Step down to High?" **Step down** switches to High,
+**Keep** leaves everything as it is, and **Don't ask again** stops the note on this
+computer. Oro never changes the setting without asking.
 
 ### Voice (1.4)
 
@@ -2413,9 +2442,10 @@ The Windows installer and Linux AppImage can download an update inside the app. 
 to be saved. A failed save keeps the app open. It never restarts in the middle of playing
 or installs an update simply because you quit.
 
-Current Mac builds use ad hoc signing, so they show a release notice and **Download latest
-release** for manual replacement. Windows portable copies and Linux archives use the same
-manual path. Browser users get the hosted version when they reload the site; an offline
+Mac builds are not signed by Apple, so the built-in macOS updater cannot install them.
+By default a Mac shows a release notice and **Download latest release** for manual
+replacement (see Automatic updates on Mac below to opt in). Windows portable copies and
+Linux archives use the manual path. Browser users get the hosted version when they reload the site; an offline
 HTML copy is updated by downloading the new file. Saved patches and scenes remain in
 their existing storage. Export your library if you also move to another browser or computer.
 
@@ -2423,6 +2453,31 @@ Updates come from the public Oro GitHub releases. The supported desktop installe
 verifies downloaded artifact checksums. Release publishing includes the update metadata
 and hashes; bumping the version and completing the release routine makes the next release
 available to existing copies with checks enabled. This does not require an account.
+
+### Automatic updates on Mac (2.12)
+
+**Settings > Updates > Install updates automatically** is off by default and appears only
+on a Mac. When it is on and a check (Check now, on launch, or periodically) finds a new
+release, Oro:
+
+1. downloads `Oro-mac-arm64.zip` (Apple silicon) or `Oro-mac-x64.zip` (Intel) in the
+   background, without touching the audio;
+2. checks it against the sha512 checksum published in the release's `latest-mac.yml`, and
+   refuses it if they differ or if the version is not newer;
+3. unpacks it and checks that the app inside has the expected version;
+4. replaces the app when you quit Oro, or right away if you choose **Restart now** (after
+   your session is saved). A small helper waits for Oro to close, keeps the old app as a
+   backup, moves the new one into place, clears the macOS download flag on it only if it
+   is set, and puts the old app back if any step fails. When you quit, the new version
+   opens the next time you start Oro; Restart now reopens it straight away.
+
+Oro never installs while you play unless you choose Restart now. Oro must run from a
+folder it can write to, such as Applications or Applications in your home folder. If macOS
+runs it from a temporary read-only copy (this happens when you open it straight from the
+download or the disk image), the Updates tab says so: move Oro to Applications, open it
+from there, and try again. The helper writes a log, `mac-update.log`, in Oro's data folder
+(`~/Library/Application Support/Orograph`). This is new in 2.12 and not yet tested on every
+macOS version; if an update does not take, download the new version manually.
 
 
 ### Browser performance

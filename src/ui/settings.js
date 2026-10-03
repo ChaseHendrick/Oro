@@ -12,7 +12,8 @@ import { createVoiceSettings } from './settings-voice.js';
 import { createUpdatesTab } from './updates-tab.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { STYLES, VIEWS } from './viewport-overlay.js';
-import { openBounce, bounceSupported } from './bounce.js';
+import { openBounce, bounceSupported, localBinding } from './bounce.js';
+import { bounceReminderEnabled, setBounceReminderEnabled } from './bounce-reminder.js';
 import { createPalettePicker } from './palettes.js';
 import { createTuningSettings } from './tuning-settings.js';
 import { icon } from './icons.js';
@@ -136,6 +137,11 @@ function audioTab(ctx, scope) {
   const deviceWrap = h('div', { class: 'device-pick' });
   const bounceBtn = h('button', { type: 'button', class: 'btn btn--sm', html: icon('bounce') + '<span>Bounce...</span>', disabled: !bounceSupported(ctx) });
   scope.on(bounceBtn, 'click', () => openBounce(ctx, bounceBtn));
+  // 2.12 bounce reminders, per computer, on by default.
+  const remindBinding = localBinding({ id: 'bounceReminder', label: 'Remind me to bounce', default: 1 }, bounceReminderEnabled() ? 1 : 0);
+  scope.add(remindBinding.subscribe(() => { setBounceReminderEnabled(!!remindBinding.get()); ctx.bounceReminder?.refresh(); }));
+  const remindToggle = createToggle(ctx, remindBinding, { label: 'Remind me to bounce', className: 'toggle--switch', ariaLabel: 'Remind me to bounce' });
+  scope.add(remindToggle.dispose);
 
   function render() {
     status.textContent = '';
@@ -210,7 +216,8 @@ function audioTab(ctx, scope) {
     h('section', { class: 'settings-group', 'aria-label': 'Tuning (saved with the session)' }, h('h3', { class: 'group-title' }, 'Tuning'), tuning.el),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Export'),
-      row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn)));
+      row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn),
+      row('Remind me to bounce', 'A small note, at most every 15 minutes, when the audio drops out while playing or after 20 minutes of playing with changes since your last bounce. The desktop app also asks when you close it. Kept on this computer.', remindToggle.el)));
 }
 
 export function shortcutsList() {
