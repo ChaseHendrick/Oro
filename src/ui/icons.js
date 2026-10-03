@@ -1,4 +1,4 @@
-// Original line icons, drawn for Orograph on a 24 px grid. Static markup only
+// Original line icons, drawn for Oro on a 24 px grid. Static markup only
 // (no user data is ever interpolated), returned as strings for innerHTML.
 
 function gearPath() {
@@ -109,7 +109,7 @@ export function icon(name, { size, cls = '' } = {}) {
 }
 
 /**
- * The Orograph glyph: stacked contour rings rising to a peak, with the orbit
+ * The Oro glyph: stacked contour rings rising to a peak, with the orbit
  * dot circling the summit. Lines use currentColor, the dot uses --accent.
  */
 export function brandGlyph(size = 26) {

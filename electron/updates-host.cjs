@@ -23,7 +23,7 @@ async function fetchLatestRelease(fetch, timers = globalThis) {
   const abort = new AbortController();
   const timeout = timers.setTimeout(() => abort.abort(), 30000);
   try {
-    const response = await fetch(RELEASE_API, { signal: abort.signal, headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Orograph-desktop' } });
+    const response = await fetch(RELEASE_API, { signal: abort.signal, headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Oro-desktop' } });
     if (!response.ok) throw new Error(`The release server returned HTTP ${response.status}. Try again later.`);
     return await response.json();
   } finally { timers.clearTimeout(timeout); }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TERRAINS, PATHS } from '../../src/dsp/catalog.js';
-import { OrographDSP, HALFBAND, CTRL } from '../../src/dsp/dsp-core.js';
+import { OroDSP, HALFBAND, CTRL } from '../../src/dsp/dsp-core.js';
 import { MOD_PARAM_IDS } from '../../src/core/params.js';
 import { SR, makeDSP, render, rms, peak, allFinite, spectrum, terrainChain } from './helpers.js';
 
@@ -47,7 +47,7 @@ describe('engine basics', () => {
   });
 
   it('plays the built-in default terrain before any terrain message arrives', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     dsp.handleMessage(on(57));
     const r = render(dsp, 0.3);
     expect(rms(r.L, 2000)).toBeGreaterThan(0.01);
@@ -421,7 +421,7 @@ describe('mixer, filter and safety', () => {
   });
 
   it('never exceeds ±4 and never outputs NaN, even when abused', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     const bad = new Float32Array(32 * 32).fill(NaN);
     for (let p = 0; p < 4; p++) {
       dsp.handleMessage({ t: 'params', part: p, p: { level: 1, lift: 4, fold: 1, resonance: 1, unison: 4, drive: 1, filterType: 1, cutoff: 3000 } });
@@ -500,7 +500,7 @@ describe('aliasing', () => {
 
 describe('protocol robustness', () => {
   it('ignores malformed messages', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     for (const m of [null, 1, 'x', {}, { t: 'nope' }, { t: 'params', part: 9, p: { level: 1 } }, { t: 'params', part: 0, p: null },
       { t: 'terrain', part: 0, slot: 0, levels: [{ size: 100, data: new Float32Array(10) }] }, { t: 'noteOn', part: 0, note: NaN },
       { t: 'mods', part: 0, m: { nope: {}, size: null } }, { t: 'watch', part: 7 }, { t: 'bend', part: 0, v: 'x' }]) {
@@ -512,7 +512,7 @@ describe('protocol robustness', () => {
 
   it('runs at other sample rates and odd block sizes', () => {
     for (const sr of [44100, 96000]) {
-      const dsp = new OrographDSP(sr);
+      const dsp = new OroDSP(sr);
       dsp.handleMessage({ t: 'terrain', part: 0, slot: 0, levels: terrainChain(T.ripple) });
       dsp.handleMessage(on(69));
       const r = render(dsp, 0.2, null, 333);

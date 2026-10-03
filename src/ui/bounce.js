@@ -14,7 +14,7 @@ export const BOUNCE_BARS = [1, 2, 4, 8, 16, 32, 64];
 export const BOUNCE_TAILS = [0, 1, 2, 4, 8];
 
 export function bounceName(date, suffix = '') {
-  return recordingName(date).replace('orograph-', 'orograph-bounce-').replace('.wav', `${suffix}.wav`);
+  return recordingName(date).replace('oro-', 'oro-bounce-').replace('.wav', `${suffix}.wav`);
 }
 
 /** File name for track `index` (0-based, named `name` when given) of a stems bounce. */

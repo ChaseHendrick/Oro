@@ -68,10 +68,10 @@ export function createPedalSettings(ctx) {
   const own = (c) => { scope.add(c.dispose); return c; };
 
   root.appendChild(h('div', { class: 'callout' }, h('span', { html: icon('info') }),
-    h('span', null, 'Run parts of Orograph through real guitar pedals: a pedal send per part on extra outputs, the pedals coming back on an input, and MIDI for the pedals that have it. This follows the MPC XL and pedal manuals but has not been tested with the real hardware yet, so start with the send low.')));
+    h('span', null, 'Run parts of Oro through real guitar pedals: a pedal send per part on extra outputs, the pedals coming back on an input, and MIDI for the pedals that have it. This follows the MPC XL and pedal manuals but has not been tested with the real hardware yet, so start with the send low.')));
 
   if (!rig || !rig.supported) {
-    root.appendChild(h('p', { class: 'settings-note' }, 'The pedal loop needs Web Audio, which is not running in this browser. Everything else in Orograph works as usual.'));
+    root.appendChild(h('p', { class: 'settings-note' }, 'The pedal loop needs Web Audio, which is not running in this browser. Everything else in Oro works as usual.'));
     if (rig) appendMidi();
     return { el: root, dispose };
   }
@@ -301,7 +301,7 @@ export function createPedalSettings(ctx) {
     label: 'Sample rate', size: 'sm', options: SAMPLE_RATE_OPTIONS,
   }));
   const rateOut = h('p', { class: 'setting-hint pedal-rate', 'aria-live': 'polite' });
-  const reloadBtn = h('button', { type: 'button', class: 'btn btn--sm', hidden: true, html: icon('rotate') + '<span>Reload now</span>', dataset: { tip: 'Restart Orograph with the new sample rate. The session is saved first.' } });
+  const reloadBtn = h('button', { type: 'button', class: 'btn btn--sm', hidden: true, html: icon('rotate') + '<span>Reload now</span>', dataset: { tip: 'Restart Oro with the new sample rate. The session is saved first.' } });
   scope.on(reloadBtn, 'click', () => rig.reload());
 
   const pingGroup = h('section', { class: 'settings-group', 'aria-labelledby': 'pedals-ping' },
@@ -330,7 +330,7 @@ export function createPedalSettings(ctx) {
       if (!p.enabled) fact(routeFacts, 'Send', 'Off');
       else if (a.active) fact(routeFacts, 'Send', `Running on outputs ${a.sendChannels.map(c => c + 1).join(' and ')}`);
       else fact(routeFacts, 'Send', 'Switched off for now', false);
-      const warn = !a.supported.chooseOutput ? 'This browser cannot choose an output device, so Orograph uses the system default. Chrome, Edge and the desktop app can.' : (p.enabled && a.routing.reason) || st.lastError;
+      const warn = !a.supported.chooseOutput ? 'This browser cannot choose an output device, so Oro uses the system default. Chrome, Edge and the desktop app can.' : (p.enabled && a.routing.reason) || st.lastError;
       routeWarn.hidden = !warn;
       routeWarn.lastChild.textContent = warn || '';
       const r = a.ret;

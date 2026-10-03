@@ -1,4 +1,4 @@
-// Shared pure maths for Orograph's terrain synthesis.
+// Shared pure maths for Oro's terrain synthesis.
 //
 // Everything here is used by more than one consumer (the audio worklet, the
 // terrain generators, the 3D visuals) so that what you hear and what you see

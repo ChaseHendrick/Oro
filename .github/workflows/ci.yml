@@ -43,7 +43,7 @@ jobs:
       - name: Name the offline file
         run: |
           mkdir -p offline
-          cp dist-single/index.html offline/Orograph.html
+          cp dist-single/index.html offline/Oro.html
 
       - name: Upload web build
         uses: actions/upload-artifact@v4
@@ -56,5 +56,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: orograph-offline-html
-          path: offline/Orograph.html
+          path: offline/Oro.html
           if-no-files-found: error

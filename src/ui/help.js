@@ -49,7 +49,7 @@ export function openHelp(ctx, { onClose } = {}) {
       h('p', null, c.text)))),
     h('details', { class: 'help-shortcuts' }, h('summary', null, 'Keyboard shortcuts'), shortcutsList()));
   const modal = openModal(ctx.layers, ctx.root, {
-    title: 'How Orograph works', content, wide: true, className: 'modal--help',
+    title: 'How Oro works', content, wide: true, className: 'modal--help',
     onClose,
   });
   return modal;

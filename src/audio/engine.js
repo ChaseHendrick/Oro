@@ -1,5 +1,5 @@
-// Orograph audio host: AudioContext, the DSP (AudioWorklet, or a
-// ScriptProcessor running the same OrographDSP class on the main thread when
+// Oro audio host: AudioContext, the DSP (AudioWorklet, or a
+// ScriptProcessor running the same OroDSP class on the main thread when
 // worklets cannot load), the effect graph, store forwarding, terrain tables,
 // file import, recording and offline bounces. See docs/ARCHITECTURE.md
 // "Audio host API" and "Round D additions".
@@ -174,8 +174,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   }
 
   async function buildScriptSource(init) {
-    const { OrographDSP } = await import('../dsp/dsp-core.js');
-    const dsp = new OrographDSP(ctx.sampleRate);
+    const { OroDSP } = await import('../dsp/dsp-core.js');
+    const dsp = new OroDSP(ctx.sampleRate);
     dsp.postMessage = (m) => { if (m && m.t === 'tele') onTele(m); };
     for (const m of init) dsp.handleMessage(m);
     let sp;

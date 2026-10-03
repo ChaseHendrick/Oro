@@ -1184,3 +1184,10 @@
 @container stage (max-width: 360px) {
   .vp-toolbar--left .seg--camera { display: none; }
 }
+
+/* v2.3 formula terrains */
+.terrain-source-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+.formula-pop { display: flex; flex-direction: column; gap: 8px; width: min(360px, 86vw); }
+.formula-field { font-family: var(--mono, monospace); font-size: var(--fs-sm, 13px); resize: vertical; min-height: 56px; width: 100%; }
+.formula-examples { display: flex; flex-wrap: wrap; gap: 4px; }
+.formula-both { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-xs); color: var(--text-dim); }

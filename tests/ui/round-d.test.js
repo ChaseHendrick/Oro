@@ -67,10 +67,10 @@ describe('links', () => {
 
 describe('bounce, steps LFO and dot settings', () => {
   it('names bounce files', () => {
-    expect(bounceName(new Date(2026, 0, 2, 3, 4, 5))).toBe('orograph-bounce-20260102-030405.wav');
-    expect(bounceName(new Date(2026, 0, 2, 3, 4, 5), '-part1-bass')).toBe('orograph-bounce-20260102-030405-part1-bass.wav');
-    expect(stemName(new Date(2026, 0, 2, 3, 4, 5), 2)).toBe('orograph-bounce-20260102-030405-track3.wav');
-    expect(stemName(new Date(2026, 0, 2, 3, 4, 5), 5, 'Glass Bells')).toBe('orograph-bounce-20260102-030405-track6-glass-bells.wav');
+    expect(bounceName(new Date(2026, 0, 2, 3, 4, 5))).toBe('oro-bounce-20260102-030405.wav');
+    expect(bounceName(new Date(2026, 0, 2, 3, 4, 5), '-part1-bass')).toBe('oro-bounce-20260102-030405-part1-bass.wav');
+    expect(stemName(new Date(2026, 0, 2, 3, 4, 5), 2)).toBe('oro-bounce-20260102-030405-track3.wav');
+    expect(stemName(new Date(2026, 0, 2, 3, 4, 5), 5, 'Glass Bells')).toBe('oro-bounce-20260102-030405-track6-glass-bells.wav');
     expect(slug('Glass Orbit!')).toBe('glass-orbit');
     expect(slug('')).toBe('part');
   });

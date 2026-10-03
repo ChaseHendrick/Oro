@@ -7,7 +7,7 @@ import { defaultState, DEFAULT_PARTS } from '../../src/core/params.js';
 import { TERRAIN_INDEX } from '../../src/dsp/catalog.js';
 import { generateTerrain } from '../../src/dsp/terrains.js';
 import { bytesToBase64 } from '../../src/audio/importers.js';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -192,7 +192,7 @@ describe('terrain manager', () => {
     const generator = await createTerrainGenerator({ code: '', inlineSize: 64 });
     const store = createStore(defaultState());
     store.set('parts.2.params.terrainB', 9);
-    const dsp = new OrographDSP(48000);
+    const dsp = new OroDSP(48000);
     const before = dsp.parts[2].terrB;
     const tm = createTerrainManager({ store, generator, post: (msg) => dsp.handleMessage(msg), emit: () => {} });
     await tm.whenIdle();

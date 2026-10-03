@@ -12,7 +12,7 @@ const { REPO_URL, RELEASES_URL, ISSUES_URL } = require('./policy.cjs');
  * @param {string}  o.appName
  * @param {(url: string) => void} o.openExternal
  */
-function buildMenuTemplate({ isMac, isPackaged, appName = 'Orograph', openExternal, checkUpdates }) {
+function buildMenuTemplate({ isMac, isPackaged, appName = 'Oro', openExternal, checkUpdates }) {
   const link = (label, url) => ({ label, click: () => openExternal(url) });
 
   const appMenu = {
@@ -75,7 +75,7 @@ function buildMenuTemplate({ isMac, isPackaged, appName = 'Orograph', openExtern
   const helpMenu = {
     role: 'help',
     submenu: [
-      link('Orograph on GitHub', REPO_URL),
+      link('Oro on GitHub', REPO_URL),
       ...(checkUpdates ? [{ label: 'Check for Updates...', click: checkUpdates }] : []),
       link('Download the Latest Version', RELEASES_URL),
       link('Report a Problem', ISSUES_URL),

@@ -17,7 +17,7 @@ export const BUILTIN_GUIDE = [
     ],
   },
   {
-    title: 'Play the MPC from Orograph',
+    title: 'Play the MPC from Oro',
     steps: [
       'On the MPC open Menu > Preferences > MIDI/Sync. Under Input Ports find "USB MIDI Port 1", enable Track and disable Global.',
       'On a plugin, keygroup or MIDI track, set the MIDI input to USB MIDI Port 1, choose a specific channel (not All) and set monitoring to In (or Merge).',
@@ -25,18 +25,18 @@ export const BUILTIN_GUIDE = [
     ],
   },
   {
-    title: 'Control Orograph from the MPC',
+    title: 'Control Oro from the MPC',
     steps: [
       'The MPC has to send MIDI to the computer: point the track\'s MIDI output (or MIDI Control mode) at the USB port.',
-      'Q-Link CC numbers are not fixed, so use the Q-Link wizard below: twist each Q-Link when asked and Orograph binds whatever CC arrives.',
-      'Shift + Q-Links on the MPC is the MPC\'s own learn for its internal parameters. You do not need it for Orograph.',
+      'Q-Link CC numbers are not fixed, so use the Q-Link wizard below: twist each Q-Link when asked and Oro binds whatever CC arrives.',
+      'Shift + Q-Links on the MPC is the MPC\'s own learn for its internal parameters. You do not need it for Oro.',
       'Pads: Notes plays the notes the pads send. Scale maps the pads to the global key\'s scale, starting at the base note.',
     ],
   },
   {
     title: 'Clock: keep one master',
     steps: [
-      'Orograph as master: turn on Send clock here, then on the MPC set Sync Receive to MIDI Clock. Akai notes that MPC audio recording is disabled while it receives MIDI clock.',
+      'Oro as master: turn on Send clock here, then on the MPC set Sync Receive to MIDI Clock. Akai notes that MPC audio recording is disabled while it receives MIDI clock.',
       'MPC as master: enable clock send for the USB port in the MPC\'s MIDI/Sync settings, then turn on Follow MPC clock here.',
       'Only one device should send clock. If both do, the tempo fights.',
     ],
@@ -47,7 +47,7 @@ export const BUILTIN_GUIDE = [
       'Watch the activity lights next to each input. If they never blink, no MIDI is reaching the browser.',
       'Check the cable carries data, and that the MPC\'s MIDI/Sync output settings target the USB port.',
       'Stuck notes? Press Panic. It sends note-offs, then Sustain off (CC 64), All Sound Off (CC 120) and All Notes Off (CC 123) on the channels in use. On the MPC, leave "Filter All Notes Off CC" disabled so it accepts these.',
-      'Web MIDI needs Chrome, Edge or Opera (or the Orograph desktop app) on a secure page (https or localhost).',
+      'Web MIDI needs Chrome, Edge or Opera (or the Oro desktop app) on a secure page (https or localhost).',
     ],
   },
 ];

@@ -12,6 +12,7 @@ import { FILTER2_TYPES, FILTER_ROUTES } from '../dsp/filter2.js';
 // (semitones cycled across the copies from the outside in; the centre copy
 // stays at the note).
 export const UNISON_MODES = ['Linear', 'Super', 'Exp', 'Random'];
+export const WARP_MODES = ['Off', 'PWM', 'Quantize', 'Flip', 'Spiral'];
 export const UNISON_STACKS = Object.freeze([
   { name: 'Off', semis: [0] },
   { name: '+12', semis: [0, 12] },
@@ -229,6 +230,9 @@ export const PART_PARAMS = [
   P('unisonMode', 'Spread', 'voice', 'enum', 0, UNISON_MODES.length - 1, 0, { options: UNISON_MODES, hint: 'How the detune spreads the copies: evenly, bunched at the centre (Super), towards the edges (Exp) or at random per note' }),
   P('unisonStack', 'Stack', 'voice', 'enum', 0, UNISON_STACKS.length - 1, 0, { options: UNISON_STACKS.map(s => s.name), hint: 'Transpose some unison copies by octaves or fifths' }),
   P('unisonMap', 'Map spread', 'voice', 'lin', 0, 1, 0, { mod: true, hint: 'Each unison copy reads the land at its own spot around the dot, so the copies differ in tone, not just pitch' }),
+  // v2.3: warp modes on the path read (Laps already does hard sync and Pace bend/asym)
+  P('warpMode', 'Warp mode', 'path', 'enum', 0, WARP_MODES.length - 1, 0, { options: WARP_MODES, hint: 'PWM traces the path in part of the cycle and waits; Quantize steps the point along the path; Flip turns the end of the path through the centre; Spiral shrinks the loop through each cycle' }),
+  P('warpAmount', 'Warp amt', 'path', 'lin', 0, 1, 0, { mod: true }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's

@@ -1,4 +1,4 @@
-// Generates every Orograph icon from one parametric drawing:
+// Generates every Oro icon from one parametric drawing:
 //   build/icon.svg, build/icon.png (1024, macOS grid), build/icon.ico (16..256)
 //   public/favicon.svg, public/icon-192.png, public/icon-512.png,
 //   public/icon-maskable-512.png, public/apple-touch-icon.png (180)
@@ -138,7 +138,7 @@ function iconSvg({ detail = 'full', frame = 'rounded', contentScale = 1, size = 
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 1024 1024">
-  <title>Orograph</title>
+  <title>Oro</title>
   <defs>
     <radialGradient id="${id}-sky" cx="500" cy="330" r="760" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#2f2678"/><stop offset="0.55" stop-color="#18133f"/><stop offset="1" stop-color="#0b0920"/>

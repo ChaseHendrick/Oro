@@ -195,7 +195,7 @@ describe('pedal rig: capture', () => {
   });
 
   it('passes on why the recording failed', async () => {
-    const { rig, captures } = setup({ samples: () => ({ ok: false, reason: 'Turn on the pedal return first, so Orograph can hear the guitar.' }) });
+    const { rig, captures } = setup({ samples: () => ({ ok: false, reason: 'Turn on the pedal return first, so Oro can hear the guitar.' }) });
     const r = await rig.captureNote();
     expect(r).toMatchObject({ ok: false, reason: expect.stringMatching(/pedal return/) });
     expect(captures.at(-1).stage).toBe('error');

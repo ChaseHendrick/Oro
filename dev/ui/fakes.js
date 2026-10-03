@@ -430,7 +430,7 @@ export function createFakePresets({ store }) {
     exportJSON() { return new Blob([JSON.stringify({ orograph: 1, patches: user, scenes: userScenes })], { type: 'application/json' }); },
     async importJSON(file) {
       const data = JSON.parse(await file.text());
-      if (!data || !data.orograph) throw new Error('Not an Orograph file');
+      if (!data || !data.orograph) throw new Error('Not an Oro file');
       for (const p of data.patches || []) user.push({ ...p, id: 'u' + nextId++ });
       for (const s of data.scenes || []) userScenes.push({ ...s, id: 'us' + nextId++ });
       ev.emit('change');

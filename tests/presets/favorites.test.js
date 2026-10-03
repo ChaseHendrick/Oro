@@ -37,7 +37,7 @@ describe('favorite bank persistence and program change', () => {
     const file = await presets.exportJSON('all').text(), restored = library(); await restored.ready; await restored.importJSON(file);
     expect(restored.programPatch(2).name).toBe('My favorite'); expect(restored.programPatch(2).id).not.toBe(id);
     const before = restored.favorites().map(patch => patch?.id || null);
-    await expect(restored.importJSON(JSON.stringify({ favorites: [] }))).rejects.toThrow('No Orograph');
+    await expect(restored.importJSON(JSON.stringify({ favorites: [] }))).rejects.toThrow('No Oro');
     expect(restored.favorites().map(patch => patch?.id || null)).toEqual(before);
     expect(restored.setFavorite(0, { name: 'Injected', params: {} })).toBe(false); expect(restored.programPatch(-1)).toBe(null);
   });

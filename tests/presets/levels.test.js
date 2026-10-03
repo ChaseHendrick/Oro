@@ -4,7 +4,7 @@
 // /tmp/orograph-shots/music/ for listening.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { FACTORY_PATCHES } from '../../src/presets/factory-patches.js';
 import { FACTORY_SCENES } from '../../src/presets/factory-scenes.js';
 import { loadPatch, render, renderScene, stats, db, writeWav, roughMix, SR } from './render.js';
@@ -14,7 +14,7 @@ const OUT_DIR = '/tmp/orograph-shots/music';
 const WAV_PATCHES = new Set(['Basalt Bass', 'Tidal Flats', 'Cirque Bell', 'Pebble Pluck', 'Summit Saw', 'Dust Devil']);
 
 function renderPatch(patch) {
-  const dsp = new OrographDSP(SR);
+  const dsp = new OroDSP(SR);
   dsp.handleMessage({ t: 'global', p: { tempo: 120 } });
   loadPatch(dsp, 0, patch);
   const { events, length } = NOTES(patch);

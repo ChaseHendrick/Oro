@@ -1,4 +1,4 @@
-// Web MIDI: inputs play parts and move knobs, outputs mirror Orograph's notes
+// Web MIDI: inputs play parts and move knobs, outputs mirror Oro's notes
 // and clock to external gear (an Akai MPC in particular, see mpc.js).
 //
 // createMidi() never throws: without Web MIDI it returns an object with
@@ -62,10 +62,10 @@ const STATUS_TEXT = {
   ready: 'MIDI is connected.',
   denied: 'MIDI access was blocked. Allow MIDI devices in the site settings (the icon in the address bar), then reload.',
   error: 'MIDI could not start.',
-  unsupported: 'This browser does not offer Web MIDI. Use Chrome, Edge, Opera or the Orograph desktop app.',
+  unsupported: 'This browser does not offer Web MIDI. Use Chrome, Edge, Opera or the Oro desktop app.',
 };
 
-const INSECURE_TEXT = 'MIDI needs a secure page. Open Orograph over https, from localhost, or use the desktop app.';
+const INSECURE_TEXT = 'MIDI needs a secure page. Open Oro over https, from localhost, or use the desktop app.';
 
 function safeStorage() {
   try { return globalThis.localStorage || null; } catch { return null; }
@@ -287,7 +287,7 @@ export async function createMidi({
     const name = (port && port.name) || outputName || 'MIDI output';
     output = null;
     heldOut.clear();
-    error = `${name} was disconnected, so Orograph stopped sending to it. Reconnect it and it will be picked up again.`;
+    error = `${name} was disconnected, so Oro stopped sending to it. Reconnect it and it will be picked up again.`;
     emitChange('devices');
   }
 

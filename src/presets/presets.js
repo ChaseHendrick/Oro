@@ -425,7 +425,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       }
     }
     const favoriteBank = data?.format === FORMAT && Array.isArray(data.favorites);
-    if (!patchCount && !sceneCount && !favoriteBank) throw new Error('No Orograph patches or scenes were found in that file.');
+    if (!patchCount && !sceneCount && !favoriteBank) throw new Error('No Oro patches or scenes were found in that file.');
     if (favoriteBank) {
       favorites = Array.from({ length: FAVORITE_COUNT }, (_, i) => importedNames.get(data.favorites[i]) || allPatches().find(p => p.name === data.favorites[i])?.id || null);
       if (!hydrated) for (let i = 0; i < FAVORITE_COUNT; i++) earlyFavoriteSlots.add(i);

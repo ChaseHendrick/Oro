@@ -1,4 +1,4 @@
-// Orograph bootstrap: builds the store, then wires audio, visuals, music,
+// Oro bootstrap: builds the store, then wires audio, visuals, music,
 // presets, MIDI and the UI together. Each module owns its own behaviour; this
 // file only decides construction order and session persistence.
 
@@ -80,6 +80,6 @@ boot().catch(err => {
   console.error('[orograph] failed to start', err);
   const el = document.createElement('pre');
   el.className = 'boot-error';
-  el.textContent = 'Orograph could not start:\n' + (err && err.stack || err);
+  el.textContent = 'Oro could not start:\n' + (err && err.stack || err);
   document.body.appendChild(el);
 });

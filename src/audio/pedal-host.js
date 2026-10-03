@@ -13,7 +13,7 @@
 //   'guitarNote') and Capture (captureGuitar records it for a wavetable)
 //
 // The return is never connected to anything that leads back into the send, so
-// Orograph cannot feed its own return into the pedals; a loop can only close
+// Oro cannot feed its own return into the pedals; a loop can only close
 // outside (for example in the MPC's monitoring), and the guard mutes it then.
 //
 // Everything here is optional. Until enable() is called the graph is exactly
@@ -370,7 +370,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
   async function captureGuitar({ seconds = CAPTURE_SECONDS, onProgress = null } = {}) {
     const fail = (reason) => ({ ok: false, reason });
     if (disposed) return fail('The audio engine was shut down.');
-    if (!ret) return fail('Turn on the pedal return first, so Orograph can hear the guitar.');
+    if (!ret) return fail('Turn on the pedal return first, so Oro can hear the guitar.');
     if (capturing) return fail('A capture is already running.');
     if (ctx.state && ctx.state !== 'running') return fail('Start the audio first, then try Capture again.');
     const secs = clamp(num(Number(seconds), CAPTURE_SECONDS), 0.5, 10);
@@ -431,7 +431,7 @@ export function createPedalHost(ctx, { sendBus, mainOut, masterIn, delayIn = nul
       if (reopen) {
         closeReturn();
         if (retCfg.enabled) {
-          if (!deps.hasGetUserMedia()) retInfo = { open: false, reason: 'This browser cannot capture audio here. Orograph needs a secure page (https or localhost) or the desktop app to hear the pedal return.', warnings: [], settings: null };
+          if (!deps.hasGetUserMedia()) retInfo = { open: false, reason: 'This browser cannot capture audio here. Oro needs a secure page (https or localhost) or the desktop app to hear the pedal return.', warnings: [], settings: null };
           else await openReturnNow();
         } else retInfo = { open: false, reason: null, warnings: [], settings: null };
       }

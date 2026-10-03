@@ -3,7 +3,7 @@
 // like the first one, a reorder moves the parts without touching the sound,
 // and a removed track fades out instead of clicking.
 import { describe, it, expect } from 'vitest';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { MAX_PARTS, DEFAULT_PARTS } from '../../src/core/params.js';
 import { TERRAINS } from '../../src/dsp/catalog.js';
 import { SR, render, rms, peak, allFinite, terrainChain } from './helpers.js';
@@ -12,7 +12,7 @@ const T = Object.fromEntries(TERRAINS.map((t, i) => [t.id, i]));
 const swap = (a, b) => { const p = Array.from({ length: MAX_PARTS }, (_, i) => i); p[a] = b; p[b] = a; return p; };
 
 function dspWith(count, part, { note = 57, params = {} } = {}) {
-  const dsp = new OrographDSP(SR);
+  const dsp = new OroDSP(SR);
   dsp.handleMessage({ t: 'tracks', count });
   dsp.handleMessage({ t: 'terrain', part, slot: 0, levels: terrainChain(T.swell) });
   dsp.handleMessage({ t: 'params', part, p: { attack: 0.002, release: 0.05, ...params } });
@@ -29,7 +29,7 @@ function maxStep(a, from = 1, to = a.length) {
 
 describe('track count', () => {
   it('starts with the default four tracks and ignores notes for parts past the count', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     expect(dsp.parts).toHaveLength(MAX_PARTS);
     expect(dsp.count).toBe(DEFAULT_PARTS);
     dsp.handleMessage({ t: 'terrain', part: 5, slot: 0, levels: terrainChain(T.swell) });
@@ -54,7 +54,7 @@ describe('track count', () => {
   });
 
   it('plays sixteen tracks at once', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     dsp.handleMessage({ t: 'tracks', count: MAX_PARTS });
     for (let p = 0; p < MAX_PARTS; p++) {
       dsp.handleMessage({ t: 'terrain', part: p, slot: 0, levels: terrainChain(T.swell) });
@@ -68,7 +68,7 @@ describe('track count', () => {
   });
 
   it('does no work for parts past the count (no LFOs, ramps or buses)', () => {
-    const dsp = new OrographDSP(SR);
+    const dsp = new OroDSP(SR);
     dsp.handleMessage({ t: 'tracks', count: 2 });
     const seen = new Set();
     const lfos = dsp.advanceLfos.bind(dsp);

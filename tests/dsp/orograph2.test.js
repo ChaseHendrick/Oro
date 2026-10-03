@@ -18,7 +18,7 @@ function frequency(data,sr,f) {
   return (k+.5*(a-c)/(a-2*b+c))*sr/n;
 }
 
-describe('Orograph2 oscillator blocks',()=>{
+describe('Oro2 oscillator blocks',()=>{
   it('seven sub waves are DC-free and suppress discontinuity aliases',()=>{
     const n=16384,cycles=373,inc=cycles/n;
     for(let type=0;type<7;type++) {
@@ -124,7 +124,7 @@ describe('six-stage envelope and richer modulation',()=>{
   });
 });
 
-describe('Orograph2 core integration',()=>{
+describe('Oro2 core integration',()=>{
   it('runs eight unison voices and changes between one and eight continuously',()=>{
     const dsp=makeDSP({params:{...plain,unison:8,detune:35,spread:1}});dsp.handleMessage(on());
     let data=render(dsp,.1);expect(allFinite(data.L)).toBe(true);expect(rms(data.L)).toBeGreaterThan(.01);expect(delta(data.L,data.R)).toBeGreaterThan(.01);

@@ -160,9 +160,9 @@ export function bufferStats(buffer) {
  * returns its dry / delay / reverb outputs as three stereo AudioBuffers.
  */
 export async function renderDspHere(octx, init, late, frames, onFrames = () => {}) {
-  const { OrographDSP } = await import('../dsp/dsp-core.js');
+  const { OroDSP } = await import('../dsp/dsp-core.js');
   const sr = octx.sampleRate;
-  const dsp = new OrographDSP(sr);
+  const dsp = new OroDSP(sr);
   dsp.postMessage = () => {};
   for (const m of init) dsp.handleMessage(m);
   const bufs = [0, 1, 2].map(() => octx.createBuffer(2, frames, sr));

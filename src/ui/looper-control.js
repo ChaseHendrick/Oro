@@ -48,7 +48,7 @@ export function saveLooperPrefs(prefs, storage = globalThis.localStorage) {
 
 /** File name for a loop export: orograph-loop-YYYYMMDD-HHMMSS.wav. */
 export function loopFileName(date = new Date()) {
-  return recordingName(date).replace('orograph-', 'orograph-loop-');
+  return recordingName(date).replace('oro-', 'oro-loop-');
 }
 
 /**

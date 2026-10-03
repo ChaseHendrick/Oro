@@ -1,6 +1,6 @@
-# Orograph 2.0 validation
+# Oro 2.0 validation
 
-Checked 2026-10-03. This report concerns Orograph's implementation of the owner's
+Checked 2026-10-03. This report concerns Oro's implementation of the owner's
 feature request. It does not independently test or compare another instrument.
 
 ## Functional evidence

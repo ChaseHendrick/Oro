@@ -28,9 +28,9 @@ const fence = (text) => '```text\n' + text + '\n```';
 
 const out = `# Third-party notices
 
-Orograph is MIT licensed (see [LICENSE](LICENSE)). It is an independent, clean-room
+Oro is MIT licensed (see [LICENSE](LICENSE)). It is an independent, clean-room
 implementation; the only third-party code it ships is listed below. Every build of
-Orograph (the web app, the offline HTML file and the desktop apps) contains the first
+Oro (the web app, the offline HTML file and the desktop apps) contains the first
 two components. The desktop apps additionally contain Electron.
 
 ## three.js ${version('three')}
@@ -47,7 +47,7 @@ Physics for the rolling dot. https://rapier.rs, Apache License 2.0.
 
 ${rapierCopyright.join('\n')}
 
-Orograph uses the published package unmodified (it is bundled into the app as is).
+Oro uses the published package unmodified (it is bundled into the app as is).
 The full license text follows.
 
 ${fence(rapierLicense)}

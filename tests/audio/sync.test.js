@@ -3,7 +3,7 @@ import { createStoreSync } from '../../src/audio/sync.js';
 import { createEmitter } from '../../src/audio/emitter.js';
 import { createStore } from '../../src/core/store.js';
 import { defaultState, DEFAULT_PARTS, PART_PARAMS, MOD_PARAM_IDS, GLOBAL_PARAMS } from '../../src/core/params.js';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 
 function setup() {
   const store = createStore(defaultState());
@@ -132,7 +132,7 @@ describe('store sync', () => {
 
   it('every message it produces is accepted by the real DSP', () => {
     const { store, sync, batches, run } = setup();
-    const dsp = new OrographDSP(48000);
+    const dsp = new OroDSP(48000);
     for (const m of sync.snapshot()) dsp.handleMessage(m);
     store.set('parts.1.params.cutoff', 2000);
     store.set('parts.1.mods.cutoff', { lfoShape: 2, lfoRate: 3, lfoSync: 0, lfoDiv: 5, lfoDepth: 0.5, envDepth: 0, retrig: 1 });

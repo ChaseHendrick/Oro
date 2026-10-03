@@ -160,7 +160,7 @@ describe('pedal host: return', () => {
   });
 
   it('reports a refused input or a browser without capture instead of throwing', async () => {
-    const a = setup({ openReturn: async () => ({ ok: false, reason: 'Orograph needs permission to hear the pedal return.' }) });
+    const a = setup({ openReturn: async () => ({ ok: false, reason: 'Oro needs permission to hear the pedal return.' }) });
     const st = await a.host.setReturn({ enabled: true });
     expect(st.ret).toMatchObject({ open: false, reason: expect.stringMatching(/permission/) });
     const b = setup({ capture: false });
@@ -175,7 +175,7 @@ describe('pedal host: return', () => {
     await host.setReturn({ enabled: true });
     const seen = [];
     host.on('change', s => seen.push(s.ret.muted));
-    fx.guard.o.onTrip({ kind: 'howl', reason: 'The pedal return started feeding back, so Orograph muted it.' });
+    fx.guard.o.onTrip({ kind: 'howl', reason: 'The pedal return started feeding back, so Oro muted it.' });
     expect(host.status().ret).toMatchObject({ muted: true, muteReason: expect.stringMatching(/feeding back/) });
     host.resetGuard();
     expect(fx.guard.reset).toHaveBeenCalled();

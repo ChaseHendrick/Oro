@@ -12,13 +12,13 @@ function verifyUpdateArtifacts(root, platform) {
   const metadata = yaml.load(fs.readFileSync(path.join(root, manifest), 'utf8'));
   if (!/^\d+\.\d+\.\d+$/.test(metadata.version) || !Array.isArray(metadata.files) || metadata.files.length === 0) throw new Error('Invalid update manifest.');
   for (const file of metadata.files) {
-    if (typeof file.url !== 'string' || path.basename(file.url) !== file.url || !file.url.startsWith('Orograph-')) throw new Error('Unexpected update package path.');
+    if (typeof file.url !== 'string' || path.basename(file.url) !== file.url || !file.url.startsWith('Oro-')) throw new Error('Unexpected update package path.');
     const bytes = fs.readFileSync(path.join(root, file.url));
     if (crypto.createHash('sha512').update(bytes).digest('base64') !== file.sha512 || (file.size != null && file.size !== bytes.length)) throw new Error(`Update integrity metadata does not match ${file.url}.`);
   }
   const names = fs.readdirSync(root);
   const configs = names.filter(name => platform === 'mac' ? /^mac(?:-|$)/.test(name) : name === `${platform === 'windows' ? 'win' : 'linux'}-unpacked`)
-    .map(name => path.join(root, name, ...(platform === 'mac' ? ['Orograph.app', 'Contents', 'Resources'] : ['resources']), 'app-update.yml'))
+    .map(name => path.join(root, name, ...(platform === 'mac' ? ['Oro.app', 'Contents', 'Resources'] : ['resources']), 'app-update.yml'))
     .filter(file => fs.existsSync(file));
   if (!configs.length) throw new Error('The packaged app has no app-update.yml.');
   const first = fs.readFileSync(configs[0], 'utf8');
@@ -28,7 +28,7 @@ function verifyUpdateArtifacts(root, platform) {
   }
   // Runtime configs already live inside every app. Publish a platform-labelled
   // copy as well so release metadata can be audited without opening a bundle.
-  fs.writeFileSync(path.join(root, `Orograph-app-update-${platform}.yml`), first);
+  fs.writeFileSync(path.join(root, `Oro-app-update-${platform}.yml`), first);
   return metadata;
 }
 if (require.main === module) {

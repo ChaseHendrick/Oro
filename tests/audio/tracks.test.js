@@ -10,7 +10,7 @@ import { buildTerrainLevels, jobFor } from '../../src/audio/terrain-jobs.js';
 import { createStore } from '../../src/core/store.js';
 import { MAX_PARTS, PART_PARAM_INDEX, defaultState } from '../../src/core/params.js';
 import { addTrack, removeTrack, moveTrack, duplicateTrack, REPLACE_TRACKS } from '../../src/core/tracks.js';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 
 function syncSetup(state = defaultState()) {
   const store = createStore(state);
@@ -56,7 +56,7 @@ describe('store sync: tracks', () => {
 
   it('keeps a mirrored DSP in step through add, move, duplicate, remove and a scene load', () => {
     const { store, batches, run } = syncSetup();
-    const dsp = new OrographDSP(48000);
+    const dsp = new OroDSP(48000);
     const apply = () => { run(); for (const b of batches.splice(0)) for (const m of b) dsp.handleMessage(m); };
     for (const m of createStoreSync({ store, post: () => {}, defer: () => {} }).snapshot()) dsp.handleMessage(m);
     const check = (label) => {

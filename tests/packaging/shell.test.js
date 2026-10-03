@@ -86,12 +86,12 @@ describe('policy', () => {
 
 describe('menu', () => {
   const opened = [];
-  const build = (o) => buildMenuTemplate({ appName: 'Orograph', openExternal: (u) => opened.push(u), ...o });
+  const build = (o) => buildMenuTemplate({ appName: 'Oro', openExternal: (u) => opened.push(u), ...o });
   const roles = (menu) => JSON.stringify(menu, (k, v) => (typeof v === 'function' ? undefined : v));
 
   it('has the expected top-level menus', () => {
     expect(build({ isMac: false, isPackaged: true }).map((m) => m.label || m.role)).toEqual(['File', 'Edit', 'View', 'Window', 'help']);
-    expect(build({ isMac: true, isPackaged: true }).map((m) => m.label || m.role)).toEqual(['Orograph', 'File', 'Edit', 'View', 'Window', 'help']);
+    expect(build({ isMac: true, isPackaged: true }).map((m) => m.label || m.role)).toEqual(['Oro', 'File', 'Edit', 'View', 'Window', 'help']);
   });
 
   it('puts Quit in File on Windows/Linux and in the app menu on macOS', () => {

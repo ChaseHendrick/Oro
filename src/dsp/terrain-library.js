@@ -1,4 +1,4 @@
-// Original procedural imagery, created specifically for Orograph. No remote
+// Original procedural imagery, created specifically for Oro. No remote
 // assets or photographs. Stable recipes generate real RGBA PNGs on demand.
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
 import { crc32, PNG_SIGNATURE } from '../audio/png.js';
@@ -14,7 +14,7 @@ export const TERRAIN_LIBRARY = Object.freeze(FAMILIES.flatMap(([family, category
   Array.from({ length: 32 }, (_, variant) => Object.freeze({
     id: `original-${family}-${String(variant + 1).padStart(3, '0')}`, name: `${category} ${String(variant + 1).padStart(2, '0')}`,
     family, category, desc, seed: (fi + 1) * 1009 + variant * 7919, variant, familyIndex: fi,
-    attribution: 'Original procedural imagery for Orograph', width: 512, height: 512,
+    attribution: 'Original procedural imagery for Oro', width: 512, height: 512,
   }))));
 export const TERRAIN_LIBRARY_CATEGORIES = Object.freeze(FAMILIES.map(x => x[1]));
 const ENTRIES = new Map(TERRAIN_LIBRARY.map(x => [x.id, x]));

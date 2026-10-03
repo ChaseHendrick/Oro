@@ -18,7 +18,7 @@ Add this plugin and `copyPublicDir` to `vite.config.js`:
 ```js
 import fs from 'node:fs';   // alongside the existing imports
 
-// In the one-file offline build there is no folder next to Orograph.html, so
+// In the one-file offline build there is no folder next to Oro.html, so
 // inline the SVG favicon and drop links that would point at missing files.
 function singleFileHead() {
   return {

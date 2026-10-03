@@ -67,7 +67,7 @@ export function createDock(ctx, container) {
         } catch (err) {
           console.error(`[ui] the ${p.def.label} panel failed to build`, err);
           p.built = { el: null };
-          p.el.appendChild(h('p', { class: 'panel-error' }, `The ${p.def.label} panel could not load. The rest of Orograph still works.`));
+          p.el.appendChild(h('p', { class: 'panel-error' }, `The ${p.def.label} panel could not load. The rest of Oro still works.`));
         }
       }
       p.el.hidden = !on;

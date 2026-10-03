@@ -206,8 +206,8 @@ export function createFeedbackDetector({
     st.kind = kind;
     st.at = t;
     st.reason = kind === 'clipping'
-      ? 'The pedal return was clipping, so Orograph muted it. Turn the return level down, then unmute.'
-      : 'The pedal return started feeding back, so Orograph muted it. Turn the send or the pedal feedback down, then unmute.';
+      ? 'The pedal return was clipping, so Oro muted it. Turn the return level down, then unmute.'
+      : 'The pedal return started feeding back, so Oro muted it. Turn the send or the pedal feedback down, then unmute.';
   }
 
   function observe(block, t) {
@@ -298,7 +298,7 @@ export function planRouting(maxChannelCount, { sendChannels = [2, 3], mainChanne
  */
 export async function applyOutputDevice(ctx, deviceId) {
   if (!ctx || typeof ctx.setSinkId !== 'function') {
-    return { ok: false, reason: 'This browser cannot send Orograph to a chosen output device. Chrome and Edge can.', maxChannelCount: ctx && ctx.destination ? ctx.destination.maxChannelCount : 2 };
+    return { ok: false, reason: 'This browser cannot send Oro to a chosen output device. Chrome and Edge can.', maxChannelCount: ctx && ctx.destination ? ctx.destination.maxChannelCount : 2 };
   }
   try {
     await ctx.setSinkId(deviceId || '');
@@ -428,7 +428,7 @@ export function returnConstraints(deviceId, sampleRate) {
 
 function mediaErrorReason(err) {
   const name = err && err.name;
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Orograph needs permission to hear the pedal return. Allow microphone access for this page in the browser, then try again.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Oro needs permission to hear the pedal return. Allow microphone access for this page in the browser, then try again.';
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'That input is not connected any more. Plug it in or pick another input.';
   if (name === 'NotReadableError' || name === 'AbortError') return 'Another app is using that input, or the system blocked it. Close the other app and try again.';
   return `The input could not be opened (${(err && err.message) || err}).`;
@@ -443,7 +443,7 @@ function mediaErrorReason(err) {
 export async function openReturn(ctx, deviceId, { layout = 'stereo', gain = 1 } = {}) {
   const md = typeof navigator !== 'undefined' && navigator.mediaDevices;
   if (!md || typeof md.getUserMedia !== 'function') {
-    return { ok: false, reason: 'This browser cannot capture audio here. Orograph needs a secure page (https or localhost) to use an audio input.' };
+    return { ok: false, reason: 'This browser cannot capture audio here. Oro needs a secure page (https or localhost) to use an audio input.' };
   }
   let stream;
   try {
@@ -458,7 +458,7 @@ export async function openReturn(ctx, deviceId, { layout = 'stereo', gain = 1 } 
     if (settings[k] === true) warnings.push(`The browser kept ${k.replace(/[A-Z]/g, c => ' ' + c.toLowerCase())} on, which will colour the return.`);
   }
   if (settings.sampleRate && settings.sampleRate !== ctx.sampleRate) {
-    warnings.push(`The input runs at ${settings.sampleRate} Hz and Orograph at ${ctx.sampleRate} Hz, so the browser resamples it.`);
+    warnings.push(`The input runs at ${settings.sampleRate} Hz and Oro at ${ctx.sampleRate} Hz, so the browser resamples it.`);
   }
   const source = ctx.createMediaStreamSource(stream);
   const out = ctx.createGain();
@@ -520,9 +520,9 @@ export function attachFeedbackGuard(ctx, { input, gain, intervalMs = 25, onTrip 
     get tripped() { return det.tripped; },
     status() {
       const s = det.state;
-      // Still loud and steady after we muted: the loop runs outside Orograph (for example in the MPC's monitoring).
+      // Still loud and steady after we muted: the loop runs outside Oro (for example in the MPC's monitoring).
       const outside = muted && s.levelDb >= (detectorOptions.thresholdDb ?? -9) && s.clarity >= 0.9;
-      return { ...s, muted, outside, outsideReason: outside ? 'It is still feeding back with Orograph muted, so the loop is in the MPC routing. Check that the return track goes to USB Out 1,2 only.' : null };
+      return { ...s, muted, outside, outsideReason: outside ? 'It is still feeding back with Oro muted, so the loop is in the MPC routing. Check that the return track goes to USB Out 1,2 only.' : null };
     },
     reset() {
       det.reset();

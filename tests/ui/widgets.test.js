@@ -40,8 +40,8 @@ describe('keyboard', () => {
 });
 
 describe('recording', () => {
-  it('names files orograph-YYYYMMDD-HHMMSS.wav', () => {
-    expect(recordingName(new Date(2026, 9, 2, 7, 5, 9))).toBe('orograph-20261002-070509.wav');
+  it('names files oro-YYYYMMDD-HHMMSS.wav', () => {
+    expect(recordingName(new Date(2026, 9, 2, 7, 5, 9))).toBe('oro-20261002-070509.wav');
   });
   it('formats elapsed time', () => {
     expect(formatElapsed(0)).toBe('0:00');

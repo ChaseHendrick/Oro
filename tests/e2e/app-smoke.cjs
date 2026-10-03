@@ -1,4 +1,4 @@
-// Full-app smoke test: boots the real Orograph (vite dev server or a built
+// Full-app smoke test: boots the real Oro (vite dev server or a built
 // file), starts audio, and checks the things a player would notice first.
 //
 //   node tests/e2e/app-smoke.cjs http://127.0.0.1:5190/          (dev server)

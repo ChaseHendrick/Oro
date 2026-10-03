@@ -4,7 +4,7 @@
 // unison 2 at 48 kHz, best of three runs. gen.*: CPU ms to generate each
 // 512 x 512 terrain at detail 1, best of three. CPU time (process.cpuUsage)
 // rather than wall time, so a busy machine does not inflate the numbers.
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { generateTerrain, buildMipChain } from '../../src/dsp/terrains.js';
 import { TERRAINS } from '../../src/dsp/catalog.js';
 
@@ -15,7 +15,7 @@ const massif = buildMipChain(generateTerrain(5, { size: 512 }), 512);
 const swell = buildMipChain(generateTerrain(0, { size: 512 }), 512);
 
 function rtFactor(params, quality = 'standard', extra = null) {
-  const dsp = new OrographDSP(SR);
+  const dsp = new OroDSP(SR);
   dsp.handleMessage({ t: 'quality', mode: quality });
   for (let p = 0; p < 2; p++) {
     if (extra) for (const m of extra) dsp.handleMessage({ ...m, part: p });

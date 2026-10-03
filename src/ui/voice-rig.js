@@ -208,7 +208,7 @@ export function createVoiceRig({
     let res;
     try { res = analyse(rec.samples, rec.sampleRate); } catch (err) { res = { ok: false, reason: `The analysis failed (${(err && err.message) || err}).` }; }
     if (!res || !res.ok) {
-      const reason = (res && res.reason) || 'Orograph could not find a steady pitch.';
+      const reason = (res && res.reason) || 'Oro could not find a steady pitch.';
       return fail(reason.replace('Hold one clear note (no chords)', 'Sing or hum one steady note (no vibrato)').replace('play a little louder', 'sing a little louder'));
     }
     const name = `Voice ${noteLabel(res.note)}`;

@@ -6,7 +6,7 @@ import { has, downloadBlob, listen } from './dom.js';
 const pad = (n, w = 2) => String(n).padStart(w, '0');
 
 export function recordingName(date = new Date()) {
-  return `orograph-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.wav`;
+  return `oro-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.wav`;
 }
 
 export function formatElapsed(ms) {

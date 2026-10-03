@@ -287,7 +287,7 @@ describe('presets API', () => {
     expect(wild.params).toEqual({ cutoff: 18000 });
     expect(wild.mods.morph.lfoDepth).toBe(1);
     await expect(b.presets.importJSON('not json')).rejects.toThrow(/JSON/);
-    await expect(b.presets.importJSON('{"hello": 1}')).rejects.toThrow(/No Orograph/);
+    await expect(b.presets.importJSON('{"hello": 1}')).rejects.toThrow(/No Oro/);
   });
 
   it('survives broken or missing storage', () => {

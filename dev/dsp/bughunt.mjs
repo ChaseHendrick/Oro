@@ -7,7 +7,7 @@
 // the second difference against its local level, x), denormal float32
 // samples, NaN. A patch-change row compares the switch with steady playing.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { OrographDSP } from '../../src/dsp/dsp-core.js';
+import { OroDSP } from '../../src/dsp/dsp-core.js';
 import { FACTORY_PATCHES } from '../../src/presets/factory-patches.js';
 import { FACTORY_SCENES } from '../../src/presets/factory-scenes.js';
 import { patchParams, patchMods } from '../../src/presets/apply.js';
@@ -61,7 +61,7 @@ function stats(L, R) {
 }
 
 function fresh() {
-  const dsp = new OrographDSP(SR);
+  const dsp = new OroDSP(SR);
   dsp.handleMessage({ t: 'quality', mode: quality });
   dsp.handleMessage({ t: 'global', p: { tempo: 120 } });
   return dsp;

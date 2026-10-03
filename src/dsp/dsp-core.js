@@ -1,4 +1,4 @@
-// Orograph's audio engine: up to MAX_PARTS parts (tracks) x 8 voices of wave
+// Oro's audio engine: up to MAX_PARTS parts (tracks) x 8 voices of wave
 // terrain synthesis. All MAX_PARTS parts exist from the start; the host says
 // how many are in use ({t:'tracks', count, perm?, fresh?}, see setTracks) and
 // the rest cost nothing: a part past the count that has finished fading out
@@ -111,7 +111,7 @@ const M_F2CUT=MOD_SLOT.filter2Cutoff, M_F2RES=MOD_SLOT.filter2Reso, M_F2ENV=MOD_
 const M_UBLEND=MOD_SLOT.unisonBlend, M_UMAP=MOD_SLOT.unisonMap;
 const MAP_SPREAD_TILES = 0.25;          // Map spread at 100%: copies sit this far (in tiles) from the dot
 const SIZE_DEF = PART_PARAM_MAP.size;
-const EXTRA_IDS = ['sub2','airTexture','inharmProfile','inharmAmount','phaseMod','phaseRatio','ringMod','ringRatio','pluck','pluckDecay','pluckTone','pluckDispersion','pathWindow','pathMangle'];
+const EXTRA_IDS = ['sub2','airTexture','inharmProfile','inharmAmount','phaseMod','phaseRatio','ringMod','ringRatio','pluck','pluckDecay','pluckTone','pluckDispersion','pathWindow','pathMangle','warpAmount'];
 const EXTRA_SLOTS = EXTRA_IDS.map(id => MOD_SLOT[id]);
 const EX = Object.fromEntries(EXTRA_IDS.map((id,i) => [id,i]));
 const NEX = EXTRA_IDS.length;
@@ -274,7 +274,7 @@ function linkCurve(c, x) {
 }
 
 // --- vowel formants ----------------------------------------------------------
-// Orograph's own vowel set, A E I O U at formant 0, 0.25, 0.5, 0.75, 1:
+// Oro's own vowel set, A E I O U at formant 0, 0.25, 0.5, 0.75, 1:
 // three resonances each (Hz), their bandwidths (Hz) and levels (dB). Values
 // were set by ear on terrain tones, starting from the broad ranges acoustic
 // phonetics gives for an adult voice and leaning towards a clear, slightly
@@ -695,7 +695,7 @@ class Part {
 
     // unison layout
     this.uni = 1;
-    this.uniMode = 0; this.uniStack = 0; this.f2Type = 0; this.f2Route = 0;
+    this.uniMode = 0; this.uniStack = 0; this.f2Type = 0; this.f2Route = 0; this.warpMode = 0;
     this.stackRatio = new Float64Array(MAX_UNISON).fill(1);
     this.uPos = new Float64Array(MAX_UNISON); this.uW = new Float64Array(MAX_UNISON).fill(1);
     this.uMapX = new Float64Array(MAX_UNISON); this.uMapY = new Float64Array(MAX_UNISON);
@@ -772,6 +772,7 @@ class Part {
     this.uniMode = Math.max(0, Math.min(3, Math.round(P[PI.unisonMode]) || 0));
     this.uniStack = Math.max(0, Math.min(UNISON_STACKS.length - 1, Math.round(P[PI.unisonStack]) || 0));
     this.f2Type = Math.max(0, Math.min(11, Math.round(P[PI.filter2Type]) || 0));
+    this.warpMode = Math.max(0, Math.min(4, Math.round(P[PI.warpMode]) || 0));
     this.f2Route = Math.max(0, Math.min(2, Math.round(P[PI.filterRoute]) || 0));
     unisonLayout(this, U, P[PI.detune], clamp01(P[PI.spread]), clamp01(P[PI.unisonBlend]));
     // Env 1 at the oversampled rate
@@ -933,7 +934,7 @@ function airNormTable(sr, fs) {
 
 // ---------------------------------------------------------------------------
 
-export class OrographDSP {
+export class OroDSP {
   constructor(sampleRate) {
     this.sr = sampleRate > 0 ? sampleRate : 48000;
     this.quality = 'standard';
@@ -1340,18 +1341,24 @@ export class OrographDSP {
     const point=this.pt, ex=v.ex,dex=v.dex;
     for (let q=0;q<v.uRun;q++) {
       let phase=v.phase[q],inc=v.inc[q],pm=v.pmPh,param=v.param,pace=v.pace,laps=v.laps;
-      let depth=ex[EX.phaseMod],window=ex[EX.pathWindow],mangle=ex[EX.pathMangle];
-      const X=this.xs[q],Y=this.ys[q];
+      let depth=ex[EX.phaseMod],window=ex[EX.pathWindow],mangle=ex[EX.pathMangle],wa=ex[EX.warpAmount];
+      const X=this.xs[q],Y=this.ys[q],wm=P.warpMode;
       for (let j=0;j<n2;j++) {
         phase+=inc; phase-=Math.floor(phase); inc+=v.dinc[q]; pm+=v.pmInc; pm-=Math.floor(pm);
         param+=v.dParam; pace+=v.dPace; laps+=v.dLaps;
-        depth+=dex[EX.phaseMod]; window+=dex[EX.pathWindow]; mangle+=dex[EX.pathMangle];
+        depth+=dex[EX.phaseMod]; window+=dex[EX.pathWindow]; mangle+=dex[EX.pathMangle]; wa+=dex[EX.warpAmount];
         let t=phase+0.25*depth*fastSin(pm); t-=Math.floor(t);
+        const tc=t;                      // cycle phase before warping (Flip and Spiral use it)
+        if (wm === 1) { const w=1-0.95*(wa<0?0:wa>1?1:wa); t=t<w?t/w:1; }                       // PWM: trace, then wait at the end
+        else if (wm === 2) { const s=Math.round(2+254*Math.pow(1-(wa<0?0:wa>1?1:wa),3)); t=Math.floor(t*s)/s; }   // Quantize
         t=laps*paceWarp(t,pace,v.paceShape); t-=Math.floor(t);
         if (trav) t=this.travelMap(shape,order,t,param,trav);
         pathPoint(shape,t,order,param,point);
         shapePathPoint(point.x,point.y,t,window,mangle,v.pathMirror,point);
-        X[j]=point.x; Y[j]=point.y;
+        let px=point.x,py=point.y;
+        if (wm === 3 && tc > 1-0.5*wa) { px=-px; py=-py; }                                        // Flip: the end of the cycle through the centre
+        else if (wm === 4) { const k=1-wa*tc; px*=k; py*=k; }                                     // Spiral: shrink through the cycle
+        X[j]=px; Y[j]=py;
       }
       v.phase[q]=phase; v.inc[q]=inc; v.blepPend[q]=0; v.blepSkip[q]=0;
     }
@@ -2812,7 +2819,7 @@ export class OrographDSP {
     const sync = v.laps !== 1 || v.dLaps !== 0 || v.pace !== 0 || v.dPace !== 0 || trav !== 0;
     let paced = sync && (v.pace !== 0 || v.dPace !== 0);
     let nEv = 0;
-    const customPath=v.ex[EX.phaseMod] !== 0 || v.dex[EX.phaseMod] !== 0 || v.ex[EX.pathWindow] !== 0 || v.dex[EX.pathWindow] !== 0 || v.ex[EX.pathMangle] !== 0 || v.dex[EX.pathMangle] !== 0 || v.pathMirror !== 0;
+    const customPath=v.ex[EX.phaseMod] !== 0 || v.dex[EX.phaseMod] !== 0 || v.ex[EX.pathWindow] !== 0 || v.dex[EX.pathWindow] !== 0 || v.ex[EX.pathMangle] !== 0 || v.dex[EX.pathMangle] !== 0 || v.pathMirror !== 0 || (P.warpMode !== 0 && (v.ex[EX.warpAmount] !== 0 || v.dex[EX.warpAmount] !== 0));
     if (customPath) {
       this.extraPaths(P,v,n2,trav,shape,order); paced=false;
     } else if (sync) {
@@ -3819,7 +3826,7 @@ export class OrographDSP {
     if (snap) v.calm = P.orbitVoiceMod ? 0 : 1e9;
     else if (motion > 8) v.calm = 0;
     else if (motion < 4) v.calm += CTRL;
-    const want = v.calm >= 0.064 * this.sr && v.exTarget[EX.phaseMod] === 0 && v.ms === 0 && v.dms === 0;
+    const want = v.calm >= 0.064 * this.sr && v.exTarget[EX.phaseMod] === 0 && v.ms === 0 && v.dms === 0 && (P.warpMode === 0 || v.exTarget[EX.warpAmount] === 0);
     const cyc = this.sr / f;
     const R = CTRL * Math.ceil(Math.min(1024, Math.max(256, cyc)) / CTRL);
     if (want && !v.tabValid && this.tabBudget <= 0) {

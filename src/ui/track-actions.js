@@ -16,13 +16,13 @@ const nameOf = (store, i) => store.get(`parts.${i}.name`) || `Track ${i + 1}`;
 /** Add a track at the end and select it. Tells the person when the list is full. */
 export function addTrackAction(ctx) {
   const i = addTrack(ctx.store);
-  if (i < 0) { ctx.toast(`${MAX_PARTS} tracks is the most Orograph can play at once`, { kind: 'info' }); return -1; }
+  if (i < 0) { ctx.toast(`${MAX_PARTS} tracks is the most Oro can play at once`, { kind: 'info' }); return -1; }
   return i;
 }
 
 export function duplicateTrackAction(ctx, i) {
   const n = duplicateTrack(ctx.store, i);
-  if (n < 0 && partCount(ctx.store) >= MAX_PARTS) ctx.toast(`${MAX_PARTS} tracks is the most Orograph can play at once`, { kind: 'info' });
+  if (n < 0 && partCount(ctx.store) >= MAX_PARTS) ctx.toast(`${MAX_PARTS} tracks is the most Oro can play at once`, { kind: 'info' });
   return n;
 }
 

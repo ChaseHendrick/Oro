@@ -39,7 +39,7 @@ describe('icons', () => {
     expect(sizes).toEqual([16, 24, 32, 48, 64, 128, 256]);
   });
 
-  it('has SVG sources with the Orograph palette', () => {
+  it('has SVG sources with the Oro palette', () => {
     for (const file of ['build/icon.svg', 'public/favicon.svg']) {
       const svg = read(file).toString('utf8');
       expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
@@ -53,7 +53,7 @@ describe('icons', () => {
 describe('web manifest', () => {
   const manifest = JSON.parse(read('public/manifest.webmanifest').toString('utf8'));
   it('describes an installable standalone app', () => {
-    expect(manifest).toMatchObject({ name: 'Orograph', short_name: 'Orograph', display: 'standalone', start_url: './', scope: './' });
+    expect(manifest).toMatchObject({ name: 'Oro', short_name: 'Oro', display: 'standalone', start_url: './', scope: './' });
     expect(manifest.theme_color).toMatch(/^#[0-9a-f]{6}$/i);
     expect(manifest.background_color).toMatch(/^#[0-9a-f]{6}$/i);
   });
@@ -71,7 +71,7 @@ describe('electron-builder config proposal', () => {
   const b = add.build;
   it('matches the agreed identity and outputs', () => {
     expect(add.main).toBe('electron/main.cjs');
-    expect(b).toMatchObject({ appId: 'com.hendrickresearch.orograph', productName: 'Orograph', asar: true });
+    expect(b).toMatchObject({ appId: 'com.hendrickresearch.orograph', productName: 'Oro', asar: true });
     expect(b.directories.output).toBe('release');
     expect(b.files).toEqual(['dist/**', 'electron/**', 'package.json']);
     expect(add.dependencies).toEqual({});
