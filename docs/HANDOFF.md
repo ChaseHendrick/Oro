@@ -136,6 +136,12 @@ registry). The short version:
 Then: run the tests and both builds, open a PR, wait for green, squash-merge. The push to
 `main` publishes the release.
 
+**Desktop app size.** Since 2.0.1 the `electronLanguages: ["en", "en-US"]` build option
+bundles only English Chromium language files (about 50 MB less installed on Apple silicon).
+Keep `en-US` in that list: electron-builder matches locale names exactly, and Windows and
+Linux need `en-US.pak` as Chromium's fallback locale. Almost all of the remaining size is
+Electron itself.
+
 **Website update after a release** (in a clone of `hendrickresearch.com` next to `synth`):
 
 ```bash
