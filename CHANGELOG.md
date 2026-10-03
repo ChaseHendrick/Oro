@@ -3,6 +3,17 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.2.0 (October 2026)
+
+* **Filter 2.** A second filter per voice with Serial, Parallel and Split (left/right)
+  routing and its own Cutoff, Reso, Env Amt, Key Trk and Mix. Types: Low 12, Low 24,
+  Band, High 12, High 24, Notch, Peak, Phaser, Comb +, Comb − and Low-pass gate (cutoff
+  and level follow the amp envelope).
+* **Bigger unison.** Up to 16 copies, with **Blend** (centre against the detuned copies),
+  **Spread** modes (Linear, Super, Exp, Random per note), **Stack** (octaves and fifths)
+  and **Map spread**, which lets each copy read the land at its own spot around the dot.
+* With every new control at its default, patches sound exactly as before.
+
 ## 2.1.0 (October 2026)
 
 * **Science sources.** Nine new Link sources driven by real dynamical systems from the

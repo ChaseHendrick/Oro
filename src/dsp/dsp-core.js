@@ -49,12 +49,14 @@ import { AnalogFilter } from './analog-filters.js';
 import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.js';
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
+import { Filter2 } from './filter2.js';
+import { UNISON_STACKS } from '../core/params.js';
 import { MAX_NOISE_SECONDS } from './noise-recording.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
 const MAX_OS = 4;                       // the High quality renders voices at 4x
-const MAX_UNISON = 8;
+const MAX_UNISON = 16;
 const VOICE_GAIN = 0.5;                 // headroom: a full-scale voice sits at -6 dBFS
 const SMOOTH_TIME = 0.004;              // one-pole smoothing of control targets (s)
 const TERRAIN_FADE_TIME = 0.03;         // crossfade when a new terrain table arrives (s)
@@ -105,6 +107,9 @@ const M_PHASE_MOD=MOD_SLOT.phaseMod, M_PHASE_RATIO=MOD_SLOT.phaseRatio;
 const M_PATH_MANGLE=MOD_SLOT.pathMangle, M_PATH_WINDOW=MOD_SLOT.pathWindow;
 const M_KEY_TRACK=MOD_SLOT.keyTrack, M_FILTER_ENV=MOD_SLOT.filterEnv;
 const M_DETUNE=MOD_SLOT.detune, M_SPREAD=MOD_SLOT.spread, M_VEL_SENS=MOD_SLOT.velSens;
+const M_F2CUT=MOD_SLOT.filter2Cutoff, M_F2RES=MOD_SLOT.filter2Reso, M_F2ENV=MOD_SLOT.filter2Env, M_F2MIX=MOD_SLOT.filter2Mix;
+const M_UBLEND=MOD_SLOT.unisonBlend, M_UMAP=MOD_SLOT.unisonMap;
+const MAP_SPREAD_TILES = 0.25;          // Map spread at 100%: copies sit this far (in tiles) from the dot
 const SIZE_DEF = PART_PARAM_MAP.size;
 const EXTRA_IDS = ['sub2','airTexture','inharmProfile','inharmAmount','phaseMod','phaseRatio','ringMod','ringRatio','pluck','pluckDecay','pluckTone','pluckDispersion','pathWindow','pathMangle'];
 const EXTRA_SLOTS = EXTRA_IDS.map(id => MOD_SLOT[id]);
@@ -376,6 +381,48 @@ class FFT {
   }
 }
 
+// --- unison layout (v2.2) ---------------------------------------------------
+
+/**
+ * Detune ratio, stereo gains and map offsets of a part's U unison copies.
+ * Spread modes move the detune positions (Linear as before, Super bunches
+ * them at the centre, Exp pushes them out; Random keeps Linear gains and
+ * takes per-note positions in the voice). Stack transposes copies, Blend
+ * sets the outer copies' level against the centre one, and the gains keep
+ * the total power. With the defaults (Linear, no stack, Blend 1) this is
+ * exactly the layout before v2.2.
+ */
+function unisonLayout(P, U, detune, spread, blend) {
+  const semisList = UNISON_STACKS[P.uniStack].semis, ns = semisList.length;
+  let c0 = -1, c1 = -1;                   // centre copies (one for odd U, two for even)
+  if (U > 1) { if (U & 1) c0 = (U - 1) >> 1; else { c0 = U / 2 - 1; c1 = U / 2; } }
+  let sumW = 0;
+  for (let q = 0; q < MAX_UNISON; q++) {
+    let pos = U === 1 ? 0 : q / (U - 1) * 2 - 1;
+    if (P.uniMode === 1) pos = pos < 0 ? -pos * pos : pos * pos;
+    else if (P.uniMode === 2) pos = pos < 0 ? -Math.sqrt(-pos) : Math.sqrt(pos);
+    const centre = U === 1 || q === c0 || q === c1;
+    const semis = centre || ns === 1 ? 0 : semisList[q % ns];
+    P.stackRatio[q] = semis === 0 ? 1 : Math.pow(2, semis / 12);
+    P.detRatio[q] = Math.pow(2, pos * detune * 0.5 / 1200 + semis / 12);
+    P.uPos[q] = pos;
+    const w = centre ? 1 : blend;
+    P.uW[q] = w;
+    if (q < U) sumW += w * w;
+    // Map spread: copies on a circle around the dot (golden-angle steps), the centre copy on the dot
+    const ang = q * 2.399963229728653;
+    P.uMapX[q] = centre && (U & 1) ? 0 : Math.cos(ang);
+    P.uMapY[q] = centre && (U & 1) ? 0 : Math.sin(ang);
+  }
+  for (let q = 0; q < MAX_UNISON; q++) {
+    if (U === 1) { P.gUL[q] = 1; P.gUR[q] = 1; continue; }
+    const angle = (P.uPos[q] * spread + 1) * Math.PI / 4;
+    const norm = Math.SQRT2 / Math.sqrt(sumW > 0 ? sumW : 1) * P.uW[q];
+    P.gUL[q] = Math.cos(angle) * norm;
+    P.gUR[q] = Math.sin(angle) * norm;
+  }
+}
+
 // --- voice -----------------------------------------------------------------
 
 class Voice {
@@ -417,6 +464,10 @@ class Voice {
     this.string = new KarplusStrong(sr * os, 8, sr * MAX_OS); this.stringOn = false;
     this.analog = [new AnalogFilter(), new AnalogFilter()]; this.analogCurrent = 0;
     this.renderRate = sr * os;
+    // v2.2: Filter 2 (with its mix ramp), Map spread (ramped) and Random unison positions
+    this.f2 = new Filter2(); this.f2On = false; this.f2Mix = 1; this.df2Mix = 0;
+    this.ms = 0; this.dms = 0;
+    this.uPos = new Float64Array(MAX_UNISON);
 
     // pending note when this voice is being stolen
     this.stealFade = 0; this.stealStep = 0; this.stealGain = 1;
@@ -644,6 +695,10 @@ class Part {
 
     // unison layout
     this.uni = 1;
+    this.uniMode = 0; this.uniStack = 0; this.f2Type = 0; this.f2Route = 0;
+    this.stackRatio = new Float64Array(MAX_UNISON).fill(1);
+    this.uPos = new Float64Array(MAX_UNISON); this.uW = new Float64Array(MAX_UNISON).fill(1);
+    this.uMapX = new Float64Array(MAX_UNISON); this.uMapY = new Float64Array(MAX_UNISON);
     this.detRatio = new Float64Array(MAX_UNISON).fill(1);
     this.gUL = new Float64Array(MAX_UNISON).fill(1);
     this.gUR = new Float64Array(MAX_UNISON).fill(1);
@@ -713,18 +768,12 @@ class Part {
     this.travBits = (Math.round(P[PI.direction]) === 1 ? 1 : 0) | (Math.round(P[PI.traverse]) === 1 ? 2 : 0);
     // unison
     const U = Math.max(1, Math.min(MAX_UNISON, Math.round(P[PI.unison])));
-    const det = P[PI.detune];
-    const spread = clamp01(P[PI.spread]);
     this.uni = U;
-    for (let k = 0; k < MAX_UNISON; k++) {
-      const pos = U === 1 ? 0 : (k / (U - 1)) * 2 - 1;
-      this.detRatio[k] = Math.pow(2, (pos * det * 0.5) / 1200);
-      if (U === 1) { this.gUL[k] = 1; this.gUR[k] = 1; continue; }
-      const ang = (pos * spread + 1) * Math.PI / 4;
-      const norm = Math.SQRT2 / Math.sqrt(U);
-      this.gUL[k] = Math.cos(ang) * norm;
-      this.gUR[k] = Math.sin(ang) * norm;
-    }
+    this.uniMode = Math.max(0, Math.min(3, Math.round(P[PI.unisonMode]) || 0));
+    this.uniStack = Math.max(0, Math.min(UNISON_STACKS.length - 1, Math.round(P[PI.unisonStack]) || 0));
+    this.f2Type = Math.max(0, Math.min(11, Math.round(P[PI.filter2Type]) || 0));
+    this.f2Route = Math.max(0, Math.min(2, Math.round(P[PI.filterRoute]) || 0));
+    unisonLayout(this, U, P[PI.detune], clamp01(P[PI.spread]), clamp01(P[PI.unisonBlend]));
     // Env 1 at the oversampled rate
     const fs2 = sr * this.os;
     this.attC = Math.exp(Math.log((ATTACK_OVERSHOOT - 1) / ATTACK_OVERSHOOT) / Math.max(1, P[PI.attack] * fs2));
@@ -954,12 +1003,14 @@ export class OrographDSP {
     this.phs = new Float64Array(n2max);          // cycle phases (Laps / Pace)
     this.sumL = new Float64Array(n2max);
     this.sumR = new Float64Array(n2max);
+    this.f2L = new Float64Array(n2max);          // v2.2 Filter 2 input (parallel / split) or work buffer
+    this.f2R = new Float64Array(n2max);
     this.tmpL = new Float64Array(n2max);         // second render for crossfades
     this.tmpR = new Float64Array(n2max);
     this.sav = new Float64Array(8 * MAX_UNISON); // oscillator state saved around a second render
     this.pst = new Float64Array(5);
     this.pt = { x: 0, y: 0 };
-    this.rng = mulberry32(0x6f726f67); this.extensionRng = mulberry32(0x82edfe);
+    this.rng = mulberry32(0x6f726f67); this.extensionRng = mulberry32(0x82edfe); this.unisonRng = mulberry32(0x5e1f22);
     this.linkRng = mulberry32(0x11c5);           // Random link source (own stream: unison phases stay as they were)
     this.noiseSeed = 0x2545f491;
     // hard-sync restarts of the current segment: oscillator, sample (n2 = look-ahead), fraction, laps
@@ -1877,7 +1928,8 @@ export class OrographDSP {
     v.order = ++this.voiceCounter;
     v.pitch = glideFrom >= 0 ? glideFrom : note;
     v.phase[0] = 0;
-    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? this.rng() : this.extensionRng();
+    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? this.rng() : k < 8 ? this.extensionRng() : this.unisonRng();
+    if (P.uniMode === 3) for (let k = 0; k < MAX_UNISON; k++) v.uPos[k] = this.unisonRng() * 2 - 1;
     v.uniPrev = 0;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
@@ -2263,6 +2315,19 @@ export class OrographDSP {
     const n2 = this.os * CTRL;
     const inv = 1 / n2;
     const U = P.uni;
+    // v2.2 Filter 2: coefficients for this block, its mix ramped
+    if (P.f2Type !== 0) {
+      const fresh = snap || !v.f2On;
+      const fc2 = Math.exp((Math.log2(MP[M_F2CUT] > 1 ? MP[M_F2CUT] : 1) + prm[PI.filter2Key] * (semis - 60) / 12 + MP[M_F2ENV] * 6 * e2) * Math.LN2);
+      v.f2.setTargets(P.f2Type, fc2, MP[M_F2RES], fs2, n2, fresh, v.envLvl);
+      const mx = clamp01(MP[M_F2MIX]);
+      if (fresh) { v.f2Mix = mx; v.df2Mix = 0; } else v.df2Mix = (mx - v.f2Mix) * inv;
+      v.f2On = true;
+      if (P.f2Route === 2 && !v.stereo) v.goStereo();
+    } else v.f2On = false;
+    // v2.2 Map spread: unison copies read the land around the dot
+    const msT = U > 1 ? clamp01(MP[M_UMAP]) * MAP_SPREAD_TILES : 0;
+    if (snap) { v.ms = msT; v.dms = 0; } else v.dms = (msT - v.ms) * inv;
     if (snap) {
       v.tA = tA; v.tB = tB; v.tC = tC; v.tD = tD; v.dtA = v.dtB = v.dtC = v.dtD = 0;
       v.cx = v.sCx; v.cy = v.sCy; v.dcx = v.dcy = 0;
@@ -2286,20 +2351,13 @@ export class OrographDSP {
       v.dLaps = (v.sLaps - v.laps) * inv; v.dPace = (v.sPace - v.pace) * inv; v.dSubLv = (v.sSub - v.subLv) * inv;
       v.dcLvA = (v.uLvA - v.cLvA) * inv; v.dcLvB = (v.uLvB - v.cLvB) * inv;
     }
-    const detune=MP[M_DETUNE], spread=MP[M_SPREAD];
-    const layoutChanged=detune !== prm[PI.detune] || spread !== prm[PI.spread];
-    if (layoutChanged || P.layoutDirty) for (let q=0;q<MAX_UNISON;q++) {
-      const position=U === 1 ? 0 : q/(U-1)*2-1;
-      P.detRatio[q]=Math.pow(2,position*detune*0.5/1200);
-      if (U === 1) { P.gUL[q]=P.gUR[q]=1; } else {
-        const angle=(position*spread+1)*Math.PI/4,norm=Math.SQRT2/Math.sqrt(U);
-        P.gUL[q]=Math.cos(angle)*norm; P.gUR[q]=Math.sin(angle)*norm;
-      }
-    }
+    const detune=MP[M_DETUNE], spread=MP[M_SPREAD], blend=MP[M_UBLEND];
+    const layoutChanged=detune !== prm[PI.detune] || spread !== prm[PI.spread] || blend !== prm[PI.unisonBlend];
+    if (layoutChanged || P.layoutDirty) unisonLayout(P, U, detune, clamp01(spread), clamp01(blend));
     P.layoutDirty=layoutChanged;
     if (snap && layoutChanged) for (let q=0;q<U;q++) { v.ugL[q]=P.gUL[q]; v.ugR[q]=P.gUR[q]; }
     for (let q = 0; q < U; q++) {
-      let incT = f * P.detRatio[q] / fs2;
+      let incT = f * (P.uniMode === 3 ? P.stackRatio[q] * Math.pow(2, v.uPos[q] * detune * 0.5 / 1200) : P.detRatio[q]) / fs2;
       if (incT > 0.45) incT = 0.45;
       if (snap || q >= v.uniPrev) { v.inc[q] = incT; v.dinc[q] = 0; } else v.dinc[q] = (incT - v.inc[q]) * inv;
     }
@@ -2722,6 +2780,7 @@ export class OrographDSP {
     v.param += v.dParam * n2;
     v.tA += v.dtA * n2; v.tB += v.dtB * n2; v.tC += v.dtC * n2; v.tD += v.dtD * n2;
     v.cx += v.dcx * n2; v.cy += v.dcy * n2;
+    v.ms += v.dms * n2;
     v.morph += v.dMorph * n2; v.warp += v.dWarp * n2; v.lift += v.dLift * n2; v.fold += v.dFold * n2;
     v.wA += v.dwA * n2; v.wB += v.dwB * n2;
     v.cLvA += v.dcLvA * n2; v.cLvB += v.dcLvB * n2;
@@ -2802,6 +2861,7 @@ export class OrographDSP {
     const shapeOn = !(lf0 === 1 && dLift === 0 && fd0 <= 0 && fd0 + dFold * n2 <= 0);
     const tA0 = v.tA, tB0 = v.tB, tC0 = v.tC, tD0 = v.tD, cx0 = v.cx, cy0 = v.cy;
     const dtA = v.dtA, dtB = v.dtB, dtC = v.dtC, dtD = v.dtD, dcx = v.dcx, dcy = v.dcy;
+    const msOn = v.ms !== 0 || v.dms !== 0;
 
     if (paced) {
       // the local traversal speed changes within the cycle: per-sample mips
@@ -2811,10 +2871,11 @@ export class OrographDSP {
         const X = XS[q], Y = YS[q];
         let gl = gUL[q], gr = gUR[q];
         const dgl = gRamp ? v.dugL[q] : 0, dgr = gRamp ? v.dugR[q] : 0;
-        let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
+        let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0, dcxq = dcx, dcyq = dcy;
+        if (msOn) { cx += P.uMapX[q] * v.ms; cy += P.uMapY[q] * v.ms; dcxq += P.uMapX[q] * v.dms; dcyq += P.uMapY[q] * v.dms; }
         let morph = m0, warp = wp0, lift = lf0, fold = fd0, wA = wA0, wB = wB0, fA = fA0, fB = fB0;
         for (let j = 0; j < n2; j++) {
-          tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
+          tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcxq; cy += dcyq;
           if (gRamp) { gl += dgl; gr += dgr; }
           const px = X[j], py = Y[j];
           let u = cx + px * tA - py * tB;
@@ -3085,7 +3146,7 @@ export class OrographDSP {
   voiceChain(P, v, base, n2, rc) {
     // the common case (a state variable filter or none, no filter change in
     // progress) runs as one fused loop: no intermediate buffers
-    if (v.ft <= 4 && !(v.ftW > 0) && !v.ampCustom) { this.voiceChainFused(P, v, base, n2, rc); return; }
+    if (v.ft <= 4 && !(v.ftW > 0) && !v.ampCustom && !v.f2On) { this.voiceChainFused(P, v, base, n2, rc); return; }
     const SL = this.sumL, SR = this.sumR;
     const bL = rc.busL, bR = rc.busR;
     const stereo = v.stereo;
@@ -3166,7 +3227,10 @@ export class OrographDSP {
     if (sub2On) v.sub2Ph=s2Ph;
     if (airOn) { v.aH = aH; v.aD = aD; v.nz = nz; v.tlL = tlL; v.tlR = tlR; }
 
+    const f2 = v.f2On, route = P.f2Route;
+    if (f2 && route !== 0) { this.f2L.set(SL.subarray(0, n2)); this.f2R.set((stereo ? SR : SL).subarray(0, n2)); }
     this.filterStage(v, n2, stereo);
+    if (f2) this.filter2Stage(v, n2, stereo, route);
     if (v.pdOn) {
       let pxL = v.pdxL, pyL = v.pdyL, pxR = v.pdxR, pyR = v.pdyR;
       for (let j = 0; j < n2; j++) {
@@ -3221,6 +3285,24 @@ export class OrographDSP {
     v.gl = gl; v.gr = gr;
     v.envStage = st; v.envLvl = lvl;
     v.stealGain = sg;
+  }
+
+  /**
+   * v2.2 Filter 2 on sumL/sumR (already through Filter 1). Serial filters
+   * that signal; Parallel and Split filter the pre-Filter 1 copy in f2L/f2R.
+   * Mix crossfades from Filter 1's output to Filter 2's (Split: right only).
+   */
+  filter2Stage(v, n2, stereo, route) {
+    const SL = this.sumL, SR = this.sumR, XL = this.f2L, XR = this.f2R;
+    if (route === 0) { XL.set(SL.subarray(0, n2)); if (stereo) XR.set(SR.subarray(0, n2)); }
+    v.f2.process(XL, XR, n2, stereo);
+    let m = v.f2Mix; const dm = v.df2Mix;
+    for (let j = 0; j < n2; j++) {
+      m += dm;
+      if (route !== 2) SL[j] += m * (XL[j] - SL[j]);
+      if (stereo) SR[j] += m * (XR[j] - SR[j]);
+    }
+    v.f2Mix = m;
   }
 
   /** Filter sumL/sumR in place with the voice's type, fading out the previous type after a change. */
@@ -3517,12 +3599,13 @@ export class OrographDSP {
       const X = XS[q], Y = YS[q], LV = this.lvs[q];
       let gl = gUL[q], gr = gUR[q];
       const dgl = gRamp ? v.dugL[q] : 0, dgr = gRamp ? v.dugR[q] : 0;
-      let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0;
+      let tA = tA0, tB = tB0, tC = tC0, tD = tD0, cx = cx0, cy = cy0, dcxq = dcx, dcyq = dcy;
+      if (v.ms !== 0 || v.dms !== 0) { cx += P.uMapX[q] * v.ms; cy += P.uMapY[q] * v.ms; dcxq += P.uMapX[q] * v.dms; dcyq += P.uMapY[q] * v.dms; }
       let morph = m0, warp = wp0, lift = lf0, fold = fd0, fA = fA0, fB = fB0, lvA = lvA0, lvB = lvB0;
       let curA = -1, a0 = chA[0].data, sa0 = 1, ma0 = 0, a1 = a0, sa1 = 1, ma1 = 0, oa = a0, osa = 1, oma = 0;
       let curB = -1, b0 = chB[0].data, sb0 = 1, mb0 = 0, b1 = b0, sb1 = 1, mb1 = 0, ob = b0, osb = 1, omb = 0;
       for (let j = 0; j < n2; j++) {
-        tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcx; cy += dcy;
+        tA += dtA; tB += dtB; tC += dtC; tD += dtD; cx += dcxq; cy += dcyq;
         lvA += dlvA; lvB += dlvB;
         if (gRamp) { gl += dgl; gr += dgr; }
         const px = X[j], py = Y[j], off = LV[j];
@@ -3599,8 +3682,9 @@ export class OrographDSP {
   heightAt(P, v, n2, j, q, paced) {
     const s = j + 1, px = this.pt.x, py = this.pt.y;
     const tA = v.tA + v.dtA * s, tB = v.tB + v.dtB * s, tC = v.tC + v.dtC * s, tD = v.tD + v.dtD * s;
-    let u = v.cx + v.dcx * s + px * tA - py * tB;
-    let w = v.cy + v.dcy * s + px * tC + py * tD;
+    const mo = v.ms + v.dms * s;
+    let u = v.cx + v.dcx * s + px * tA - py * tB + (mo !== 0 ? P.uMapX[q] * mo : 0);
+    let w = v.cy + v.dcy * s + px * tC + py * tD + (mo !== 0 ? P.uMapY[q] * mo : 0);
     if (v.warp > 0 || v.warp + v.dWarp * n2 > 0) {
       const ww = (v.warp + v.dWarp * s) * 0.06;
       const u2 = u + ww * (fastSin(2 * w) + 0.5 * fastSin(3 * w + 2 * u));
@@ -3735,7 +3819,7 @@ export class OrographDSP {
     if (snap) v.calm = P.orbitVoiceMod ? 0 : 1e9;
     else if (motion > 8) v.calm = 0;
     else if (motion < 4) v.calm += CTRL;
-    const want = v.calm >= 0.064 * this.sr && v.exTarget[EX.phaseMod] === 0;
+    const want = v.calm >= 0.064 * this.sr && v.exTarget[EX.phaseMod] === 0 && v.ms === 0 && v.dms === 0;
     const cyc = this.sr / f;
     const R = CTRL * Math.ceil(Math.min(1024, Math.max(256, cyc)) / CTRL);
     if (want && !v.tabValid && this.tabBudget <= 0) {

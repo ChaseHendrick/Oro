@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.1.0, including the guitar pedal features
+going on under the hood. It describes version 2.2.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -431,7 +431,7 @@ filter and the amp envelope shape them too.
 | **Glide** | Portamento time, 0 to 2 seconds. |
 | **Bend** | Pitch bend range, 0 to 24 semitones. |
 | **Sub**, **Sub two** | Oscillators one and two octaves below each note, added before the filter. Each has seven waveforms in the Sub oscillators card. |
-| **Unison** | Stacks 1 to 8 copies of each voice. |
+| **Unison** | Stacks 1 to 16 copies of each voice (see [Unison and Filter 2](#unison-and-filter-2-22) for Blend, Spread, Stack and Map spread). |
 | **Detune** | How far apart the unison copies are, 0 to 50 cents. |
 | **Width** | How far the unison copies spread across the stereo field. |
 | **Velocity** | How much playing harder makes the note louder. |
@@ -456,6 +456,37 @@ The other filter controls:
 * **Key Trk** makes the cutoff follow the note you play (1 = fully).
 
 The **Vowel** knob is dimmed unless the filter type is Comb or Vowel.
+
+### Unison and Filter 2 (2.2)
+
+The **Unison** card shapes the stacked copies:
+
+* **Blend** sets the level of the detuned copies against the centre one (the total level
+  stays about the same). At 0 only the centre copy sounds.
+* **Spread** decides where the copies sit within **Detune**: **Linear** (evenly),
+  **Super** (bunched near the note, a few far out), **Exp** (pushed to the edges) or
+  **Random** (new positions for every note).
+* **Stack** transposes some copies: **+12**, **±12**, **+7**, **+12 +19** or **+12 +24**
+  semitones, cycled across the copies; the centre copy stays at the note.
+* **Map spread** is Orograph's own: each copy reads the land at its own spot around the
+  dot (up to a quarter of a tile away), so the copies differ in tone and not only in
+  pitch. It turns a stack into a chorus of neighbouring landscapes.
+
+**Filter 2** is a second filter for every voice. Its types are **Low 12** and **Low 24**
+(12 and 24 dB per octave), **Band**, **High 12**, **High 24**, **Notch**, **Peak** (a
+resonant boost of up to 18 dB), **Phaser** (six allpass stages with feedback, Cutoff
+sweeps the notches), **Comb +** and **Comb −** (tuned to Cutoff; minus is hollower) and
+**Low-pass gate**, whose cutoff and level follow the amp envelope with a fast opening and
+a slower close, for plucked and percussive tones. It has its own **Cutoff**, **Reso**,
+**Env Amt** (Envelope 2, up to ±6 octaves), **Key Trk** and **Mix**. **Routing**:
+
+* **Serial**: Filter 1, then Filter 2. Mix sets how much of Filter 2 you hear.
+* **Parallel**: both filters hear the oscillator; Mix goes from Filter 1 (0) to Filter 2 (1).
+* **Split**: Filter 1 on the left channel, Filter 2 on the right (Mix sets how much of the
+  right channel is Filter 2).
+
+Filter 2's Cutoff, Reso, Env Amt and Mix, and Unison Blend and Map spread, are modulatable
+like any other knob.
 
 ### Envelopes
 
@@ -523,7 +554,7 @@ period, with a 2 ms slew so the steps do not click. Synced to 1 bar, that is a c
 
 ### Links
 
-**Links** (Mod tab, **Links + Macros**) route a source to any of the forty modulatable
+**Links** (Mod tab, **Links + Macros**) route a source to any of the 46 modulatable
 controls, with an amount and a response curve. Each part can have up to 8.
 
 | Source | Range |
@@ -1464,7 +1495,7 @@ Heart and Lemniscate.
 
 ### Per-parameter movement
 
-Click a parameter's modulation button or its name in **Mod**. Each of the 40 targets has
+Click a parameter's modulation button or its name in **Mod**. Each of the 46 targets has
 its own LFO, its own envelope and four controller slots. The Mod table is the overview of
 all targets and their live values.
 
