@@ -37,6 +37,11 @@
 //
 // Pure computation: every buffer is allocated in the constructor; process()
 // and everything it calls never allocate.
+//
+// 2.12: `grid` ({n, sub}) overrides the quality grid (the GPU Resonator plans
+// its finer membranes with this class), and `feed` (src/dsp/reso-feed.js),
+// when set, takes over the internal-rate step so the membrane can run on the
+// GPU. With no feed every sample is computed exactly as in 2.10.
 
 export const RESO_MODES = Object.freeze(['Off', 'Strike', 'Resonate']);
 /** Grid (interior nodes per side) and the most sub-steps per internal sample, by quality. */
@@ -111,11 +116,13 @@ function smallestEig(a, b, m, hi) {
 }
 
 export class Resonator {
-  constructor(sr, quality = 'standard') {
+  constructor(sr, quality = 'standard', grid = null) {
     this.sr = sr;
     this.D = Math.max(1, Math.round(sr / RESO_RATE));
     this.fs = sr / this.D;
-    const W = RESO_NMAX + 2, cells = W * W;
+    this.grid = grid;
+    this.feed = null;
+    const W = (grid ? grid.n : RESO_NMAX) + 2, cells = W * W;
     this.u = new Float64Array(cells);
     this.up = new Float64Array(cells);
     this.lp = new Float64Array(cells);      // Lap of `up` (the previous step), for the Tone loss term
@@ -156,7 +163,7 @@ export class Resonator {
 
   /** Grid size and sub-step ceiling for a quality mode; restarts the membrane at rest. */
   setQuality(quality) {
-    const q = RESO_GRID[quality] || RESO_GRID.standard;
+    const q = this.grid || RESO_GRID[quality] || RESO_GRID.standard;
     this.n = q.n; this.smax = q.sub; this.W = q.n + 2;
     this.reset();
     this.s.fill(0);
@@ -331,6 +338,7 @@ export class Resonator {
     if (this.mode !== 1 || !(amp > 0)) return;
     x = fin(x, 0.5); y = fin(y, 0.5);
     x -= Math.floor(x); y -= Math.floor(y);
+    if (this.feed !== null) this.feed.strike(x, y, amp);
     const slot = this.pNext; this.pNext = (slot + 1) % MAX_STRIKES;
     const base = slot * BUMP_W * BUMP_W;
     this.pCnt[slot] = this.stencil(x, y, this.pIdx, this.pW, base);
@@ -467,6 +475,7 @@ export class Resonator {
     const end = pos + seg;
     const mix0 = this.mixCur, dm = (this.mix - mix0) / seg;
     let mixv = mix0;
+    if (this.feed !== null && this.feed.active) this.busy = true;
     if (this.mode === 2 && !this.busy) {
       for (let n = pos; n < end; n++) if (oL[n] !== 0 || oR[n] !== 0) { this.busy = true; this.quietN = 0; break; }
     }
@@ -483,7 +492,7 @@ export class Resonator {
     for (let n = pos; n < end; n++) {
       const dl = oL[n], dr = oR[n];
       if (res) { const x = 0.5 * (dl + dr); acc += x; sIn += x * x; if (x > inPeak) inPeak = x; else if (-x > inPeak) inPeak = -x; }
-      if (++ph >= D) { ph = 0; this.step(acc * invD); acc = 0; }
+      if (++ph >= D) { ph = 0; if (this.feed !== null) this.feed.tick(this, acc * invD); else this.step(acc * invD); acc = 0; }
       // 4-point Hermite between y1 and y2
       const t = ph * invD;
       let wl = hermite(hl[0], hl[1], hl[2], hl[3], t), wr = hermite(hr[0], hr[1], hr[2], hr[3], t);
@@ -512,7 +521,7 @@ export class Resonator {
     // rest: quiet output, no pulse pending, no input, and (checked rarely) a quiet membrane
     let pending = false;
     for (let p = 0; p < MAX_STRIKES; p++) if (this.pAmp[p] !== 0) pending = true;
-    if (!pending && peak < QUIET && inPeak < QUIET) {
+    if (!pending && peak < QUIET && inPeak < QUIET && (this.feed === null || !this.feed.active)) {
       this.quietN += seg;
       if (this.quietN >= IDLE_SEC * this.sr) {
         this.quietN = 0;

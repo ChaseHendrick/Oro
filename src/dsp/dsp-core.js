@@ -66,6 +66,7 @@ import { MAX_NOISE_SECONDS } from './noise-recording.js';
 import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
 import { MasterOperator, OPERATOR_ACTIONS } from './damage.js';
 import { Resonator } from './resonator.js';
+import { ResoGpuLink } from './reso-feed.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -1209,6 +1210,7 @@ export class OroDSP {
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
+      case 'resoGpu': (this.resoGpu || (this.resoGpu = new ResoGpuLink(this))).message(msg); break;
       case 'tracks': this.setTracks(msg); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
@@ -1338,6 +1340,7 @@ export class OroDSP {
     P.reso.configure(mode, prm[PI.resoMix], prm[PI.resoDecay], prm[PI.resoTone], prm[PI.resoSize], prm[PI.resoListen]);
     P.resoMode = P.reso.mode;
     if (Math.abs(prm[PI.morph] - P.resoMorph) > 0.01) { P.resoMorph = prm[PI.morph]; P.reso.dirty = true; }
+    if (this.resoGpu) this.resoGpu.ensure(P);   // 2.12 GPU Resonator
   }
 
   /** Stiffness and lowest mode of the part's membrane from its terrains (about 1 ms at the standard grid). */
@@ -1345,6 +1348,7 @@ export class OroDSP {
     P.resoMorph = P.params[PI.morph];
     P.reso.derive(P.terrA, P.terrB, clamp01(P.resoMorph));
     P.resoAt = this.blockTime + 0.05;
+    if (P.reso.feed) P.reso.feed.terrain();
   }
 
   /** Note pitch (Hz) as the voice computes it, without modulation. */
