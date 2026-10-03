@@ -1346,3 +1346,25 @@
   .smap-pad, .smap-actions .btn { min-height: 44px; }
   .smap-canvas { aspect-ratio: 4 / 3; }
 }
+
+/* v2.9 MIDI file tools (Seq tab > Pattern) and the bounce popover's Save MIDI */
+.bounce-actions { gap: 8px; }
+.seq-midi { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--divider); padding-top: 6px; min-width: 0; }
+.seq-midi .select { width: 100%; }
+.seq-midi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seq-midi-row .btn { justify-content: center; min-width: 0; }
+.seq-midi-pick { display: flex; flex-direction: column; gap: 6px; }
+.seq-midi-pick[hidden] { display: none; }
+.seq-midi-status { margin: 0; font-size: var(--fs-xs); line-height: 1.35; color: var(--text-3); overflow-wrap: anywhere; }
+.seq-midi-status:empty { display: none; }
+
+/* v2.9 Settings > Audio > Tuning */
+.tuning { display: flex; flex-direction: column; gap: 8px; }
+.tuning-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.tuning-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tuning-ref { width: 100%; height: 28px; font-variant-numeric: tabular-nums; }
+.tuning-readout { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .tuning-grid { grid-template-columns: 1fr 1fr; } .tuning-grid > :first-child { grid-column: 1 / -1; } }
+@media (pointer: coarse) {
+  .seq-midi .btn, .seq-midi .select-native, .tuning .btn, .tuning .select-native, .tuning-ref, .bounce-actions .btn { min-height: 44px; }
+}

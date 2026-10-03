@@ -206,3 +206,28 @@ describe('store sync: Round D state', () => {
     expect(sync.snapshot().slice(-1)).toEqual([{ t: 'quality', mode: 'high' }]);
   });
 });
+
+// v2.9 adds one message kind: {t:'tuning', hz} (a 128-entry Hz table, or null for 12-TET at A4 = 440 Hz)
+describe('store sync: tuning', () => {
+  it('sends nothing for the default tuning, a table for a custom one and null when it goes back', () => {
+    const { store, sync, batches, run } = setup();
+    expect(sync.snapshot().some(m => m.t === 'tuning')).toBe(false);
+    store.set('global.scaleRoot', 2);
+    run();
+    expect(batches.flat().some(m => m.t === 'tuning')).toBe(false);
+    store.set('tuning', { id: 'just5' });
+    run();
+    const msg = batches.flat().find(m => m.t === 'tuning');
+    expect(msg.hz.length).toBe(128);
+    expect(msg.hz[66] / msg.hz[62]).toBeCloseTo(5 / 4, 9);   // follows the key (D to F#)
+    expect(sync.snapshot().filter(m => m.t === 'tuning').length).toBe(1);
+    batches.length = 0;
+    store.set('global.scaleRoot', 0);
+    run();
+    expect(batches[0].find(m => m.t === 'tuning').hz[64] / batches[0].find(m => m.t === 'tuning').hz[60]).toBeCloseTo(5 / 4, 9);
+    batches.length = 0;
+    store.load(defaultState());
+    run();
+    expect(batches[0].filter(m => m.t === 'tuning')).toEqual([{ t: 'tuning', hz: null }]);
+  });
+});

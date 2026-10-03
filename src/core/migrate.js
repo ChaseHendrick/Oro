@@ -16,6 +16,7 @@ import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from './smart.js';
 import { sanitizeChord } from '../music/chord-trigger.js';
+import { sanitizeTuning } from '../dsp/tuning.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -232,10 +233,13 @@ export function migrateState(src) {
   const count = list.length >= MIN_PARTS && (num(src.version, 0) >= 4 || list.length > DEFAULT_PARTS) ? list.length : DEFAULT_PARTS;
   const parts = Array.from({ length: count }, (_, i) => sanitizePart(list[i] || null, i));
   uniqueIds(parts);
+  // v2.9 microtuning, absent for the default tuning
+  const tuning = sanitizeTuning(src.tuning);
   return {
     version: STATE_VERSION,
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
     parts,
+    ...(tuning ? { tuning } : {}),
   };
 }
 

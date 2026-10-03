@@ -754,6 +754,40 @@ These are shared by all parts:
 * **Swing**: 0 to 60%. It delays every off-beat sixteenth; the maximum is a 3:1 shuffle.
   Triplet rates are not swung.
 
+### Microtuning (2.9)
+
+Every synth part can play in a tuning other than 12-tone equal temperament. The tuning is
+part of the session (it is saved with it and with scenes) and lives in **Settings > Audio
+> Tuning**:
+
+* **Tuning**: 12-TET (the default), Just intonation (5-limit), Pythagorean,
+  Quarter-comma meantone, Werckmeister III, 19-TET, 24-TET (quarter tones), 31-TET and
+  Bohlen-Pierce (13 equal steps of the 3/1 "tritave"), plus any scale you import.
+* **Root**: the key the scale starts on. **Follow key** (the default) uses the global
+  **Key**, so a just-intonation scale stays pure when you change key.
+* **A4 (Hz)**: the reference pitch, 400 to 480 Hz (default 440).
+* **Import .scl / .kbm**: load a Scala scale file (`.scl`: a description, the number of
+  notes, then one pitch per line in cents, such as `386.3`, or as a ratio, such as `5/4`;
+  lines starting with `!` are comments; the last pitch is the period, usually `2/1`).
+  Scales of up to 128 notes are accepted. You can also load a Scala keyboard map
+  (`.kbm`), alone or together with a scale: it sets which keys play which degrees, the
+  middle key, and the reference key and frequency. While a map is loaded, Root and A4
+  are greyed out; **Remove map** drops it. **Reset** returns to 12-TET at 440 Hz.
+* The line under the controls names the scale, its number of notes per period and the
+  reference, and reports any file that could not be loaded and why.
+
+How keys map without a `.kbm`: the scale's first note sits on the root key in the octave
+of middle C, and each key up or down is one scale degree. A 12-note scale is pinned so
+that A4 plays the reference pitch exactly. Scales with another number of notes (19-TET,
+Bohlen-Pierce, most imported scales) keep the root key at its usual pitch, so a 19-TET C4
+is still about 261.6 Hz, and an octave is then 19 keys wide. Tuned pitches are kept
+between 8 Hz and 20 kHz.
+
+Pitch bend, **Tune**, **Fine**, the **Octave** switch and unison detune work as before:
+they are applied in equal-tempered semitones on top of the tuned key (Octave is always a
+true 2/1). Glide slides smoothly between the tuned pitches. Drum kit tracks are not
+affected, and notes sent to other MIDI gear are unchanged. Bounces use the tuning too.
+
 ### The step sequencer
 
 A track can hold up to 16 **patterns**. The picker at the top of the Pattern block shows the
@@ -908,6 +942,33 @@ of land.
 
 Locked spots are marked on the 3D map with numbers. If you grab the dot while a lock is
 gliding it, your hand wins.
+
+### MIDI files (2.9)
+
+The **MIDI file** box at the bottom of the Seq tab's Pattern block moves patterns in and
+out as Standard MIDI Files (`.mid`):
+
+* **Export**: with **This pattern** chosen, saves one pass of the selected track's
+  current pattern (even if its sequencer is off). With **All tracks, N bars**, saves N
+  bars of every track whose sequencer is on, one MIDI track each. Files are type 1 at 480
+  ticks per beat, with the session tempo, 4/4 and the track names. Timing comes from the
+  same offline sequencer as the WAV bounce, so swing, ratchets and probability (as on the
+  first Play) match a bounce. Arpeggiators and live playing are not included. Drum kit
+  tracks are written on channel 10, lane 1 as key 36 (C1) up to lane 8 as key 43.
+  The **Bounce** popover also has **Save MIDI**, for the bars chosen there.
+* **Import**: reads a type 0 or type 1 file into the selected track's current pattern.
+  If the file has several tracks (or channels) with notes, choose one from the list (the
+  busiest is selected); otherwise it is used at once. Notes are quantized to the
+  pattern's step rate, starting at the bar of the first note, and the first *Length*
+  steps are written. Each note becomes a scale degree and octave in the global key and
+  scale; notes outside the scale snap to the nearest scale note (the lower one on a tie).
+  Velocity and length set each step's Vel and Gate, and overlapping notes become slides.
+  One note per step is kept (the highest). On a drum kit track the notes fill the lanes
+  instead: keys 36 to 43 go to lanes 1 to 8, and other keys wrap round onto them.
+  Dot locks and the steps after the pattern's length are left as they were.
+* The status line says how many notes came in, how many were snapped, how many were left
+  out and the file's tempo (the session tempo is not changed). An import is one undo
+  step.
 
 ### Arpeggiator
 
@@ -1284,6 +1345,8 @@ Open **Settings** with the gear button or the **,** key.
 * **Output device**: choose where the sound goes, in browsers that allow it (Chrome and
   Edge) and in the desktop app. Elsewhere, change the output in your computer's sound
   settings.
+* **Tuning**: built-in tunings, the reference pitch and Scala import (see
+  [Microtuning](#microtuning-29)).
 * **Bounce...** (see above).
 
 <a id="audio-quality"></a>
