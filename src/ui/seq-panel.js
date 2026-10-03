@@ -16,6 +16,7 @@ import { schedule } from './frame.js';
 import { createToggle, createSelect, createStepper, createMiniSlider, createSegmented } from './controls.js';
 import { icon } from './icons.js';
 import { createDrumPanel } from './drum-panel.js';
+import { createMidiFileTools } from './midi-file-tools.js';
 import { CHORD_PRESET_NAMES, CHORD_LEARNED, sanitizeChord, chordNotes, learnChord } from '../music/chord-trigger.js';
 
 export function midiName(m) {
@@ -119,6 +120,9 @@ export function createSeqPanel(ctx) {
     label: 'Rec dot', iconName: 'record', className: 'toggle--sm toggle--rec',
     tip: 'While playing, moving the dot records it into the step that is sounding',
   });
+  // v2.9 MIDI file export / import
+  const midiTools = createMidiFileTools(ctx, sel);
+  scope.add(midiTools.dispose);
   const tools = h('div', { class: 'seq-tools' },
     tool('dice', 'Randomise pattern', () => {
       if (has(music, 'randomizePattern')) call(music, 'randomizePattern', sel(), { density: 0.6 }); else localRandom(store, sel());
@@ -192,7 +196,8 @@ export function createSeqPanel(ctx) {
       h('div', { class: 'seq-pair' },
         h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Time'), humanTime.el),
         h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Velocity'), humanVel.el)),
-      tools));
+      tools,
+      midiTools.el));
 
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },
     field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el),

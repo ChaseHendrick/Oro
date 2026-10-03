@@ -9,6 +9,7 @@ import { openPopover } from './layers.js';
 import { recordingName } from './record.js';
 import { createSegmented, createToggle } from './controls.js';
 import { icon } from './icons.js';
+import { saveSessionMidi } from './midi-file-tools.js';
 
 export const BOUNCE_BARS = [1, 2, 4, 8, 16, 32, 64];
 export const BOUNCE_TAILS = [0, 1, 2, 4, 8];
@@ -69,6 +70,8 @@ export function openBounce(ctx, anchor) {
   scope.add(fxToggle.dispose);
 
   const go = h('button', { type: 'button', class: 'btn btn--primary btn--sm', html: icon('bounce') + '<span>Render WAV</span>', disabled: !ok });
+  // v2.9: the same bars as notes, one MIDI track per sequencer that is on
+  const midiBtn = h('button', { type: 'button', class: 'btn btn--sm', 'aria-label': 'Save the sequencers as a MIDI file', dataset: { tip: 'Save these bars of every track whose sequencer is on as a .mid file' } }, 'Save MIDI');
   const bar = h('div', { class: 'bounce-progress', hidden: true, role: 'progressbar', 'aria-label': 'Render progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, h('span', { class: 'bounce-fill' }));
   const status = h('p', { class: 'popover-note bounce-status', role: 'status', 'aria-live': 'polite' });
   const length = h('p', { class: 'bounce-length mono' });
@@ -83,7 +86,7 @@ export function openBounce(ctx, anchor) {
     field('Files', outSeg.el),
     h('div', { class: 'bounce-row' }, h('span', { class: 'bounce-row-text' }, 'Effects', h('span', { class: 'setting-hint' }, 'Delay, reverb, chorus and warmth')), fxToggle.el),
     length, bar, status,
-    h('div', { class: 'bounce-actions' }, go));
+    h('div', { class: 'bounce-actions' }, midiBtn, go));
 
   const renderLength = () => {
     const bars = Number(barsSel.value);
@@ -110,6 +113,10 @@ export function openBounce(ctx, anchor) {
     setProgress(p.done / p.total);
     setText(status, `Rendering... ${Math.round((p.done / p.total) * 100)}%`);
   }));
+
+  scope.on(midiBtn, 'click', () => {
+    try { setText(status, saveSessionMidi(store, Number(barsSel.value))); } catch (err) { console.warn('[ui] MIDI export failed', err); setText(status, 'The MIDI file could not be made.'); }
+  });
 
   scope.on(go, 'click', async () => {
     if (busy || !ok) return;

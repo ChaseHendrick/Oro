@@ -55,6 +55,7 @@ export function describeEdit(path, meta = {}) {
     return `${names[k[2]] || 'Edit'}, ${track}`;
   }
   if (k[0] === 'parts') return 'Tracks';
+  if (k[0] === 'tuning') return 'Tuning';
   return 'Edit';
 }
 

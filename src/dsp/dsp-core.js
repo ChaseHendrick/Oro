@@ -1015,6 +1015,9 @@ export class OroDSP {
     // computer (outputs 3/4); until then the send bus stays silent and Insert
     // is ignored, so a part can never go quiet with nowhere to go.
     this.pedalOn = false;
+    // v2.9 microtuning: per key, the tuned pitch as a fractional 12-TET note
+    // number (69 = 440 Hz). null = the default tuning, played by the original code.
+    this.tuneSemis = null;
     // Pedal latency compensation: dry delay (host samples) for parts in Send
     // mode (pedal send above 0, Insert off) while the pedal loop runs.
     this.dryDelayN = 0;
@@ -1105,6 +1108,29 @@ export class OroDSP {
 
   // ---- message protocol ---------------------------------------------------
 
+  /**
+   * v2.9 microtuning: `hz` is the frequency of every key 0..127 (any array
+   * of 128 numbers), or null for the default 12-TET at A4 = 440 Hz.
+   */
+  setTuning(hz) {
+    if (!hz || typeof hz.length !== 'number' || hz.length < 128) { this.tuneSemis = null; return; }
+    const t = new Float64Array(128);
+    for (let i = 0; i < 128; i++) {
+      const f = Number(hz[i]);
+      t[i] = f >= 1 && f <= 24000 ? 69 + 12 * Math.log2(f / 440) : f > 24000 ? 69 + 12 * Math.log2(24000 / 440) : i;
+    }
+    this.tuneSemis = t;
+  }
+
+  /** A (possibly gliding, fractional) key -> its tuned pitch as a 12-TET note number. */
+  tunedPitch(p) {
+    const t = this.tuneSemis;
+    if (!(p > 0)) return t[0] + (p || 0);
+    if (p >= 127) return t[127] + (p - 127);
+    const i = Math.floor(p), fr = p - i;
+    return fr === 0 ? t[i] : t[i] + (t[i + 1] - t[i]) * fr;
+  }
+
   handleMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
@@ -1146,6 +1172,7 @@ export class OroDSP {
       case 'kitPreview': this.previewKit(msg.part, msg); break;
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
+      case 'tuning': this.setTuning(msg.hz); break;
       case 'freeze': this.setFrozen(msg); break;
       case 'capture': { const i = Math.round(finiteOr(msg.part, -1)); this.capture = i >= 0 && i < MAX_PARTS ? i : -1; break; }
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
@@ -2450,7 +2477,8 @@ export class OroDSP {
     v.eA = tA; v.eB = tB; v.eC = tC; v.eD = tD;
 
     // pitch
-    const semis = v.pitch + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange];
+    // the tuned key (v2.9 microtuning) or, by default, the key itself
+    const semis = (this.tuneSemis === null ? v.pitch : this.tunedPitch(v.pitch)) + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange];
     let f = 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
     if (!(f > 0)) f = 1;
 
