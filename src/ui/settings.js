@@ -15,6 +15,8 @@ import { createPalettePicker } from './palettes.js';
 import { createTuningSettings } from './tuning-settings.js';
 import { icon } from './icons.js';
 import { createOperatorSettings } from './operator.js';
+import { has as hasFun } from '../core/fun.js';
+import { skinOn, setSkin, onSkin } from './eggs.js';
 
 export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -39,6 +41,19 @@ function prefBinding(ctx, key, fallback) {
     get: () => ctx.prefs.get(key), set: (v) => ctx.prefs.set(key, v), reset() {},
     subscribe: (fn) => ctx.prefs.on((k) => { if (k === key) fn(); }), modPath: () => null, learnTarget: () => null,
   };
+}
+
+/** v2.9 the Phosphor theme switch, listed once its secret is found (src/ui/eggs.js). */
+function phosphorRow(ctx, scope) {
+  if (!hasFun('secret', 'logo-seven')) return null;
+  const binding = {
+    def: { id: 'skin', label: 'Phosphor theme', default: 0 }, id: 'skin', scope: 'pref', part: () => null, path: () => 'skin',
+    get: () => (skinOn() ? 1 : 0), set: (v) => setSkin(!!v), reset() {},
+    subscribe: (fn) => onSkin(fn), modPath: () => null, learnTarget: () => null,
+  };
+  const c = createToggle(ctx, binding, { label: 'Phosphor theme', className: 'toggle--switch' });
+  scope.add(c.dispose);
+  return row('Phosphor theme', 'Soft green and amber on dark, or ink on paper in the light theme. Nothing flickers.', c.el);
 }
 
 function generalTab(ctx, scope) {
@@ -70,7 +85,8 @@ function generalTab(ctx, scope) {
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Appearance'),
       row('Theme', 'System follows your computer\'s light or dark setting', theme.el),
       row('Reduce motion', 'Calms animations. System follows your computer\'s setting.', motion.el),
-      row('Show tips', 'Hover hints and the map hint', tips.el)),
+      row('Show tips', 'Hover hints and the map hint', tips.el),
+      phosphorRow(ctx, scope)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
       row('Frame rate', 'Uncapped draws the map as often as the screen refreshes. A cap saves battery and heat; the sound is never affected.', fps.el),

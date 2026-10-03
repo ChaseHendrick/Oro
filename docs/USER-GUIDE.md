@@ -1594,8 +1594,8 @@ or interface microphone. Monitoring through the browser adds a few milliseconds 
 ### Operator panel (2.9)
 
 **Settings > Operator** imitates a synth that has had a hard life, plus a few service
-tools. Everything is off until you turn it on, and while it is off Oro sounds exactly as
-before. The switches are saved with the session (and with scenes); the damage itself is
+tools. Everything except **Free Play** is off until you turn it on, and while it is off Oro
+sounds exactly as before. The switches are saved with the session (and with scenes); the damage itself is
 not, so a reloaded session starts repaired. Bounces include the damage, quirks and
 vintage sound, but never a test tone.
 
@@ -1631,11 +1631,27 @@ The delay and reverb hear the cutouts but are not muffled, so their tails stay c
   played. **Amount** sets how often and how many repeats.
 * **Slowdown**: the pitch sags when many notes sound at once, like an overloaded old
   machine, and recovers as they stop. **Amount** sets how far it sags.
+* **Kill screen**: like an old game that was never meant to be played that long. Once
+  the transport has played a track's pattern 256 times in a row, the pattern starts to
+  break up as it plays: now and then a step plays a different note, at a different
+  velocity, or not at all, a little more often with every pass. It is the same every
+  time, it only changes what you hear (your saved pattern is not touched), and **Stop**
+  resets the count. Off by default.
 
 #### Vintage
 
 * **Vintage sampler**: an early sampler sound on the whole output, 12-bit at about 26 kHz
   with gentle filtering on each side.
+
+#### Coin slot
+
+* **Free Play** (on by default): Oro plays as usual. Turn it off and Oro stays silent,
+  whether from the keys, MIDI or the sequencer, until you insert a coin: press **C** on
+  the computer keyboard (while Free Play is off, C inserts a coin instead of lowering the
+  keyboard velocity) or **Insert coin**. Each coin is one credit, worth 3 minutes of play
+  counted from the first note. A small status at the top says **INSERT COIN** when no
+  credit is left, or the time left and **Credits: N**. It stays still and never blinks.
+  Credits are not saved; bounces are never blocked.
 
 #### Service
 
@@ -1652,6 +1668,19 @@ The delay and reverb hear the cutouts but are not muffled, so their tails stay c
 Time played (while audio is running), notes played, sessions started and patches saved.
 The counters are kept only in this browser and are never sent anywhere. **Reset
 counters** starts them again from zero.
+
+Below the counters are your secrets and badges (see the next section).
+
+### Secrets and badges (2.9)
+
+Oro has a few secrets hidden in it, and badges to earn as you use it. Nothing about them
+gets in the way: they never react while you type in a field, never stop a key doing what it
+normally does, and never change the sound or your session unless you choose to. Nothing
+flashes. When you find a secret or earn a badge, a short message says so.
+
+**Settings > Operator > Bookkeeping** shows how many secrets you have found, with a vague
+hint for each one still hidden, and every badge: the ones you have earned with the date,
+the rest as **???** with a hint. Like the counters, this is kept only in this browser.
 
 ### MIDI & MPC, Pedals, Shortcuts, About
 

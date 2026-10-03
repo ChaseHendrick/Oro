@@ -9,6 +9,8 @@ import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 import { createPedalPresetFields, openPedalPresetEditor } from './pedal-presets-form.js';
 import { describePedalPresets } from '../pedals/pedal-presets.js';
+import { has as hasFun } from '../core/fun.js';
+import { CABINET_PATCH } from '../presets/hidden-patches.js';
 import { loadPostcardFile } from './postcard.js';
 
 export function matchesQuery(item, q) {
@@ -26,6 +28,12 @@ export function groupByCategory(items, order = []) {
     groups.get(c).push(it);
   }
   return [...groups].filter(([, list]) => list.length);
+}
+
+/** v2.9 patches unlocked by a secret (src/ui/eggs.js): listed after the factory ones, loaded as objects. */
+export function hiddenPatches(unlocked = hasFun('secret', 'konami')) {
+  if (!unlocked) return [];
+  return [{ id: 'secret-cabinet', name: CABINET_PATCH.name, category: CABINET_PATCH.category, factory: true, tags: [...CABINET_PATCH.tags], author: '', folder: CABINET_PATCH.folder, favoriteSlots: [], pedalPresets: null, patch: CABINET_PATCH }];
 }
 
 export function createPatchBrowser(ctx) {
@@ -212,7 +220,7 @@ function openBrowser(ctx, anchor) {
     h('footer', { class: 'browser-foot' }, saveScene, postcardBtn, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
 
   function items() {
-    if (tab === 'patches') return (call(presets, 'patches') || []).filter(p => matchesQuery(p, query) && (!folderFilter || p.folder === folderFilter));
+    if (tab === 'patches') return [...(call(presets, 'patches') || []), ...hiddenPatches()].filter(p => matchesQuery(p, query) && (!folderFilter || p.folder === folderFilter));
     return (call(presets, 'scenes') || []).filter(sc => matchesQuery(sc, query));
   }
 
@@ -318,7 +326,7 @@ function openBrowser(ctx, anchor) {
 
   function choose(it) {
     if (tab === 'patches') {
-      call(presets, 'loadPatch', part, it.id);
+      call(presets, 'loadPatch', part, it.patch || it.id);
       render();
     } else {
       call(presets, 'loadScene', it.id);

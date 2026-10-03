@@ -52,6 +52,7 @@ import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 import { MIN_GAP, LATE_WINDOW } from './router.js';
 import { createLockPlayer, wrap01 } from './locks.js';
+import { KILL_LOOPS, killStep } from './kill-screen.js';
 
 export const LOOKAHEAD = 0.12;       // seconds of audio scheduled ahead (normal)
 // When the main thread stalls (garbage collection, a heavy redraw, a busy
@@ -117,7 +118,10 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   // chain: { e, rep, pos } song-mode position (entry, passes done, step in the pattern) or null.
   // plocked: parameter ids the last step locked (null: none); plockLast: audio time of the latest
   // locks message; restore: id -> [time, lead] of returns to the track's own value still queued.
-  const freshState = () => ({ absStep: 0, rateIdx: null, tie: null, heard: [], chain: null, plocked: null, plockLast: 0, restore: null });
+  // loops / stepped: v2.9 Kill screen, pattern passes completed since Play (src/music/kill-screen.js).
+  const freshState = () => ({ absStep: 0, rateIdx: null, tie: null, heard: [], chain: null, plocked: null, plockLast: 0, restore: null, loops: 0, stepped: false });
+  let killFired = false;
+  const killOn = () => { const o = store.get('operator'); return !!o && (o.killScreen === 1 || o.killScreen === true); };
   let ps = Array.from({ length: MAX_PARTS }, freshState);
   const count = () => partCount(store);
   /** The pattern track `p` plays, with `enabled` = its seqOn (null for no track). */
@@ -185,6 +189,8 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       ps[p].heard = [];
       ps[p].chain = null;
       ps[p].plocked = null;
+      ps[p].loops = 0;
+      ps[p].stepped = false;
     }
   }
 
@@ -227,9 +233,9 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
 
   // A tied note ends with the lead it started with, so a lead that changes
   // mid-tie can never put its note-off before its note-on.
-  function playStep(p, seq, idx, t, tNext, rate, lead = 0, abs = 0, chain = null) {
+  function playStep(p, seq, idx, t, tNext, rate, lead = 0, abs = 0, chain = null, kill = 0) {
     const st = ps[p];
-    const step = seq.steps && seq.steps[idx];
+    let step = seq.steps && seq.steps[idx];
     st.heard.push(chain ? { time: t, step: idx, entry: chain.entry } : { time: t, step: idx });
     if (st.heard.length > HEARD_KEEP) st.heard.shift();
     // A lock moves the dot whether or not the step has a note.
@@ -255,6 +261,12 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         router._engineOff(p, KIT_BASE_NOTE + r, Math.max(tr + 0.005, Math.min(tr + 0.05, tNext - MIN_GAP)), 'seq', lead);
       }
       return;
+    }
+    if (kill > 0) {
+      // Kill screen: the copy played here goes wrong, the stored pattern stays intact.
+      const was = step;
+      step = killStep(step, kill, p, idx);
+      if (step !== was && !killFired) { killFired = true; emitter.emit('killscreen', { part: p, loops: kill }); }
     }
     const active = seq.enabled && step && step.on && stepPlays(step, (probSeed | 0) + runs, p, abs);
     if (!active) {
@@ -380,6 +392,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
 
   function scheduleSeq(now, horizon) {
     const n = count();
+    const kill = killOn();
     for (let p = 0; p < n; p++) {
       let seq = seqOf(p);
       if (!seq) continue;
@@ -414,6 +427,8 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         let t = swungTime(st.absStep * rate, rateIdx);
         if (t >= reach) break;
         const idx = ch ? ch.idx : ((st.absStep % len) + len) % len;
+        if (idx === 0 && st.stepped) st.loops++;
+        st.stepped = true;
         st.absStep++;
         if (ch) st.chain.pos++;
         if (t < now - LATE_WINDOW) {
@@ -423,7 +438,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         }
         if (t < now) t = now;
         const tNext = swungTime(st.absStep * rate, rateIdx);
-        playStep(p, seq, idx, t, tNext, rate, lead, st.absStep - 1, ch);
+        playStep(p, seq, idx, t, tNext, rate, lead, st.absStep - 1, ch, kill && st.loops >= KILL_LOOPS ? st.loops : 0);
       }
     }
   }
@@ -507,6 +522,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     if (!playing) { setUiPlaying(0); return; }
     const now = timebase.now();
     playing = false;
+    for (const st of ps) { st.loops = 0; st.stepped = false; }
     // Steps queued ahead of the stop must not play after it.
     if (typeof router._cancelAfter === 'function') router._cancelAfter(now, 'seq');
     releaseTies(now);

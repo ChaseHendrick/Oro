@@ -46,6 +46,8 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   // part -> seconds its sequenced notes are sent early (pedal latency
   // compensation); null = none. Set by the pedal rig.
   let leadFn = null;
+  // (part, note, source) -> false to keep a note-on from the engine; null = every note plays
+  let gate = null;
   // `${source}:${note}` -> parts the note was sent to, so a note-off reaches the
   // same parts even if the key mode or selected part changed in between.
   const routes = new Map();
@@ -150,6 +152,8 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   function engineOn(part, note, vel, time, source, lead = 0) {
     if (note < 0 || note > 127) return;
+    // v2.9 Free Play off (src/ui/coin-slot.js): no credit, no sound
+    if (gate !== null && !gate(part, note, source)) return;
     const et = engineTime(time, lead);
     try { if (engine) engine.noteOn(part, note, vel, et, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOn failed', err); }
     emitter.emit('sched', { part, note, vel, on: true, time, source });
@@ -568,6 +572,8 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
 
   return {
     noteOn, noteOff, sustain, allNotesOff, heldNotes, heldEntries, resolve,
+    /** v2.9 coin slot: fn(part, note, source) -> whether a note-on may sound; null removes the gate. */
+    setGate: (fn) => { gate = typeof fn === 'function' ? fn : null; },
     on: (type, fn) => emitter.on(type, fn),
     off: (type, fn) => emitter.off(type, fn),
     // Internal hooks used by the transport.

@@ -50,6 +50,8 @@ export const PATHS = [
   { id: 'butterfly', name: 'Butterfly', orderLabel: 'Wings', paramLabel: 'Spread', desc: 'A smooth butterfly curve with paired wing lobes.' },
   { id: 'heart', name: 'Heart', orderLabel: 'Passes', paramLabel: 'Notch', desc: 'A smooth heart-shaped loop with adjustable indentation.' },
   { id: 'lemniscate', name: 'Lemniscate', orderLabel: 'Passes', paramLabel: 'Width', desc: 'The rational Bernoulli figure eight, traced smoothly.' },
+  // v2.9 hidden until found (the path picker lists it once unlocked, src/ui/eggs.js)
+  { id: 'oro', name: 'Oro', orderLabel: 'Slant', paramLabel: 'Height', desc: 'Traces the letters O, R and O along one line.', hidden: true },
 ];
 
 export const TERRAIN_NAMES = TERRAINS.map(t => t.name);

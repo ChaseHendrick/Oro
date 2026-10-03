@@ -13,7 +13,7 @@
 
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
 
-export const PATH_COUNT = 20;
+export const PATH_COUNT = 21;
 const ELLIPSE = 0, LISSA = 1, ROSE = 2, POLYGON = 3, STAR = 4, SPIRAL = 5,
   SCAN = 6, SPIRO = 7, EIGHT = 8, CUSP = 9, SUPER = 10, SCRIBBLE = 11;
 
@@ -314,7 +314,42 @@ function lemniscateAt(t, n, p, X, Y, j) {
   const c = fastCos(t * n), s = fastSin(t * n), d = 1 + s * s;
   X[j] = c / d; Y[j] = 2 * c * s / d * (0.2 + 0.8 * p);
 }
-const EXTRA_PATHS = [lineAt, squareAt, rasterAt, triangleAt, hypocycloidAt, butterflyAt, heartAt, lemniscateAt];
+// Oro (v2.9, hidden): the letters O, R, O as one closed line. The outline is
+// resampled at equal arc length (at a middle height) into ORO_N points, so the
+// dot moves at a steady speed. Height scales the letters vertically and Slant
+// (the order) leans them like italics.
+const ORO_N = 1024;
+const ORO = (() => {
+  const v = [];
+  const oval = (cx) => { for (let k = 0; k <= 40; k++) { const a = -Math.PI / 2 + 2 * Math.PI * k / 40; v.push([cx + 0.27 * Math.cos(a), Math.sin(a)]); } };
+  oval(-0.7);                                   // O, from its bottom, anticlockwise
+  v.push([-0.2, -1], [-0.2, 1], [0.02, 1]);     // R: stem and top
+  for (let k = 1; k <= 20; k++) { const a = Math.PI / 2 - Math.PI * k / 20; v.push([0.02 + 0.2 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]); }
+  v.push([-0.2, 0], [0.22, -1]);                // back to the stem, then the leg
+  v.push([0.7, -1]);
+  oval(0.7);                                    // O
+  v.push([-0.7, -1]);                           // home along the baseline
+  const H = 0.7, cum = [0];
+  for (let i = 1; i < v.length; i++) cum.push(cum[i - 1] + Math.hypot(v[i][0] - v[i - 1][0], H * (v[i][1] - v[i - 1][1])));
+  const total = cum[cum.length - 1], X = new Float64Array(ORO_N + 1), Y = new Float64Array(ORO_N + 1);
+  for (let i = 0, k = 1; i <= ORO_N; i++) {
+    const s = total * i / ORO_N;
+    while (k < v.length - 1 && cum[k] < s) k++;
+    const f = cum[k] > cum[k - 1] ? (s - cum[k - 1]) / (cum[k] - cum[k - 1]) : 0;
+    X[i] = v[k - 1][0] + f * (v[k][0] - v[k - 1][0]);
+    Y[i] = v[k - 1][1] + f * (v[k][1] - v[k - 1][1]);
+  }
+  X[ORO_N] = X[0]; Y[ORO_N] = Y[0];
+  return { X, Y };
+})();
+function oroAt(t, n, p, X, Y, j) {
+  let u = t; u -= Math.floor(u);
+  const s = u * ORO_N, k = Math.min(ORO_N - 1, s | 0), f = s - k, h = 0.45 + 0.5 * p, lean = 0.03 * (n - 1);
+  const y = h * (ORO.Y[k] + f * (ORO.Y[k + 1] - ORO.Y[k]));
+  X[j] = (ORO.X[k] + f * (ORO.X[k + 1] - ORO.X[k])) * (1 - lean) + lean * y;
+  Y[j] = y;
+}
+const EXTRA_PATHS = [lineAt, squareAt, rasterAt, triangleAt, hypocycloidAt, butterflyAt, heartAt, lemniscateAt, oroAt];
 
 /** Window, Mangle and Mirror operate on raw path coordinates before its affine transform. */
 export function shapePathPoint(x, y, t, window = 0, mangle = 0, mirror = 0, out) {

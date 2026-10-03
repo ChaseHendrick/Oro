@@ -23,8 +23,13 @@ export const OPERATOR_DEFAULTS = Object.freeze({
   glitch: 0, glitchAmount: 0.5,
   slowdown: 0, slowAmount: 0.5,
   vintage: 0, visual: 1,
+  // v2.9 coin slot and kill screen (src/ui/coin-slot.js, src/music/kill-screen.js):
+  // note-path switches, the DSP ignores them
+  freePlay: 1, killScreen: 0,
 });
-const BOOLS = ['drop', 'realDrops', 'water', 'staysWet', 'glitch', 'slowdown', 'vintage', 'visual'];
+const BOOLS = ['drop', 'realDrops', 'water', 'staysWet', 'glitch', 'slowdown', 'vintage', 'visual', 'freePlay', 'killScreen'];
+/** Drop damage at or above this makes a spill short the circuits (a brief crackle). */
+export const SHORT_CIRCUIT_DMG = 0.6;
 const AMOUNTS = ['dropSeverity', 'waterSeverity', 'glitchAmount', 'slowAmount'];
 /** The switches that change the sound (Real drops and the screen hint do not). */
 export const OPERATOR_SWITCHES = ['drop', 'water', 'glitch', 'slowdown', 'vintage'];
@@ -72,6 +77,8 @@ const TONE_PINK = 0.1;          // pink noise scale (about -20 dBFS RMS)
 const PULSE_PEAK = 0.25;        // polarity pulse peak (-12 dBFS), positive going
 const VINTAGE_RATE = 26040;     // Hz, sample and hold rate of the Vintage stage
 const VINTAGE_LEVELS = 2048;    // 12-bit signed
+const ARC_SEC = 0.25;           // short circuit crackle length
+const ARC_LEVEL = 0.06;         // its loudest spark (about -24 dBFS)
 
 const pow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
 const onePole = (fc, sr) => 1 - Math.exp(-TAU * Math.min(fc, sr * 0.45) / sr);
@@ -88,7 +95,7 @@ export class MasterOperator {
     this.fresh = 0;               // samples processed since the last wake-up
     this.ctl = 0;
     this.voices = 0;
-    this.stats = { drops: 0, spills: 0, clicks: 0, cutouts: 0, dropouts: 0, scratches: 0, shorts: 0, bitErrors: 0, stutters: 0 };
+    this.stats = { drops: 0, spills: 0, clicks: 0, cutouts: 0, dropouts: 0, scratches: 0, shorts: 0, bitErrors: 0, stutters: 0, arcs: 0 };
 
     // constants
     this.kGain = smooth(0.0015, s); this.kMix = smooth(0.03, s); this.kTone = smooth(0.01, s); this.kHum = smooth(0.2, s);
@@ -108,6 +115,7 @@ export class MasterOperator {
     this.fizz = 0; this.fizzWalk = 0.5;
     this.humT = 0; this.humAmp = 0; this.humPh = 0;
     this.shortLeft = 0;
+    this.arcLeft = 0; this.arcLen = Math.round(ARC_SEC * s); this.arcAmp = 0; this.arcK = decay(0.002, s);
     this.biteLeft = 0; this.biteHold = 4; this.biteCnt = 0; this.biteLev = 16; this.bhL = 0; this.bhR = 0;
     // channel gains (cutouts, dropouts, short-outs)
     this.gL = 1; this.gR = 1; this.tgL = 1; this.tgR = 1;
@@ -170,6 +178,8 @@ export class MasterOperator {
       this.wet = Math.min(1, this.wet + 0.6 * s);
       this.splash = Math.min(0.3, this.splash + 0.15 * s);
       this.shortLeft = Math.max(this.shortLeft, Math.round(0.03 * sr));
+      // Water on a badly dropped synth: a brief electrical short crackle
+      if (c.drop === 1 && this.dmg >= SHORT_CIRCUIT_DMG) { this.arcLeft = this.arcLen; this.stats.arcs++; }
       return true;
     }
     if (a === 'repair') {
@@ -178,7 +188,7 @@ export class MasterOperator {
         this.cutLeft = 0; this.dropLeft = 0; this.potLeft = 0;
       }
       if (v !== 'drop') {
-        this.wet = 0; this.splash = 0; this.shortLeft = 0; this.biteLeft = 0;
+        this.wet = 0; this.splash = 0; this.shortLeft = 0; this.biteLeft = 0; this.arcLeft = 0; this.arcAmp = 0;
       }
       return true;
     }
@@ -212,7 +222,7 @@ export class MasterOperator {
       || (c.drop === 1 && (this.dmg > 0 || this.shock > 0))
       || (c.water === 1 && (this.wet > 0 || this.splash > 0))
       || this.thud !== 0 || this.rattle !== 0 || this.clickL !== 0 || this.clickR !== 0
-      || this.gL !== 1 || this.gR !== 1 || this.cutLeft > 0 || this.shortLeft > 0
+      || this.gL !== 1 || this.gR !== 1 || this.cutLeft > 0 || this.shortLeft > 0 || this.arcLeft > 0
       || this.potMix !== 0 || this.mix !== 0 || this.shMix !== 0 || this.humAmp !== 0 || this.stLeft > 0 || this.splash !== 0;
   }
 
@@ -458,6 +468,14 @@ export class MasterOperator {
         x += this.rattle * k; y += this.rattle * k * 0.8;
         this.rattle *= this.rattleK;
         if (this.rattle < 1e-5) this.rattle = 0;
+      }
+      if (this.arcLeft > 0) {
+        // sparse sparks that fade over the short circuit
+        if (this.rnd() < 0.015) this.arcAmp = ARC_LEVEL * (0.4 + 0.6 * this.rnd()) * (0.25 + 0.75 * this.arcLeft / this.arcLen);
+        const k = this.arcAmp * (this.rnd() * 2 - 1);
+        x += k; y += k * 0.7;
+        this.arcAmp *= this.arcK;
+        if (--this.arcLeft === 0) this.arcAmp = 0;
       }
       if (waterOn && this.fizz > 0) {
         x += this.fizz * (this.rnd() * 2 - 1); y += this.fizz * (this.rnd() * 2 - 1);
