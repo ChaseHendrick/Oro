@@ -191,8 +191,20 @@ describe('routing, changes and stability', () => {
   it('every real effect produces finite bounded output at extreme settings and releases after reset', () => {
     for (const type of FX_TYPES.filter(type => type.id !== 'bypass')) for (const value of [0, 1]) {
       const fx = rack(type.id, { p1: value, p2: value, p3: value, p4: value }); settle(fx, SR * .15);
-      let energy = 0; for (let i = 0; i < SR * .3; i++) { const x = i === 0 ? 4 : .2 * Math.sin(i * .183) + .03 * Math.sin(i * .011); const y = fx.processSample(x, -x * .8, i % 512 < 128 ? 1 : 0); expect(Number.isFinite(y.L) && Number.isFinite(y.R), type.id).toBe(true); expect(Math.max(Math.abs(y.L), Math.abs(y.R)), type.id).toBeLessThanOrEqual(8.001); energy += y.L * y.L + y.R * y.R; }
-      expect(energy, type.id).toBeGreaterThan(0); fx.reset(); expect(fx.meter().rms).toBe(0);
+      let energy = 0, peak = 0, firstNonfinite = -1, firstOverbound = -1;
+      for (let i = 0; i < SR * .3; i++) {
+        const x = i === 0 ? 4 : .2 * Math.sin(i * .183) + .03 * Math.sin(i * .011);
+        const y = fx.processSample(x, -x * .8, i % 512 < 128 ? 1 : 0);
+        if ((!Number.isFinite(y.L) || !Number.isFinite(y.R)) && firstNonfinite < 0) firstNonfinite = i;
+        const magnitude = Math.max(Math.abs(y.L), Math.abs(y.R));
+        if (magnitude > 8.001 && firstOverbound < 0) firstOverbound = i;
+        peak = Math.max(peak, magnitude); energy += y.L * y.L + y.R * y.R;
+      }
+      const fixture = `${type.id} controls=${value}`;
+      expect(firstNonfinite, `${fixture} first nonfinite sample`).toBe(-1);
+      expect(firstOverbound, `${fixture} first sample exceeding bound`).toBe(-1);
+      expect(peak, fixture).toBeLessThanOrEqual(8.001);
+      expect(energy, fixture).toBeGreaterThan(0); fx.reset(); expect(fx.meter().rms).toBe(0);
     }
   });
 });

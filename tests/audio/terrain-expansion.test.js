@@ -19,7 +19,9 @@ describe('Orograph terrain expansion', () => {
     expect(PATHS.length).toBeGreaterThanOrEqual(20);
     for (let k = 14; k < TERRAINS.length; k++) {
       const a = generateTerrain(k), b = generateTerrain(k);
-      expect(a.length).toBe(512 * 512); expect(a).toEqual(b);
+      expect(a.length).toBe(512 * 512); expect(b.length).toBe(a.length);
+      // Compare every sample without Vitest recursively visiting 262,144 keys.
+      expect(Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength)), TERRAINS[k].id).toBe(true);
       expect(Math.max(...a.subarray(0, 4096).map(Math.abs))).toBeGreaterThan(0.05);
     }
   });

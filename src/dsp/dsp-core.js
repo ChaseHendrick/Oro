@@ -97,6 +97,13 @@ const M_PARAM = MOD_SLOT.pathParam, M_SIZE = MOD_SLOT.size, M_STRETCH = MOD_SLOT
 const M_ROTATE = MOD_SLOT.rotate, M_CX = MOD_SLOT.centerX, M_CY = MOD_SLOT.centerY, M_FINE = MOD_SLOT.fine;
 const M_CUTOFF = MOD_SLOT.cutoff, M_RES = MOD_SLOT.resonance, M_DRIVE = MOD_SLOT.drive, M_PAN = MOD_SLOT.pan;
 const M_LAPS = MOD_SLOT.laps, M_PACE = MOD_SLOT.pace, M_FORMANT = MOD_SLOT.formant;
+// Cache registry offsets outside the voice control loop. Node 22 repeatedly
+// deoptimizes generic named loads on this registry inside the large hot method.
+const M_GLIDE=MOD_SLOT.glide, M_SUB=MOD_SLOT.sub, M_AIR=MOD_SLOT.air;
+const M_PHASE_MOD=MOD_SLOT.phaseMod, M_PHASE_RATIO=MOD_SLOT.phaseRatio;
+const M_PATH_MANGLE=MOD_SLOT.pathMangle, M_PATH_WINDOW=MOD_SLOT.pathWindow;
+const M_KEY_TRACK=MOD_SLOT.keyTrack, M_FILTER_ENV=MOD_SLOT.filterEnv;
+const M_DETUNE=MOD_SLOT.detune, M_SPREAD=MOD_SLOT.spread, M_VEL_SENS=MOD_SLOT.velSens;
 const SIZE_DEF = PART_PARAM_MAP.size;
 const EXTRA_IDS = ['sub2','airTexture','inharmProfile','inharmAmount','phaseMod','phaseRatio','ringMod','ringRatio','pluck','pluckDecay','pluckTone','pluckDispersion','pathWindow','pathMangle'];
 const EXTRA_SLOTS = EXTRA_IDS.map(id => MOD_SLOT[id]);
@@ -2068,7 +2075,7 @@ export class OrographDSP {
     }
     if (v.env2Stage === DECAY && Math.abs(v.env2Lvl - P.sus2) < 1e-9) v.env2Lvl = P.sus2;
 
-    const glideSlot=MOD_SLOT.glide;
+    const glideSlot=M_GLIDE;
     const glide=P.lfoDepth[glideSlot] || P.envDepth[glideSlot] || P.vLinked[glideSlot] || P.partLink[glideSlot] ? (snap ? P.partPlain[glideSlot] : v.modPlain[glideSlot]) : prm[PI.glide];
     if (glide > 0.0005) {
       if (!snap) {
@@ -2160,8 +2167,8 @@ export class OrographDSP {
     if (Math.abs(v.laps - v.sLaps) < 1e-9) v.laps = v.sLaps;
     if (Math.abs(v.pace - v.sPace) < 1e-9) v.pace = v.sPace;
     if (Math.abs(v.subLv - v.sSub) < 1e-9) v.subLv = v.sSub;
-    const subT=SUB_GAIN*MP[MOD_SLOT.sub]*MP[MOD_SLOT.sub];
-    const airT=Math.round(prm[PI.airType]) === 0 ? AIR_RMS*MP[MOD_SLOT.air]*MP[MOD_SLOT.air] : 0;
+    const subT=SUB_GAIN*MP[M_SUB]*MP[M_SUB];
+    const airT=Math.round(prm[PI.airType]) === 0 ? AIR_RMS*MP[M_AIR]*MP[M_AIR] : 0;
     const lapsT = MP[M_LAPS];
     let paceT = MP[M_PACE];
     if (snap) {
@@ -2213,7 +2220,7 @@ export class OrographDSP {
     // it is added per sample (see terrainPaced).
     let speed = f * pathLength(v.pShape, v.pOrder, v.sParam) * v.sSize * (ax > 1 ? ax : 1 / ax) * (1 + 1.3 * v.sWarp) * v.sLaps + 1e-9;
     if (v.trav & 1) speed *= 2;
-    speed*=1+0.5*Math.PI*Math.abs(v.modPlain[MOD_SLOT.phaseMod]*v.modPlain[MOD_SLOT.phaseRatio])+3*Math.abs(v.modPlain[MOD_SLOT.pathMangle])+v.modPlain[MOD_SLOT.pathWindow];
+    speed*=1+0.5*Math.PI*Math.abs(v.modPlain[M_PHASE_MOD]*v.modPlain[M_PHASE_RATIO])+3*Math.abs(v.modPlain[M_PATH_MANGLE])+v.modPlain[M_PATH_WINDOW];
     v.eSpeed = speed / f;
     const rawA = this.mipRaw(P.terrA, speed), rawB = this.mipRaw(P.terrB, speed);
     const topA = P.terrA.length - 1, topB = P.terrB.length - 1;
@@ -2226,7 +2233,7 @@ export class OrographDSP {
     if (snap) { v.uLvA = uA; v.uLvB = uB; } else { v.uLvA += (uA - v.uLvA) * k; v.uLvB += (uB - v.uLvB) * k; }
 
     // filter
-    const fcRaw = Math.exp((v.sCut + MP[MOD_SLOT.keyTrack] * (semis - 60) / 12 + MP[MOD_SLOT.filterEnv] * 6 * e2) * Math.LN2);
+    const fcRaw = Math.exp((v.sCut + MP[M_KEY_TRACK] * (semis - 60) / 12 + MP[M_FILTER_ENV] * 6 * e2) * Math.LN2);
     let fc = fcRaw;
     const fcMax = 0.45 * fs2;
     if (!(fc > 16)) fc = 16; else if (fc > fcMax) fc = fcMax;
@@ -2263,7 +2270,7 @@ export class OrographDSP {
       v.dLaps = (v.sLaps - v.laps) * inv; v.dPace = (v.sPace - v.pace) * inv; v.dSubLv = (v.sSub - v.subLv) * inv;
       v.dcLvA = (v.uLvA - v.cLvA) * inv; v.dcLvB = (v.uLvB - v.cLvB) * inv;
     }
-    const detune=MP[MOD_SLOT.detune], spread=MP[MOD_SLOT.spread];
+    const detune=MP[M_DETUNE], spread=MP[M_SPREAD];
     const layoutChanged=detune !== prm[PI.detune] || spread !== prm[PI.spread];
     if (layoutChanged || P.layoutDirty) for (let q=0;q<MAX_UNISON;q++) {
       const position=U === 1 ? 0 : q/(U-1)*2-1;
@@ -2292,7 +2299,7 @@ export class OrographDSP {
     if (snap) { v.subInc = subIncT; v.dSubInc = 0; } else v.dSubInc = (subIncT - v.subInc) * inv;
 
     this.controlExtras(P,v,snap,f,k,inv);
-    const velocitySensitivity=MP[MOD_SLOT.velSens];
+    const velocitySensitivity=MP[M_VEL_SENS];
     v.velGain=1-velocitySensitivity*(1-Math.pow(clamp01(v.vel),1.5));
     this.setMipRamp(v, P.terrA.length, v.sLvA, snap, true, inv);
     this.setMipRamp(v, P.terrB.length, v.sLvB, snap, false, inv);

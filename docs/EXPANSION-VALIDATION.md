@@ -5,7 +5,7 @@ feature request. It does not independently test or compare another instrument.
 
 ## Functional evidence
 
-The final local suite passed **1,229 tests in 100 files**, including import identity,
+The final local suite passed **1,233 tests in 101 files**, including import identity,
 minimap caching and desktop updater checks. Web and standalone HTML builds passed.
 Focused tests cover the following contracts:
 
@@ -20,8 +20,9 @@ Focused tests cover the following contracts:
 * Forty target envelopes and controller banks persist through patches, scenes and
   sessions. MIDI expression, sustain level and breath reach modulation even when
   the corresponding CC is learned or mapped; note-sustain retains existing routing.
-* Every track effect has a distinct tested response. Ten routing layouts pass
-  dry identity, impulse, spectral and dynamics checks. Effects follow stable track
+* Every track effect has a distinct tested response. Effect tests cover impulse,
+  spectrum and dynamics. All ten routing layouts pass dry identity, branch arithmetic
+  and asymmetric multitone comparisons. Effects follow stable track
   identities, continue their tails after note release and clear on Panic.
 * Favorite banks, factory-only banks, metadata, PCM loops and four-channel image
   planes round-trip. Persistence tests cover blocked/failed databases, transaction
@@ -52,6 +53,14 @@ local machine; they are not a browser deadline or all-computer guarantee.
 | One complex voice, unison 8 | 0.349 ms | 0.400 ms |
 | Eight complex voices, unison 8 | 2.638 ms | 2.777 ms |
 | Eight complex voices plus all 40 own envelopes/controller banks | 3.515 ms | 3.874 ms |
+
+These complex-session timings preceded the final registry-offset cache in the voice
+control loop. A separate paired Node 22 Air fixture rendered six seconds of audio,
+using the best CPU-time result of three runs: **27.2973% before, 12.7695% after**, a
+53.2% reduction. Fixed modulation indices now avoid repeated V8 deoptimization.
+Four regression fixtures preserve every Float32 output bit from the earlier core
+across 44.1/48/96 kHz, four quality modes and changing controls. The unchanged
+35% Air CPU budget passed locally; CI checks the Linux runner separately.
 
 `node dev/bench-track-fx.mjs` measured 63 to 128 ms of processing per second of
 rendered audio for four tracks with four active effects each, and 305 to 514 ms
