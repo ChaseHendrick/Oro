@@ -9,6 +9,7 @@ import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 import { createPedalPresetFields, openPedalPresetEditor } from './pedal-presets-form.js';
 import { describePedalPresets } from '../pedals/pedal-presets.js';
+import { loadPostcardFile } from './postcard.js';
 
 export function matchesQuery(item, q) {
   if (!q) return true;
@@ -196,7 +197,9 @@ function openBrowser(ctx, anchor) {
   let folderFilter = '';
   const tabScenes = h('button', { type: 'button', class: 'tab-btn', role: 'tab', 'aria-selected': 'false' }, 'Scenes');
   const list = h('div', { class: 'preset-list', id: listId, role: 'listbox', 'aria-label': 'Presets' });
-  const fileInput = h('input', { type: 'file', accept: '.json,application/json', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
+  const fileInput = h('input', { type: 'file', accept: '.json,application/json,.png,image/png', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
+  // v2.9 the selected track's sound as a postcard image and share link
+  const postcardBtn = ctx.openPostcard ? h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('postcard') + '<span>Postcard</span>', dataset: { tip: 'Share this track\'s sound as an image and a link' } }) : null;
   const saveScene = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('scene') + '<span>Save scene</span>' });
   const exportBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('export') + '<span>Export</span>', disabled: !has(presets, 'exportJSON') });
   const importBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs', html: icon('import') + '<span>Import</span>', disabled: !has(presets, 'importJSON') });
@@ -206,7 +209,7 @@ function openBrowser(ctx, anchor) {
       h('div', { class: 'tabs tabs--sm', role: 'tablist', 'aria-label': 'Preset type' }, tabPatches, tabScenes, tabFavorites)),
     folder,
     list,
-    h('footer', { class: 'browser-foot' }, saveScene, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
+    h('footer', { class: 'browser-foot' }, saveScene, postcardBtn, h('span', { class: 'spacer' }), exportBtn, importBtn, fileInput));
 
   function items() {
     if (tab === 'patches') return (call(presets, 'patches') || []).filter(p => matchesQuery(p, query) && (!folderFilter || p.folder === folderFilter));
@@ -356,11 +359,17 @@ function openBrowser(ctx, anchor) {
       ctx.toast('Export did not work', { kind: 'error' });
     }
   });
+  if (postcardBtn) scope.on(postcardBtn, 'click', () => { pop.close('postcard'); ctx.openPostcard(part); });
   scope.on(importBtn, 'click', () => fileInput.click());
   scope.on(fileInput, 'change', async () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
     if (!file) return;
+    // v2.9 a postcard image loads its sound onto this track
+    if (/\.png$/i.test(file.name || '') || file.type === 'image/png') {
+      if (!(await loadPostcardFile(ctx, file))) ctx.toast('Import did not work', { kind: 'error', detail: 'This image has no Oro sound in it. Postcards made with Oro carry one.' });
+      return;
+    }
     try {
       const res = await presets.importJSON(file);
       const n = (res && res.patches) || 0, m = (res && res.scenes) || 0;

@@ -16,6 +16,7 @@ import { uniqueIds } from './tracks.js';
 import { sanitizePedalPresets } from '../pedals/pedal-presets.js';
 import { sanitizeSmart } from './smart.js';
 import { sanitizeChord } from '../music/chord-trigger.js';
+import { sanitizeGhost } from '../music/ghost-data.js';
 import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
 
 function num(v, fallback) {
@@ -234,7 +235,14 @@ export function sanitizePart(src, i) {
     ...(sanitizeSmart(p.smart) ? { smart: sanitizeSmart(p.smart) } : {}),
     // v2.8 chord trigger, absent until it is set (absent = off)
     ...(p.chord && typeof p.chord === 'object' ? { chord: sanitizeChord(p.chord) } : {}),
+    // v2.9 ghost replay, absent until one is recorded
+    ...ghostField(p.ghost),
   };
+}
+
+function ghostField(src) {
+  const g = src ? sanitizeGhost(src) : null;
+  return g ? { ghost: g } : {};
 }
 
 /**

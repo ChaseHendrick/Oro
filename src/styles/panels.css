@@ -1408,3 +1408,8 @@
   .seq-plock-mark { width: 7px; height: 7px; top: 3px; right: 3px; }
   .seq-plock-hint { white-space: normal; }
 }
+
+/* v2.9 Ghost replay (Seq tab) */
+.seq-ghost { display: flex; flex-direction: column; gap: 4px; }
+.seq-ghost-btn:focus-visible { outline: 2px solid var(--focus, var(--part)); outline-offset: 1px; }
+@media (pointer: coarse) { .seq-ghost-btn { min-height: 44px; min-width: 44px; } }

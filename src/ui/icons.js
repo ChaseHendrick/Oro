@@ -104,6 +104,10 @@ const P = {
   // v2.8 freeze (six-armed flake) and chord (three stacked note heads)
   freeze: '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><path d="M9.6 4.6L12 7l2.4-2.4M9.6 19.4L12 17l2.4 2.4M4.6 10.9l3.3.9-.9 3.3M19.4 13.1l-3.3-.9.9-3.3M7 8.9l.9 3.3M17 15.1l-.9-3.3"/>',
   chord: '<ellipse cx="9" cy="17.6" rx="2.6" ry="1.9"/><ellipse cx="9" cy="12" rx="2.6" ry="1.9"/><ellipse cx="9" cy="6.4" rx="2.6" ry="1.9"/><path d="M11.6 17.4V4.2M11.6 4.2l5.2 1.8"/>',
+  // v2.9 postcards and ghost replay
+  share: '<path d="M12 14.6V4.4M8.2 8.2L12 4.4l3.8 3.8"/><path d="M7.4 11.2H6a1.2 1.2 0 0 0-1.2 1.2v6.4A1.2 1.2 0 0 0 6 20h12a1.2 1.2 0 0 0 1.2-1.2v-6.4a1.2 1.2 0 0 0-1.2-1.2h-1.4"/>',
+  postcard: '<rect x="3.6" y="5.6" width="16.8" height="12.8" rx="1.8"/><path d="M13.2 9h4M13.2 12h4M13.2 15h2.6"/><path d="M6.4 15.2l2.2-3 1.8 2.2"/>',
+  ghost: '<path d="M6.2 19.6V10.4a5.8 5.8 0 0 1 11.6 0v9.2l-1.9-1.5-1.9 1.5-2-1.5-2 1.5-1.9-1.5z"/><circle cx="10" cy="10.6" r=".9" fill="currentColor" stroke="none"/><circle cx="14" cy="10.6" r=".9" fill="currentColor" stroke="none"/>',
 };
 
 export function icon(name, { size, cls = '' } = {}) {

@@ -82,6 +82,36 @@ export function sanitizePatch(src) {
   return patch;
 }
 
+/**
+ * The sound of part object `cur` as a patch (what Save stores, without an id):
+ * no mute / solo, pedal routing or send amounts, which belong to the mix.
+ * v2.9 postcards and share links send this.
+ */
+export function partPatch(cur, { name, category = 'User', author = '', folder = '', tags = [] } = {}) {
+  const src = cur || defaultPart(0);
+  const params = { ...src.params };
+  delete params.mute;
+  delete params.solo;
+  for (const id of PEDAL_PARAM_IDS) delete params[id];
+  for (const id of SEND_PARAM_IDS) delete params[id];
+  const patch = {
+    name: String(name ?? src.patchName ?? 'My patch').slice(0, 60),
+    category, author, folder,
+    trackFx: JSON.parse(JSON.stringify(src.trackFx ?? null)),
+    noiseRecording: src.noiseRecording ? { ...src.noiseRecording } : null,
+    tags,
+    params,
+    mods: compactMods(src.mods),
+    links: sanitizeLinks(src.links),
+    // A deep copy: the dot holds arrays (waypoints) that later edits to the part must not reach.
+    dot: JSON.parse(JSON.stringify(src.dot || {})),
+  };
+  if (src.userTerrain && (src.userTerrain.A || src.userTerrain.B)) patch.userTerrain = { ...src.userTerrain };
+  const smart = sanitizeSmart(src.smart);
+  if (smart) patch.smart = smart;
+  return patch;
+}
+
 export function sanitizeScene(src) {
   if (!src || typeof src !== 'object' || !Array.isArray(src.parts)) return null;
   return {
@@ -243,29 +273,16 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     // Saving under the name of one of your own patches updates it in place.
     const existing = user.patches.find(x => x.name === clean);
     const from = allPatches().find(x => x.name === cur.patchName);
-    const params = { ...cur.params };
-    delete params.mute;
-    delete params.solo;
-    for (const id of PEDAL_PARAM_IDS) delete params[id];
-    for (const id of SEND_PARAM_IDS) delete params[id];
     const patch = {
       id: existing ? existing.id : newId(),
-      name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),
-      category: category && typeof category === 'string' ? category.slice(0, 30) : (from ? from.category : 'User'),
-      author: String(author ?? existing?.author ?? '').trim().slice(0, 60),
-      folder: String(folder ?? existing?.folder ?? '').trim().slice(0, 80),
-      trackFx: JSON.parse(JSON.stringify(cur.trackFx)),
-      noiseRecording: cur.noiseRecording ? { ...cur.noiseRecording } : null,
-      tags: from ? (from.tags || []).slice() : [],
-      params,
-      mods: compactMods(cur.mods),
-      links: sanitizeLinks(cur.links),
-      // A deep copy: the dot holds arrays (waypoints) that later edits to the part must not reach.
-      dot: JSON.parse(JSON.stringify(cur.dot || {})),
+      ...partPatch(cur, {
+        name: existing ? clean : uniqueName(clean, FACTORY_PATCH_LIST),
+        category: category && typeof category === 'string' ? category.slice(0, 30) : (from ? from.category : 'User'),
+        author: String(author ?? existing?.author ?? '').trim().slice(0, 60),
+        folder: String(folder ?? existing?.folder ?? '').trim().slice(0, 80),
+        tags: from ? (from.tags || []).slice() : [],
+      }),
     };
-    if (cur.userTerrain && (cur.userTerrain.A || cur.userTerrain.B)) patch.userTerrain = { ...cur.userTerrain };
-    const smart = sanitizeSmart(cur.smart);
-    if (smart) patch.smart = smart;
     const pp = pedalPresets === undefined ? sanitizePedalPresets(existing && existing.pedalPresets) : sanitizePedalPresets(pedalPresets);
     if (pp) patch.pedalPresets = pp;
     if (existing) user.patches[user.patches.indexOf(existing)] = patch;

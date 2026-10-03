@@ -10,6 +10,7 @@ import { h } from './dom.js';
 import { icon } from './icons.js';
 import { openMenu } from './menu.js';
 import { openPopover } from './layers.js';
+import { ghostMenuItems } from './ghost-ui.js';
 
 const nameOf = (store, i) => store.get(`parts.${i}.name`) || `Track ${i + 1}`;
 
@@ -71,6 +72,9 @@ export function openTrackMenu(ctx, anchor, i) {
     { separator: true },
     // v2.8 Freeze
     ...(ctx.freeze ? [{ label: ctx.freeze.isFrozen(i) ? 'Unfreeze' : ctx.freeze.isBusy(i) ? 'Cancel freezing' : 'Freeze', icon: icon('freeze'), onSelect: () => toggleFreeze(ctx, i) }] : []),
+    // v2.9 ghost replay and postcards
+    ...ghostMenuItems(ctx, i),
+    ...(ctx.openPostcard ? [{ label: 'Postcard...', icon: icon('postcard'), onSelect: () => ctx.openPostcard(i) }] : []),
     { label: 'Add track', icon: icon('plus'), disabled: full, onSelect: () => addTrackAction(ctx) },
     { label: 'Remove track', icon: icon('trash'), danger: true, disabled: n <= MIN_PARTS, onSelect: () => removeTrackAction(ctx, i) },
   ], { label: `Track ${i + 1} options` });

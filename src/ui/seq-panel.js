@@ -16,6 +16,7 @@ import {
   PLOCK_IDS, PLOCK_MAX, PART_PARAM_MAP, CHAIN_MAX, CHAIN_REPEATS_MAX, toNorm, fromNorm, formatValue,
 } from '../core/params.js';
 import { addPattern, selectPattern, removePattern } from '../core/tracks.js';
+import { createGhostBar } from './ghost-ui.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
 import { schedule } from './frame.js';
 import { createToggle, createSelect, createStepper, createMiniSlider, createSegmented } from './controls.js';
@@ -196,6 +197,9 @@ export function createSeqPanel(ctx) {
     setText(captureStatus, (res && res.message) || '');
   });
   scope.add(store.subscribe('ui.selectedPart', () => setText(captureStatus, '')));
+  // v2.9 Ghost replay
+  const ghostBar = createGhostBar(ctx);
+  scope.add(ghostBar.dispose);
 
   const tool = (name, label, fn) => {
     const b = h('button', { type: 'button', class: 'icon-btn icon-btn--sm', 'aria-label': label, dataset: { tip: label }, html: icon(name) });
@@ -294,6 +298,7 @@ export function createSeqPanel(ctx) {
       chainBox,
       h('div', { class: 'seq-line seq-capture' }, captureBtn),
       captureStatus,
+      ghostBar.el,
       h('div', { class: 'seq-line' }, seqOn.el, seqRate.el),
       h('div', { class: 'seq-pair' },
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Length'), seqLen.el),
