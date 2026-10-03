@@ -25,7 +25,14 @@
 // (activePattern) while its seqOn is set. Per-track scheduling state follows
 // the track when the list is reordered (src/core/tracks.js).
 
-import { MAX_PARTS, SEQ_RATES, stepToMidi, activeSeq, clamp } from '../core/params.js';
+// Probability and ratchets: a step that is on plays this pass when
+// stepPlays() says so (a hash of the seed, the track and the step count since
+// Play, so it is repeatable); `probSeed` sets the seed and each Play moves on
+// to the next one. A ratchet of N splits the step into N equal hits, each with
+// the step's gate scaled to its share and RATCHET_DECAY times the velocity of
+// the hit before it. A slide applies to the last hit.
+
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, activeSeq, clamp } from '../core/params.js';
 import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 import { MIN_GAP, LATE_WINDOW } from './router.js';
@@ -72,7 +79,7 @@ export function stepLock(seq, step) {
   return { x: wrap01(finite(step.lx, 0.5)), y: wrap01(finite(step.ly, 0.5)) };
 }
 
-export function createTransport({ store, engine, timebase, router, timers, lockPlayer = null }) {
+export function createTransport({ store, engine, timebase, router, timers, lockPlayer = null, probSeed = 1 }) {
   const emitter = createEmitter();
   let playing = false;
   let follow = false;          // the "follow external clock" setting
@@ -90,6 +97,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   let timer = null;
   let lookahead = LOOKAHEAD;   // adaptive, see adaptLookahead()
   let lastTickMs = null;       // performance time of the previous timer tick
+  let runs = -1;               // Plays so far (minus one): advances the probability seed
   // heard: [{ time, step }] of the latest scheduled steps, oldest first.
   const freshState = () => ({ absStep: 0, rateIdx: null, tie: null, heard: [] });
   let ps = Array.from({ length: MAX_PARTS }, freshState);
@@ -148,6 +156,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   }
 
   function resetParts(beat) {
+    runs++;
     for (let p = 0; p < MAX_PARTS; p++) {
       const seq = seqOf(p) || {};
       const rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
@@ -189,7 +198,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
 
   // A tied note ends with the lead it started with, so a lead that changes
   // mid-tie can never put its note-off before its note-on.
-  function playStep(p, seq, idx, t, tNext, rate, lead = 0) {
+  function playStep(p, seq, idx, t, tNext, rate, lead = 0, abs = 0) {
     const st = ps[p];
     const step = seq.steps && seq.steps[idx];
     st.heard.push({ time: t, step: idx });
@@ -198,17 +207,33 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     const lock = stepLock(seq, step);
     announceStep(p, idx, t, lock);
     if (lock) locks.schedule(p, idx, lock, t, clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t));
-    const active = seq.enabled && step && step.on;
+    const active = seq.enabled && step && step.on && stepPlays(step, (probSeed | 0) + runs, p, abs);
     if (!active) {
       if (st.tie) { router._engineOff(p, st.tie.note, t, 'seq', st.tie.lead); st.tie = null; }
       return;
     }
     const note = clamp(stepToMidi(step, seq.baseOctave ?? 3, store.get('global.scaleRoot') || 0, store.get('global.scaleType') || 0), 0, 127);
     const vel = step.accent ? 1 : clamp(Number.isFinite(step.vel) ? step.vel : 0.8, 0.01, 1);
-    const gateEnd = Math.max(t + 0.01, Math.min(t + clamp(step.gate ?? 0.5, 0.05, 1) * rate * spb, tNext - MIN_GAP));
+    const gateSec = clamp(step.gate ?? 0.5, 0.05, 1) * rate * spb;
+    const hits = stepRatchet(step);
+    if (hits === 1) { playHit(p, note, vel, gateSec, step.slide, t, tNext, lead, 0.01); return; }
+    const span = tNext - t;
+    for (let i = 0; i < hits; i++) {
+      const ti = t + span * i / hits;
+      const tiNext = i + 1 === hits ? tNext : t + span * (i + 1) / hits;
+      // The minimum note length shrinks with very short hits so a hit never outlasts its slot.
+      playHit(p, note, clamp(vel * RATCHET_DECAY ** i, 0.01, 1), gateSec / hits, i + 1 === hits && step.slide, ti, tiNext, lead,
+        Math.min(0.01, (tiNext - ti) / 2));
+    }
+  }
+
+  /** One note of a step (a ratcheted step plays several), with ties and slides. */
+  function playHit(p, note, vel, gateSec, slide, t, tNext, lead, minLen) {
+    const st = ps[p];
+    const gateEnd = Math.max(t + minLen, Math.min(t + gateSec, tNext - MIN_GAP));
     if (st.tie && st.tie.note === note) {
       // Same pitch tied over: the note simply keeps sounding.
-      if (!step.slide) { router._engineOff(p, note, gateEnd, 'seq', st.tie.lead); st.tie = null; }
+      if (!slide) { router._engineOff(p, note, gateEnd, 'seq', st.tie.lead); st.tie = null; }
       return;
     }
     router._engineOn(p, note, vel, t, 'seq', lead);
@@ -216,7 +241,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       router._engineOff(p, st.tie.note, t + SLIDE_OVERLAP, 'seq', st.tie.lead);
       st.tie = null;
     }
-    if (step.slide) st.tie = { note, onTime: t, lead };
+    if (slide) st.tie = { note, onTime: t, lead };
     else router._engineOff(p, note, gateEnd, 'seq', lead);
   }
 
@@ -250,7 +275,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         }
         if (t < now) t = now;
         const tNext = swungTime(st.absStep * rate, rateIdx);
-        playStep(p, seq, idx, t, tNext, rate, lead);
+        playStep(p, seq, idx, t, tNext, rate, lead, st.absStep - 1);
       }
     }
   }

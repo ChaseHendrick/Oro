@@ -1,4 +1,4 @@
-import { FX_TYPE_MAP, FX_ROUTINGS, defaultTrackFx } from './track-fx-config.js';
+import { FX_TYPE_MAP, FX_ROUTINGS, FILTER_SEQ_PATTERNS, defaultTrackFx, freqShiftHz } from './track-fx-config.js';
 export { FX_TYPES, FX_ROUTINGS, defaultTrackFx, defaultFxSlot, sanitizeTrackFx } from './track-fx-config.js';
 
 const TAU = Math.PI * 2;
@@ -9,6 +9,20 @@ const db = (x) => Math.pow(10, x / 20);
 const pole = (hz, sr) => 1 - Math.exp(-TAU * Math.min(hz, sr * .45) / sr);
 const timePole = (seconds, sr) => 1 - Math.exp(-1 / Math.max(1, seconds * sr));
 const wrap = (x) => x - Math.floor(x);
+// Frequency shifter Hilbert pair: two chains of four second-order all-pass
+// sections, y[n] = c (x[n] + y[n-2]) - x[n-2], whose outputs stay close to
+// 90 degrees apart across the audio band (c is the square of a published,
+// widely used 8th-order coefficient set). The first chain is delayed by one
+// sample so the two chains line up.
+const HILBERT_A = Float64Array.from([.6923878, .9360654322959, .9882295226860, .9987488452737], c => c * c);
+const HILBERT_B = Float64Array.from([.4021921162426, .8561710882420, .9722909545651, .9952884791278], c => c * c);
+const HILBERT_STRIDE = 34;
+// Hyper dimension voices: base delay (s), LFO rate multiplier, pan.
+const HYPER_BASE = Float64Array.from([.0071, .0113, .0149, .0193, .0237, .0281]);
+const HYPER_RATE = Float64Array.from([1, 1.18, .83, 1.37, .71, 1.52]);
+const HYPER_PAN = Float64Array.from([-1, 1, -.6, .6, -.25, .25]);
+const SEQ_STEPS = Float64Array.from(FILTER_SEQ_PATTERNS.flatMap(pattern => pattern.steps));
+const SEQ_LOW = Math.log(.005);
 const rounded = (x) => { x = clamp(x, -3, 3); return x * (27 + x * x) / (27 + 9 * x * x); };
 
 // RBJ biquads in transposed direct form II. Coefficients and both channel
@@ -56,6 +70,11 @@ class EffectSlot {
     this.threshold = 1; this.duckScale = 0; this.ratioPower = 0; this.makeup = 1; this.downPower = 0; this.upPower = 0;
     this.floor = 0; this.noise = 0; this.fdnGain = 0; this.fdnTone = 0; this.grainL = 0; this.grainR = 0; this.wetL = 0; this.wetR = 0;
     this.apCoefficient = 0;
+    // frequency shifter (Hilbert states per channel), Hyper voice LFOs and the
+    // tempo clock of the filter sequencer
+    this.hilbert = new Float64Array(HILBERT_STRIDE * 2); this.voicePhase = new Float64Array(HYPER_BASE.length);
+    this.hI = 0; this.hQ = 0; this.direction = 0; this.pattern = 0;
+    this.tempo = 120; this.stepRate = 120 / 15 / sr; this.seqPos = 0;
     this.L = 0; this.R = 0; this.tailL = 0; this.tailR = 0;
     this.reset();
   }
@@ -82,6 +101,21 @@ class EffectSlot {
     this.heldL = 0; this.heldR = 0; this.hold = 0; this.gateHold = 0;
     this.seed = (0x6d2b79f5 + this.index * 9871) | 0; this.control = 0;
     this.tailL = 0; this.tailR = 0; this.deltaL = 0; this.deltaR = 0; this.reduction = 1;
+    this.hilbert.fill(0); this.hI = 0; this.hQ = 0; this.seqPos = 0;
+    for (let i = 0; i < this.voicePhase.length; i++) this.voicePhase[i] = i / this.voicePhase.length;
+  }
+  /** One Hilbert step: hI and hQ receive the in-phase and quadrature parts. */
+  hilbertStep(x, base) {
+    const h = this.hilbert;
+    let a = x, b = x;
+    for (let i = 0; i < 4; i++) {
+      const o = base + i * 4, q = o + 16;
+      const ya = HILBERT_A[i] * (a + h[o + 3]) - h[o + 1];
+      h[o + 1] = h[o]; h[o] = a; h[o + 3] = h[o + 2]; h[o + 2] = ya; a = ya;
+      const yb = HILBERT_B[i] * (b + h[q + 3]) - h[q + 1];
+      h[q + 1] = h[q]; h[q] = b; h[q + 3] = h[q + 2]; h[q + 2] = yb; b = yb;
+    }
+    this.hI = h[base + 32]; h[base + 32] = a; this.hQ = b;
   }
   random() { let x = this.seed; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.seed = x; return (x >>> 0) / 4294967296 * 2 - 1; }
   read(buffer, delay) {
@@ -131,6 +165,18 @@ class EffectSlot {
     else if (type === 23) { this.delay = sr / (40 * Math.pow(50, p[0])); this.fb = (p[1] * 2 - 1) * .95; this.tone = pole(300 * Math.pow(50, p[2]), sr); this.drive = 1 + p[3] * 6; }
     else if (type === 26) { this.threshold = db(-70 + 55 * p[0]); this.holdSamples = Math.round(p[1] * sr * .2); this.floor = db(-80 + p[3] * 60); this.attack = timePole(.001, sr); this.release = timePole(.005 + p[2] * .595, sr); }
     else if (type === 27) { this.rate = (.1 + p[1] * 1.9) / sr; this.drive = 1 + p[0] * 7; this.noise = db(-90 + p[3] * 50); this.tone = pole(1200 * Math.pow(10, p[2]), sr); }
+    else if (type === 28) {
+      // switches follow the target directly: a gliding direction would click through every state
+      this.rate = freqShiftHz(p[0]) / sr; this.fb = p[1] * .9; this.direction = Math.round(this.target[2] * 2); this.delay = sr * .001 * Math.pow(500, p[3]);
+    } else if (type === 29) {
+      // Detune sets the peak pitch deviation (0 to 25 cents): delay depth = deviation / (2 pi rate)
+      const hz = .05 * Math.pow(100, p[0]);
+      this.rate = hz / sr; this.depth = sr * Math.min(.012, (Math.pow(2, 25 * p[1] / 1200) - 1) / (TAU * hz));
+    }
+    else if (type === 30) {
+      this.pattern = Math.round(this.target[0] * (FILTER_SEQ_PATTERNS.length - 1)) * 8;
+      this.attack = timePole(.001 + p[1] * 15 / this.tempo, sr); this.fb = 2 - 1.85 * p[2];
+    }
     if (this.type === 12) {
       coefficients(this.c, 0, 'shelfLow', 100, .707, 24 * p[0] - 12, sr);
       coefficients(this.c, 5, 'peak', 500, .7, 24 * p[1] - 12, sr);
@@ -298,6 +344,39 @@ class EffectSlot {
       this.write(rounded(L * drive) / Math.sqrt(drive) + noise, rounded(R * drive) / Math.sqrt(drive) - noise);
       const dl = this.read(this.bufL, d), dr = this.read(this.bufR, d), tone = this.tone;
       this.lpL += tone * (dl - this.lpL); this.lpR += tone * (dr - this.lpR); l = this.lpL; r = this.lpR;
+    } else if (type === 28) {
+      // single-sideband shift: (I cos + Q sin) moves partials up, (I cos - Q sin) down
+      this.phase = wrap(this.phase + this.rate);
+      const c = Math.cos(TAU * this.phase), sn = Math.sin(TAU * this.phase), fb = this.fb;
+      const dir = this.direction, upL = dir !== 1 ? 1 : -1, upR = dir === 0 ? 1 : -1;
+      this.hilbertStep(L + fb * this.read(this.bufL, this.delay), 0); l = this.hI * c + upL * this.hQ * sn;
+      this.hilbertStep(R + fb * this.read(this.bufR, this.delay), HILBERT_STRIDE); r = this.hI * c + upR * this.hQ * sn;
+      this.write(l, r);
+    } else if (type === 29) {
+      this.write(L, R);
+      const n = HYPER_BASE.length, width = p[2], vp = this.voicePhase;
+      let wl = 0, wr = 0;
+      for (let i = 0; i < n; i++) {
+        const ph = vp[i] = wrap(vp[i] + this.rate * HYPER_RATE[i]);
+        const pan = HYPER_PAN[i], x = this.read(pan < 0 ? this.bufL : this.bufR, sr * HYPER_BASE[i] + this.depth * (1 + Math.sin(TAU * ph)));
+        wl += x * (1 - pan * width); wr += x * (1 + pan * width);
+      }
+      // Dimension: short cross-channel reflections of opposite polarity
+      const dim = p[3] * .5;
+      const xl = this.read(this.bufR, sr * .0043) * .7 - this.read(this.bufR, sr * .0127) * .45;
+      const xr = this.read(this.bufL, sr * .0061) * .7 - this.read(this.bufL, sr * .0167) * .45;
+      // the voices are mostly decorrelated, so they sum near unity power
+      l = (wl * .35 + dim * xl) / (1 + dim * .4); r = (wr * .35 + dim * xr) / (1 + dim * .4);
+    } else if (type === 30) {
+      let pos = this.seqPos + this.stepRate; if (pos >= 8) pos -= 8; this.seqPos = pos;
+      this.env += this.attack * (SEQ_STEPS[this.pattern + (pos | 0)] - this.env);
+      const hz = 18000 * Math.exp(SEQ_LOW * p[3] * (1 - this.env)), g = Math.tan(Math.PI * Math.min(hz, sr * .45) / sr);
+      // trapezoidal state-variable low-pass; k = 1 / Q
+      const k = this.fb, a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2, zl = this.zL, zr = this.zR;
+      let v3 = L - zl[1], v1 = a1 * zl[0] + a2 * v3, v2 = zl[1] + a2 * zl[0] + a3 * v3;
+      zl[0] = 2 * v1 - zl[0]; zl[1] = 2 * v2 - zl[1]; l = v2;
+      v3 = R - zr[1]; v1 = a1 * zr[0] + a2 * v3; v2 = zr[1] + a2 * zr[0] + a3 * v3;
+      zr[0] = 2 * v1 - zr[0]; zr[1] = 2 * v2 - zr[1]; r = v2;
     }
     this.tailL *= 1 - this.transitionPole; this.tailR *= 1 - this.transitionPole;
     this.L = safe(L + (safe(l) - L) * this.mix + this.tailL); this.R = safe(R + (safe(r) - R) * this.mix + this.tailR);
@@ -333,6 +412,17 @@ export class TrackEffects {
     this.routeFade = 0; this.routeTailL = 0; this.routeTailR = 0; this.inputL = 0; this.inputR = 0;
   }
   meter() { return this.meters; }
+  /** Host tempo (BPM) and, while the transport plays, the beat position at
+   * the next sample (otherwise NaN): tempo-synced effects follow the song
+   * grid when it runs and keep free-running time at the tempo when it stops. */
+  setTransport(bpm, beat = NaN) {
+    const tempo = clamp(Number.isFinite(bpm) ? bpm : 120, 20, 400);
+    for (let i = 0; i < 4; i++) {
+      const slot = this.slots[i];
+      if (slot.tempo !== tempo) { slot.tempo = tempo; slot.stepRate = tempo / 15 / this.sampleRate; slot.control = 0; }
+      if (Number.isFinite(beat)) { const sixteenths = beat * 4; slot.seqPos = sixteenths - Math.floor(sixteenths / 8) * 8; }
+    }
+  }
   processSample(left, right, sidechain = 0) {
     const L = finite(left), R = finite(right), sc = Math.max(0, finite(sidechain)), s = this.slots;
     let l = L, r = R, aL, aR, bL, bR;

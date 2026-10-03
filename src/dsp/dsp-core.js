@@ -4138,6 +4138,8 @@ export class OroDSP {
 
   renderSegment(pos, seg, outL, outR, dlyL, dlyR, revL, revR, pedL, pedR) {
     const count = this.count, parts = this.parts, liveN = this.liveN;
+    // song position at this segment's first sample, for tempo-synced track effects
+    const T = this.transport, fxBeat = T.playing ? T.beat + (this.blockTime + this.sinceCtrl / this.sr - T.beatTime) * this.tempo / 60 : NaN;
     for (let i = 0; i < liveN; i++) {
       const P = parts[i];
       if (i >= count && this.dormant(P)) continue;
@@ -4195,6 +4197,7 @@ export class OroDSP {
       for (let n=pos;n<pos+seg;n++) rawPeak=Math.max(rawPeak,Math.abs(oL[n]),Math.abs(oR[n]));
       P.rawPeak=Math.max(P.rawPeak,rawPeak);
       if (P.effects.active) {
+        P.effects.setTransport(this.tempo, fxBeat);
         const src=P.sidechainIndex;
         let level=0;
         if (src >= 0) level=parts[src].previousRawPeak;

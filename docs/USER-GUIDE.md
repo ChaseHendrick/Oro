@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.4.0, including the guitar pedal features
+going on under the hood. It describes version 2.5.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -754,6 +754,16 @@ The grid has one column per step and one row per setting:
 **Steps store scale degrees, not fixed notes.** A step says "the third note of the scale",
 not "C sharp". Change the key or scale and every pattern follows, staying in key. Setting a
 step while the transport is stopped plays it so you can hear what you chose.
+
+### Probability and ratchets (2.5)
+
+Two more rows in the step grid. **Prob** is the chance, from 0 to 100%, that a step plays
+each time it comes round (100% is the usual always-on step; 0% never plays). The roll is
+made fresh every pass, so a 50% step plays about half the time, with no fixed pattern.
+**Ratchet** plays a step 1 to 4 times, splitting its length evenly; each repeat has the
+same gate within its own slice and plays a little softer than the one before (85% of
+its velocity). Steps start with Prob 100% and Ratchet 1, so existing patterns are
+unchanged.
 
 ### Dot locks in the sequencer
 
@@ -1572,12 +1582,20 @@ effect menu, Mix amount and four controls named for that algorithm. Bypass or Mi
 passes dry audio through. Effects are applied after voice pan and before the track's level and sends,
 and their tails continue after notes release. Patches include the rack.
 
-The 27 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
+The 30 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
 Phaser, Overdrive, Distortion, Decimator, Granular pitch shift, Four-band EQ, Sidechain
 ducking, Multiband compression, Compressor, Limiter, Tremolo, Auto pan, Ring modulation,
 Envelope wah, Low-pass filter, High-pass filter, Comb resonator, Stereo width, Warmth,
-Noise gate and Tape colour. Multiband compression uses three bands with upward and downward
-compression; it is not a copy of any branded compressor.
+Noise gate, Tape colour, Frequency shifter, Hyper dimension and Filter sequencer. Multiband
+compression uses three bands with upward and downward compression; it is not a copy of any
+branded compressor.
+
+**Frequency shifter** moves every partial by the same number of hertz (up to 2000 Hz up
+or down, or left up and right down), with Feedback and Delay for spiralling echoes.
+**Hyper dimension** spreads six detuned delay voices and short cross reflections across the
+stereo field to widen and thicken even a mono track. **Filter sequencer** steps a resonant
+low-pass through one of eight eight-step patterns in sixteenth notes, synced to the song
+tempo and position.
 
 Routing offers Serial, Four parallel, Parallel pairs, Middle split, Input split, Output
 fan, Input fan, Mid/side, Low/high and Left/right splits. Parallel branches are averaged.

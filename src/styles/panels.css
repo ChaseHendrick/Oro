@@ -650,7 +650,7 @@
 .seq-status { font-size: var(--fs-xs); color: var(--text-3); }
 .seq-status:empty { display: none; }
 .seq-grid { display: grid; grid-template-columns: 42px repeat(16, minmax(26px, 1fr)); gap: 0 3px; min-height: 0; }
-.seq-labels, .seq-col { display: grid; grid-template-rows: 12px 24px 18px 13px 17px 8px 10px 10px 15px; gap: 2px; min-width: 0; }
+.seq-labels, .seq-col { display: grid; grid-template-rows: 12px 22px 17px 12px 15px 8px 8px 12px 10px 10px 13px; gap: 2px; min-width: 0; }
 .seq-label { font-size: 8.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); display: flex; align-items: center; white-space: nowrap; line-height: 1; }
 .seq-num { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-dim); text-align: center; line-height: 12px; }
 .seq-col.is-beat .seq-num { color: var(--text-2); }
@@ -688,6 +688,10 @@
 .seq-col.is-on .seq-bar-fill { opacity: .75; }
 .seq-bar--gate { cursor: ew-resize; }
 .seq-bar--gate .seq-bar-fill { transform-origin: left; }
+/* Probability: a horizontal bar like Gate, outlined so the two read apart. */
+.seq-bar--prob { cursor: ew-resize; background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.seq-bar--prob .seq-bar-fill { transform-origin: left; }
+.seq-rat { cursor: ns-resize; }
 .seq-flag { display: block; width: 100%; height: 100%; border-radius: 3px; background: var(--panel-3); border: 1px solid var(--border); }
 .seq-flag:hover { border-color: var(--border-strong); }
 .seq-flag[aria-pressed="true"] { background: var(--part); border-color: var(--part); }
@@ -721,11 +725,11 @@
   .seq-global, .seq-arp { gap: 10px; }
   .seq-global-note { display: none; }
 }
-/* Shorter desktop windows: tighten the grid so all nine rows fit without scrolling. */
+/* Shorter desktop windows: tighten the grid so all the rows fit without scrolling. */
 @media (max-height: 860px) and (min-width: 900px) {
   .dock-pane--seq { padding-top: 8px; padding-bottom: 8px; }
   .seq-main { gap: 5px; }
-  .seq-labels, .seq-col { grid-template-rows: 12px 22px 17px 12px 16px 8px 10px 10px 14px; }
+  .seq-labels, .seq-col { grid-template-rows: 12px 20px 16px 12px 15px 7px 7px 11px 9px 9px 13px; gap: 1px; }
   .seq-arp { padding-top: 5px; }
   .seq-block { gap: 6px; padding-top: 7px; padding-bottom: 7px; }
 }
@@ -948,7 +952,7 @@
   .dock-pane--seq { padding: 8px; }
   .seq-grid { grid-template-columns: 34px repeat(16, minmax(36px, 1fr)); overflow-x: auto; padding-bottom: 4px; }
   .seq-main { overflow-x: auto; }
-  .seq-labels, .seq-col { grid-template-rows: 12px 40px 28px 22px 28px 14px 22px 22px 26px; gap: 3px; }
+  .seq-labels, .seq-col { grid-template-rows: 12px 40px 28px 22px 28px 14px 14px 22px 22px 22px 26px; gap: 3px; }
   .dock-pane--mix { padding: 8px; }
   /* two strips across, the rest a swipe away */
   .mix-strips { padding-bottom: 4px; }
@@ -1123,7 +1127,7 @@
     padding: 4px 4px 10px 0;
     scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
   }
-  .seq-labels, .seq-col { grid-template-rows: 20px repeat(8, var(--seq-cell)); gap: 4px; }
+  .seq-labels, .seq-col { grid-template-rows: 20px repeat(10, var(--seq-cell)); gap: 4px; }
   .seq-col { scroll-snap-align: start; }
   .seq-col::before { inset: -3px -2px; }
   /* Pinned row names: opaque so scrolled steps pass underneath. */
