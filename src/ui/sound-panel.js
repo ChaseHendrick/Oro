@@ -1,11 +1,16 @@
-// SOUND tab: voice, filter, amp envelope and Envelope 2 for the selected part.
+// SOUND tab: smart controls (v2.8), voice, filter, amp envelope and Envelope 2
+// for the selected part.
 
 import { INHARMONIC_PROFILES } from '../core/params.js';
 import { h, createScope } from './dom.js';
 import { createKnob } from './knob.js';
 import { createSegmented, createSelect } from './controls.js';
 import { schedule } from './frame.js';
+import { icon } from './icons.js';
 import { createEnvGraph } from './env-graph.js';
+import { createSmartPanel } from './smart-panel.js';
+import { decodeNoiseRecording, encodeNoiseRecording, MAX_NOISE_SECONDS } from '../dsp/noise-recording.js';
+import { timeStretch } from '../dsp/time-stretch.js';
 
 function card(title, aside, ...children) {
   const id = 'sec-' + title.toLowerCase().replace(/\W+/g, '-');
@@ -30,7 +35,30 @@ export function createSoundPanel(ctx) {
   const noiseFile = h('input', { type: 'file', accept: 'audio/*,.wav,.aif,.aiff,.flac', hidden: true });
   const noiseImport = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Import noise recording');
   const noiseName = h('span', { class: 'section-aside' });
-  const refreshNoise = () => { noiseName.textContent = ctx.store.get(`parts.${binder.selected()}.noiseRecording`)?.name || 'Up to 16 seconds, looped'; };
+  // v2.8 time stretch of the recording (pitch kept), applied once to the saved audio.
+  const stretchSel = h('select', { class: 'select-native', 'aria-label': 'Time stretch the noise recording, keeping its pitch' },
+    h('option', { value: '' }, 'Stretch...'),
+    ...[[0.5, 'Half as long'], [0.75, '75% as long'], [1.5, '150% as long'], [2, 'Twice as long']].map(([v, t]) => h('option', { value: String(v) }, t)));
+  const stretchBox = h('div', { class: 'select select--sm', dataset: { tip: 'Make the recording shorter or longer without changing its pitch' } }, stretchSel, h('span', { class: 'select-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }));
+  scope.on(stretchSel, 'change', () => {
+    const ratio = Number(stretchSel.value);
+    stretchSel.value = '';
+    const p = binder.selected();
+    const rec = ctx.store.get(`parts.${p}.noiseRecording`);
+    if (!rec || !(ratio > 0)) return;
+    const pcm = decodeNoiseRecording(rec);
+    if (pcm.length < 4) return;
+    const out = timeStretch(pcm, ratio, { sampleRate: rec.sampleRate, loop: true });
+    const name = `${String(rec.name || 'Recording').replace(/ \(\d+%\)$/, '')} (${Math.round(ratio * 100)}%)`;
+    ctx.store.set(`parts.${p}.noiseRecording`, encodeNoiseRecording(out, rec.sampleRate, name), { source: 'ui' });
+    const cut = out.length > rec.sampleRate * MAX_NOISE_SECONDS;
+    ctx.toast(`Recording stretched to ${(Math.min(out.length / rec.sampleRate, MAX_NOISE_SECONDS)).toFixed(1)} s`, { kind: 'info', detail: cut ? `Recordings keep at most ${MAX_NOISE_SECONDS} seconds, so the end was cut.` : 'Its pitch is unchanged. Undo takes it back.' });
+  });
+  const refreshNoise = () => {
+    const rec = ctx.store.get(`parts.${binder.selected()}.noiseRecording`);
+    noiseName.textContent = rec?.name || 'Up to 16 seconds, looped';
+    stretchSel.disabled = !rec;
+  };
   scope.on(noiseImport, 'click', () => noiseFile.click());
   scope.on(noiseFile, 'change', async () => {
     const file = noiseFile.files?.[0]; noiseFile.value = ''; if (!file) return;
@@ -65,7 +93,11 @@ export function createSoundPanel(ctx) {
 
   const amp4 = (pfx) => (id, label) => k(id, { size: 'sm', ariaLabel: (l) => `${pfx} ${l}`, label });
 
+  const smart = createSmartPanel(ctx);
+  scope.add(smart.dispose);
+
   const el = h('div', { class: 'dock-pane dock-pane--sound' },
+    smart.el,
     card('Voice', mode.el,
       h('div', { class: 'knob-grid knob-grid--6' },
         ...['octave', 'tune', 'fine', 'glide', 'bendRange', 'unison', 'detune', 'spread', 'velSens'].map(id => k(id, { size: 'sm' })))),
@@ -77,7 +109,7 @@ export function createSoundPanel(ctx) {
       h('div', { class: 'knob-row' }, k('sub'), k('sub2'))),
     card('Noise', select('airType', 'Noise type'),
       h('div', { class: 'knob-row' }, k('air'), k('airTone'), k('airTexture', { label: 'Position', ariaLabel: () => 'Texture position' })),
-      h('div', { class: 'sound-selects' }, noiseImport, noiseFile, noiseName)),
+      h('div', { class: 'sound-selects' }, noiseImport, noiseFile, stretchBox, noiseName)),
     card('Partial profiles', h('span', { class: 'section-aside' }, '11 original ratio banks'),
       h('div', { class: 'knob-row' }, k('inharmProfile', { label: 'Profile', ariaLabel: () => 'Partial profile', format: v => {
         const i = Math.floor(v), next = Math.min(10, i + 1), fraction = v - i;

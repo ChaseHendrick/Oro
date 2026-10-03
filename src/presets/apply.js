@@ -5,6 +5,7 @@ import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT,
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { sanitizeLinks } from '../core/migrate.js';
+import { sanitizeSmart } from '../core/smart.js';
 
 // Mod settings may hold arrays (the Steps LFO values). Each part gets its own
 // copies, so editing one part's steps can never touch another part, a factory
@@ -51,7 +52,7 @@ export function patchLinks(patch) {
 
 /**
  * The part `base` with `patch` loaded: sound, modulation, Links, dot
- * behaviour and imported terrains come from the patch; name, colour,
+ * behaviour, imported terrains and smart controls come from the patch; name, colour,
  * sequence, arp, the mixer's mute/solo and the pedal routing (Pedal send, Pre,
  * Insert: part of the rig, not the sound) stay as they were.
  */
@@ -60,8 +61,13 @@ export function partWithPatch(base, patch) {
   params.mute = base.params ? base.params.mute || 0 : 0;
   params.solo = base.params ? base.params.solo || 0 : 0;
   for (const id of PEDAL_PARAM_IDS) params[id] = base.params && Number.isFinite(base.params[id]) ? base.params[id] : PART_PARAM_MAP[id].default;
+  // v2.8 smart controls belong to the sound: the patch's own, or none.
+  const rest = { ...base };
+  delete rest.smart;
+  const smart = sanitizeSmart(patch && patch.smart);
   return {
-    ...base,
+    ...rest,
+    ...(smart ? { smart } : {}),
     patchName: String((patch && patch.name) || 'Init').slice(0, 60),
     params,
     mods: patchMods(patch),

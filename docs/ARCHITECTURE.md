@@ -386,3 +386,23 @@ and A/B fade weights are blended each frame; shading, palette, tint and lift sta
 `hud.js`. The shared sRGB lookup differs by at most one output byte. The cache holds
 six fixed 112 by 112 Float64 grids and one 4097-entry lookup, without changing frame rate
 or the 512 terrain/audio source resolution.
+
+
+## 2.8 additions
+
+* **Smart controls** (`src/core/smart.js`, UI `src/ui/smart-panel.js`): `parts.N.smart =
+  { knobs: [8 x { name, value, maps: [<= 4 x { id, min, max, curve }] }] }`, absent unless a
+  knob has a target or a name (`sanitizeSmart` returns null otherwise). `min`/`max` are
+  normalised positions of a modulatable part parameter (min > max inverts). Smart knobs
+  write the target params through the store (`applySmartKnob`, meta `{ source, smart: true }`),
+  so sync sends ordinary `params` messages and there is no new worklet message. Patches carry
+  `smart` when present; `partWithPatch` replaces the track's smart controls with the patch's.
+  MIDI learn target `{ scope: 'smart', part, id: 'smart1'..'smart8' }`.
+* **Time stretch** (`src/dsp/time-stretch.js`): offline WSOLA, `timeStretch(channels, ratio,
+  { sampleRate, loop, length })`, `stretchToLength(L, R, length, opts)`. Used by the looper's
+  Follow tempo / Fit to tempo (`src/ui/looper-control.js`) and the noise recording Stretch menu.
+* **Looper protocol**: `{t:'replace', id, L, R, base, spb, bars}` swaps in new loop audio
+  (only while playing or stopped, and only if `base` equals the core's `edit` counter),
+  answering `{t:'replaced', id, ok, edit}`. `state` and `loop` replies now include `edit`
+  (changes of the loop audio) and `loopSpb` (beat length the loop fits, 0 for free length).
+  `engine.looper.replaceLoop({ L, R, base, spb, bars })` wraps it.

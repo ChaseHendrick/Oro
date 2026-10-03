@@ -11,6 +11,7 @@ import { partCount, watchTracks } from '../core/tracks.js';
 import { createEmitter } from '../music/emitter.js';
 import { createTimebase } from '../music/timing.js';
 import { isMpcPort, detectMpcPort } from './mpc.js';
+import { applySmartKnob, SMART_KNOBS } from '../core/smart.js';
 import { createClockFollower, clockBytes, parseSongPosition, CLOCK, START, CONTINUE, STOP, SONG_POSITION, CLOCK_ACTIVE_MS } from './clock.js';
 
 export const STORAGE_KEY = 'orograph.midi';
@@ -113,6 +114,14 @@ function sanitizeTarget(t) {
   }
   if (!t || typeof t !== 'object') return null;
   if (t.scope === 'global') return GLOBAL_PARAM_MAP[t.id] ? { scope: 'global', id: t.id } : null;
+  // v2.8 smart knobs: { scope: 'smart', part: 'sel' | index, id: 'smart1'..'smart8' }
+  if (t.scope === 'smart') {
+    const m = /^smart(\d+)$/.exec(String(t.id));
+    if (!m || !(Number(m[1]) >= 1 && Number(m[1]) <= SMART_KNOBS)) return null;
+    const part = t.part === 'sel' || t.part == null ? 'sel' : Number(t.part);
+    if (part !== 'sel' && !(Number.isInteger(part) && part >= 0 && part < MAX_PARTS)) return null;
+    return { scope: 'smart', part, id: `smart${Number(m[1])}` };
+  }
   if (t.scope === 'part' || t.scope == null) {
     if (!PART_PARAM_MAP[t.id]) return null;
     const part = t.part === 'sel' || t.part == null ? 'sel' : Number(t.part);
@@ -456,6 +465,11 @@ export async function createMidi({
     if (target.scope === 'global') {
       const def = GLOBAL_PARAM_MAP[target.id];
       if (def) store.set(`global.${target.id}`, fromNorm(def, n), { source: 'midi' });
+      return;
+    }
+    if (target.scope === 'smart') {
+      const p = target.part === 'sel' ? clamp(Math.round(store.get('ui.selectedPart') || 0), 0, partCount(store) - 1) : target.part;
+      if (p < partCount(store)) applySmartKnob(store, p, Number(target.id.slice(5)) - 1, n, { source: 'midi' });
       return;
     }
     const def = PART_PARAM_MAP[target.id];
