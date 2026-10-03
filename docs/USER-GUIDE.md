@@ -1533,9 +1533,8 @@ before. The switches are saved with the session (and with scenes); the damage it
 not, so a reloaded session starts repaired. Bounces include the damage, quirks and
 vintage sound, but never a test tone.
 
-The Operator switches belong to the machine, like a cabinet's DIP switches: loading a scene
-only changes them when the scene was saved with some of them on. Damage itself (how
-broken or wet Oro is right now) is not saved, so a reload starts repaired.
+The switches belong to the machine, like a cabinet's DIP switches: loading a scene only
+changes them when the scene was saved with some of them on.
 
 #### Damage
 
