@@ -38,6 +38,8 @@ import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
 import { icon } from './icons.js';
 import { startOperatorHost } from './operator.js';
+import { installGhost } from './ghost-ui.js';
+import { installPostcards } from './postcard.js';
 
 function emitter() {
   const map = new Map();
@@ -310,6 +312,9 @@ export function createUI(root, modules = {}) {
     ctx.freeze = null;
   }
 
+  // v2.9 ghost replay (the Seq tab and the track menu use ctx.ghost)
+  try { installGhost(ctx, scope); } catch (err) { console.warn('[ui] ghost replay is unavailable', err); ctx.ghost = null; }
+
   ctx.learn = {
     start(target, label, onEnd) {
       if (!ctx.midiOk()) return;
@@ -524,6 +529,9 @@ export function createUI(root, modules = {}) {
       if (engine.context.state === 'running') store.set('ui.audioStarted', 1, { source: 'engine' });
     });
   }
+
+  // v2.9 postcards: ctx.openPostcard, share links (#p=...) and postcard drops on the 3D view
+  try { installPostcards(ctx, scope, viewport); } catch (err) { console.warn('[ui] postcards are unavailable', err); }
 
   root.classList.add('is-ready');
   applyPartColours();

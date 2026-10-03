@@ -13,6 +13,10 @@ import { drawTerrain, downsample, previewTable, prewarmPreviews } from './terrai
 import { pathOutline } from './dsp-bridge.js';
 import { openTerrainLibrary } from './terrain-library.js';
 import { openFormulaTerrain } from './formula-terrain.js';
+import { offerPostcardFile } from './postcard.js';
+
+// v2.9 PNG files already checked for a postcard (Use as terrain imports them as usual).
+const postcardChecked = new WeakSet();
 
 const TERRAIN_KNOBS = ['morph', 'warp', 'lift', 'fold', 'seed', 'detail'];
 const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror', 'warpMode', 'warpAmount'];
@@ -193,6 +197,11 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
 
   async function doImport(file, opts) {
     if (!file || !canImport) return;
+    // v2.9 a postcard image: load its sound, or use the picture as terrain
+    if (!opts && !postcardChecked.has(file) && (/\.png$/i.test(file.name || '') || file.type === 'image/png')) {
+      postcardChecked.add(file);
+      if (await offerPostcardFile(ctx, file, () => doImport(file))) return;
+    }
     const isImage = /^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(file.name);
     const isAudio = /^audio\//.test(file.type) || /\.(wav|mp3|m4a|aac|ogg|flac|aiff?)$/i.test(file.name);
     if (isAudio && !opts) { openAudioImportOptions(ctx, importBtn, file, o => doImport(file, o)); return; }

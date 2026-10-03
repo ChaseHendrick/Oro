@@ -497,6 +497,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
     return out;
   }
   const _base = { u: 0, v: 0 };
+  // v2.9 ghost replay: where each track's ghost has the dot (null when no ghost plays)
+  const ghostDot = Array.from({ length: MAX_PARTS }, () => null);
 
   /** A person changed a path knob from the map (Size / Rotate gestures). */
   function writeParam(id, v) {
@@ -1454,6 +1456,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     else {
       let wu, wv;
       if (simActive) { const s = sim.state(sel); wu = s.u; wv = s.v; dotSrc = 'sim'; }
+      else if (ghostDot[sel]) { wu = ghostDot[sel].u; wv = ghostDot[sel].v; dotSrc = 'ghost'; }
       else if (centreMod) { wu = L.centerX; wv = L.centerY; dotSrc = 'live'; }
       else { baseCenter(_base); wu = _base.u; wv = _base.v; dotSrc = 'base'; }
       wu = wrap01(wu); wv = wrap01(wv);
@@ -1571,6 +1574,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (markersDirty) refreshMarkers();
     const mode = Math.round(num(r.dot.mode, MODE_PIN));
     const showWp = mode === MODE_TOUR || editing();
+    { const gd = ghostDot[sel]; markers.setGhost(gd ? gd.u : null, gd ? gd.v : null); }
     if (showWp && routeN > 1) markers.setRoute(routeUV, routeN, view);
     else markers.setRoute(routeUV, 0, view);
     markers.update(view, dt, showWp, time, reduced);
@@ -1658,6 +1662,14 @@ export async function createVisuals(container, { store, engine = null, quality, 
     palettes() { return PALETTE_INFO.map(p => ({ name: p.name, dark: p.dark.slice(), light: p.light.slice() })); },
 
     resize() { width = 0; resize(); },
+
+    /** v2.9 ghost replay: track `part`'s dot follows the ghost at (u, v); null gives it back. */
+    setGhost(part, pos) {
+      if (!(part >= 0 && part < MAX_PARTS)) return;
+      if (!pos || !Number.isFinite(pos.u) || !Number.isFinite(pos.v)) { ghostDot[part] = null; return; }
+      const g = ghostDot[part] || (ghostDot[part] = { u: 0, v: 0 });
+      g.u = pos.u; g.v = pos.v;
+    },
 
     setQuality(q) {
       const name = QUALITY[q] ? q : 'high';

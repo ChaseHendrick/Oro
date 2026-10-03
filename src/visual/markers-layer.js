@@ -177,6 +177,12 @@ export function createMarkersLayer() {
   }
   let pingNext = 0;
 
+  // ---- v2.9 ghost dot: where a replaying ghost has the dot (translucent)
+  const ghost = sprite(tipTex, 17);
+  ghost.material.opacity = 0.5;
+  group.add(ghost);
+  let ghostOn = false, ghostU = 0, ghostV = 0;
+
   // ---- colours and sizes
   const part = new THREE.Color(1, 0.6, 0.3);
   const lockCol = new THREE.Color(1, 1, 1);
@@ -236,6 +242,12 @@ export function createMarkersLayer() {
       const p = pings[pingNext];
       pingNext = (pingNext + 1) % PINGS;
       p.age = 0; p.peak = peak; p.u = u; p.v = v;
+    },
+
+    /** v2.9 the ghost dot at (u, v), or hidden with null. */
+    setGhost(u, v) {
+      ghostOn = u != null && Number.isFinite(u) && Number.isFinite(v);
+      if (ghostOn) { ghostU = u; ghostV = v; }
     },
 
     setHover(i) { hoverWp = i; },
@@ -318,6 +330,14 @@ export function createMarkersLayer() {
         // with the sequencer off the locks will not play: quieter, but still findable
         s.material.opacity = (lockDim ? (themeT > 0.5 ? 0.7 : 0.6) : 0.95) + 0.05 * f;
       }
+      ghost.visible = ghostOn;
+      if (ghostOn) {
+        setXZ(ghost, ghostU, ghostV, hf, LIFT * 0.5);
+        ghost.scale.setScalar(tipScale * 3.2);
+        ghost.material.color.copy(part);
+        if (themeT <= 0.5) ghost.material.color.multiplyScalar(1.2);
+        ghost.material.opacity = themeT > 0.5 ? 0.6 : 0.45;
+      }
       for (let i = 0; i < PINGS; i++) {
         const p = pings[i];
         if (p.age >= 1) { p.s.visible = false; continue; }
@@ -362,6 +382,7 @@ export function createMarkersLayer() {
       for (const s of badges) s.material.dispose();
       for (const s of pinTips) s.material.dispose();
       for (const s of lockTips) s.material.dispose();
+      ghost.material.dispose();
       tipTex.dispose();
       for (const p of pings) p.s.material.dispose();
       ringTex.dispose();

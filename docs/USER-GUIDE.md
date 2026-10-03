@@ -1052,6 +1052,34 @@ Dot locks and parameter locks stay on their steps. If the track's sequencer was 
 switches it on. The status line under the button says what was captured, or why nothing was.
 Undo takes the whole capture back in one step.
 
+### Ghost replay (2.9)
+
+A ghost is a recording of you playing one track: the notes you play on it, the knobs you
+turn on it and the path you drag its dot along. Play it back and the track keeps playing
+your take in a loop while you play something else on top.
+
+The **Ghost** block in the Seq tab (under Capture) works on the selected track, and the
+track menu (the track tab's menu, or the mixer strip's) has the same commands:
+
+* **Record ghost** starts recording (it starts the transport if it is stopped). Play notes
+  on the track from the on-screen keyboard, the computer keyboard or MIDI, turn its knobs
+  and drag its dot. Press **Stop recording** when you are done. The arpeggiator's notes are
+  recorded too, so what you heard is what comes back.
+* The ghost starts at the bar you started recording in and lasts until Stop, rounded up to
+  whole bars (64 bars at most; recording stops by itself there, or when the ghost is full).
+* **Play ghost** plays it on its own track in a loop while the transport runs, lined up with
+  the bar it was recorded from. You can play any track meanwhile, including the same track's
+  keys. The ghost's knob moves and dot path drive the sound without moving your knobs, so
+  your settings stay as they are and Undo is not filled up. A translucent ghost dot shows the
+  recorded path on the map, and the track's dot follows it while you are not holding it.
+* **Stop ghost** (or stopping the transport) silences it and gives the track its own knob
+  values back. A ghost that is on plays again with the next Play.
+* **Clear ghost** removes it. Recording a new ghost replaces the old one.
+
+Ghosts are saved with the session, one per track, and go with the track when it is moved or
+duplicated. Loading a patch onto the track keeps its ghost. Mute, solo and the pedal routing
+are never part of a ghost.
+
 ### Arpeggiator
 
 Each part also has an arpeggiator (the **Arp** row in the Seq tab). Hold a chord and it
@@ -1146,6 +1174,44 @@ Shelf and Signal Fault).
 work. Your own patches and scenes are kept separately. Both live in the browser's storage
 for the page you use (or in the desktop app's own storage), so clearing site data in the
 browser also clears them. Export them to a file if you want a backup.
+
+### Postcards and sharing (2.9)
+
+A postcard is one track's sound as a picture you can post, with the sound itself inside.
+Choose **Postcard** at the bottom of the patch browser (it uses the selected track) or
+**Postcard...** in a track's menu. The dialog shows a 1080 x 1080 image of the track's
+terrain and path with the patch name, "Made with Oro" and hendrickresearch.com/music/oro,
+and a share link.
+
+* **Share...** opens your device's share sheet. On a phone it offers the image and the link
+  to apps such as X, Instagram, Facebook, TikTok and Messages; elsewhere it shares the link.
+* **X, Facebook, Bluesky, Threads, Reddit and LinkedIn** open that site's post page in a new
+  tab with the link (and a caption where the site takes one). In the desktop app they open
+  in your browser.
+* **Copy link** copies the link. **Download image** saves the PNG.
+* Instagram posts are made in the Instagram app: download the image (or use Share on a phone)
+  and add the link to your caption or bio.
+
+The caption reads: A sound I made in Oro: "name". Open it: followed by the link.
+
+**What travels.** The image and the link carry the track's sound: its patch, the same as
+Save in the patch browser keeps, plus the patch name and Oro's version. They never carry the
+track's pattern, its mute, solo, sends or pedal routing, the rest of the session, or anything
+about you.
+
+**Opening a link.** A link opens Oro in the browser and asks first: Load the shared sound
+"name" onto track N? You can pick another track before pressing **Load sound**, and Undo
+brings the old sound back. Nothing loads without that answer. A damaged or cut-short link
+shows a message instead. Very large sounds are refused.
+
+**Opening a postcard image.** Drop the PNG on the 3D view, or choose it with **Import** in the
+patch browser, and its sound loads onto the selected track. Dropped on Terrain A or B in the
+map panel, Oro asks whether to load the sound or use the picture as terrain.
+
+Social sites strip hidden data from the images people upload, so on those sites the link is
+what carries the sound; the downloaded image keeps it. A sound with an imported terrain is
+too large for a link: the link carries the rest of the sound and the dialog says so, while the
+image keeps all of it.
 
 ---
 
