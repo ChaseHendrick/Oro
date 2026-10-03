@@ -32,8 +32,18 @@
 // the step's gate scaled to its share and RATCHET_DECAY times the velocity of
 // the hit before it. A slide applies to the last hit.
 
+// v2.9 song mode: a track whose chain is on plays its chain entries in order
+// (each pattern `repeats` passes, then the next, looping), switching at the
+// end of a pattern pass. Switched on while playing, the chain starts at the
+// next pass boundary of the pattern playing. Chain off is the plain loop.
+//
+// v2.9 parameter locks: a step's `plocks` go to the engine as a timed params
+// message at the step time (with the track's lead), never to the store, so
+// the knobs keep their own values. The first later step without a lock on
+// that parameter sends the track's own value back, also timed; so does Stop.
+
 import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
-import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, stepChance, activeSeq, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepChance, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
 
 // v2.6 humanize: up to this late (s) at Humanize time 1, and this share of velocity either way at Humanize velocity 1
 export const HUMAN_TIME_MAX = 0.02;
@@ -103,8 +113,11 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   let lookahead = LOOKAHEAD;   // adaptive, see adaptLookahead()
   let lastTickMs = null;       // performance time of the previous timer tick
   let runs = -1;               // Plays so far (minus one): advances the probability seed
-  // heard: [{ time, step }] of the latest scheduled steps, oldest first.
-  const freshState = () => ({ absStep: 0, rateIdx: null, tie: null, heard: [] });
+  // heard: [{ time, step }] of the latest scheduled steps, oldest first (with `entry` while a chain plays).
+  // chain: { e, rep, pos } song-mode position (entry, passes done, step in the pattern) or null.
+  // plocked: parameter ids the last step locked (null: none); plockLast: audio time of the latest
+  // locks message; restore: id -> [time, lead] of returns to the track's own value still queued.
+  const freshState = () => ({ absStep: 0, rateIdx: null, tie: null, heard: [], chain: null, plocked: null, plockLast: 0, restore: null });
   let ps = Array.from({ length: MAX_PARTS }, freshState);
   const count = () => partCount(store);
   /** The pattern track `p` plays, with `enabled` = its seqOn (null for no track). */
@@ -170,6 +183,8 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       ps[p].absStep = Math.ceil(beat / rate - 1e-9);
       ps[p].tie = null;
       ps[p].heard = [];
+      ps[p].chain = null;
+      ps[p].plocked = null;
     }
   }
 
@@ -179,6 +194,15 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     const heardNow = timebase.perfToAudio(timebase.perfNow()) + 1e-4;
     const list = ps[part].heard;
     for (let i = list.length - 1; i >= 0; i--) if (list[i].time <= heardNow) return list[i].step;
+    return -1;
+  }
+
+  /** Index of the chain entry of `part` being heard right now, or -1 (stopped, or its chain is off). */
+  function chainEntry(part) {
+    if (!playing || !(part >= 0 && part < count())) return -1;
+    const heardNow = timebase.perfToAudio(timebase.perfNow()) + 1e-4;
+    const list = ps[part].heard;
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].time <= heardNow) return list[i].entry ?? -1;
     return -1;
   }
 
@@ -193,9 +217,9 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     }
   }
 
-  function announceStep(part, step, time, lock) {
+  function announceStep(part, step, time, lock, chain) {
     if (!emitter.has('step')) return;
-    const detail = { part, step, time, lock };
+    const detail = chain ? { part, step, time, lock, entry: chain.entry, pattern: chain.pattern } : { part, step, time, lock };
     const delay = timebase.heardDelayMs(time);
     if (delay < 4) emitter.emit('step', detail);
     else timers.setTimeout(() => emitter.emit('step', detail), delay);
@@ -203,15 +227,17 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
 
   // A tied note ends with the lead it started with, so a lead that changes
   // mid-tie can never put its note-off before its note-on.
-  function playStep(p, seq, idx, t, tNext, rate, lead = 0, abs = 0) {
+  function playStep(p, seq, idx, t, tNext, rate, lead = 0, abs = 0, chain = null) {
     const st = ps[p];
     const step = seq.steps && seq.steps[idx];
-    st.heard.push({ time: t, step: idx });
+    st.heard.push(chain ? { time: t, step: idx, entry: chain.entry } : { time: t, step: idx });
     if (st.heard.length > HEARD_KEEP) st.heard.shift();
     // A lock moves the dot whether or not the step has a note.
     const lock = stepLock(seq, step);
-    announceStep(p, idx, t, lock);
+    announceStep(p, idx, t, lock, chain);
     if (lock) locks.schedule(p, idx, lock, t, clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t));
+    // Parameter locks, like the dot lock, apply whether or not the step has a note.
+    if (st.plocked || (step && step.plocks)) plockStep(p, seq, step, t, lead);
     // v2.7 a drum kit track plays its lanes instead of its melodic steps (humanize applies to them too)
     const drum = store.get(`parts.${p}.drum`);
     if (drum && drum.on) {
@@ -254,6 +280,86 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     }
   }
 
+  /** The track's own (knob) value of part parameter `id`. */
+  function ownValue(p, id) {
+    const v = store.get(`parts.${p}.params.${id}`);
+    return typeof v === 'number' && Number.isFinite(v) ? v : PART_PARAM_MAP[id].default;
+  }
+
+  /** Send a step's parameter locks, and the track's own value for parameters the previous step locked and this one does not. */
+  function plockStep(p, seq, step, t, lead) {
+    const st = ps[p];
+    const want = seq.enabled ? stepPlocks(step) : null;
+    const out = {};
+    let any = false;
+    if (st.plocked) {
+      for (const id of st.plocked) {
+        if (want && id in want) continue;
+        out[id] = ownValue(p, id);
+        any = true;
+        if (!st.restore) st.restore = new Map();
+        st.restore.set(id, [t, lead]);
+      }
+    }
+    if (want) for (const id of Object.keys(want)) { out[id] = want[id]; any = true; if (st.restore) st.restore.delete(id); }
+    st.plocked = want ? Object.keys(want) : null;
+    if (!any) return;
+    st.plockLast = Math.max(st.plockLast, t);
+    router._engineParams(p, out, t, lead);
+  }
+
+  /** Stop (or a restart): every parameter still locked goes back to the track's own value, after any lock already queued. */
+  function restorePlocks(now) {
+    for (let p = 0; p < count(); p++) {
+      const st = ps[p];
+      if (!st.plocked) continue;
+      const out = {};
+      const t = Math.max(now, st.plockLast);
+      if (!st.restore) st.restore = new Map();
+      for (const id of st.plocked) { out[id] = ownValue(p, id); st.restore.set(id, [t, 0]); }
+      st.plocked = null;
+      router._engineParams(p, out, t, 0);
+    }
+  }
+
+  /**
+   * A knob moved while a return to its own value is still queued: that
+   * queued return would undo the move, so send the new value at the same time.
+   */
+  function refreshRestores(p, id) {
+    const st = ps[p];
+    if (!st || !st.restore) return;
+    const now = timebase.now();
+    for (const [k, [t, lead]] of [...st.restore]) {
+      if (t < now) { st.restore.delete(k); continue; }
+      if (id && k !== id) continue;
+      router._engineParams(p, { [k]: ownValue(p, k) }, t, lead);
+    }
+    if (!st.restore.size) st.restore = null;
+  }
+
+  /**
+   * Song mode: the step track `p` plays next from its chain (switching to the
+   * next entry at the end of a pattern pass) as { seq, idx, entry, pattern },
+   * or null while it waits for the pass boundary of the pattern playing now.
+   */
+  function chainAt(p, chain, st, len) {
+    const part = store.get(`parts.${p}`);
+    let c = st.chain;
+    if (!c) {
+      if (((st.absStep % len) + len) % len !== 0) return null;
+      c = st.chain = { e: 0, rep: 0, pos: 0 };
+    }
+    if (c.e >= chain.length) { c.e = 0; c.rep = 0; c.pos = 0; }
+    const lenOf = (e) => clamp(Math.round(part.patterns[e.pattern].length || 16), 1, 16);
+    if (c.pos >= lenOf(chain[c.e])) {
+      c.pos = 0;
+      if (++c.rep >= chain[c.e].repeats) { c.rep = 0; c.e = (c.e + 1) % chain.length; }
+    }
+    const e = chain[c.e];
+    return { seq: { ...part.patterns[e.pattern], enabled: part.seqOn ? 1 : 0 }, idx: c.pos, entry: c.e, pattern: e.pattern };
+  }
+
   /** One note of a step (a ratcheted step plays several), with ties and slides. */
   function playHit(p, note, vel, gateSec, slide, t, tNext, lead, minLen) {
     const st = ps[p];
@@ -275,26 +381,41 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   function scheduleSeq(now, horizon) {
     const n = count();
     for (let p = 0; p < n; p++) {
-      const seq = seqOf(p);
+      let seq = seqOf(p);
       if (!seq) continue;
       const st = ps[p];
-      const rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
-      const rate = SEQ_RATES[rateIdx].beats;
-      if (st.rateIdx !== rateIdx) {
+      const chain = activeChain(store.get(`parts.${p}`));
+      if (!chain) st.chain = null;
+      let rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
+      let rate = SEQ_RATES[rateIdx].beats;
+      if (st.rateIdx !== rateIdx && !st.chain) {
         // Rate changed mid-play: continue from the same musical position on the new grid.
         const b = st.rateIdx == null ? beatAt(now) : st.absStep * SEQ_RATES[st.rateIdx].beats;
         st.absStep = Math.ceil(b / rate - 1e-9);
         st.rateIdx = rateIdx;
       }
-      const len = clamp(Math.round(seq.length || 16), 1, 16);
+      let len = clamp(Math.round(seq.length || 16), 1, 16);
       // A part through the pedals with compensation on looks further ahead.
       const lead = leadOf(p);
       const reach = horizon + lead;
       for (let guard = 0; guard < 64; guard++) {
+        const ch = chain ? chainAt(p, chain, st, len) : null;
+        if (ch) {
+          // Song mode: this entry's pattern, rate and length (a new rate continues from the same musical position).
+          seq = ch.seq;
+          rateIdx = clamp(Math.round(seq.rate ?? 3), 0, SEQ_RATES.length - 1);
+          rate = SEQ_RATES[rateIdx].beats;
+          if (st.rateIdx !== rateIdx) {
+            st.absStep = Math.ceil((st.rateIdx == null ? beatAt(now) : st.absStep * SEQ_RATES[st.rateIdx].beats) / rate - 1e-9);
+            st.rateIdx = rateIdx;
+          }
+          len = clamp(Math.round(seq.length || 16), 1, 16);
+        }
         let t = swungTime(st.absStep * rate, rateIdx);
         if (t >= reach) break;
-        const idx = ((st.absStep % len) + len) % len;
+        const idx = ch ? ch.idx : ((st.absStep % len) + len) % len;
         st.absStep++;
+        if (ch) st.chain.pos++;
         if (t < now - LATE_WINDOW) {
           // Too late to be heard in time (tab was frozen): skip rather than pile up.
           if (st.tie) { router._engineOff(p, st.tie.note, now, 'seq', st.tie.lead); st.tie = null; }
@@ -302,7 +423,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
         }
         if (t < now) t = now;
         const tNext = swungTime(st.absStep * rate, rateIdx);
-        playStep(p, seq, idx, t, tNext, rate, lead, st.absStep - 1);
+        playStep(p, seq, idx, t, tNext, rate, lead, st.absStep - 1, ch);
       }
     }
   }
@@ -389,6 +510,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     // Steps queued ahead of the stop must not play after it.
     if (typeof router._cancelAfter === 'function') router._cancelAfter(now, 'seq');
     releaseTies(now);
+    restorePlocks(now);
     locks.cancelAll();
     if (anchored && !external) emitter.emit('clock', { type: 'stop', time: now });
     notifyEngine();
@@ -429,6 +551,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     if (!follow) return;
     if (playing) {
       releaseTies(timebase.now());
+      restorePlocks(timebase.now());
       if (anchored && !external) emitter.emit('clock', { type: 'stop', time: timebase.now() });
     }
     playing = true;
@@ -490,6 +613,12 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       }
     }
   }));
+  // A knob turned while a parameter lock's return to it is still queued.
+  unsubs.push(store.subscribe('parts', (path) => {
+    if (path === '' || path === 'parts') { for (let p = 0; p < MAX_PARTS; p++) if (ps[p].restore) refreshRestores(p, null); return; }
+    const m = /^parts\.(\d+)(?:\.params(?:\.(\w+))?)?$/.exec(path);
+    if (m && ps[Number(m[1])] && ps[Number(m[1])].restore) refreshRestores(Number(m[1]), m[2] || null);
+  }));
   unsubs.push(store.subscribe('global.tempo', () => {
     if (external) return;
     const next = 60 / tempoNow();
@@ -537,6 +666,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     // Older contract shape kept for convenience: onStep((part, step, time, lock) => {}).
     onStep: (fn) => emitter.on('step', e => fn(e.part, e.step, e.time, e.lock)),
     currentStep,
+    chainEntry,
     locks,
     setFollow, syncStart, syncTick, syncStop,
     tick, kick,

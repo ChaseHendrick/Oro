@@ -58,6 +58,8 @@ export function createFakeEngine(clock) {
     events,
     noteOn(part, note, vel = 0.8, time = 0) { events.push({ type: 'on', part, note, vel, time }); },
     noteOff(part, note, time = 0) { events.push({ type: 'off', part, note, time }); },
+    // v2.9 parameter locks (timed engine-only params)
+    scheduleParams(part, p, time = 0) { events.push({ type: 'params', part, p: { ...p }, time }); },
     allNotesOff(part) { events.push({ type: 'allOff', part }); },
     panic() { events.push({ type: 'panic' }); },
     bend(part, v) { events.push({ type: 'bend', part, v }); },
