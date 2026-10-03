@@ -22,7 +22,12 @@ import { createUI } from './ui/app.js';
 import { savedContextSampleRate } from './pedals/rig-settings.js';
 import { installConsoleEgg } from './ui/eggs.js';
 
+// Start-up timing marks (2.11): 'oro:boot' once the main chunk has run,
+// 'oro:ui' once the interface is built. Read with performance.getEntriesByType('mark').
+const mark = (name) => { try { performance.mark(name); } catch { /* old browsers */ } };
+
 async function boot() {
+  mark('oro:boot');
   const root = document.getElementById('app');
   const saved = await loadSessionAsync();
   const store = createStore(saved || defaultState());
@@ -79,6 +84,7 @@ async function boot() {
     return saved.every(Boolean);
   } });
 
+  mark('oro:ui');
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };
   // v2.9 a hello for people who open the console (src/ui/eggs.js)

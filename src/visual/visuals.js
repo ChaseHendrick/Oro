@@ -28,6 +28,7 @@
 // HUD -> render. Nothing in that loop allocates.
 
 import * as THREE from 'three';
+import { budgetPixelRatio, quantizeRatio, createDynamicScale, RENDER_SCALES } from './resolution.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -249,6 +250,10 @@ export async function createVisuals(container, { store, engine = null, quality, 
     } catch { return false; }
   })();
   let width = 1, height = 1, pixelRatio = 1;
+  const readRenderScale = () => (RENDER_SCALES.includes(store.get('ui.renderScale')) ? store.get('ui.renderScale') : 'auto');
+  let renderScale = readRenderScale();
+  const dyn = createDynamicScale();
+  let prevPaint = NaN;
 
   function buildComposer() {
     if (composer) {
@@ -1053,7 +1058,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
         case 'ui.selectedPart': selectPart(clampPart(store.get('ui.selectedPart')), true); break;
         case 'ui.view': if (!meta || meta.source !== 'visual') api.setView(store.get('ui.view')); break;
         case 'ui.quality': api.setQuality(store.get('ui.quality')); break;
-        case 'ui.fpsCap': fpsCap = readFpsCap(); break;
+        case 'ui.fpsCap': fpsCap = readFpsCap(); dyn.settle(performance.now()); break;
+        case 'ui.renderScale': api.setRenderScale(store.get('ui.renderScale')); break;
         case 'ui.autoRotate': rig.setAutoRotate(!!store.get('ui.autoRotate')); break;
         case 'ui.renderStyle': api.setRenderStyle(store.get('ui.renderStyle')); break;
         case 'ui.palette': api.setPalette(store.get('ui.palette')); break;
@@ -1089,6 +1095,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     selectPart(clampPart(store.get('ui.selectedPart')), true);
     api.setQuality(store.get('ui.quality'));
     fpsCap = readFpsCap();
+    api.setRenderScale(store.get('ui.renderScale'));
     rig.setAutoRotate(!!store.get('ui.autoRotate'));
     api.setRenderStyle(store.get('ui.renderStyle'));
     api.setPalette(store.get('ui.palette'));
@@ -1198,8 +1205,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
   function resize() {
     const w = Math.max(1, Math.round(container.clientWidth));
     const h = Math.max(1, Math.round(container.clientHeight));
-    const pr = Math.min(window.devicePixelRatio || 1, QUALITY[qualityName].pixelRatio);
+    // 2.11 render budget: Auto caps the drawing buffer and scales it with the
+    // dynamic resolution; Full is device pixels up to the quality cap.
+    const budget = budgetPixelRatio(w, h, window.devicePixelRatio || 1, QUALITY[qualityName].pixelRatio, renderScale);
+    const pr = renderScale === 'full' ? budget : quantizeRatio(budget * dyn.scale);
     if (w === width && h === height && pr === pixelRatio && composer) return;
+    if (w !== width || h !== height) dyn.settle(performance.now());
     width = w; height = h; pixelRatio = pr;
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, false);
@@ -1225,6 +1236,20 @@ export async function createVisuals(container, { store, engine = null, quality, 
   let physicsTimer = 0;
 
   let held = false; // paused by debug.pause() (deterministic test stepping)
+  // 2.11: compile every scene shader up front, off the main thread where the
+  // browser has KHR_parallel_shader_compile. The first frame used to link the
+  // sky and marble programs synchronously, which froze start-up for seconds
+  // on software GL. Without the extension this resolves at once and the first
+  // frame compiles as before (nothing is compiled ahead of time).
+  let shadersReady = false;
+  function warmShaders() {
+    const done = () => { shadersReady = true; };
+    let p = null;
+    try { if (renderer.extensions.has('KHR_parallel_shader_compile')) p = renderer.compileAsync(scene, camera); } catch { p = null; }
+    if (!p || typeof p.then !== 'function') { done(); return; }
+    p.then(done, done);
+    setTimeout(done, 20000); // never wait on a stuck status query forever
+  }
   function shouldRender() {
     return !held && !disposed && !contextLost && onScreen && document.visibilityState !== 'hidden' && width > 1 && height > 1;
   }
@@ -1233,6 +1258,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const want = shouldRender();
     if (want && !running) {
       running = true;
+      dyn.settle(performance.now());
       last = performance.now();
       raf = requestAnimationFrame(frame);
     } else if (!want && running) {
@@ -1426,7 +1452,16 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (!running) return;
     raf = requestAnimationFrame(frame);
     if (!pacer.shouldPaint(now, fpsCap)) return;
-    tick(now, true);
+    // Until the shaders have compiled in the background the frame still runs
+    // (dots move, sound follows) but skips the GPU work that would block on them.
+    tick(now, shadersReady);
+    // Dynamic resolution (Auto): the gap between painted frames against the
+    // display frame or the frame-rate cap, whichever is longer.
+    if (shadersReady && renderScale === 'auto') {
+      const target = Math.max(pacer.frameMs, fpsCap > 0 ? 1000 / fpsCap : 0);
+      if (dyn.frame(now, now - prevPaint, target)) resize();
+    }
+    prevPaint = now;
   }
 
   /** One frame of everything; `draw` false skips the GPU work (test stepping). */
@@ -1714,6 +1749,16 @@ export async function createVisuals(container, { store, engine = null, quality, 
       g.u = pos.u; g.v = pos.v;
     },
 
+    /** 'auto' (pixel budget + dynamic resolution, the default) or 'full'. */
+    setRenderScale(mode) {
+      const m = RENDER_SCALES.includes(mode) ? mode : 'auto';
+      if (m === renderScale) return;
+      renderScale = m;
+      dyn.reset();
+      dyn.settle(performance.now());
+      resize();
+    },
+
     setQuality(q) {
       const name = QUALITY[q] ? q : 'high';
       if (name === qualityName && composer) return;
@@ -1723,6 +1768,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       orbit.setQuality(name);
       buildComposer();
       width = 0;
+      dyn.reset();
       resize();
       themeDirty = true;
     },
@@ -1934,6 +1980,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
           physics: Array.from({ length: partCount(store) }, (_, p) => sim.engineName(p)),
           music: !!music,
           floatLinear: terrain.floatLinear, size: [width, height, pixelRatio],
+          resolution: { mode: renderScale, scale: dyn.scale, pixelRatio, buffer: [canvas.width, canvas.height] },
         };
       },
       resetStats() { frames = 0; cpuMs = 0; statsAt = performance.now(); },
@@ -1994,6 +2041,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   applyPartColor(1);
   rig.setView(VIEW_NAMES.includes(store.get('ui.view')) ? store.get('ui.view') : 'orbit', false);
   api.setRenderStyle(store.get('ui.renderStyle'));
+  warmShaders();
   schedule();
   return api;
 }

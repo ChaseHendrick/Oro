@@ -11,16 +11,12 @@ import { openPopover } from './layers.js';
 import { icon } from './icons.js';
 import { drawTerrain, downsample, previewTable, prewarmPreviews } from './terrain-art.js';
 import { pathOutline } from './dsp-bridge.js';
-import { openTerrainLibrary } from './terrain-library.js';
-import { openRealPlaces } from './real-places.js';
-import { openDataPanel } from './data-panel.js';
-import { openFormulaTerrain } from './formula-terrain.js';
+import { chunks } from './lazy.js';
 import { has as hasFun, found } from '../core/fun.js';
 import { offerPostcardFile } from './postcard.js';
 
 // v2.9 PNG files already checked for a postcard (Use as terrain imports them as usual).
 const postcardChecked = new WeakSet();
-import { openImprint } from './imprint-panel.js';
 
 const TERRAIN_KNOBS = ['morph', 'warp', 'lift', 'fold', 'seed', 'detail'];
 const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror', 'warpMode', 'warpAmount'];
@@ -160,19 +156,19 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
     html: icon('import'), 'aria-label': `Import an image or audio into terrain ${slot}`,
   });
   const libraryBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Browse original image library for terrain ${slot}` }, 'Image library');
-  parentScope.on(libraryBtn, 'click', () => openTerrainLibrary(ctx, libraryBtn, slot));
+  parentScope.on(libraryBtn, 'click', () => chunks.terrainLibrary.run(m => m.openTerrainLibrary(ctx, libraryBtn, slot), 'Image library'));
   const formulaBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Build terrain ${slot} from a formula` }, 'Formula');
-  parentScope.on(formulaBtn, 'click', () => openFormulaTerrain(ctx, formulaBtn, slot));
+  parentScope.on(formulaBtn, 'click', () => chunks.formula.run(m => m.openFormulaTerrain(ctx, formulaBtn, slot), 'Formula'));
   const imprintBtn = h('button', {
     type: 'button', class: 'btn btn--ghost btn--sm', disabled: !canImport, 'aria-label': `Imprint a sound into terrain ${slot}`,
     dataset: { tip: canImport ? 'Turn a sound into land: one cycle of it along the dot\'s path' : 'Imprint needs the audio engine, which is not available' },
   }, 'Imprint');
-  parentScope.on(imprintBtn, 'click', () => openImprint(ctx, imprintBtn, slot));
+  parentScope.on(imprintBtn, 'click', () => chunks.imprint.run(m => m.openImprint(ctx, imprintBtn, slot), 'Imprint'));
   // v2.10 Real places (Earth, Moon, Mars, night sky) and Sonify your data
   const placesBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Real places and the night sky for terrain ${slot}` }, 'Real places');
-  parentScope.on(placesBtn, 'click', () => openRealPlaces(ctx, placesBtn, slot));
+  parentScope.on(placesBtn, 'click', () => chunks.realPlaces.run(m => m.openRealPlaces(ctx, placesBtn, slot), 'Real places'));
   const dataBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Make terrain ${slot} or a melody from your data` }, 'Data');
-  parentScope.on(dataBtn, 'click', () => openDataPanel(ctx, dataBtn, slot));
+  parentScope.on(dataBtn, 'click', () => chunks.dataPanel.run(m => m.openDataPanel(ctx, dataBtn, slot), 'Data'));
   const channel = createKnob(ctx, binder.partParam('imageChannel' + slot), { size: 'sm', label: 'Channel', ariaLabel: () => 'Image channel' });
   const mapping = createKnob(ctx, binder.partParam('imageMapping' + slot), { size: 'sm', label: 'Mapping', ariaLabel: () => 'Image mapping' });
   parentScope.add(channel.dispose); parentScope.add(mapping.dispose);

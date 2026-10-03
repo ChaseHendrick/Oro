@@ -27,7 +27,8 @@ import {
   embedPatch, readPostcard, linkFor, caption, shareText, shareTargets, SITE_SHORT, decodeLinkData, linkDataFromHash, LinkError,
 } from '../presets/postcard.js';
 import { found } from '../core/fun.js';
-import { VERSION } from './settings.js';
+// VERSION comes from settings.js, which loads lazily (2.11).
+const appVersion = () => import('./settings.js').then(m => m.VERSION);
 
 export const CARD = 1080;
 const MAX_FILE = 25 * 1024 * 1024;
@@ -124,7 +125,7 @@ export async function makePostcard(ctx, part) {
   const canvas = document.createElement('canvas');
   drawPostcard(canvas, { store, terrains: ctx.terrains, part, name });
   const plain = await new Promise((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error('The image could not be made'))), 'image/png'));
-  const bytes = embedPatch(new Uint8Array(await plain.arrayBuffer()), patch, VERSION);
+  const bytes = embedPatch(new Uint8Array(await plain.arrayBuffer()), patch, await appVersion());
   return { blob: new Blob([bytes], { type: 'image/png' }), patch, name };
 }
 
@@ -177,7 +178,7 @@ export function openPostcard(ctx, part) {
     img.src = objectUrl;
     img.alt = `Postcard for "${name}": the terrain of ${trackName(store, p)} with its path, the words Made with Oro and ${SITE_SHORT}`;
     let link;
-    try { link = await linkFor(patch, VERSION); } catch (err) {
+    try { link = await linkFor(patch, await appVersion()); } catch (err) {
       console.warn('[ui] share link failed', err);
       link = null;
     }

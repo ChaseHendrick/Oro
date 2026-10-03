@@ -8,7 +8,7 @@ import { h, createScope, setText } from './dom.js';
 import { schedule } from './frame.js';
 import { createKnob } from './knob.js';
 import { createStepper, createSelect } from './controls.js';
-import { openSoundMap } from './sound-map-view.js';
+import { chunks } from './lazy.js';
 import { euclidLane, grooveLanes, GROOVE_STYLES } from '../music/drum-gen.js';
 import { SEQ_STEPS, patternPath } from '../core/params.js';
 import { KIT_PADS, KIT_BASE_NOTE, sanitizeDrum, sanitizeLanes, sliceTransients, pcmToBase64, defaultDrum } from '../dsp/drum-kit.js';
@@ -61,7 +61,7 @@ export function createDrumPanel(ctx) {
   const synthBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Synth kit');
   const mapBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-haspopup': 'dialog' }, 'Sound map');
   scope.on(mapBtn, 'click', () => {
-    openSoundMap(ctx, { part: sel(), pad: padSel, onPad: (k) => { if (k !== padSel) { padSel = k; schedule(renderGrid); } } });
+    chunks.soundMap.run(m => m.openSoundMap(ctx, { part: sel(), pad: padSel, onPad: (k) => { if (k !== padSel) { padSel = k; schedule(renderGrid); } } }), 'Sound map');
   });
 
   async function useRecording(mono, label) {
