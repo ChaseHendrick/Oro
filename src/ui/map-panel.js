@@ -12,9 +12,10 @@ import { icon } from './icons.js';
 import { drawTerrain, downsample, previewTable, prewarmPreviews } from './terrain-art.js';
 import { pathOutline } from './dsp-bridge.js';
 import { openTerrainLibrary } from './terrain-library.js';
+import { openFormulaTerrain } from './formula-terrain.js';
 
 const TERRAIN_KNOBS = ['morph', 'warp', 'lift', 'fold', 'seed', 'detail'];
-const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror'];
+const PATH_KNOBS = ['pathOrder', 'pathParam', 'size', 'noteSize', 'stretch', 'rotate', 'spin', 'laps', 'pace', 'paceShape', 'centerX', 'centerY', 'pathWindow', 'pathMangle', 'pathMirror', 'warpMode', 'warpAmount'];
 const ACCEPT = 'image/*,audio/*,.wav,.mp3,.m4a,.aac,.ogg,.flac,.aif,.aiff';
 
 export function friendlyImportError(err) {
@@ -152,13 +153,15 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
   });
   const libraryBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Browse original image library for terrain ${slot}` }, 'Image library');
   parentScope.on(libraryBtn, 'click', () => openTerrainLibrary(ctx, libraryBtn, slot));
+  const formulaBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'aria-label': `Build terrain ${slot} from a formula` }, 'Formula');
+  parentScope.on(formulaBtn, 'click', () => openFormulaTerrain(ctx, formulaBtn, slot));
   const channel = createKnob(ctx, binder.partParam('imageChannel' + slot), { size: 'sm', label: 'Channel', ariaLabel: () => 'Image channel' });
   const mapping = createKnob(ctx, binder.partParam('imageMapping' + slot), { size: 'sm', label: 'Mapping', ariaLabel: () => 'Image mapping' });
   parentScope.add(channel.dispose); parentScope.add(mapping.dispose);
   const imageControls = h('div', { class: 'knob-grid knob-grid--2 knob-grid--tight' }, channel.el, mapping.el);
   const card = h('div', { class: 'terrain-card', style: { position: 'relative' } }, pick, importBtn);
   pick.style.width = '100%';
-  const el = h('div', { class: 'terrain-slot', dataset: { slot } }, card, fileInput, libraryBtn, imageControls);
+  const el = h('div', { class: 'terrain-slot', dataset: { slot } }, card, fileInput, h('div', { class: 'terrain-source-btns' }, libraryBtn, formulaBtn), imageControls);
 
   function render() {
     const part = binder.selected();
@@ -169,7 +172,7 @@ function createTerrainSlot(ctx, parentScope, slot, canImport) {
     imageControls.hidden = !user || !ut;
     channel.el.hidden = !ut?.channels;
     setText(name, user ? (ut ? ut.name : 'Imported') : t.name);
-    setText(sub, user ? (ut ? (ut.libraryId ? 'Original procedural image' : ut.kind === 'wavetable' ? 'Your wavetable' : ut.kind === 'audio' ? 'Your audio recording' : 'Your image') : 'Nothing imported yet') : t.desc);
+    setText(sub, user ? (ut ? (ut.libraryId ? 'Original procedural image' : ut.kind === 'wavetable' ? 'Your wavetable' : ut.kind === 'audio' ? 'Your audio recording' : ut.kind === 'formula' ? 'Formula: ' + (ut.formula || '') : 'Your image') : 'Nothing imported yet') : t.desc);
     pick.dataset.tip = user && !ut ? 'Import an image or audio to use this slot' : t.desc;
     const table = ctx.terrains ? ctx.terrains.get(part, slot) : null;
     drawTerrain(canvas, downsample(table, 112), { color: store.get(`parts.${part}.color`), theme: document.documentElement.dataset.theme });

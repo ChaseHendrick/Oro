@@ -2,7 +2,7 @@
 
 Orograph is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.2.0, including the guitar pedal features
+going on under the hood. It describes version 2.3.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -294,6 +294,22 @@ matter just as much, so treat them as starting points.
 | **Vortex** | Spiral arms winding out of a centre inside a disc, with a gentle swirl outside it. | Crossing the arms gives a run of harmonics that shifts as you move round the centre; outside the disc it is gentler. |
 | **Imported** | Your own image or WAV file. | Whatever you bring. See below. |
 
+### Formula terrains (2.3)
+
+The **Formula** button under terrain A or B builds the land from a height formula
+z = f(x, y). **x** and **y** run from −1 to 1 across the tile, **r** is the distance from
+the centre and **th** the angle. You can use numbers, **pi**, **e**, + − * / % and ^,
+comparisons (which give 1 or 0) and the functions sin, cos, tan, asin, acos, atan, atan2,
+sinh, cosh, tanh, abs, sqrt, cbrt, exp, log, floor, ceil, round, sign, fract, min, max,
+pow, mod, hypot, clamp, mix, step, smoothstep and noise(x, y). Examples are one click
+away (Ripples, Egg crate, Saddle, Spiral, Terraces, Interference). The heights are
+stretched to the full range, and the tile is mirrored so it always joins without a seam.
+Formulas are only maths: nothing else can be reached from them.
+
+Tick **Fill A and B** to build terrain A with **t** = 0 and terrain B with **t** = 1; turning
+**Morph** then moves t between them, so Morph animates your formula. A formula terrain is
+saved with its patch and remembers its formula, so you can reopen and edit it.
+
 ### Importing your own terrain
 
 Click the small import button next to a slot (or drop a file straight onto the slot) to
@@ -353,6 +369,22 @@ continuous control from 0 to 1).
 | **Epicycloid** | Cusps | Depth | A wheel rolling round a wheel: cardioids and cusps. |
 | **Superformula** | Symmetry | Pinch | Rounded blobs through to pinched stars. |
 | **Scribble** | Seed | Chaos | A smooth random closed loop. Change Order for a new one. |
+
+### Warp modes (2.3)
+
+**Warp mode** and **Warp amt** (Path card) bend how the point travels the path each cycle.
+Laps already gives hard sync and Pace bends the speed, so these add four more:
+
+* **PWM** traces the whole path in the first part of the cycle, then waits at its end
+  for the rest. More amount = a shorter trace, a thinner, buzzier sound.
+* **Quantize** moves the point in steps along the path (from 256 steps down to 2), a
+  stepped, bit-crushed character.
+* **Flip** sends the end of each cycle through the orbit's centre to the opposite side,
+  a sudden jump in the land it reads, for hollow, sync-like tones.
+* **Spiral** shrinks the loop through each cycle towards the centre, so every cycle
+  sweeps from the outer land inward.
+
+Warp amt is modulatable. At 0 every mode sounds exactly like Off.
 
 ### Placing and sizing the loop
 

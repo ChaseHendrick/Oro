@@ -1,7 +1,7 @@
 {
   "name": "orograph",
   "productName": "Orograph",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Orograph: a 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
   "author": "Chase",
   "license": "MIT",

@@ -3,6 +3,14 @@
 All notable changes to Orograph are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.3.0 (October 2026)
+
+* **Warp modes.** PWM, Quantize, Flip and Spiral change how the point travels the path
+  each cycle, with a modulatable Warp amt (Laps and Pace already cover sync and bend).
+* **Formula terrains.** Type z = f(x, y) to build terrain A or B, with r, th, noise() and
+  about thirty maths functions; fill A and B at t = 0 and t = 1 so Morph animates the
+  formula. A safe parser: formulas can only do maths.
+
 ## 2.2.0 (October 2026)
 
 * **Filter 2.** A second filter per voice with Serial, Parallel and Split (left/right)
