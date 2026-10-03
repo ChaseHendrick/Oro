@@ -98,6 +98,13 @@ export function createSeqPanel(ctx) {
   const lockGlide = createMiniSlider(ctx, P('seq.lockGlide', { id: 'lockGlide', label: 'Dot glide', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How long the dot takes to reach a step\'s locked spot (0 jumps)' }), {
     ariaLabel: 'Dot lock glide time', format: v => (v < 0.005 ? 'Jump' : Math.round(v * 100) + '% of a step'),
   });
+  // v2.6 humanize
+  const humanTime = createMiniSlider(ctx, P('seq.humanTime', { id: 'humanTime', label: 'Humanize time', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Play each note up to 20 ms late, a little differently every pass' }), {
+    ariaLabel: 'Humanize timing', format: v => (v < 0.005 ? 'Off' : `${Math.round(v * 20)} ms`),
+  });
+  const humanVel = createMiniSlider(ctx, P('seq.humanVel', { id: 'humanVel', label: 'Humanize velocity', curve: 'lin', min: 0, max: 1, default: 0, hint: 'Vary each note\'s velocity by up to 30% either way' }), {
+    ariaLabel: 'Humanize velocity', format: v => (v < 0.005 ? 'Off' : `±${Math.round(v * 30)}%`),
+  });
   // Lock Record goes through the music module when it has one (it owns the
   // recording logic); the store flag alone is the fallback it also reads.
   const lockRecBinding = { ...binder.uiValue('lockRecord', [0, 1], 0), def: { id: 'lockRecord', label: 'Rec dot', default: 0 } };
@@ -137,7 +144,7 @@ export function createSeqPanel(ctx) {
   const scale = createSelect(ctx, binder.globalParam('scaleType'), { label: 'Scale', className: 'select--sm' });
   const swing = createMiniSlider(ctx, binder.globalParam('swing'), { ariaLabel: 'Swing', format: v => Math.round(v * 100) + '%' });
   const keyMode = createSegmented(ctx, binder.globalParam('keyMode'), { label: 'Keyboard plays', size: 'sm' });
-  for (const c of [seqOn, seqRate, seqLen, seqOct, arpMode, arpRate, arpRhythm, arpOct, arpGate, arpHold, key, scale, swing, keyMode, lockGlide, lockRec]) scope.add(c.dispose);
+  for (const c of [seqOn, seqRate, seqLen, seqOct, arpMode, arpRate, arpRhythm, arpOct, arpGate, arpHold, key, scale, swing, keyMode, lockGlide, lockRec, humanTime, humanVel]) scope.add(c.dispose);
 
   const field = (label, control, cls = '') => h('div', { class: ['field-row', cls] }, h('span', { class: 'mini-label' }, label), control);
   const side = h('div', { class: 'seq-side' },
@@ -149,6 +156,9 @@ export function createSeqPanel(ctx) {
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Length'), seqLen.el),
         h('div', { class: 'field-col' }, h('span', { class: 'mini-label' }, 'Octave'), seqOct.el)),
       h('div', { class: 'seq-line seq-dotline' }, lockRec.el, h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Dot glide'), lockGlide.el)),
+      h('div', { class: 'seq-pair' },
+        h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Humanize time'), humanTime.el),
+        h('div', { class: 'field-col field-col--grow' }, h('span', { class: 'mini-label' }, 'Humanize vel'), humanVel.el)),
       tools));
 
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },

@@ -105,6 +105,9 @@ export function sanitizePattern(src, n = 1) {
     length: Math.round(clamp(num(s.length, base.length), 1, SEQ_STEPS)),
     baseOctave: Math.round(clamp(num(s.baseOctave, base.baseOctave), 0, 7)),
     lockGlide: clamp(num(s.lockGlide, base.lockGlide), 0, 1),
+    // v2.6 humanize, absent unless set
+    ...(num(s.humanTime, 0) > 0 ? { humanTime: clamp(num(s.humanTime, 0), 0, 1) } : {}),
+    ...(num(s.humanVel, 0) > 0 ? { humanVel: clamp(num(s.humanVel, 0), 0, 1) } : {}),
     steps: [],
   };
   for (let i = 0; i < SEQ_STEPS; i++) {

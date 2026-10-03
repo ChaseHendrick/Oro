@@ -13,6 +13,7 @@ import { addLoop, schedule } from './frame.js';
 import { createBinder, clampPart } from './bind.js';
 import { partCount } from '../core/tracks.js';
 import { createTheme } from './theme.js';
+import { createHistory } from '../core/history.js';
 import { createPrefs } from './prefs.js';
 import { createLayers } from './layers.js';
 import { createToaster } from './toast.js';
@@ -139,6 +140,19 @@ export function createUI(root, modules = {}) {
   const prefs = createPrefs({ store });
   scope.add(prefs.dispose);
   rememberPlace(store, prefs, visuals, scope);
+  // v2.6 undo history: Cmd/Ctrl+Z undoes, Shift+Cmd+Z or Ctrl+Y redoes (text fields keep their own undo)
+  const history = createHistory(store);
+  scope.add(history.dispose);
+  const onUndoKey = (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const t = e.target, tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); history.undo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); history.redo(); }
+  };
+  window.addEventListener('keydown', onUndoKey);
+  scope.add(() => window.removeEventListener('keydown', onUndoKey));
   const bus = emitter();
   const binder = createBinder(store);
   const tele = createTele(engine);
@@ -170,7 +184,7 @@ export function createUI(root, modules = {}) {
   const ctx = {
     root, store, engine, visuals, music, presets, midi,
     prepareUpdate: modules.prepareUpdate || null,
-    layers, prefs, bus, binder, tele, toast, tooltips, terrains, notes, live,
+    layers, prefs, bus, binder, tele, toast, tooltips, terrains, notes, live, history,
     theme: null,
     /** Surfaces a part colour must stay readable on, for the active theme. */
     panelBg() {

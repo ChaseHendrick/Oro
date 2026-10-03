@@ -11,6 +11,7 @@ import { createRecorder, formatElapsed } from './record.js';
 import { createLooperButton } from './looper-panel.js';
 import { openBounce, bounceSupported } from './bounce.js';
 import { openMacros } from './macros.js';
+import { openPopover } from './layers.js';
 import { createTrackTabs } from './track-tabs.js';
 import { icon, brandGlyph } from './icons.js';
 
@@ -156,7 +157,25 @@ export function createTopbar(ctx, container) {
     if (macrosPop && macrosPop.isOpen()) { macrosPop.close(); return; }
     macrosPop = openMacros(ctx, macrosBtn);
   });
-  const utils = h('div', { class: 'utils' }, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
+  // v2.6 undo / redo, with the history list on the undo button's menu (right-click or long-press)
+  const undoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Undo', html: icon('undo') });
+  const redoBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Redo', html: icon('redo') });
+  const hist = ctx.history;
+  const renderHist = () => {
+    if (!hist) { undoBtn.disabled = redoBtn.disabled = true; return; }
+    const { past, future } = hist.list();
+    undoBtn.disabled = !hist.canUndo; redoBtn.disabled = !hist.canRedo;
+    undoBtn.dataset.tip = past.length ? `Undo ${past[past.length - 1]} (Cmd/Ctrl+Z). Right-click for the history` : 'Nothing to undo';
+    redoBtn.dataset.tip = future.length ? `Redo ${future[0]} (Shift+Cmd/Ctrl+Z)` : 'Nothing to redo';
+  };
+  if (hist) {
+    scope.on(undoBtn, 'click', () => { const l = hist.undo(); if (l) ctx.toast(`Undid ${l}`); });
+    scope.on(redoBtn, 'click', () => { const l = hist.redo(); if (l) ctx.toast(`Redid ${l}`); });
+    scope.on(undoBtn, 'contextmenu', (e) => { e.preventDefault(); openHistory(ctx, undoBtn); });
+    scope.add(hist.on(renderHist));
+  }
+  renderHist();
+  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   // On hendrickresearch.com (served under /music/oro/) a way back to the site's Music page.
   const siteBack = isOnSite()
@@ -177,4 +196,21 @@ export function createTopbar(ctx, container) {
 export function isOnSite(loc = typeof location !== 'undefined' ? location : null) {
   if (!loc || !/^https?:$/.test(loc.protocol || '')) return false;
   return /^\/music\/(oro|orograph)(\/|$)/.test(loc.pathname || '');
+}
+
+/** The undo history as a list: click an edit to go back to just before it. */
+function openHistory(ctx, anchor) {
+  const hist = ctx.history;
+  const { past } = hist.list();
+  const items = past.slice(-20).map((label, i, arr) => {
+    const keep = past.length - arr.length + i;
+    const b = h('button', { type: 'button', class: 'history-item' }, label);
+    b.addEventListener('click', () => { hist.undoTo(keep); pop.close('select'); });
+    return b;
+  }).reverse();
+  const body = h('div', { class: 'history-pop' }, h('div', { class: 'popover-title' }, 'History'),
+    items.length ? h('div', { class: 'history-list' }, items) : h('p', { class: 'popover-note' }, 'Nothing to undo yet.'),
+    h('p', { class: 'popover-note' }, 'Click an edit to undo it and everything after it. Redo brings them back.'));
+  const pop = openPopover(ctx.layers, anchor, body, { className: 'popover--history', label: 'Undo history', placement: 'bottom-end' });
+  return pop;
 }

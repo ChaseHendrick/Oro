@@ -32,7 +32,11 @@
 // the step's gate scaled to its share and RATCHET_DECAY times the velocity of
 // the hit before it. A slide applies to the last hit.
 
-import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, activeSeq, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, stepToMidi, stepPlays, stepRatchet, stepChance, activeSeq, clamp } from '../core/params.js';
+
+// v2.6 humanize: up to this late (s) at Humanize time 1, and this share of velocity either way at Humanize velocity 1
+export const HUMAN_TIME_MAX = 0.02;
+export const HUMAN_VEL_MAX = 0.3;
 import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
 import { MIN_GAP, LATE_WINDOW } from './router.js';
@@ -213,7 +217,11 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       return;
     }
     const note = clamp(stepToMidi(step, seq.baseOctave ?? 3, store.get('global.scaleRoot') || 0, store.get('global.scaleType') || 0), 0, 127);
-    const vel = step.accent ? 1 : clamp(Number.isFinite(step.vel) ? step.vel : 0.8, 0.01, 1);
+    let vel = step.accent ? 1 : clamp(Number.isFinite(step.vel) ? step.vel : 0.8, 0.01, 1);
+    // humanize: a late push and a velocity wobble, the same each time this step of this pass plays
+    const hT = clamp(finite(seq.humanTime, 0), 0, 1), hV = clamp(finite(seq.humanVel, 0), 0, 1);
+    if (hT > 0) { const d = hT * HUMAN_TIME_MAX * stepChance(((probSeed | 0) + runs) ^ 0x51ed, p, abs); t += d; if (t > tNext - 0.002) t = tNext - 0.002; }
+    if (hV > 0) vel = clamp(vel * (1 + hV * HUMAN_VEL_MAX * (2 * stepChance(((probSeed | 0) + runs) ^ 0x2a7c, p, abs) - 1)), 0.01, 1);
     const gateSec = clamp(step.gate ?? 0.5, 0.05, 1) * rate * spb;
     const hits = stepRatchet(step);
     if (hits === 1) { playHit(p, note, vel, gateSec, step.slide, t, tNext, lead, 0.01); return; }

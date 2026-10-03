@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.5.0, including the guitar pedal features
+going on under the hood. It describes version 2.6.0, including the guitar pedal features
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -765,6 +765,12 @@ same gate within its own slice and plays a little softer than the one before (85
 its velocity). Steps start with Prob 100% and Ratchet 1, so existing patterns are
 unchanged.
 
+### Humanize (2.6)
+
+**Humanize time** plays each note up to 20 ms late and **Humanize vel** moves each note's
+velocity up to 30% up or down, a little differently on every pass, so a pattern stops
+sounding machine-tight. Both are per pattern and start at Off. Dot locks stay on the grid.
+
 ### Dot locks in the sequencer
 
 The **Dot** row lets the sequencer move the dot, so each step can sit on a different patch
@@ -1003,6 +1009,16 @@ Resample and choose **MIDI Learn**, then press a button on your controller. A ma
 fires each time its value rises past the middle (use momentary buttons).
 
 ---
+
+## Undo (2.6)
+
+**Undo** and **Redo** sit at the left of the top bar's buttons; **Cmd+Z** (Ctrl+Z on Windows
+and Linux) undoes, and **Shift+Cmd+Z** or **Ctrl+Y** redoes. A knob drag or a burst of
+changes counts as one step, and the button's tooltip names what it will undo. Right-click
+Undo for the **History**: click any edit there to go back to just before it. Up to 60 steps
+are kept. Undo covers sounds, patterns, tracks, links, effects and loaded patches or
+scenes; the moving dot, settings and the view are not part of it. Text fields keep their
+own undo.
 
 ## 13. Settings
 

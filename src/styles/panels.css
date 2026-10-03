@@ -1202,3 +1202,9 @@
 .func-canvas { border: 1px solid var(--border); border-radius: var(--r-md, 6px); background: var(--panel); cursor: crosshair; touch-action: none; max-width: 100%; }
 .func-controls { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .func-sync { display: flex; gap: 6px; align-items: center; }
+
+/* v2.6 undo history */
+.history-pop { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+.history-list { display: flex; flex-direction: column; max-height: 320px; overflow: auto; }
+.history-item { text-align: left; padding: 5px 8px; border-radius: var(--r-sm, 4px); font-size: var(--fs-sm, 12px); }
+.history-item:hover, .history-item:focus-visible { background: var(--panel-2); }
