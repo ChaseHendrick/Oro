@@ -1,4 +1,4 @@
-// Game controller Link sources (2.12): the right stick's X and Y, -1..1. The
+// Game controller Link sources (2.11): the right stick's X and Y, -1..1. The
 // main thread sends {t:'pad', v:[x, y]} only when the stick moves; each value
 // follows its target with a short smoothing (PAD_SMOOTH seconds) so a 60 Hz
 // poll never steps. Idle (never set) the bank does nothing and reads 0.

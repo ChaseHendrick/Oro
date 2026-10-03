@@ -1,4 +1,4 @@
-// Settings > Controllers (2.12): game controllers and haptics. Loaded when the
+// Settings > Controllers (2.11): game controllers and haptics. Loaded when the
 // tab is opened. Turning controllers on, the dot speed and deadzone, the
 // mapping and the haptics are kept on this computer (localStorage), never in
 // the session. The live test reads the pad only while this pane is open.

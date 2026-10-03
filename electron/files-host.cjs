@@ -1,6 +1,6 @@
 'use strict';
 
-// v2.12 Save dialog for exports (the stems zip): the renderer hands over a
+// v2.11 Save dialog for exports (the stems zip): the renderer hands over a
 // file name and the bytes, the main process asks where to save and writes
 // the file. Only the app's own page may ask (trustedSender).
 

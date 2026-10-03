@@ -33,7 +33,7 @@ export const SAMPLE_RATE_OPTIONS = Object.freeze([
   Object.freeze({ value: 'auto', label: 'Auto' }),
   Object.freeze({ value: 44100, label: '44.1 kHz' }),
   Object.freeze({ value: 48000, label: '48 kHz' }),
-  // 2.12: the default for new installs (src/core/first-run.js); existing choices are kept.
+  // 2.11: the default for new installs (src/core/first-run.js); existing choices are kept.
   Object.freeze({ value: 96000, label: '96 kHz' }),
 ]);
 /** Manual latency offset range (ms), added to the measured round trip. */

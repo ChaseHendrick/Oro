@@ -166,7 +166,7 @@ for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPE
 for (let s = L_SCIENCE; s <= L_SCIENCE_END && s < NSRC; s++) PART_SOURCE[s] = 1;
 if (L_TURING < NSRC) PART_SOURCE[L_TURING] = 1;
 for (let s = L_WEATHER; s <= L_WEATHER_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.10 live weather (global)
-for (let s = L_PAD; s <= L_PAD_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.12 game controller right stick (global)
+for (let s = L_PAD; s <= L_PAD_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.11 game controller right stick (global)
 const SCI_TURING = 7;
 const SCIENCE_KEYS = { sciNeuronCurrent: 'neuronCurrent', sciNeuronKick: 'neuronKick', sciNeuronTemp: 'neuronTemp', sciNeuronRate: 'neuronRate',
   sciLorenzRate: 'lorenzRate', sciPendEnergy: 'pendEnergy', sciPendRate: 'pendRate', sciSmoothTime: 'smoothTime', sciSmoothness: 'smoothness',
@@ -1014,7 +1014,7 @@ export class OroDSP {
     this.postMessage = () => {};
     this.parts = [];
     this.weather = new WeatherBank();   // v2.10 live weather Link sources (global), read by every part
-    this.pad = new PadBank();           // v2.12 game controller right stick Link sources (global)
+    this.pad = new PadBank();           // v2.11 game controller right stick Link sources (global)
     for (let i = 0; i < MAX_PARTS; i++) { const P = new Part(i, this.sr, this.os); P.weather = this.weather.out; P.pad = this.pad.out; this.parts.push(P); }
     // Parts (tracks) in use: 0..count-1. The rest only render while they fade
     // out after being removed (see setTracks and dormant()).
@@ -1048,8 +1048,8 @@ export class OroDSP {
     // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
     this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
-    this.dryOut = 1;               // v2.12 stems export: 0 renders only the sends (a send-return stem)
-    this.partStreams = false;      // v2.12 stems export: per-part random streams (streamOf)
+    this.dryOut = 1;               // v2.11 stems export: 0 renders only the sends (a send-return stem)
+    this.partStreams = false;      // v2.11 stems export: per-part random streams (streamOf)
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
     this.kGate = 1 / (this.sr * FREEZE_GATE_TIME);
@@ -2211,7 +2211,7 @@ export class OroDSP {
   }
 
   /**
-   * The random stream a note of part P draws from: the shared one, or (v2.12
+   * The random stream a note of part P draws from: the shared one, or (v2.11
    * stems export, {t:'stemTap', streams: 1}) the part's own, so a track
    * sounds the same rendered alone as in the mix.
    */

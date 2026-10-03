@@ -124,7 +124,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
   let voiceMsg = null;            // v1.4 Voice Level link source
   let weatherMsg = null;          // v2.10 live weather link sources
-  let padMsg = null;              // v2.12 game controller right stick link sources
+  let padMsg = null;              // v2.11 game controller right stick link sources
   let pedalCompMs = 0;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
@@ -566,7 +566,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       weatherMsg = { t: 'weather', v: Array.from(values) };
       post({ ...weatherMsg, snap: !!snap });
     },
-    /** v2.12 game controller right stick [x, y], -1..1 (the DSP smooths it). */
+    /** 2.11 game controller right stick [x, y], -1..1 (the DSP smooths it). */
     setPadStick(x, y) {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       padMsg = { t: 'pad', v: [clamp(x, -1, 1), clamp(y, -1, 1)] };
@@ -717,7 +717,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     get bouncing() { return bouncing; },
 
     /**
-     * v2.12 stems export (src/audio/stems.js): render `passes` one at a time,
+     * 2.11 stems export (src/audio/stems.js): render `passes` one at a time,
      * handing each AudioBuffer to `onPass(buffer, pass, index)` before the
      * next starts, so only one is held. A pass is { solo, extra, events }
      * (see passInit); `frames(index)` gives each pass its length. Stops

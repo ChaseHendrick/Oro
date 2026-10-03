@@ -1,4 +1,4 @@
-// Audio strain safety net (2.12). New installs start at Pristine and 96 kHz;
+// Audio strain safety net (2.11). New installs start at Pristine and 96 kHz;
 // if this computer cannot keep up, the DSP load meter shows it first. When
 // it reports sustained trouble, Oro offers (once per session, never silently)
 // to step down to High. "Don't ask again" is remembered on this computer.

@@ -1,4 +1,4 @@
-// Export stems dialog (v2.12), opened from the Bounce popover and loaded on
+// Export stems dialog (2.11), opened from the Bounce popover and loaded on
 // demand. Renders every track, the optional send returns and the full mix
 // offline and saves one .zip (src/audio/stems.js).
 

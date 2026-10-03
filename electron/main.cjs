@@ -54,7 +54,7 @@ protocol.registerSchemesAsPrivileged([{
 
 let mainWindow = null;
 let updates = null;
-// 2.12 bounce reminder in the close flow (Settings > Audio > Remind me to bounce).
+// 2.11 bounce reminder in the close flow (Settings > Audio > Remind me to bounce).
 const closeGuard = createCloseGuard({ dialog, isInstalling: () => updates?.status().status === 'installing', quit: () => app.quit() });
 
 function focusMainWindow() {
@@ -261,7 +261,7 @@ function start() {
     // Manual formats use release notices, never the installer's download/install
     // machinery. Keep electron-updater's publisher verification unchanged.
     const autoUpdater = capability.supportsInstall ? require('electron-updater').autoUpdater : null;
-    // 2.12 opt-in Mac self-update: verified zip download and bundle swap, no Squirrel.
+    // 2.11 opt-in Mac self-update: verified zip download and bundle swap, no Squirrel.
     const macInstaller = capability.macAutoInstall ? createMacInstaller({ fs, https: require('node:https'), execFile: require('node:child_process').execFile,
       spawn: require('node:child_process').spawn, tmpdir: app.getPath('temp'), userData: app.getPath('userData'), exePath: app.getPath('exe'),
       arch: process.arch, pid: process.pid, currentVersion: app.getVersion(), newerVersion: require('./updates.cjs').newerVersion }) : null;

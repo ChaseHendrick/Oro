@@ -1,4 +1,4 @@
-// Export stems (v2.12): one offline render per track, optional send-return
+// Export stems (2.11): one offline render per track, optional send-return
 // stems and the full mix, all the same length from beat 0, packed into a
 // single store-only .zip with the session's MIDI, a tempo map and a README.
 //

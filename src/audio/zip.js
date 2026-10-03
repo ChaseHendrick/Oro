@@ -1,4 +1,4 @@
-// A minimal store-only ZIP writer and reader (v2.12 stems export).
+// A minimal store-only ZIP writer and reader (2.11 stems export).
 //
 // Entries are stored uncompressed (method 0): audio barely compresses and a
 // stored entry can be streamed from encoder pieces without ever holding the

@@ -88,7 +88,7 @@ export function writeDurable(key, raw, storage) {
   done.finally(() => { if (writes.get(key) === done) writes.delete(key); });
   return { immediate, done };
 }
-// v2.12 version history: remove a document written with writeDurable(key, raw, null).
+// v2.11 version history: remove a document written with writeDurable(key, raw, null).
 export async function removeDurable(key) {
   const pending = writes.get(key);
   if (pending) await pending.catch(() => {});

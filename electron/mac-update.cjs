@@ -1,6 +1,6 @@
 'use strict';
 
-// Opt-in automatic updates for the unsigned Mac app (2.12).
+// Opt-in automatic updates for the unsigned Mac app (2.11).
 //
 // Squirrel.Mac (electron-updater's Mac path) only accepts a Developer ID
 // signed app, so the Mac build cannot use it. This module replaces the app

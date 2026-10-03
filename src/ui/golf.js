@@ -31,7 +31,7 @@ const yardText = (n) => `${n} yard${n === 1 ? '' : 's'}`;
 let active = null;
 
 export function golfActive() { return !!active; }
-/** 2.12 game controller input for the open game (src/ui/gamepad-host.js), or null. */
+/** 2.11 game controller input for the open game (src/ui/gamepad-host.js), or null. */
 export function golfPad() { return active ? active.pad : null; }
 
 /** Open Golf on the selected track (a choice of game first). Returns the game, or null. */
@@ -155,7 +155,7 @@ export function startGolf(ctx) {
     setText(aimText, '');
     fun.shoot(Math.cos(angle) * pw * MAX_SHOT, Math.sin(angle) * pw * MAX_SHOT);
     powerBar.hidden = true;
-    ctx.bus?.emit('golf', { type: 'shoot', power: pw });   // 2.12 controller rumble
+    ctx.bus?.emit('golf', { type: 'shoot', power: pw });   // 2.11 controller rumble
     renderStatus();
   }
 
@@ -378,7 +378,7 @@ export function startGolf(ctx) {
     hud.remove();
   }
 
-  // 2.12 game controller: the stick turns the aim, a held trigger charges and
+  // 2.11 game controller: the stick turns the aim, a held trigger charges and
   // letting go shoots, A goes back to the tee or on to the next hole, B quits.
   let padTurned = false;
   const pad = {

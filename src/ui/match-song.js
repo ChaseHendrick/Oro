@@ -1,4 +1,4 @@
-// Match a song (2.12): choose or drop an audio file, or record about 10
+// Match a song (2.11): choose or drop an audio file, or record about 10
 // seconds from the microphone, and Oro works out the tempo and key on this
 // computer (src/music/song-match.js; nothing is uploaded). Apply sets the
 // global tempo, key and scale as one undo step. The file can keep playing as a

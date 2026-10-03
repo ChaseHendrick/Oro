@@ -1,4 +1,4 @@
-/* 2.12 game controllers and haptics (Settings > Controllers), Golf power, Match a song. */
+/* 2.11 game controllers and haptics (Settings > Controllers), Golf power, Match a song. */
 
 .pad-check { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
 .pad-check input { width: 18px; height: 18px; accent-color: var(--accent); }

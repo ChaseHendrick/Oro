@@ -177,7 +177,7 @@ export function createTopbar(ctx, container) {
     scope.add(hist.on(renderHist));
   }
   renderHist();
-  // v2.12 version history (loaded on demand)
+  // v2.11 version history (loaded on demand)
   const versionsBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Version history', 'aria-haspopup': 'dialog', dataset: { tip: 'Version history: earlier saves of this session' }, html: icon('versions') });
   scope.on(versionsBtn, 'click', () => { import('./version-panel.js').then(m => m.openVersionHistory(ctx)).catch(err => console.warn('[ui] version history failed', err)); });
   const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);

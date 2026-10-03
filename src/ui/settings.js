@@ -143,7 +143,7 @@ function audioTab(ctx, scope) {
   const deviceWrap = h('div', { class: 'device-pick' });
   const bounceBtn = h('button', { type: 'button', class: 'btn btn--sm', html: icon('bounce') + '<span>Bounce...</span>', disabled: !bounceSupported(ctx) });
   scope.on(bounceBtn, 'click', () => openBounce(ctx, bounceBtn));
-  // 2.12 bounce reminders, per computer, on by default.
+  // 2.11 bounce reminders, per computer, on by default.
   const remindBinding = localBinding({ id: 'bounceReminder', label: 'Remind me to bounce', default: 1 }, bounceReminderEnabled() ? 1 : 0);
   scope.add(remindBinding.subscribe(() => { setBounceReminderEnabled(!!remindBinding.get()); ctx.bounceReminder?.refresh(); }));
   const remindToggle = createToggle(ctx, remindBinding, { label: 'Remind me to bounce', className: 'toggle--switch', ariaLabel: 'Remind me to bounce' });
@@ -259,7 +259,7 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     general: () => generalTab(ctx, scope),
     audio: () => audioTab(ctx, scope),
     midi: () => { const m = createMidiSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
-    // v2.12 game controllers and haptics: the pane's code loads when the tab is opened
+    // v2.11 game controllers and haptics: the pane's code loads when the tab is opened
     controllers: () => {
       const pane = h('div', { class: 'settings-pane' }, h('p', { class: 'settings-note' }, 'Loading…'));
       import('./settings-controllers.js').then((mod) => {

@@ -1,4 +1,4 @@
-// Game controllers and haptics (2.12): the browser side. Loaded only when the
+// Game controllers and haptics (2.11): the browser side. Loaded only when the
 // person turns controllers or phone pulses on (src/ui/gamepad-boot.js), so it
 // adds nothing to startup otherwise.
 //

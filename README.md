@@ -90,9 +90,9 @@ few lines.
   MPC guide inside the app.
 * **Desktop updates.** Optional release checks and background downloads on Windows
   installer/Linux AppImage builds, followed by your choice to restart and install.
-  Macs offer release notices by default, and from 2.12 an opt-in **Install updates
+  Macs offer release notices by default, and from 2.11 an opt-in **Install updates
   automatically** that downloads the release, checks its checksum and replaces the app
-  when you quit (new in 2.12, not yet tested on every macOS version). Portable/archive
+  when you quit (new in 2.11, not yet tested on every macOS version). Portable/archive
   copies offer release notices and manual downloads. Older copies need one manual
   upgrade to gain the updater.
 * **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
@@ -139,12 +139,12 @@ From then on Oro opens normally. You may need to repeat step 3 after installing
 a new version.
 
 **Updates on a Mac.** By default Oro shows a notice when a new release is out, and you
-download and replace the app yourself. From 2.12 you can instead turn on
+download and replace the app yourself. From 2.11 you can instead turn on
 **Settings > Updates > Install updates automatically** (off by default). Oro then
 downloads the new version in the background, checks it against the checksum published
 with the release, and replaces the app when you quit (or when you choose **Restart now**),
 keeping the old one if anything goes wrong. Oro must be in your Applications folder for
-this. It is new in 2.12 and not yet tested on every macOS version.
+this. It is new in 2.11 and not yet tested on every macOS version.
 
 On macOS 14 Sonoma or older there is a shortcut: in Applications, hold **Control** and
 click Oro, choose **Open**, then click **Open** again.

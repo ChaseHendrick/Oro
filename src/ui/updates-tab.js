@@ -25,7 +25,7 @@ export function createUpdatesTab(ctx, { version, api = globalThis.orographDeskto
     option('checkOnLaunch', 'Check on launch', 'After launch, check for a newer release. Off by default.'),
     option('periodicChecks', 'Check periodically', 'Check every six hours while the app is open. Off by default.'),
     option('autoDownload', 'Download updates automatically', 'Windows installer and Linux AppImage only. Never restarts or installs automatically. Off by default.'),
-    option('autoInstall', 'Install updates automatically', 'Mac only. Off by default. When a check finds a new release, Oro downloads it in the background, checks it against the checksum published with the release, and replaces the app when you quit (or when you choose Restart now). It never restarts on its own or while you play. Oro must be in your Applications folder. New in 2.12, not yet tested on every macOS version.'),
+    option('autoInstall', 'Install updates automatically', 'Mac only. Off by default. When a check finds a new release, Oro downloads it in the background, checks it against the checksum published with the release, and replaces the app when you quit (or when you choose Restart now). It never restarts on its own or while you play. Oro must be in your Applications folder. New in 2.11, not yet tested on every macOS version.'),
     macProblem);
   rows.autoInstall.hidden = true;
   const check = h('button', { type: 'button', class: 'btn btn--primary btn--sm', hidden: !api }, 'Check now');

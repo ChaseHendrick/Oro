@@ -371,7 +371,7 @@ restart. That callback flushes and awaits both session and preset storage.
 
 NSIS installed copies and AppImage copies use electron-updater. Other current packages
 use the fixed public GitHub release endpoint and manual download link. macOS lacks the
-signing identity Squirrel.Mac requires, so by default it is a manual path. From 2.12 the
+signing identity Squirrel.Mac requires, so by default it is a manual path. From 2.11 the
 opt-in `autoInstall` preference uses `electron/mac-update.cjs` instead: it downloads the
 release zip for `process.arch`, verifies its sha512 against `latest-mac.yml`, unpacks it
 with `ditto`, checks `CFBundleShortVersionString`, and on quit or Restart now starts a

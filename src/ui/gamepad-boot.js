@@ -1,4 +1,4 @@
-// Game controllers and haptics (2.12), at startup: a tiny check of this
+// Game controllers and haptics (2.11), at startup: a tiny check of this
 // computer's settings. The controller code (src/ui/gamepad-host.js) is only
 // loaded when controllers or phone pulses were turned on before, or when the
 // Settings pane asks for it, so startup stays as light as before.

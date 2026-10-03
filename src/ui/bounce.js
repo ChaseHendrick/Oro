@@ -107,7 +107,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
     h('div', { class: 'bounce-row' }, h('span', { class: 'bounce-row-text' }, 'Effects', h('span', { class: 'setting-hint' }, 'Delay, reverb, chorus and warmth')), fxToggle.el),
     length, bar, status,
     h('div', { class: 'bounce-actions' }, midiBtn, go),
-    // v2.12 stems, returns, MIDI and a README in one zip (loaded on demand)
+    // v2.11 stems, returns, MIDI and a README in one zip (loaded on demand)
     h('div', { class: 'bounce-actions' }, stemsBtn));
 
   const renderLength = () => {

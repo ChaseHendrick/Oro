@@ -1,4 +1,4 @@
-// Bounce reminders (2.12). A small toast suggests a bounce, never a modal,
+// Bounce reminders (2.11). A small toast suggests a bounce, never a modal,
 // at most once per 15 minutes: when dropouts happen while the transport plays
 // (a bounce renders offline and cannot glitch), and after 20 minutes of
 // playing with changes since the last bounce. The desktop app also asks

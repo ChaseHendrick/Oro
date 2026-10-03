@@ -1,4 +1,4 @@
-// New-install defaults (2.12): Pristine quality and a 96 kHz audio context.
+// New-install defaults (2.11): Pristine quality and a 96 kHz audio context.
 //
 // Existing installs keep every choice they have, including the old defaults
 // (Standard, Auto rate) they never changed: the new defaults are written only

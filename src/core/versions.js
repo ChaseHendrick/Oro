@@ -1,4 +1,4 @@
-// Version history (v2.12): saved snapshots of the session over time.
+// Version history (2.11): saved snapshots of the session over time.
 //
 // A version is the persisted session (store.serialize()) at a moment, kept in
 // IndexedDB through durable storage under its own keys, so the autosaved

@@ -1491,7 +1491,7 @@ Only what the sequencers, arpeggiators and dot locks play is rendered; parts wit
 pattern stay silent. Files are 24-bit WAVs named like
 `orograph-bounce-20261002-143015.wav`, and stems add `-part1`, `-part2` and so on.
 
-### Bounce reminders (2.12)
+### Bounce reminders (2.11)
 
 Playing live through a struggling computer can glitch; a bounce renders offline and
 can't. With **Settings > Audio > Remind me to bounce** on (the default, kept on this
@@ -1507,7 +1507,7 @@ The browser version does not add a leave-page prompt for this. **Bounce now** op
 with a length that covers the whole pattern, or the whole song when song mode is on.
 Turn the setting off and none of these appear.
 
-### Export stems (2.12)
+### Export stems (2.11)
 
 **Export stems...** at the bottom of the Bounce popover renders every track on its own and
 saves one **.zip** you can drop into a DAW. All files start on the first beat and have the
@@ -1679,7 +1679,7 @@ are kept. Undo covers sounds, patterns, tracks, links, effects and loaded patche
 scenes; the moving dot, settings and the view are not part of it. Text fields keep their
 own undo.
 
-### Version history (2.12)
+### Version history (2.11)
 
 The **clock button** next to Undo and Redo opens **Version history**: earlier saves of your
 session, grouped by day (Today, Yesterday, then dates). Oro saves a version when the session
@@ -1768,12 +1768,12 @@ computer, not part of a patch.
 | Mode | What it does | Cost |
 |---|---|---|
 | **Eco** | Runs the oscillator at the output rate (no oversampling) and reads slightly smoother terrain. | Lightest. Some aliasing on high notes. |
-| **Standard** | Two times oversampling. The default before 2.12. | Balanced. |
+| **Standard** | Two times oversampling. The default before 2.11. | Balanced. |
 | **High** | Four times oversampling in two stages. | Roughly twice the oscillator work of Standard. Cleaner high notes. |
 | **Pristine** | Standard, plus a band-limited single cycle per voice, rebuilt about every 256 samples and crossfaded, whenever the loop is steady. Falls back to Standard for a voice whose loop is being moved at audio rate. | Extra work per voice. The cleanest tone. |
 | **Raw** | Two times oversampling with the terrain smoothing switched off. | Like Standard. Deliberately gritty and digital: aliasing on purpose. |
 
-**New defaults in 2.12.** A new install (a computer with no saved Oro session or
+**New defaults in 2.11.** A new install (a computer with no saved Oro session or
 settings) starts at **Pristine** quality and a **96 kHz** sample rate (Settings > Pedals >
 Sample rate). If you already used Oro, nothing changes: your quality and sample rate stay
 as they were, including the old defaults (Standard and Auto). If the browser or audio
@@ -2065,7 +2065,7 @@ None of this has been tested on a physical MPC XL yet. The steps come from Akai'
 documentation, so treat menu names as guidance and use the MPC's MIDI monitor to confirm
 what is being sent.
 
-### Game controllers and haptics (2.12)
+### Game controllers and haptics (2.11)
 
 Oro can be played with a game controller. It is off by default: open **Settings >
 Controllers** and turn on **Use game controllers**. The settings are kept on this computer
@@ -2109,7 +2109,7 @@ the tee on the driving range or on to the next hole; B quits.
 Where the browser or device cannot do it, the tab says "not supported on this device".
 These features have not been tested with every controller or phone.
 
-### Match a song: key and tempo (2.12)
+### Match a song: key and tempo (2.11)
 
 In the Seq tab's global bar (next to Key and Scale), **Match a song** finds the tempo and key
 of a piece of music so Oro can play along. Drop an audio file on the panel, choose one, or
@@ -2582,7 +2582,7 @@ verifies downloaded artifact checksums. Release publishing includes the update m
 and hashes; bumping the version and completing the release routine makes the next release
 available to existing copies with checks enabled. This does not require an account.
 
-### Automatic updates on Mac (2.12)
+### Automatic updates on Mac (2.11)
 
 **Settings > Updates > Install updates automatically** is off by default and appears only
 on a Mac. When it is on and a check (Check now, on launch, or periodically) finds a new
@@ -2604,7 +2604,7 @@ folder it can write to, such as Applications or Applications in your home folder
 runs it from a temporary read-only copy (this happens when you open it straight from the
 download or the disk image), the Updates tab says so: move Oro to Applications, open it
 from there, and try again. The helper writes a log, `mac-update.log`, in Oro's data folder
-(`~/Library/Application Support/Orograph`). This is new in 2.12 and not yet tested on every
+(`~/Library/Application Support/Orograph`). This is new in 2.11 and not yet tested on every
 macOS version; if an update does not take, download the new version manually.
 
 

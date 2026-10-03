@@ -31,7 +31,7 @@ async function boot() {
   mark('oro:boot');
   const root = document.getElementById('app');
   const saved = await loadSessionAsync();
-  // 2.12: a computer with nothing saved starts at Pristine, 96 kHz (existing choices are kept).
+  // 2.11: a computer with nothing saved starts at Pristine, 96 kHz (existing choices are kept).
   seedNewInstallDefaults({ hasSession: !!saved });
   const store = createStore(saved || defaultState());
   // Saves a moment after changes, at least every couple of seconds while a dot
@@ -88,7 +88,7 @@ async function boot() {
   } });
 
   mark('oro:ui');
-  // v2.12 version history (src/core/versions.js), loaded after the app is up
+  // v2.11 version history (src/core/versions.js), loaded after the app is up
   import('./core/versions.js').then(m => m.startVersions({ store })).catch(err => console.warn('[orograph] version history unavailable', err));
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).

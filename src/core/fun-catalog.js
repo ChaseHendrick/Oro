@@ -39,7 +39,7 @@ export const BADGES = Object.freeze([
   { id: 'night-sky', name: 'Stargazer', hint: 'Look up.' },
   { id: 'weather', name: 'Weather report', hint: 'Let the outside in.' },
   { id: 'data-terrain', name: 'Data land', hint: 'Numbers can be mountains too.' },
-  // 2.12 game controllers and Match a song
+  // 2.11 game controllers and Match a song
   { id: 'gamepad', name: 'Player two', hint: 'Pick up a controller.' },
   { id: 'auto-key', name: 'Good ear', hint: 'Let a song choose the key.' },
   // Operator

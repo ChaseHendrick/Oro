@@ -1,4 +1,4 @@
-// Version history panel (v2.12), loaded on demand from the top bar. Lists
+// Version history panel (2.11), loaded on demand from the top bar. Lists
 // the saved versions by day, with Preview / Restore / Rename / Delete /
 // Export, and shows the "Previewing ..." bar while a version is on trial.
 // The versions themselves live in src/core/versions.js.

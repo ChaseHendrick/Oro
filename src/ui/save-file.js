@@ -1,4 +1,4 @@
-// v2.12 Save an export: the desktop app asks where to save (a native save
+// v2.11 Save an export: the desktop app asks where to save (a native save
 // dialog through the preload bridge, electron/files-host.cjs); the web
 // downloads the file.
 

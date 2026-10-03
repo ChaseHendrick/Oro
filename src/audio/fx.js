@@ -442,7 +442,7 @@ export function createFx(ctx, { global = {}, destination = ctx.destination, comp
 
   return {
     dryIn, delayIn, reverbIn, output, analyser, limiter,
-    bus,   // v2.12 stems: the sum before the master chorus, warmth, volume and limiter
+    bus,   // v2.11 stems: the sum before the master chorus, warmth, volume and limiter
     masterTap: volume, masterReturn: ceilIn,
     set,
     panic,

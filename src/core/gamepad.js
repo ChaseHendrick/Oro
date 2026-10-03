@@ -1,4 +1,4 @@
-// Game controllers and haptics (2.12): the pure part. Mapping, deadzones and
+// Game controllers and haptics (2.11): the pure part. Mapping, deadzones and
 // response curves, which note an action plays, golf aiming, rumble effects and
 // the beat / bass pulse timing all live here so they are tested in Node; the
 // browser side (polling, the dot, notes, golf and rumble) is

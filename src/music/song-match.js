@@ -1,4 +1,4 @@
-// Match a song (2.12): tempo and key of a piece of audio, worked out offline
+// Match a song (2.11): tempo and key of a piece of audio, worked out offline
 // in the browser. Pure (no DOM, no Web Audio): takes mono samples and their
 // rate, so it is tested in Node with synthetic audio.
 //

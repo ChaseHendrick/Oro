@@ -1,6 +1,6 @@
 'use strict';
 
-// Bounce reminder in the desktop close flow (2.12). The renderer reports
+// Bounce reminder in the desktop close flow (2.11). The renderer reports
 // whether it has changes since the last bounce and the reminder is on; when
 // the window closes with such changes, a gentle dialog offers to bounce first.
 // It never blocks an update restart and asks once per close.

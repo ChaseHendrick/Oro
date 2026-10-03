@@ -18,7 +18,7 @@ export function createToaster(host) {
     setTimeout(() => el.remove(), 220);
   }
 
-  // `actions` (2.12): several buttons, e.g. Step down / Keep / Don't ask again. Each dismisses the toast.
+  // `actions` (2.11): several buttons, e.g. Step down / Keep / Don't ask again. Each dismisses the toast.
   function toast(message, { kind = 'info', timeout, action, actions, detail } = {}) {
     const buttons = (actions || (action ? [action] : [])).map(a => h('button', { type: 'button', class: 'toast-action', onClick: () => { dismiss(el); a.onClick?.(); } }, a.label));
     const ms = timeout ?? (kind === 'error' ? 7000 : kind === 'warn' ? 5500 : 3600);

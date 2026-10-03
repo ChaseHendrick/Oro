@@ -12,7 +12,7 @@ function preferences(value) {
 }
 
 function updateCapability({ platform, packaged, appImage = false, portable = false, nsisInstalled = false }) {
-  // 2.12: the unsigned Mac app can opt in to replacing itself (electron/mac-update.cjs);
+  // 2.11: the unsigned Mac app can opt in to replacing itself (electron/mac-update.cjs);
   // it never uses electron-updater's Squirrel path, which needs a Developer ID signature.
   if (packaged && platform === 'darwin') return { kind: 'manual', supportsCheck: true, supportsInstall: false, macAutoInstall: true,
     reason: 'This Mac build is not signed by Apple, so the built-in macOS updater cannot install it. Turn on Install updates automatically below, or download the new version and replace the app yourself.' };
@@ -47,7 +47,7 @@ function createUpdateController({ version, capability, updater, fetchRelease, ma
   let disposed = false, started = false, checking = null, downloading = null, downloaded = false, installing = false, launchTimer = null, periodicTimer = null, notifiedVersion = null;
   const listeners = new Set(), updaterListeners = [];
   let latestRelease = null;
-  // The opted-in Mac self-update (2.12); off unless the preference is on.
+  // The opted-in Mac self-update (2.11); off unless the preference is on.
   const macAuto = () => !!(capability.macAutoInstall && macInstaller && prefs.autoInstall);
   const canInstallHere = () => capability.supportsInstall || macAuto();
   const installProblem = () => { if (!capability.macAutoInstall || !macInstaller) return null; try { return macInstaller.problem(); } catch (error) { return errorText(error); } };
