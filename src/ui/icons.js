@@ -107,6 +107,7 @@ const P = {
   // v2.9 postcards and ghost replay
   share: '<path d="M12 14.6V4.4M8.2 8.2L12 4.4l3.8 3.8"/><path d="M7.4 11.2H6a1.2 1.2 0 0 0-1.2 1.2v6.4A1.2 1.2 0 0 0 6 20h12a1.2 1.2 0 0 0 1.2-1.2v-6.4a1.2 1.2 0 0 0-1.2-1.2h-1.4"/>',
   postcard: '<rect x="3.6" y="5.6" width="16.8" height="12.8" rx="1.8"/><path d="M13.2 9h4M13.2 12h4M13.2 15h2.6"/><path d="M6.4 15.2l2.2-3 1.8 2.2"/>',
+  gamepad: '<path d="M7.4 7.6h9.2a4.2 4.2 0 0 1 4.1 3.4l.9 4.6a2.4 2.4 0 0 1-4.1 2.1l-2-2.1H8.5l-2 2.1a2.4 2.4 0 0 1-4.1-2.1l.9-4.6a4.2 4.2 0 0 1 4.1-3.4z"/><path d="M8 10.4v3.2M6.4 12h3.2"/><circle cx="15.6" cy="11" r=".9" fill="currentColor" stroke="none"/><circle cx="17.4" cy="12.8" r=".9" fill="currentColor" stroke="none"/>',
   ghost: '<path d="M6.2 19.6V10.4a5.8 5.8 0 0 1 11.6 0v9.2l-1.9-1.5-1.9 1.5-2-1.5-2 1.5-1.9-1.5z"/><circle cx="10" cy="10.6" r=".9" fill="currentColor" stroke="none"/><circle cx="14" cy="10.6" r=".9" fill="currentColor" stroke="none"/>',
 };
 

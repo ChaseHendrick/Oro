@@ -311,8 +311,16 @@ export function createSeqPanel(ctx) {
       tools,
       midiTools.el));
 
+  // v2.12 Match a song: its code loads the first time the button is used
+  const matchBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm seq-match', dataset: { action: 'match-song' } }, 'Match a song');
+  let matchPop = null;
+  scope.on(matchBtn, 'click', () => {
+    if (matchPop && matchPop.isOpen?.()) { matchPop.close(); return; }
+    import('./match-song.js').then((m) => { matchPop = m.openMatchSong(ctx, matchBtn); })
+      .catch(() => ctx.toast?.('Match a song could not load', { kind: 'error' }));
+  });
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },
-    field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el),
+    field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el), matchBtn,
     h('span', { class: 'seq-global-note' }, 'All tracks'));
   const arpBar = h('div', { class: 'seq-arp', role: 'group', 'aria-label': 'Arpeggiator for this track' },
     h('span', { class: 'section-title' }, 'Arp'), arpMode.el, arpRate.el, arpRhythm.el, field('Octaves', arpOct.el), field('Gate', arpGate.el, 'field-row--gate'), arpHold.el);

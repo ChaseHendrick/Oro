@@ -1,4 +1,4 @@
-// Settings dialog: General, Audio, MIDI & MPC, Voice, Pedals, Operator, Shortcuts, Updates, About. An accessible
+// Settings dialog: General, Audio, MIDI & MPC, Controllers, Voice, Pedals, Operator, Shortcuts, Updates, About. An accessible
 // modal with a vertical tab list (horizontal on narrow screens).
 
 import { h, createScope, call, has, listen } from './dom.js';
@@ -26,6 +26,7 @@ export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
   { id: 'audio', label: 'Audio', icon: 'speaker' },
   { id: 'midi', label: 'MIDI & MPC', icon: 'midi' },
+  { id: 'controllers', label: 'Controllers', icon: 'gamepad' },
   { id: 'voice', label: 'Voice', icon: 'mic' },
   { id: 'pedals', label: 'Pedals', icon: 'pedal' },
   { id: 'operator', label: 'Operator', icon: 'bolt' },
@@ -258,6 +259,16 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     general: () => generalTab(ctx, scope),
     audio: () => audioTab(ctx, scope),
     midi: () => { const m = createMidiSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
+    // v2.12 game controllers and haptics: the pane's code loads when the tab is opened
+    controllers: () => {
+      const pane = h('div', { class: 'settings-pane' }, h('p', { class: 'settings-note' }, 'Loading…'));
+      import('./settings-controllers.js').then((mod) => {
+        const m = mod.createControllerSettings(ctx);
+        scope.add(m.dispose);
+        pane.replaceChildren(m.el);
+      }).catch(() => pane.replaceChildren(h('p', { class: 'settings-note' }, 'Controller settings could not load.')));
+      return pane;
+    },
     voice: () => { const m = createVoiceSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     pedals: () => { const m = createPedalSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     operator: () => { const m = createOperatorSettings(ctx); scope.add(m.dispose); return m.el; },

@@ -47,6 +47,7 @@ import { initWeather } from './weather-panel.js';
 import { createStrainSuggestion, watchEngineStrain } from './audio-strain.js';
 import { installBounceReminder } from './bounce-reminder.js';
 import { openBounce, suggestedBounceBars } from './bounce.js';
+import { initControllers } from './gamepad-boot.js';
 
 function emitter() {
   const map = new Map();
@@ -254,6 +255,8 @@ export function createUI(root, modules = {}) {
   layers.host.appendChild(live.region);
   // v2.10 live weather: resumes polling only if it was turned on before (off by default).
   try { initWeather(ctx); } catch (err) { console.warn('[ui] weather', err); }
+  // v2.12 game controllers and haptics: loaded only if they were turned on before (off by default).
+  try { initControllers(ctx); } catch (err) { console.warn('[ui] controllers', err); }
 
   // MIDI learn: one at a time, Esc cancels, toasts report the result.
   let learning = null;
@@ -434,6 +437,7 @@ export function createUI(root, modules = {}) {
   };
   const topbar = safely('top bar', () => createTopbar(ctx, topbarEl));
   if (topbar) scope.add(topbar.dispose);
+  ctx.togglePlay = () => { if (topbar) topbar.togglePlay(); };   // v2.12 game controller Start button
   ctx.viewport = viewport;
   const overlay = safely('viewport overlay', () => createViewportOverlay(ctx, viewport));
   if (overlay) scope.add(overlay.dispose);

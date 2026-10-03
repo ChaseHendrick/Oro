@@ -18,6 +18,7 @@ import {
   holeMessage, holeBadges, roundBadges, recordHole, recordRound, golfScores, bestTotal, sumStrokes,
   rangeTee, rangeFlags, createCarry, carryStep, carryYards, recordDrive, driveDegree,
 } from '../core/golf.js';
+import { golfTurn } from '../core/gamepad.js';
 
 const AIM_DRAG = 3.5;          // world units of drag for full power
 const CHARGE_MS = 1300;        // holding Space this long gives full power
@@ -30,6 +31,8 @@ const yardText = (n) => `${n} yard${n === 1 ? '' : 's'}`;
 let active = null;
 
 export function golfActive() { return !!active; }
+/** 2.12 game controller input for the open game (src/ui/gamepad-host.js), or null. */
+export function golfPad() { return active ? active.pad : null; }
 
 /** Open Golf on the selected track (a choice of game first). Returns the game, or null. */
 export function startGolf(ctx) {
@@ -49,6 +52,8 @@ export function startGolf(ctx) {
   const status = h('div', { class: 'golf-status' });
   const msg = h('p', { class: 'golf-msg', role: 'status', 'aria-live': 'polite' });
   const aimText = h('p', { class: 'golf-aim', 'aria-live': 'polite' });
+  const powerFill = h('span', { class: 'golf-power-fill' });
+  const powerBar = h('div', { class: 'golf-power', hidden: true, 'aria-hidden': 'true', title: 'Power' }, powerFill);
   const hint = h('p', { class: 'golf-hint' });
   const choose = (label, detail, value) => {
     const b = h('button', { type: 'button', class: 'btn btn--sm golf-choice' }, h('strong', null, label), h('span', null, detail));
@@ -63,7 +68,7 @@ export function startGolf(ctx) {
   const card = h('div', { class: 'golf-card', hidden: true });
   const hud = h('section', { class: 'golf-hud', role: 'region', 'aria-label': 'Golf', tabindex: '-1' },
     h('div', { class: 'golf-head' }, h('strong', { class: 'golf-title' }, 'Golf'), status),
-    msg, menu, aimText, hint, card,
+    msg, menu, aimText, powerBar, hint, card,
     h('div', { class: 'golf-actions' }, teeBtn, nextBtn, quitBtn));
   const host = ctx.viewport || (visuals.canvas && visuals.canvas.parentElement) || document.body;
   host.appendChild(hud);
@@ -149,6 +154,8 @@ export function startGolf(ctx) {
     fun.setAim(null);
     setText(aimText, '');
     fun.shoot(Math.cos(angle) * pw * MAX_SHOT, Math.sin(angle) * pw * MAX_SHOT);
+    powerBar.hidden = true;
+    ctx.bus?.emit('golf', { type: 'shoot', power: pw });   // 2.12 controller rumble
     renderStatus();
   }
 
@@ -173,6 +180,7 @@ export function startGolf(ctx) {
     if (sunk) {
       fun.place(H().hole.u, H().hole.v);
       play([0, 2, 4, 7].map(dg => keyNote(dg, 4)), 0.55, 1200, 70);
+      ctx.bus?.emit('golf', { type: 'sink' });
       award(holeBadges(s, par));
     }
     const rec = recordHole(funData('golf'), holeIdx, s);
@@ -265,6 +273,8 @@ export function startGolf(ctx) {
     } else if (phase === 'aim' && charging) {
       power = Math.min(1, (now - chargeAt) / CHARGE_MS);
       fun.setAim(angle, power);
+      powerBar.hidden = false;
+      powerFill.style.width = `${Math.round(power * 100)}%`;
     }
   });
 
@@ -368,8 +378,35 @@ export function startGolf(ctx) {
     hud.remove();
   }
 
+  // 2.12 game controller: the stick turns the aim, a held trigger charges and
+  // letting go shoots, A goes back to the tee or on to the next hole, B quits.
+  let padTurned = false;
+  const pad = {
+    turn(x, dt, dz) {
+      if (phase !== 'aim' || dragging) return;
+      const a = golfTurn(angle, x, dt, dz);
+      if (a !== angle) { angle = a; fun.setAim(angle, power); padTurned = true; }
+      else if (padTurned) { padTurned = false; renderAim(); }
+    },
+    charge(down) {
+      if (down) {
+        if (phase !== 'aim' || charging) return;
+        charging = true; chargeAt = performance.now(); power = 0;
+        fun.setAim(angle, 0);
+      } else if (charging) {
+        charging = false;
+        shoot(power);
+      }
+    },
+    primary() {
+      if (phase === 'between') next();
+      else if (range() && (phase === 'aim' || phase === 'result')) toTee();
+    },
+    quit: () => quit(),
+  };
+
   const game = {
-    quit: () => quit(), part, begin,
+    quit: () => quit(), part, begin, pad,
     get mode() { return mode; }, get phase() { return phase; }, get hole() { return holeIdx; }, get strokes() { return strokes; },
   };
   active = game;
