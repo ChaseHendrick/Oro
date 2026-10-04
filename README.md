@@ -12,8 +12,7 @@ from a single file). It plays from your computer keyboard, the on-screen keys, i
 step sequencer, or a MIDI controller such as an Akai MPC.
 
 **[Download](#download)** · **[User guide](docs/USER-GUIDE.md)** ·
-**[Play in the browser](#play-in-the-browser)** · **[Film](docs/Oro.mp4)** ·
-**[What's new](CHANGELOG.md)**
+**[Play in the browser](#play-in-the-browser)** · **[What's new](CHANGELOG.md)**
 
 ![Oro in the dark theme: a 3D landscape with a glowing dot and its orbit, the Map panel on the right and the Sound controls below](docs/screenshots/orograph-dark.webp)
 
