@@ -22,6 +22,7 @@ import { createOperatorSettings } from './operator.js';
 import { has as hasFun } from '../core/fun.js';
 import { skinOn, setSkin, onSkin } from './eggs.js';
 import { REAL_DATA_CREDITS } from '../audio/places.js';
+import { version as pkgVersion } from '../../package.json';
 
 export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -36,7 +37,8 @@ export const SETTINGS_TABS = [
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '2.10.0';
+// Read from package.json at build time so it can never drift (it said 2.10.0 in 2.11).
+export const VERSION = pkgVersion;
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);

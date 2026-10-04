@@ -1,7 +1,7 @@
 {
   "name": "orograph",
   "productName": "Oro",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "description": "Oro: a 3D wave terrain synthesizer. Place the dot anywhere on the map, twist knobs, make music.",
   "author": "Chase",
   "license": "MIT",

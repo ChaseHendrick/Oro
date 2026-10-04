@@ -3,7 +3,10 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
-## 2.12.0 (unreleased)
+## 2.12.0 (October 2026)
+
+**Fixed**
+* About, Updates and postcards showed version 2.10.0 in 2.11. The version now comes straight from the build.
 
 **New**
 * **Live mode.** A full-screen view for playing on stage (the four-squares button or
