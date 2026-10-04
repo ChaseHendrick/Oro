@@ -2,8 +2,11 @@
 // its stereo input and plays the loop on its stereo output. Bundled into a
 // classic script by vite.config.js (virtual:worklet:...).
 //
-// in:  the LooperCore control messages ({t:'main'} ... see looper-core.js); an array is applied in order
+// in:  the LooperCore control messages ({t:'main'} ... see looper-core.js); an array is applied in order.
+//      Tape is {t:'tape', rate, reverse, scrub}: rate 0.5 | 1 | 2, reverse flips direction,
+//      scrub is a 0..1 position while the pointer is down, or null on release.
 // out: {t:'state', ...} on changes, {t:'pos', ...} about 30 times a second,
+//      {t:'peaks', peaks, len, edit} when a chunked peak scan of the loop finishes,
 //      {t:'loop', id, L, R, len} for 'get', {t:'captured', id, L, R} for 'capture'
 
 import { LooperCore } from './looper-core.js';

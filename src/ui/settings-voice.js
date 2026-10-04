@@ -37,6 +37,23 @@ const fmtDb = (v) => `${v > 0 ? '+' : ''}${(Math.round(v * 2) / 2).toFixed(1)} d
 const fmtPct = (v) => `${Math.round(v * 100)}%`;
 const fmtPan = (v) => (Math.abs(v) < 0.005 ? 'C' : `${v < 0 ? 'L' : 'R'} ${Math.round(Math.abs(v) * 100)}`);
 
+/** Lazy tuner at the bottom of the pane. Listens only; the import stays out of the first paint. */
+function mountTuner(ctx, root, scope) {
+  let gone = false;
+  scope.add(() => { gone = true; });
+  import('./tuner-panel.js').then((mod) => {
+    if (gone) return;
+    let panel = null;
+    try { panel = mod.createTunerPanel(ctx); } catch { return; }
+    if (gone) {
+      try { panel.dispose(); } catch { /* pane already closed */ }
+      return;
+    }
+    root.appendChild(panel.el);
+    scope.add(panel.dispose);
+  }).catch(() => {});
+}
+
 export function createVoiceSettings(ctx) {
   const scope = createScope();
   const rig = ctx.voice || null;
@@ -49,6 +66,7 @@ export function createVoiceSettings(ctx) {
 
   if (!rig || !rig.supported) {
     root.appendChild(h('p', { class: 'settings-note' }, 'Voice input needs Web Audio, which is not running in this browser. Everything else in Oro works as usual.'));
+    mountTuner(ctx, root, scope);
     return { el: root, dispose };
   }
 
@@ -194,6 +212,7 @@ export function createVoiceSettings(ctx) {
     row('Voice level', 'How loud you sing, as the Voice Level source in every track\'s Links (for example Voice Level to Morph)', levelMeter));
 
   root.append(micGroup, procGroup, stripGroup, musicGroup);
+  mountTuner(ctx, root, scope);
 
   // ================================================================ meter
   let clipOn = null;

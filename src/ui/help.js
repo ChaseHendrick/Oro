@@ -40,6 +40,8 @@ const CARDS = [
   { icon: 'ear', title: 'Listen differently', text: 'The ear in the top bar changes only what you hear: a headphone crossfeed, a mono check, a rough small-speaker preview or swapped sides. Recordings and exports never include it.' },
   { icon: 'space', title: 'Place sounds in 3D', text: 'Press 3D on a track in the Mix tab to put it around your head, by hand or following the dot on the map. Made for headphones, with a generic head model, so it works better for some people than others.' },
   { icon: 'bounce', title: 'Surround', text: 'Export stems can add a 5.1 or 7.1 file: tracks in 3D sit on the speakers in their direction. With an audio device that has 6 or 8 outputs, Settings > Audio can play them live.' },
+  { icon: 'sound', title: 'Sample a track', text: 'The Sampler card on the Sound tab records, imports or grabs the loop, then plays that audio from the keyboard. Granular mode sprays short grains. Turning it on turns the drum kit off, and the other way around.' },
+  { icon: 'loop', title: 'Tape and tune', text: 'On the Loop tab, Reverse and Half or Double speed change the pitch with the speed, and dragging the waveform scrubs. Settings > Voice has a tuner that only listens and follows the reference pitch.' },
 ];
 
 export function openHelp(ctx, { onClose } = {}) {

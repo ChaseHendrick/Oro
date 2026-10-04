@@ -3,7 +3,7 @@
 // Both drive ctx.looper (src/ui/looper-control.js). Right-click or long-press
 // a looper button to MIDI-learn it.
 
-import { h, s, createScope, setText, setAttr } from './dom.js';
+import { h, s, createScope, setText, setAttr, pixelRatioOf, watchSize } from './dom.js';
 import { schedule, addLoop } from './frame.js';
 import { createSegmented, createMiniSlider, createToggle } from './controls.js';
 import { openMenu } from './menu.js';
@@ -124,6 +124,132 @@ function mainButton(ctx, scope, { compact = false } = {}) {
   return { btn, render };
 }
 
+/**
+ * Waveform strip under the transport. Drag to scrub. Peaks arrive in chunks
+ * from the worklet; this only draws the bins it was given.
+ */
+function createWaveStrip(lp, scope) {
+  const canvas = h('canvas', {
+    class: 'loop-wave', role: 'slider', tabIndex: 0,
+    'aria-label': 'Drag to scrub the loop',
+    'aria-valuemin': '0', 'aria-valuemax': '1', 'aria-valuenow': '0',
+  });
+  const wrap = h('div', { class: 'loop-wave-wrap' }, canvas);
+  let drag = null;
+
+  function fraction(e) {
+    const r = canvas.getBoundingClientRect();
+    const w = r.width || 1;
+    return Math.max(0, Math.min(1, (e.clientX - r.left) / w));
+  }
+  scope.on(canvas, 'pointerdown', (e) => {
+    if (!lp.available) return;
+    const st = lp.status();
+    if (!(st.len > 0) || st.state === 'record' || st.state === 'armed') return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* not a real pointer */ }
+    drag = e.pointerId;
+    canvas.classList.add('is-active');
+    lp.scrub(fraction(e));
+  });
+  scope.on(canvas, 'pointermove', (e) => {
+    if (drag == null || e.pointerId !== drag) return;
+    lp.scrub(fraction(e));
+  });
+  const end = (e) => {
+    if (drag == null || (e && e.pointerId != null && e.pointerId !== drag)) return;
+    drag = null;
+    canvas.classList.remove('is-active');
+    lp.scrub(null);
+  };
+  scope.on(canvas, 'pointerup', end);
+  scope.on(canvas, 'pointercancel', end);
+
+  function draw() {
+    if (typeof canvas.getContext !== 'function') return;
+    const dpr = pixelRatioOf(2);
+    const cssW = canvas.clientWidth || 0;
+    const cssH = canvas.clientHeight || 0;
+    if (cssW < 2 || cssH < 2) return;
+    const w = Math.max(1, Math.round(cssW * dpr));
+    const hgt = Math.max(1, Math.round(cssH * dpr));
+    if (canvas.width !== w || canvas.height !== hgt) { canvas.width = w; canvas.height = hgt; }
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    const st = lp.status();
+    let wave = '#8fb6ff', head = '#e8ecf6', dim = 'rgba(148,166,214,0.35)';
+    if (typeof getComputedStyle === 'function') {
+      const cs = getComputedStyle(canvas);
+      const accent = cs.getPropertyValue('--accent').trim();
+      const text = cs.getPropertyValue('--text').trim();
+      const text3 = cs.getPropertyValue('--text-3').trim();
+      if (accent) wave = accent;
+      if (text) head = text;
+      if (text3) dim = text3;
+    }
+    g.clearRect(0, 0, w, hgt);
+    const mid = hgt / 2;
+    const amp = Math.max(1, mid - 2 * dpr);
+    const peaks = st.peaks;
+    if (peaks && peaks.length) {
+      g.beginPath();
+      const n = peaks.length;
+      for (let i = 0; i < n; i++) {
+        const x = ((i + 0.5) / n) * w;
+        const mag = Math.max(0, Math.min(1.2, peaks[i] || 0));
+        const hh = Math.max(dpr, mag * amp);
+        g.moveTo(x, mid - hh);
+        g.lineTo(x, mid + hh);
+      }
+      g.strokeStyle = wave;
+      g.lineWidth = Math.max(1, dpr);
+      g.lineCap = 'round';
+      g.stroke();
+    } else {
+      g.strokeStyle = dim;
+      g.lineWidth = Math.max(1, dpr);
+      g.beginPath();
+      g.moveTo(0, mid + 0.5); g.lineTo(w, mid + 0.5); g.stroke();
+    }
+    const has = st.len > 0 && st.state !== 'empty' && st.state !== 'armed';
+    canvas.classList.toggle('is-empty', !has);
+    if (has) {
+      let pos = typeof st.fpos === 'number' && Number.isFinite(st.fpos) ? st.fpos : (st.pos || 0);
+      const rate = st.scrub ? 0 : (typeof st.rate === 'number' && Number.isFinite(st.rate) ? st.rate : 1);
+      const moving = !st.scrub && st.posAt && (st.state === 'play' || st.state === 'overdub') && !st.cue;
+      if (moving) pos += ((performance.now() - st.posAt) / 1000) * (st.sampleRate || 48000) * rate;
+      let u = (pos % st.len) / st.len;
+      if (u < 0) u += 1;
+      const x = Math.max(0, Math.min(w, u * w));
+      g.strokeStyle = head;
+      g.lineWidth = Math.max(1, Math.round(dpr));
+      g.beginPath();
+      g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, hgt); g.stroke();
+      setAttr(canvas, 'aria-valuenow', String(Math.round(u * 1000) / 1000));
+    }
+  }
+
+  const sized = watchSize(wrap, () => schedule(draw));
+  scope.add(sized.dispose);
+  scope.add(lp.on('change', () => schedule(draw)));
+  scope.add(lp.on('pos', () => schedule(draw)));
+  scope.add(lp.on('peaks', () => schedule(draw)));
+  let stopLoop = null;
+  const watch = () => {
+    const st = lp.status();
+    const moving = st.len > 0 && (st.state === 'play' || st.state === 'overdub' || st.scrub);
+    if (moving && !stopLoop) stopLoop = addLoop(draw);
+    else if (!moving && stopLoop) { stopLoop(); stopLoop = null; schedule(draw); }
+  };
+  scope.add(lp.on('change', watch));
+  scope.add(lp.on('pos', watch));
+  scope.add(() => { if (stopLoop) stopLoop(); });
+  draw();
+  watch();
+  return wrap;
+}
+
 /** Compact loop button for the top bar transport. */
 export function createLooperButton(ctx) {
   const scope = createScope();
@@ -192,6 +318,22 @@ export function createLooperPanel(ctx) {
     () => lp.prefs().follow, (v) => lp.setPref('follow', v ? 1 : 0), prefSub);
   const follow = createToggle(ctx, followBinding, { label: 'Follow tempo', className: 'toggle--sm' });
   scope.add(follow.dispose);
+  const speedBinding = localBinding({ id: 'loopSpeed', label: 'Tape speed', default: 1, hint: 'Half, normal or double speed. Pitch follows the speed' },
+    () => lp.prefs().speed, (v) => lp.setPref('speed', Number(v)), prefSub);
+  const speed = createSegmented(ctx, speedBinding, {
+    label: 'Tape speed', size: 'sm',
+    options: [
+      { value: 0.5, label: 'Half', aria: 'Half speed' },
+      { value: 1, label: 'Normal', aria: 'Normal speed' },
+      { value: 2, label: 'Double', aria: 'Double speed' },
+    ],
+  });
+  scope.add(speed.dispose);
+  const revBinding = localBinding({ id: 'loopReverse', label: 'Reverse', default: 0, hint: 'Play the loop backward. Pitch follows the direction' },
+    () => lp.prefs().reverse, (v) => lp.setPref('reverse', v ? 1 : 0), prefSub);
+  const reverse = createToggle(ctx, revBinding, { label: 'Reverse', className: 'toggle--sm', ariaLabel: 'Reverse' });
+  scope.add(reverse.dispose);
+  const wave = createWaveStrip(lp, scope);
   const fitBtn = h('button', { type: 'button', class: 'btn btn--sm loop-action', dataset: { tip: 'Stretch the loop to the current tempo now, keeping its pitch. A loop recorded without the transport is fitted to whole bars' } }, 'Fit to tempo');
   scope.on(fitBtn, 'click', () => lp.fitToTempo());
   const volVal = h('span', { class: 'loop-value mono' });
@@ -230,6 +372,9 @@ export function createLooperPanel(ctx) {
     h('section', { class: 'loop-card', 'aria-labelledby': 'sec-loop' },
       h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-loop' }, 'Looper')),
       h('div', { class: 'loop-top' }, main, h('div', { class: 'loop-tools', role: 'group', 'aria-label': 'Loop tools' }, stopBtn, undoBtn, clearBtn, muteBtn)),
+      h('div', { class: 'loop-tape' },
+        h('div', { class: 'loop-tape-controls' }, reverse.el, speed.el),
+        wave),
       status,
       h('div', { class: 'loop-grid' },
         field('Bars', bars.el),
@@ -269,7 +414,7 @@ export function createLooperPanel(ctx) {
   scope.add(statusSub(() => schedule(render)));
   scope.add(prefSub(() => schedule(render)));
   if (!lp.available) {
-    for (const c of [bars, vol, fb, slot, follow]) c.setDisabled(true, lp.reason);
+    for (const c of [bars, vol, fb, slot, follow, speed, reverse]) c.setDisabled(true, lp.reason);
     sliceSel.disabled = true; fmtSel.disabled = true;
   }
   render();

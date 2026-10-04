@@ -3,6 +3,21 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.13.0 (October 2026): Sampler, looper tape, tuner
+
+**New**
+* **Sampler.** A card at the top of the Sound tab plays one mono sample from the keyboard
+  (up to 16 seconds): Record, Import or Grab loop. Modes are Chromatic, One-shot, Held,
+  Slices and Granular, with forward, reverse and ping-pong, a loop crossfade, and grain
+  controls in Granular mode. Speed, Start, End and grain Position can be modulated. The
+  drum kit and the sampler turn each other off. Slice points can be detected but not edited.
+  Not yet tried with a real microphone.
+* **Looper tape.** Reverse, Half and Double speed (pitch follows the speed), and drag on
+  the loop waveform to scrub. Normal forward playback reads the same samples as 2.12.
+* **Tuner.** Settings > Voice shows the note, octave and cents from the microphone, using
+  the session reference pitch. It does not enter the recorded or effected signal. Checked
+  on generated tones only.
+
 ## 2.12.0 (October 2026)
 
 **Fixed**

@@ -25,6 +25,7 @@ export const LOOPER_PREFS_KEY = 'orograph.looper';
 export const EXPORT_FORMATS = Object.freeze(['pcm24', 'float32']);
 export const LOOPER_PREF_DEFAULTS = Object.freeze({
   bars: DEFAULT_BARS, volume: 1, feedback: 1, slot: 'A', slice: 'auto', root: 48, format: 'pcm24', follow: 0,
+  speed: 1, reverse: 0,
 });
 /** Relative tempo difference below which a loop counts as already in time. */
 const FIT_TOLERANCE = 0.001;
@@ -40,6 +41,8 @@ const VALID = {
   root: v => Number.isInteger(v) && v >= 24 && v <= 84,
   format: v => EXPORT_FORMATS.includes(v),
   follow: v => v === 0 || v === 1,
+  speed: v => v === 0.5 || v === 1 || v === 2,
+  reverse: v => v === 0 || v === 1,
 };
 
 export function sanitizeLooperPrefs(src) {
@@ -85,9 +88,11 @@ export function looperProgress(st, nowMs = 0) {
   if (st.capture >= 0 && st.capturing) return st.capture;
   if (st.state === 'record') return st.recTarget ? Math.min(1, st.recPos / st.recTarget) : null;
   if ((st.state === 'play' || st.state === 'overdub') && st.len > 0 && !st.cue) {
-    let pos = st.pos;
-    if (st.posAt && nowMs > st.posAt) pos += ((nowMs - st.posAt) / 1000) * (st.sampleRate || 48000);
-    return (pos % st.len) / st.len;
+    let pos = typeof st.fpos === 'number' && Number.isFinite(st.fpos) ? st.fpos : st.pos;
+    const rate = st.scrub ? 0 : (typeof st.rate === 'number' && Number.isFinite(st.rate) ? st.rate : 1);
+    if (st.posAt && nowMs > st.posAt) pos += ((nowMs - st.posAt) / 1000) * (st.sampleRate || 48000) * rate;
+    const m = pos % st.len;
+    return (m < 0 ? m + st.len : m) / st.len;
   }
   return null;
 }
@@ -131,6 +136,11 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       // An external clock moves the tempo without a store change: look about once a second.
       if (prefs.follow && st.posAt - lastPosCheck > 1000) { lastPosCheck = st.posAt; if (needsFit()) scheduleFit(); }
     }));
+    offs.push(looper.on('peaks', (p) => {
+      if (!p || !p.peaks) return;
+      st = { ...st, peaks: p.peaks, peaksLen: p.len, peaksEdit: p.edit };
+      events.emit('peaks', st);
+    }));
     offs.push(looper.on('error', (e) => { if (e && e.reason === 'memory') toast('The looper ran out of memory', { kind: 'error', detail: 'Try a shorter loop, or Clear to free the undo layers.' }); }));
     offs.push(looper.on('info', (e) => { if (e && e.reason === 'nothing-to-undo' && !quietUndo()) toast('Nothing to undo', { kind: 'info', timeout: 1600 }); }));
     // Settings travel to the worklet once at start.
@@ -138,6 +148,9 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       looper.setBars(prefs.bars);
       looper.setVolume(prefs.volume);
       looper.setFeedback(prefs.feedback);
+      if (typeof looper.setTape === 'function' && (prefs.speed !== 1 || prefs.reverse)) {
+        looper.setTape({ rate: prefs.speed, reverse: !!prefs.reverse });
+      }
     }
   }
 
@@ -242,6 +255,7 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       if (key === 'bars') looper.setBars(prefs.bars);
       else if (key === 'volume') looper.setVolume(prefs.volume);
       else if (key === 'feedback') looper.setFeedback(prefs.feedback);
+      else if ((key === 'speed' || key === 'reverse') && typeof looper.setTape === 'function') looper.setTape({ rate: prefs.speed, reverse: !!prefs.reverse });
       else if (key === 'follow' && prefs.follow) scheduleFit();
     }
     events.emit('prefs', { ...prefs });
@@ -320,6 +334,12 @@ export function createLooperControl({ store, engine = null, music = null, toast 
     clear: () => run(() => looper.clear()),
     /** Mute is a performance control: it is not remembered between sessions. */
     toggleMute() { if (guard()) looper.setMute(!st.muted); },
+    /** Move the playhead. `pos` is 0..1 while the pointer is down, or null on release. */
+    scrub(pos) {
+      if (!available || !looper || typeof looper.setTape !== 'function') return;
+      if (pos == null) looper.setTape({ scrub: null });
+      else looper.setTape({ scrub: Math.max(0, Math.min(1, Number(pos) || 0)) });
+    },
     resample: resampleNow,
     exportWav: exportNow,
     /** v2.8: stretch the loop to the current tempo now (pitch kept). */

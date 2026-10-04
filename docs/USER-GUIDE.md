@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.6.0, including the guitar pedal features
+going on under the hood. It describes version 2.13.0. Guitar pedals are in
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -585,6 +585,30 @@ Everything here is in the **Sound** tab and applies to the selected part. The si
 one voice is: oscillator (path over terrain, then Lift and Fold) → plus Sub and Air →
 Drive → filter → amp envelope → pan. Because Sub and Air go in before the filter, the
 filter and the amp envelope shape them too.
+
+### Sampler (2.13)
+
+The **Sampler** card is the first card on the Sound tab. It plays one recorded sample from
+the keyboard instead of the terrain, and the track's filter, envelopes, effects and mixer
+still apply. It is off until you turn it on, and a session that never uses it does not
+store a sampler.
+
+* **Sampler** turns it on. The drum kit and the sampler cannot both play: turning the
+  sampler on turns the drum kit off, and turning the drum kit on turns the sampler off.
+  The sample itself stays.
+* **Record** (2, 4, 8 or 16 seconds), **Import**, or **Grab loop** fills the sample. Audio
+  is kept as 16-bit mono, at most 16 seconds. Grab loop does nothing if the looper is empty.
+  Recording asks for the microphone and has not been tried with a real one.
+* The waveform shows the sample. Drag the start and end handles to set the region (the same
+  Start and End knobs). Speed, Start, End and, in Granular mode, Position can be modulated.
+* **Playback:** Chromatic (pitch follows the key), One-shot (plays through, ignoring the
+  key release), Held, Slices, or Granular. **Direction:** Forward, Reverse or Ping-pong.
+  **Loop** repeats the region. Root and Fine set which key plays the sample at its own pitch.
+* **Granular** sprays short grains around Position. Size, Density, Spread, Jitter and Reverse
+  amount appear only in that mode. The same notes render the same samples, so a bounce matches
+  what you heard.
+* **Slice on transients** (Slices mode, and only when the sample has no slices yet) places
+  slice points. Those points are stored but not edited on the card.
 
 ### Smart controls (2.8)
 
@@ -1680,6 +1704,12 @@ stretch a loop that is already recorded.
 * **Feedback** sets how much of the loop each overdub pass keeps: 100% keeps everything and
   adds the new playing on top; lower values let older layers fade a little on every pass,
   like tape echo. It never goes above 100%, so a loop cannot grow by itself.
+* **Reverse** plays the loop backward. Pitch goes with the direction.
+* **Half**, **Normal** and **Double** set the tape speed. Pitch follows the speed. Normal
+  forward playback reads the same samples as before these controls existed.
+* Drag the waveform under the transport to **scrub**. The playhead follows your finger, and
+  a fast move is quieter than a slow one. Let go and the loop continues from there. Scrubbing
+  does not record.
 
 **What it records.** The looper listens to the master after the delay, reverb, chorus,
 warmth and master volume, and plays the loop back just before the limiter, so the limiter
@@ -2018,6 +2048,12 @@ simulated signals in software, not yet with real microphones.
   Monitor off, less gain). A howl holds one exact pitch, so a sung note with normal vibrato or
   drift passes, but a very loud note held almost perfectly straight (within a few cents) for
   over half a second can occasionally trip it.
+
+**Tuner** (2.13), at the bottom of Settings > Voice. Turn **Voice** on and it
+shows the note, the octave and how many cents sharp or flat you are, with a needle that
+moves smoothly. It uses the session's reference pitch (A4 = 440 Hz unless you changed it).
+It only listens: it is not recorded, looped, bounced or sent through effects. Silence shows
+no note. It has been checked on generated sines and saws, not on a real microphone.
 
 **Processing** (all off by default)
 

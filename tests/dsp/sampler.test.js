@@ -98,22 +98,25 @@ describe('direction, region and loop', () => {
     const p = player(48000, ramp(48000), 48000, { attack: 0.0005 });
     p.noteOn(60, 0, 1, 0.25, 0.5);
     const out = run(p, 20000, { start: 0.25, end: 0.5 });
-    expect(out[100]).toBeCloseTo(0.25 + 100 / 48000, 2);
-    expect(out[11000]).toBeCloseTo(0.25 + 11000 / 48000, 2);
+    // default level is 0.8; the ramp value is the position in the sample
+    const lv = 0.8;
+    expect(out[100]).toBeCloseTo(lv * (0.25 + 100 / 48000), 2);
+    expect(out[11000]).toBeCloseTo(lv * (0.25 + 11000 / 48000), 2);
     expect(out[12500]).toBe(0);
     const r = player(48000, ramp(48000), 48000, { attack: 0.0005, dir: 1 });
     r.noteOn(60, 0, 1, 0.25, 0.5);
     const ro = run(r, 20000, { start: 0.25, end: 0.5 });
-    expect(ro[100]).toBeCloseTo(0.5 - 100 / 48000, 2);
+    expect(ro[100]).toBeCloseTo(lv * (0.5 - 100 / 48000), 2);
   });
 
   it('ping-pong turns round at both ends while looping', () => {
     const p = player(48000, ramp(4800), 48000, { dir: 2, loop: 1, attack: 0.0005 });
     p.noteOn(60, 0, 1);
     const out = run(p, 4800 * 3);
-    expect(out[4700]).toBeGreaterThan(0.95);   // up to the end
-    expect(out[9400]).toBeLessThan(0.05);      // back down to the start
-    expect(out[14000]).toBeGreaterThan(0.9);   // up again
+    // default level is 0.8, so the ramp never reaches 1
+    expect(out[4700]).toBeGreaterThan(0.95 * 0.8);   // up to the end
+    expect(out[9400]).toBeLessThan(0.05);            // back down to the start
+    expect(out[14000]).toBeGreaterThan(0.9 * 0.8);   // up again
     let jump = 0; for (let i = 200; i < out.length; i++) jump = Math.max(jump, Math.abs(out[i] - out[i - 1]));
     expect(jump).toBeLessThan(2 / 4800 + 1e-3);
   });
@@ -168,8 +171,9 @@ describe('modes and envelope', () => {
     const p = player(48000, data, 48000, { attack: 0.1, sustain: 0, decay: 0.5, loop: 1 });
     p.noteOn(60, 0, 1);
     const out = run(p, 48000);
-    expect(level(out, 0, 480)).toBeLessThan(0.05);
-    expect(level(out, 4300, 4800)).toBeGreaterThan(0.7);
+    // sine amplitude 0.8 times the default level 0.8; the first 10 ms of a 100 ms attack stays quiet
+    expect(level(out, 0, 480)).toBeLessThan(0.1);
+    expect(level(out, 4300, 4800)).toBeGreaterThan(0.5);
     expect(level(out, 4800 + 24000 - 500, 4800 + 24000)).toBeLessThan(0.8 * 0.002);
     expect(p.busy).toBe(false);
   });
@@ -289,7 +293,9 @@ describe('saved data', () => {
   it('the freeze signature changes with the sampler and is unchanged without one', () => {
     const st = migrateState(defaultState());
     const before = freezeSignature(st.parts[0]);
-    expect(before.length).toBe(4);
+    // json plus terrain A, terrain B, noise, and one slot per drum pad (the default kit)
+    const pads = (st.parts[0].drum && st.parts[0].drum.pads) || [];
+    expect(before.length).toBe(1 + 3 + pads.length);
     const withS = { ...st.parts[0], sampler: sanitizeSampler({ on: 1, sample: { rate: 48000, data: 'AAAA' } }) };
     const s1 = freezeSignature(withS);
     const s2 = freezeSignature({ ...withS, sampler: { ...withS.sampler, decay: 5 } });

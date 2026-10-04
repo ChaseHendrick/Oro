@@ -87,6 +87,14 @@ few lines.
 * **Guitar chords (1.5, experimental).** Single-note tracking with bends or
   several notes at once from a clean guitar input. Chords respond more slowly and
   can miss octave-doubled strings. Tested with generated signals, not real hardware.
+* **Sampler (2.13).** One sample per track, from the microphone, a file or
+  the looper, played from the keyboard (chromatic, one-shot, held, slices or granular).
+  The drum kit and the sampler turn each other off.
+* **Looper tape (2.13).** Reverse, half speed and double speed, with pitch
+  following the speed, and a waveform you can drag to scrub. Normal forward playback is
+  unchanged.
+* **Tuner (2.13).** Settings > Voice shows the note and cents from the
+  microphone. It only listens, and it follows the reference pitch.
 * **Voice input (1.4).** Sing into any microphone, a laptop's own included:
   hear it with the synth, loop and resample vocals, play a part by singing or humming,
   capture a sung note as a terrain, and let your voice move the terrain through Links.
