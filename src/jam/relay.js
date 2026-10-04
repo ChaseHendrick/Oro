@@ -79,7 +79,7 @@ export function createHostRoom({ name = 'Host', jam = 'jamroom1', now = () => Da
       const posted = chat.post({ from: id, text: msg.text, name: peer.name });
       if (!posted.ok) return;
       const down = { t: 'chat', from: id, text: msg.text, at: posted.entry.at, id: posted.entry.id };
-      broadcast(down);
+      broadcast(down, id);
       emit('chat', down);
       return;
     }

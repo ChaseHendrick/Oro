@@ -31,6 +31,8 @@ export function createVoicePolicy({ key = DEFAULT_PTT_KEY, mode = 'ptt' } = {}) 
     keyUp(k) { down.delete(String(k).toLowerCase()); },
     setMuted(on) { muted = !!on; },
     setDeaf(on) { deaf = !!on; },
+    get muted() { return muted; },
+    get deaf() { return deaf; },
     setVolume(id, v) { volumes.set(id, Math.max(0, Math.min(1, Number(v) || 0))); },
     volume(id) { return deaf ? 0 : (volumes.has(id) ? volumes.get(id) : 1); },
     /** True when this person's mic should be sent. */

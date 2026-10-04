@@ -22,6 +22,18 @@ describe('piano roll panel', () => {
     roll.dispose();
   });
 
+  it('shows a step whose octave is not zero on the row that sounds the same', () => {
+    const store = createStore(defaultState());
+    store.set('parts.0.patterns.0.steps.0', { on: 1, degree: 0, octave: 1, vel: 0.8, gate: 0.5 });
+    const roll = createPianoRoll({ store });
+    roll.open();
+    const notes = roll.el.querySelectorAll('.roll-note');
+    expect(notes.length).toBe(1);
+    expect(notes[0].dataset.octave).toBe('1');
+    expect(notes[0].dataset.degree).toBe('0');
+    roll.dispose();
+  });
+
   it('disables the button while the drum kit is on', () => {
     const store = createStore(defaultState());
     store.set('parts.0.drum.on', 1);

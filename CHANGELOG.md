@@ -13,6 +13,11 @@ explains every feature in detail.
 * **Ableton Link controls, desktop only.** Settings, MIDI, under Clock. The Link library is GPL and is not in this MIT app, so the status is "Not in this build" and nothing is contacted. While the switch is on, the tempo is read-only and the top bar shows LINK instead of EXT.
 * **Plugin host contract.** Open the app with `?plugin=1`. The tempo is read-only and the top bar shows EXT. `orograph.host` lists outputs (output 1 is the mix) and the first automated parameters. This is not a VST, AU or CLAP file.
 
+**Fixes**
+* The piano roll shows a step that uses the octave row. The note sits on the pitch it plays, so it is not missing and a click there does not add a second copy.
+* Jam chat is delivered to everyone else once. The line uses the name from the list.
+* Mute, Deafen and Open mic switch off again when pressed. Join voice opens the microphone on the jam connection and plays other people through the page, not through the synth.
+
 ## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
 
 **New**

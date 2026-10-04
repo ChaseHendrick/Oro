@@ -91,6 +91,7 @@ describe('jam relay', () => {
     guest.say('hello there');
     expect(host.chat.entries().some((e) => e.text === 'hello there')).toBe(true);
     expect(guest.seen().some((m) => m.t === 'welcome')).toBe(true);
+    expect(guest.seen().some((m) => m.t === 'chat')).toBe(false);
     host.muteChat(joined.id);
     const before = host.chat.entries().length;
     guest.say('second line');
@@ -132,6 +133,28 @@ describe('jam relay', () => {
     expect(heard.map((m) => m.n)).toEqual([60]);
     expect(other.map((m) => m.from)).toEqual(['p1']);
     expect(sender.seen().some((m) => m.t === 'note')).toBe(false);
+  });
+
+  it('negotiates an audio sender and can swap the microphone', async () => {
+    const tracks = [];
+    class FakePC {
+      constructor() { this.iceGatheringState = 'complete'; this.localDescription = null; }
+      addTransceiver() {
+        return { sender: { replaceTrack: async (track) => { tracks.push(track); } } };
+      }
+      createDataChannel() { return { send() {}, readyState: 'connecting', onmessage: null, onopen: null }; }
+      addEventListener() {}
+      async createOffer() { return { type: 'offer', sdp: 'v=0\r\n' }; }
+      async setLocalDescription(d) { this.localDescription = d; }
+      close() {}
+    }
+    const { createPeerSession } = await import('../../src/jam/rtc.js');
+    const session = createPeerSession({ RTCPeerConnection: FakePC });
+    const mic = { id: 'mic' };
+    await session.setMic(mic);
+    expect(tracks).toEqual([mic]);
+    const desc = await session.offer();
+    expect(desc.type).toBe('offer');
   });
 
   it('keeps voice off the synth engine', () => {

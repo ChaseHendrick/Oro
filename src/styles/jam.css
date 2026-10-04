@@ -7,6 +7,9 @@
 .jam-roster { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .jam-person { width: 100%; text-align: left; }
 .jam-person.is-on { outline: 1px solid var(--accent); }
+.jam-voice-join[aria-pressed="true"],
+.jam-mute[aria-pressed="true"],
+.jam-deafen[aria-pressed="true"] { outline: 1px solid var(--accent); }
 .jam-unread { margin-left: 6px; }
 .jam-ring { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text-3, var(--text-2)); }
 .jam-ring.is-speaking { border-color: var(--accent); }

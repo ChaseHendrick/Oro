@@ -11,8 +11,6 @@ import { schedule } from './frame.js';
 import '../styles/piano-roll.css';
 
 const GROUP_NAMES = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', filter2: 'Filter 2', mix: 'Mix', sampler: 'Sampler' };
-const ROW_FROM = -14;
-const ROW_TO = 21;
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
 function midiName(m) {
@@ -58,18 +56,43 @@ export function createPianoRoll(ctx) {
   const pattern = () => store.get(path()) || {};
   const drumOn = () => !!(store.get(`parts.${sel()}.drum`) || {}).on;
 
-  function rows() {
+  function scaleAt() {
     const pat = pattern();
-    const base = pat.baseOctave ?? 3;
-    const root = store.get('global.scaleRoot') || 0;
-    const scaleType = store.get('global.scaleType') || 0;
-    const list = [];
-    for (let degree = ROW_TO; degree >= ROW_FROM; degree--) {
-      const midi = stepToMidi({ degree, octave: 0 }, base, root, scaleType);
-      if (midi < 0 || midi > 127) continue;
-      list.push({ degree, octave: 0, midi });
+    return {
+      base: pat.baseOctave ?? 3,
+      root: store.get('global.scaleRoot') || 0,
+      scaleType: store.get('global.scaleType') || 0,
+    };
+  }
+
+  function midiOf(note) {
+    const s = scaleAt();
+    return stepToMidi(note, s.base, s.root, s.scaleType);
+  }
+
+  function rowHeight() {
+    try {
+      if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return 28;
+    } catch { /* a test DOM has no matchMedia */ }
+    return 16;
+  }
+
+  /**
+   * One row per sounding pitch. A step can store the same pitch as a degree
+   * plus an octave, so rows are matched by MIDI note, not by that encoding.
+   * The row itself prefers octave 0, which is what the grid usually stores.
+   */
+  function rows() {
+    const byMidi = new Map();
+    for (let octave = -2; octave <= 2; octave++) {
+      for (let degree = -21; degree <= 28; degree++) {
+        const midi = midiOf({ degree, octave });
+        if (midi < 0 || midi > 127) continue;
+        const prev = byMidi.get(midi);
+        if (!prev || Math.abs(octave) < Math.abs(prev.octave)) byMidi.set(midi, { degree, octave, midi });
+      }
     }
-    return list;
+    return [...byMidi.values()].sort((a, b) => b.midi - a.midi);
   }
 
   function setOpen(on) {
@@ -84,20 +107,24 @@ export function createPianoRoll(ctx) {
     const length = clamp(Math.round(pat.length) || 16, 1, SEQ_STEPS);
     const steps = pat.steps || [];
     const list = rows();
-    const rowH = 16;
+    const rowH = rowHeight();
     const track = h('div', { class: 'roll-ruler-track', style: { gridTemplateColumns: `repeat(${length}, minmax(0, 1fr))` } },
       ...Array.from({ length }, (_, i) => h('span', { class: 'roll-num' }, String(i + 1))));
     ruler.replaceChildren(h('span', { 'aria-hidden': 'true' }), track);
     keys.replaceChildren(...list.map((r) => {
       const black = BLACK.has(((r.midi % 12) + 12) % 12);
-      return h('span', { class: black ? 'roll-key is-black' : 'roll-key' }, midiName(r.midi));
+      return h('span', {
+        class: black ? 'roll-key is-black' : 'roll-key',
+        style: { height: `${rowH}px`, lineHeight: `${rowH}px` },
+      }, midiName(r.midi));
     }));
     grid.style.height = `${Math.max(rowH, list.length * rowH)}px`;
     const noteEls = [];
     for (let i = 0; i < length; i++) {
       const notes = notesOf(steps[i] || defaultStep());
       for (const n of notes) {
-        const row = list.findIndex((r) => r.degree === n.degree && r.octave === (n.octave || 0));
+        const noteMidi = midiOf(n);
+        const row = list.findIndex((r) => r.midi === noteMidi);
         if (row < 0) continue;
         const q = n.q || 0;
         const span = Math.max(1, Math.round((n.gate || 0.5) * 4));
@@ -147,8 +174,17 @@ export function createPianoRoll(ctx) {
     if (!hit) return;
     const i = hit.step;
     const cur = (pattern().steps || [])[i] || defaultStep();
-    writeStep(i, paintNote(cur, { degree: hit.degree, octave: hit.octave, vel: 0.8, gate: 0.5, q: hit.q }));
-    selected = { step: i, degree: hit.degree, octave: hit.octave };
+    const hitMidi = midiOf(hit);
+    const existing = notesOf(cur).find((n) => midiOf(n) === hitMidi);
+    const src = existing || hit;
+    writeStep(i, paintNote(cur, {
+      degree: src.degree,
+      octave: src.octave || 0,
+      vel: existing ? existing.vel : 0.8,
+      gate: existing ? existing.gate : 0.5,
+      q: hit.q,
+    }));
+    selected = { step: i, degree: src.degree, octave: src.octave || 0 };
   }
 
   scope.on(button, 'click', () => setOpen(!open));

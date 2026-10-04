@@ -29,8 +29,12 @@ export function createJamPanel(ctx) {
   let pingTimer = 0;
   let pingId = 1;
   let selectedPeer = '';
+  let micStream = null;
+  let micTrack = null;
   const clock = createClockSync();
   const buffers = new Map();
+  const remoteAudios = [];
+  let people = [];
 
   const nameInput = h('input', { class: 'jam-name', maxlength: '24', value: 'Player', 'aria-label': 'Your name' });
   const stun = h('input', { type: 'checkbox', 'aria-label': 'Use a public STUN server' });
@@ -134,13 +138,55 @@ export function createJamPanel(ctx) {
   }
 
   function renderRoster(list) {
-    const people = Array.isArray(list) ? list : [];
+    people = Array.isArray(list) ? list : [];
     roster.replaceChildren(...people.map((p) => {
       const late = p.rtt == null ? '' : ` ${p.rtt} ms`;
       const li = h('li', null, h('button', { type: 'button', class: p.id === selectedPeer ? 'jam-person is-on' : 'jam-person' }, `${p.name}${late}`));
       li.querySelector('button').addEventListener('click', () => { selectedPeer = p.id; renderRoster(people); });
       return li;
     }));
+  }
+
+  function personName(id) {
+    const list = host && typeof host.roster === 'function' ? host.roster() : people;
+    const found = list.find((p) => p.id === id);
+    return (found && found.name) || 'Friend';
+  }
+
+  function hearRemote(audio) {
+    remoteAudios.push(audio);
+    audio.muted = voice.deaf;
+    sink.play(audio);
+  }
+
+  function applySend() {
+    if (micTrack) micTrack.enabled = voice.sending();
+    for (const audio of remoteAudios) audio.muted = voice.deaf;
+  }
+
+  async function pushMic() {
+    applySend();
+    for (const session of sessions) {
+      if (session.setMic) await session.setMic(voice.joined ? micTrack : null);
+    }
+  }
+
+  async function releaseMic() {
+    for (const session of sessions) {
+      try { if (session.setMic) await session.setMic(null); } catch { /* already closed */ }
+    }
+    if (micStream) for (const track of micStream.getTracks()) track.stop();
+    micStream = null;
+    micTrack = null;
+  }
+
+  function dropRemoteAudio() {
+    for (const audio of remoteAudios) audio.srcObject = null;
+    remoteAudios.length = 0;
+  }
+
+  function sessionOpts(extra) {
+    return { stun: !!stun.checked, onRemoteAudio: hearRemote, ...extra };
   }
 
   function playEngine(msg) {
@@ -189,12 +235,13 @@ export function createJamPanel(ctx) {
   async function offerSlot() {
     if (!host) return;
     if (sessions.length >= 5) { note('This jam already has five friends.'); return; }
-    const session = createPeerSession({ stun: !!stun.checked });
+    const session = createPeerSession(sessionOpts());
     if (!session) { note('This browser cannot open a direct connection.'); return; }
     const joined = host.accept(session.link);
     if (!joined.ok) { note(joined.reason === 'full' ? 'This jam already has five friends.' : 'Nobody else can join right now.'); return; }
     sessions.push(session);
     pending = session;
+    if (micTrack && session.setMic) await session.setMic(micTrack);
     try {
       const desc = await session.offer();
       const code = await packCode('invite', { v: 1, jam: hostJam, slot: joined.id, host: nameInput.value || 'Host', desc });
@@ -217,7 +264,7 @@ export function createJamPanel(ctx) {
     hostJam = jamId();
     host = createHostRoom({ name: nameInput.value || 'Host', jam: hostJam, now: () => performance.now() });
     guest = null;
-    host.on('chat', (msg) => addLine(`${msg.from || 'Friend'}: ${msg.text}`));
+    host.on('chat', (msg) => addLine(`${personName(msg.from)}: ${msg.text}`));
     host.on('note', playRemote);
     host.on('roster', renderRoster);
     rememberSession();
@@ -231,15 +278,16 @@ export function createJamPanel(ctx) {
     if (host) { note('You are hosting. Apply the reply on this computer.'); return; }
     try {
       const got = await unpackCode(joinIn.value, 'invite');
-      const session = createPeerSession({ stun: !!stun.checked, polite: true });
+      const session = createPeerSession(sessionOpts({ polite: true }));
       if (!session) { note('This browser cannot open a direct connection.'); return; }
+      if (micTrack && session.setMic) await session.setMic(micTrack);
       const desc = await session.answer(got.payload.desc);
       sessions = [session];
       guest = createGuestRoom({
         link: session.link,
         name: nameInput.value || 'Guest',
         onNote: playRemote,
-        onChat: (msg) => addLine(`${msg.from || 'Friend'}: ${msg.text}`),
+        onChat: (msg) => addLine(`${personName(msg.from)}: ${msg.text}`),
         onRoster: (msg) => renderRoster(msg.peers),
         onPong: (msg) => {
           clock.add(msg.t0, msg.t1, msg.t2, performance.now());
@@ -287,9 +335,47 @@ export function createJamPanel(ctx) {
     } else addLine(text);
     chatInput.value = '';
   });
-  scope.on(el.querySelector('.jam-voice-join'), 'click', () => {
-    voice.join(!voice.joined);
-    note(voice.joined ? 'Voice is on. Headphones recommended.' : 'Voice is off.');
+  const voiceBtn = el.querySelector('.jam-voice-join');
+  const muteBtn = el.querySelector('.jam-mute');
+  const deafBtn = el.querySelector('.jam-deafen');
+  function paintVoiceButtons() {
+    voiceBtn.setAttribute('aria-pressed', voice.joined ? 'true' : 'false');
+    muteBtn.setAttribute('aria-pressed', voice.muted ? 'true' : 'false');
+    deafBtn.setAttribute('aria-pressed', voice.deaf ? 'true' : 'false');
+  }
+  scope.on(voiceBtn, 'click', async () => {
+    if (voice.joined) {
+      voice.join(false);
+      await releaseMic();
+      paintVoiceButtons();
+      note('Voice is off.');
+      return;
+    }
+    const devices = typeof navigator !== 'undefined' && navigator.mediaDevices;
+    if (!devices || typeof devices.getUserMedia !== 'function') {
+      note('This browser has no microphone.');
+      return;
+    }
+    try {
+      micStream = await devices.getUserMedia({ audio: voice.constraints });
+      micTrack = micStream.getAudioTracks()[0] || null;
+      voice.join(true);
+      await pushMic();
+      paintVoiceButtons();
+      note(voice.mode === 'open' ? 'Voice is on. The mic is open. Headphones recommended.' : 'Voice is on. Hold the key to talk. Headphones recommended.');
+    } catch {
+      voice.join(false);
+      await releaseMic();
+      paintVoiceButtons();
+      note('The microphone could not be opened.');
+    }
+  });
+  scope.on(el, 'change', (e) => {
+    const mode = e.target && e.target.dataset && e.target.dataset.mode;
+    if (mode !== 'ptt' && mode !== 'open') return;
+    voice.setMode(mode);
+    applySend();
+    if (voice.joined) note(mode === 'open' ? 'The mic is open.' : 'Hold the key to talk.');
   });
   scope.on(el.querySelector('.jam-key'), 'click', () => { captureKey = true; note('Press the new push to talk key.'); });
   function onTalkKey(e) {
@@ -310,6 +396,7 @@ export function createJamPanel(ctx) {
     if (!hit) return;
     if (e.type === 'keydown' && !e.repeat) voice.keyDown(voice.key);
     if (e.type === 'keyup') voice.keyUp(voice.key);
+    applySend();
   }
   document.addEventListener('keydown', onTalkKey);
   document.addEventListener('keyup', onTalkKey);
@@ -317,8 +404,18 @@ export function createJamPanel(ctx) {
     document.removeEventListener('keydown', onTalkKey);
     document.removeEventListener('keyup', onTalkKey);
   });
-  scope.on(el.querySelector('.jam-mute'), 'click', () => voice.setMuted(true));
-  scope.on(el.querySelector('.jam-deafen'), 'click', () => voice.setDeaf(true));
+  scope.on(muteBtn, 'click', () => {
+    voice.setMuted(!voice.muted);
+    applySend();
+    paintVoiceButtons();
+    note(voice.muted ? 'Your mic is muted.' : 'Your mic is unmuted.');
+  });
+  scope.on(deafBtn, 'click', () => {
+    voice.setDeaf(!voice.deaf);
+    applySend();
+    paintVoiceButtons();
+    note(voice.deaf ? 'Their voices are off.' : 'Their voices are on.');
+  });
   scope.on(modBox, 'click', (e) => {
     const act = e.target && e.target.dataset ? e.target.dataset.act : '';
     if (!act || !host) { note('Only the host can do that.'); return; }
@@ -337,8 +434,10 @@ export function createJamPanel(ctx) {
       addLine('That person is banned for this jam.');
     }
   });
-  scope.on(el.querySelector('.jam-leave'), 'click', () => {
+  scope.on(el.querySelector('.jam-leave'), 'click', async () => {
     stopNotes();
+    await releaseMic();
+    dropRemoteAudio();
     for (const session of sessions) {
       try { session.link.close(); } catch { /* already */ }
     }
@@ -348,6 +447,12 @@ export function createJamPanel(ctx) {
     guest = null;
     clock.reset();
     buffers.clear();
+    people = [];
+    voice.keyUp(voice.key);
+    voice.setMuted(false);
+    voice.setDeaf(false);
+    voice.join(false);
+    paintVoiceButtons();
     another.hidden = true;
     restoreSession();
     note('You left the jam.');

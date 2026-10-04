@@ -30,12 +30,30 @@ export function rtcAvailable() {
  * `link` queues text until the channel is open. Returns null when this
  * runtime has no RTCPeerConnection.
  */
-export function createPeerSession({ stun = false, polite = false, RTCPeerConnection: RTC = globalThis.RTCPeerConnection } = {}) {
+export function createPeerSession({ stun = false, polite = false, RTCPeerConnection: RTC = globalThis.RTCPeerConnection, onRemoteAudio } = {}) {
   if (typeof RTC !== 'function') return null;
   const pc = new RTC({ iceServers: iceServers(!!stun) });
   let channel = null;
   let handler = null;
+  let audioSender = null;
   const queue = [];
+  try {
+    const transceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    audioSender = transceiver && transceiver.sender;
+  } catch { /* a stand-in connection may not carry audio */ }
+  if (typeof pc.addEventListener === 'function' || 'ontrack' in pc) {
+    pc.ontrack = (ev) => {
+      if (typeof document === 'undefined' || typeof onRemoteAudio !== 'function') return;
+      const track = ev && (ev.track || (ev.streams && ev.streams[0] && ev.streams[0].getAudioTracks && ev.streams[0].getAudioTracks()[0]));
+      if (!track) return;
+      const stream = ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([track]);
+      const audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.setAttribute('playsinline', '');
+      audio.srcObject = stream;
+      onRemoteAudio(audio);
+    };
+  }
   function flush() {
     if (!channel || channel.readyState !== 'open') return;
     while (queue.length) {
@@ -91,6 +109,10 @@ export function createPeerSession({ stun = false, polite = false, RTCPeerConnect
     },
     async acceptReply(remote) {
       await pc.setRemoteDescription(remote);
+    },
+    /** Swap the microphone without a second invite. Null sends silence. */
+    async setMic(track) {
+      if (audioSender && typeof audioSender.replaceTrack === 'function') await audioSender.replaceTrack(track || null);
     },
   };
 }

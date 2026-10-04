@@ -2393,7 +2393,7 @@ noise and music without a steady beat or clear key give a low confidence message
 
 ### Piano roll (2.15)
 
-**Piano roll** sits on the Pattern line, next to Capture. It does not replace the 16-step grid. The grid still holds probability, ratchet, accent, slide, the dot and parameter locks. The roll can place extra notes that start part way through a step. The Note cell on the grid keeps the first note. Tap a note in the roll to remove it. The step numbers sit over the same columns as the notes.
+**Piano roll** sits on the Pattern line, next to Capture. It does not replace the 16-step grid. The grid still holds probability, ratchet, accent, slide, the dot and parameter locks. The roll can place extra notes that start part way through a step. The Note cell on the grid keeps the first note. Tap a note in the roll to remove it. The step numbers sit over the same columns as the notes. A step whose octave is not zero still appears, on the pitch that step plays.
 
 One lane under the roll draws a curve for one control. If that same control has a step lock, the lock wins for the whole step. The hint in the panel says so. The song is still the pattern chain. There is no arranger and no second lane.
 
@@ -2403,7 +2403,7 @@ One lane under the roll draws a curve for one control. If that same control has 
 
 Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are stamped on the host's clock and held back by a small steady delay, so they keep their spacing instead of arriving smeared. Leave restores the session you had before you joined.
 
-**Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it. The host can mute chat, mute a mic, remove someone, ban them for this jam, lock the jam, or clear chat. Choose the person in the list first when the action needs one.
+**Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local and turn off if you press them again. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it. You can join voice before or after the invite. The connection already has an audio channel, so the microphone does not need a second code. The host can mute chat, mute a mic, remove someone, ban them for this jam, lock the jam, or clear chat. Choose the person in the list first when the action needs one.
 
 **Use a public STUN server** asks Google's STUN server for help crossing some networks. It is off by default. Some networks need a relay. Oro does not provide one, so Join can fail. Chat is plain text, 500 characters.
 
