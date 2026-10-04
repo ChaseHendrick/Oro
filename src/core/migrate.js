@@ -140,6 +140,11 @@ export function sanitizePattern(src, n = 1) {
     const ratchet = Math.round(clamp(num(st.ratchet, 1), 1, RATCHET_MAX));
     if (prob < 1) step.prob = prob;
     if (ratchet > 1) step.ratchet = ratchet;
+    // A named sampler slice, stored only when the step has one (0..31).
+    if (typeof st.slice === 'number' && Number.isFinite(st.slice)) {
+      const sl = Math.round(st.slice);
+      if (sl >= 0 && sl < 32) step.slice = sl;
+    }
     // v2.9 parameter locks, absent unless the step has one
     const plocks = stepPlocks(st);
     if (plocks) step.plocks = plocks;

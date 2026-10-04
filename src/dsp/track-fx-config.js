@@ -30,10 +30,11 @@ export const FX_TYPES = Object.freeze([
   effect('stereo', 'Stereo width', ['Width', 'Balance', 'Haas', 'Crossfeed'], [0.75, 0.5, 0.1, 0], 'Mid-side width, balance and a short right-channel delay.'),
   effect('warmth', 'Warmth', ['Drive', 'Body', 'Tone', 'Bias'], [0.35, 0.55, 0.65, 0.5], 'A rounded cubic saturator adds low-order harmonics and body.'),
   effect('gate', 'Noise gate', ['Threshold', 'Hold', 'Release', 'Floor'], [0.4, 0.25, 0.35, 0], 'Stereo-linked gating with hold, release and a finite floor.'),
-  effect('tape', 'Tape colour', ['Drive', 'Wow', 'Tone', 'Noise'], [0.35, 0.3, 0.6, 0.1], 'Saturation, wow, flutter, high-frequency loss and tape noise.'),
+  effect('tape', 'Tape colour', ['Drive', 'Wow', 'Tone', 'Noise'], [0.35, 0.3, 0.6, 0.1], 'Saturation, wow and flutter (flutter follows Wow), high-frequency loss and tape noise.'),
   effect('freqshift', 'Frequency shifter', ['Shift', 'Feedback', 'Direction', 'Delay'], [0.65, 0.2, 0, 0.3], 'A Hilbert transformer moves every partial by the same number of hertz.'),
   effect('hyper', 'Hyper dimension', ['Rate', 'Detune', 'Width', 'Dimension'], [0.35, 0.4, 0.8, 0.4], 'Six detuned delay voices spread across the stereo field, plus short cross reflections.'),
   effect('filterseq', 'Filter sequencer', ['Pattern', 'Glide', 'Resonance', 'Depth'], [0, 0.2, 0.45, 0.75], 'A resonant low-pass steps through an eight-step pattern in sixteenth notes at the song tempo.'),
+  effect('vocoder', 'Vocoder', ['Bands', 'Formant', 'Sibilance', ''], [(16 - 8) / 24, 0.5, 0.4, 0.5], 'Microphone or another track shapes this track.'),
 ]);
 /** Eight-step cutoff patterns of the filter sequencer (0 closed, 1 open). */
 export const FILTER_SEQ_PATTERNS = Object.freeze([
@@ -64,7 +65,9 @@ const finite = (value, fallback) => typeof value === 'number' && Number.isFinite
 const clamp01 = (value, fallback) => Math.min(1, Math.max(0, finite(value, fallback)));
 export function defaultFxSlot(type = 'bypass') {
   const def = FX_TYPE_MAP[type] || FX_TYPE_MAP.bypass;
-  return { type: def.id, mix: def.id === 'bypass' ? 0 : 0.5, p1: def.defaults[0], p2: def.defaults[1], p3: def.defaults[2], p4: def.defaults[3] };
+  const slot = { type: def.id, mix: def.id === 'bypass' ? 0 : 0.5, p1: def.defaults[0], p2: def.defaults[1], p3: def.defaults[2], p4: def.defaults[3] };
+  if (def.id === 'vocoder') slot.mod = 'mic';
+  return slot;
 }
 export function defaultTrackFx() {
   return { routing: 0, sidechain: 'self', slots: Array.from({ length: FX_SLOT_COUNT }, () => defaultFxSlot()) };
@@ -76,7 +79,12 @@ export function sanitizeTrackFx(value) {
   return { routing, sidechain, slots: Array.from({ length: FX_SLOT_COUNT }, (_, index) => {
     const slot = src.slots?.[index];
     const def = defaultFxSlot(slot?.type);
-    return { type: def.type, mix: clamp01(slot?.mix, def.mix), p1: clamp01(slot?.p1, def.p1), p2: clamp01(slot?.p2, def.p2), p3: clamp01(slot?.p3, def.p3), p4: clamp01(slot?.p4, def.p4) };
+    const out = { type: def.type, mix: clamp01(slot?.mix, def.mix), p1: clamp01(slot?.p1, def.p1), p2: clamp01(slot?.p2, def.p2), p3: clamp01(slot?.p3, def.p3), p4: clamp01(slot?.p4, def.p4) };
+    if (out.type === 'vocoder') {
+      const raw = typeof slot?.mod === 'string' ? slot.mod : 'mic';
+      out.mod = raw === 'mic' || /^[\w-]{1,24}$/.test(raw) ? raw : 'mic';
+    }
+    return out;
   }) };
 }
 /** Actual-value scales keep keyboard entry and reset consistent with the
@@ -100,6 +108,8 @@ export function fxParamScale(type, parameter) {
   else if (type === 'hyper' && parameter === 0) { min = .05; max = 5; curve = 'exp'; unit = 'Hz'; }
   else if (type === 'hyper' && parameter === 1) { min = 0; max = 25; unit = 'ct'; }
   else if (type === 'filterseq' && parameter === 0) return { min: 0, max: FILTER_SEQ_PATTERNS.length - 1, curve: 'int', unit: '', options: FILTER_SEQ_PATTERNS.map(pattern => pattern.name) };
+  else if (type === 'vocoder' && parameter === 0) return { min: 8, max: 32, curve: 'int', unit: '' };
+  else if (type === 'vocoder' && parameter === 1) { min = -12; max = 12; unit = 'st'; }
   return { min, max, curve, unit };
 }
 export function formatFxParam(type, parameter, value) {
@@ -121,6 +131,9 @@ export function formatFxParam(type, parameter, value) {
   if (type === 'hyper' && parameter === 0) return (0.05 * Math.pow(100, p)).toFixed(2) + ' Hz';
   if (type === 'hyper' && parameter === 1) return (p * 25).toFixed(1) + ' ct';
   if (type === 'filterseq' && parameter === 0) return FILTER_SEQ_PATTERNS[Math.round(p * (FILTER_SEQ_PATTERNS.length - 1))].name;
+  if (type === 'vocoder' && parameter === 0) return String(Math.round(8 + p * 24));
+  if (type === 'vocoder' && parameter === 1) { const st = p * 24 - 12; return (st >= 0 ? '+' : '') + st.toFixed(1) + ' st'; }
+  if (type === 'vocoder' && parameter === 2) return Math.round(p * 100) + '%';
   return Math.round(p * 100) + '%';
 }
 /** Frequency shifter amount: a cubic curve around the centre gives fine

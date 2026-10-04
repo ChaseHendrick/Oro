@@ -190,6 +190,37 @@ describe('modes and envelope', () => {
     }
   });
 
+  it('Slices with no marks are sixteen even pieces, and a named slice overrides the key', () => {
+    const d = new Float32Array(48000);
+    for (let i = 0; i < 16; i++) d.fill((i + 1) / 16, i * 3000, (i + 1) * 3000);
+    const p = player(48000, d, 48000, { mode: 3, attack: 0.0005 });
+    p.noteOn(60, 0, 1);
+    expect(run(p, 400)[200]).toBeCloseTo((1 / 16) * 0.8, 2);
+    p.allOff(true);
+    p.noteOn(61, 1, 1);
+    expect(run(p, 400)[200]).toBeCloseTo((2 / 16) * 0.8, 2);
+    p.allOff(true);
+    p.noteOn(60, 0, 1, 0, 1, 4);
+    expect(run(p, 400)[200]).toBeCloseTo((5 / 16) * 0.8, 2);
+  });
+
+  it('a stereo take plays each channel, and a mismatched right channel is dropped', () => {
+    const left = new Float32Array(4800).fill(0.5);
+    const right = new Float32Array(4800).fill(-0.25);
+    const p = new SamplerPlayer(48000);
+    p.setData(left, 48000, right);
+    p.configure({ ...defaultSampler(), attack: 0.0005, loop: 1 });
+    p.noteOn(60, 0, 1);
+    const L = new Float32Array(400), R = new Float32Array(400);
+    p.render(L, R, 0, 400);
+    expect(L[200]).toBeCloseTo(0.5 * 0.8, 3);
+    expect(R[200]).toBeCloseTo(-0.25 * 0.8, 3);
+    const data = pcmToBase64(new Float32Array(8).fill(0.2));
+    const other = pcmToBase64(new Float32Array(8).fill(-0.2));
+    expect(sanitizeSampler({ on: 1, sample: { rate: 48000, data, right: other } }).sample.right).toBe(other);
+    expect(sanitizeSampler({ on: 1, sample: { rate: 48000, data, right: 'QQ' } }).sample.right).toBeUndefined();
+  });
+
   it('at most eight notes sound; the ninth steals with a short fade', () => {
     const p = player(48000, data, 48000, { loop: 1 });
     for (let k = 0; k < MAX_VOICES + 1; k++) p.noteOn(60 + k, k, 1);

@@ -14,8 +14,10 @@
 //                note-off is ignored (Loop does not apply)
 //   2 Held       plays while the key is held (Sustain keeps it at full level,
 //                otherwise the Attack/Decay shape), a quick fade on release
-//   3 Slices     keys from Root up pick the transient slices in turn, each
-//                played once at the sample's own pitch (times Speed)
+//   3 Slices     keys from Root up pick the slices in turn, each played once
+//                at the sample's own pitch (times Speed). With no stored marks
+//                the sample is sixteen even pieces. A sequencer step can name
+//                one slice and leave the scale degree alone.
 //   4 Granular   a cloud of short windowed grains read around Position in the
 //                region; the key transposes the grains; gated like Held
 //
@@ -44,6 +46,8 @@ const EDGE_SECONDS = 0.002;
 export const SAMPLER_MAX_SECONDS = 16;
 export const SAMPLER_RATE = 48000;
 export const MAX_SLICES = 32;
+/** Even pieces used when Slices mode has no stored marks. */
+export const EVEN_SLICES = 16;
 const WIN_N = 1024;
 
 /** Periodic Hann window, WIN_N + 1 points (the last repeats the first) for linear lookup. */
@@ -57,7 +61,8 @@ const clampN = (v, lo, hi, d) => (typeof v === 'number' && Number.isFinite(v) ? 
 
 // ---- saved data ----------------------------------------------------------
 // part.sampler (absent until a track is put in Sampler mode) =
-// { on, name, sample: null | { rate, data (base64 16-bit mono PCM) }, mode,
+// { on, name, sample: null | { rate, data (base64 16-bit PCM), right? (the
+// other channel, same length, absent when the take is mono) }, mode,
 //   root (MIDI note), fine (cents), loop (0/1), dir (0 forward, 1 reverse,
 //   2 ping-pong), attack (s), decay (s), sustain (0/1), level (0..1),
 //   slices (frame offsets, ascending, absent when none),
@@ -84,6 +89,8 @@ export function sanitizeSampler(src) {
   const sample = s && typeof s === 'object' && typeof s.data === 'string' && s.data.length > 0 && s.data.length <= SAMPLER_MAX_B64
     && /^[A-Za-z0-9+/]*={0,2}$/.test(s.data.slice(-8))
     ? { rate: Math.round(clampN(s.rate, 8000, 96000, SAMPLER_RATE)), data: s.data } : null;
+  if (sample && typeof s.right === 'string' && s.right.length === sample.data.length
+      && /^[A-Za-z0-9+/]*={0,2}$/.test(s.right.slice(-8))) sample.right = s.right;
   const g = src.grain && typeof src.grain === 'object' ? src.grain : {};
   const bg = b.grain;
   const out = {
@@ -178,7 +185,7 @@ class Voice {
 export class SamplerPlayer {
   constructor(sr) {
     this.sr = sr;
-    this.data = null; this.rate = sr; this.last = 0;
+    this.data = null; this.right = null; this.rate = sr; this.last = 0;
     this.cfg = samplerConfig(defaultSampler());
     this.voices = Array.from({ length: VOICE_SLOTS }, () => new Voice());
     this.counter = 0;
@@ -191,13 +198,20 @@ export class SamplerPlayer {
 
   get busy() { return this.active > 0; }
 
-  /** New audio (Float32Array mono at `rate`), or null. Sounding notes stop. */
-  setData(data, rate) {
+  /** New audio (Float32Array at `rate`), optional right channel of the same length. Sounding notes stop. */
+  setData(data, rate, right) {
     for (const v of this.voices) v.on = false;
     this.active = 0;
     this.data = data instanceof Float32Array && data.length > 4 ? data : null;
+    this.right = this.data && right instanceof Float32Array && right.length === this.data.length ? right : null;
     this.rate = clampN(rate, 8000, 192000, this.sr);
     this.last = this.data ? this.data.length - 1 : 0;
+  }
+
+  /** One source frame, as a stereo pair. A mono buffer is copied to both sides. */
+  readPair(pos) {
+    const l = hermite(this.data, pos, this.last);
+    return [l, this.right ? hermite(this.right, pos, this.last) : l];
   }
 
   configure(cfg) {
@@ -238,8 +252,10 @@ export class SamplerPlayer {
   /**
    * Start a note. `semis`: the key against Root in semitones (the engine
    * applies the session's tuning); `vel`: 0..1 gain already shaped.
+   * `slicePick`: in Slices mode, that slice instead of the key. Null keeps
+   * the key mapping, so an old pattern sounds the same until a step is edited.
    */
-  noteOn(note, semis, vel, start = 0, end = 1) {
+  noteOn(note, semis, vel, start = 0, end = 1, slicePick = null) {
     if (!this.data || !(vel > 0)) return;
     const c = this.cfg;
     // the same key retriggered in a mode that ignores note-offs fades the old one
@@ -258,9 +274,13 @@ export class SamplerPlayer {
     v.slice = -1;
     let [a, b] = this.region(start, end);
     if (c.mode === 3) {
-      const sl = c.slices;
-      const n = sl && sl.length ? sl.length : 1;
-      const k = (((Math.round(note) - c.root) % n) + n) % n;
+      const count = this.sliceCount();
+      let k;
+      if (slicePick != null && Number.isFinite(+slicePick)) {
+        k = Math.round(+slicePick);
+        if (k < 0) k = 0;
+        if (k >= count) k = count - 1;
+      } else k = (((Math.round(note) - c.root) % count) + count) % count;
       v.slice = k;
       [a, b] = this.sliceBounds(k);
     }
@@ -269,12 +289,26 @@ export class SamplerPlayer {
     v.pos = rev ? b - 1 : a;
   }
 
+  /** How many slices a key or a step can pick. Stored marks win; otherwise an even grid. */
+  sliceCount() {
+    const sl = this.cfg.slices;
+    return sl && sl.length ? sl.length : EVEN_SLICES;
+  }
+
   sliceBounds(k) {
     const sl = this.cfg.slices, n = this.data ? this.data.length : 0;
-    if (!sl || !sl.length) return [0, n];
-    const a = Math.min(n - 8, sl[k] || 0);
-    const b = k + 1 < sl.length ? Math.min(n, sl[k + 1]) : n;
-    return [Math.max(0, a), Math.max(a + 8, b)];
+    if (!n) return [0, 0];
+    if (sl && sl.length) {
+      const a = Math.min(n - 8, sl[k] || 0);
+      const b = k + 1 < sl.length ? Math.min(n, sl[k + 1]) : n;
+      return [Math.max(0, a), Math.max(a + 8, b)];
+    }
+    const count = EVEN_SLICES;
+    const kk = ((k % count) + count) % count;
+    let a = Math.floor(kk * n / count);
+    let b = kk + 1 === count ? n : Math.floor((kk + 1) * n / count);
+    if (b - a < 8) { b = Math.min(n, a + 8); a = Math.max(0, b - 8); }
+    return [a, b];
   }
 
   noteOff(note) {
@@ -305,7 +339,7 @@ export class SamplerPlayer {
    */
   render(L, R, off, n, speed = 1, start = 0, end = 1, gpos = 0.5, bend = 1) {
     if (this.active === 0 || !this.data) return;
-    const c = this.cfg, d = this.data, last = this.last;
+    const c = this.cfg;
     const base = this.rate / this.sr * clampN(speed, 0.01, 16, 1) * bend;
     const [ra, rb] = this.region(start, end);
     let active = 0;
@@ -314,7 +348,7 @@ export class SamplerPlayer {
       const inc = base * Math.pow(2, v.semis / 12);
       const g = c.level * v.vel;
       if (c.mode === 4) this.renderGrains(v, L, R, off, n, inc, g, ra, rb, gpos);
-      else this.renderVoice(v, L, R, off, n, inc, g, ra, rb, d, last);
+      else this.renderVoice(v, L, R, off, n, inc, g, ra, rb);
       if (v.on) active++;
     }
     this.active = active;
@@ -344,7 +378,7 @@ export class SamplerPlayer {
     return e;
   }
 
-  renderVoice(v, L, R, off, n, inc, g, ra, rb, d, last) {
+  renderVoice(v, L, R, off, n, inc, g, ra, rb) {
     const c = this.cfg;
     let a = ra, b = rb;
     if (v.slice >= 0) [a, b] = this.sliceBounds(v.slice);
@@ -357,22 +391,26 @@ export class SamplerPlayer {
     for (let j = off; j < off + n; j++) {
       const e = this.envStep(v);
       if (!v.on) break;
-      let s;
+      let pair;
       if (X > 0 && dir > 0 && pos >= b - X) {
-        // crossfade the end of the region into its start
-        const z = (pos - (b - X)) / X, w = z * Math.PI / 2;
-        s = hermite(d, pos, last) * Math.cos(w) + hermite(d, a + (pos - (b - X)), last) * Math.sin(w);
+        const w = (pos - (b - X)) / X * Math.PI / 2, c0 = Math.cos(w), s0 = Math.sin(w);
+        const p0 = this.readPair(pos), p1 = this.readPair(a + (pos - (b - X)));
+        pair = [p0[0] * c0 + p1[0] * s0, p0[1] * c0 + p1[1] * s0];
       } else if (X > 0 && dir < 0 && pos < a + X) {
-        const z = ((a + X) - pos) / X, w = z * Math.PI / 2;
-        s = hermite(d, pos, last) * Math.cos(w) + hermite(d, b - ((a + X) - pos), last) * Math.sin(w);
-      } else s = hermite(d, pos, last);
+        const w = ((a + X) - pos) / X * Math.PI / 2, c0 = Math.cos(w), s0 = Math.sin(w);
+        const p0 = this.readPair(pos), p1 = this.readPair(b - ((a + X) - pos));
+        pair = [p0[0] * c0 + p1[0] * s0, p0[1] * c0 + p1[1] * s0];
+      } else pair = this.readPair(pos);
       // fade the very ends of a region that is not looping (or a one-way pass)
       if (!loop && !(ping && v.passes === 0 && dir > 0)) {
         const toEnd = dir > 0 ? (b - 1 - pos) : (pos - a);
-        if (toEnd < edge) s *= toEnd > 0 ? toEnd / edge : 0;
+        if (toEnd < edge) {
+          const f = toEnd > 0 ? toEnd / edge : 0;
+          pair = [pair[0] * f, pair[1] * f];
+        }
       }
-      const y = s * e * g;
-      L[j] += y; R[j] += y;
+      const eg = e * g;
+      L[j] += pair[0] * eg; R[j] += pair[1] * eg;
       pos += inc * dir;
       if (dir > 0 && loop && !ping) {
         if (pos >= b) pos -= len - X;
@@ -390,7 +428,7 @@ export class SamplerPlayer {
   }
 
   renderGrains(v, L, R, off, n, inc, g, ra, rb, gpos) {
-    const gc = this.cfg.grain, d = this.data, last = this.last, W = GRAIN_WINDOW;
+    const gc = this.cfg.grain, W = GRAIN_WINDOW;
     const len = rb - ra;
     const every = this.sr / gc.density;
     const gLen = Math.max(8, gc.size * this.sr);
@@ -419,21 +457,22 @@ export class SamplerPlayer {
           }
         }
       }
-      let sum = 0;
+      let sumL = 0, sumR = 0;
       for (let q = 0; q < GRAINS_PER_VOICE; q++) {
         if (!v.gOn[q]) continue;
         const t = v.gT[q] * WIN_N, ti = t | 0;
         const w = W[ti] + (W[ti + 1] - W[ti]) * (t - ti);
         let p = v.gPos[q];
-        sum += hermite(d, p, last) * w;
+        const pair = this.readPair(p);
+        sumL += pair[0] * w; sumR += pair[1] * w;
         p += v.gInc[q];
         if (p >= rb) p -= len; else if (p < ra) p += len;
         v.gPos[q] = p;
         const nt = v.gT[q] + v.gDt[q];
         if (nt >= 1) v.gOn[q] = 0; else v.gT[q] = nt;
       }
-      const y = sum * norm * e * g;
-      L[j] += y; R[j] += y;
+      const eg = norm * e * g;
+      L[j] += sumL * eg; R[j] += sumR * eg;
     }
   }
 }

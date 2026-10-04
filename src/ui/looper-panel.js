@@ -10,6 +10,7 @@ import { openMenu } from './menu.js';
 import { icon } from './icons.js';
 import { noteName } from '../audio/resample.js';
 import { mappingControl } from '../midi/midi.js';
+import { tapeBendToRate, tapeRateToBend, tapeSpeedText } from './looper-control.js';
 
 const RING_LEN = 100;
 
@@ -318,21 +319,23 @@ export function createLooperPanel(ctx) {
     () => lp.prefs().follow, (v) => lp.setPref('follow', v ? 1 : 0), prefSub);
   const follow = createToggle(ctx, followBinding, { label: 'Follow tempo', className: 'toggle--sm' });
   scope.add(follow.dispose);
-  const speedBinding = localBinding({ id: 'loopSpeed', label: 'Tape speed', default: 1, hint: 'Half, normal or double speed. Pitch follows the speed' },
-    () => lp.prefs().speed, (v) => lp.setPref('speed', Number(v)), prefSub);
-  const speed = createSegmented(ctx, speedBinding, {
-    label: 'Tape speed', size: 'sm',
-    options: [
-      { value: 0.5, label: 'Half', aria: 'Half speed' },
-      { value: 1, label: 'Normal', aria: 'Normal speed' },
-      { value: 2, label: 'Double', aria: 'Double speed' },
-    ],
+  const speedBinding = localBinding(
+    { id: 'loopSpeed', label: 'Speed', min: -1, max: 1, default: 0, curve: 'lin', hint: 'Center is normal speed. Right is faster. Left slows down, stops, then plays backward. Pitch follows the speed.' },
+    () => tapeRateToBend(lp.prefs().speed),
+    (v) => {
+      let b = Number(v);
+      if (!Number.isFinite(b)) return;
+      if (Math.abs(b) < 0.008) b = 0;
+      lp.setPref('speed', tapeBendToRate(b));
+    },
+    prefSub,
+  );
+  const speed = createMiniSlider(ctx, speedBinding, {
+    label: 'Speed', ariaLabel: 'Tape speed', bipolar: true, className: 'loop-slider',
+    format: (bend) => tapeSpeedText(tapeBendToRate(Math.abs(Number(bend)) < 0.008 ? 0 : bend)),
   });
   scope.add(speed.dispose);
-  const revBinding = localBinding({ id: 'loopReverse', label: 'Reverse', default: 0, hint: 'Play the loop backward. Pitch follows the direction' },
-    () => lp.prefs().reverse, (v) => lp.setPref('reverse', v ? 1 : 0), prefSub);
-  const reverse = createToggle(ctx, revBinding, { label: 'Reverse', className: 'toggle--sm', ariaLabel: 'Reverse' });
-  scope.add(reverse.dispose);
+  const speedVal = h('span', { class: 'loop-value mono' });
   const wave = createWaveStrip(lp, scope);
   const fitBtn = h('button', { type: 'button', class: 'btn btn--sm loop-action', dataset: { tip: 'Stretch the loop to the current tempo now, keeping its pitch. A loop recorded without the transport is fitted to whole bars' } }, 'Fit to tempo');
   scope.on(fitBtn, 'click', () => lp.fitToTempo());
@@ -373,7 +376,7 @@ export function createLooperPanel(ctx) {
       h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-loop' }, 'Looper')),
       h('div', { class: 'loop-top' }, main, h('div', { class: 'loop-tools', role: 'group', 'aria-label': 'Loop tools' }, stopBtn, undoBtn, clearBtn, muteBtn)),
       h('div', { class: 'loop-tape' },
-        h('div', { class: 'loop-tape-controls' }, reverse.el, speed.el),
+        h('div', { class: 'loop-tape-controls' }, h('span', { class: 'mini-label' }, 'Speed'), speed.el, speedVal),
         wave),
       status,
       h('div', { class: 'loop-grid' },
@@ -408,13 +411,14 @@ export function createLooperPanel(ctx) {
     fitBtn.disabled = !lp.available || !has || !!st.busy || st.state === 'record' || st.state === 'armed' || st.state === 'overdub';
     setText(volVal, pct(st.prefs.volume));
     setText(fbVal, pct(st.prefs.feedback));
+    setText(speedVal, tapeSpeedText(st.prefs.speed));
     if (sliceSel.value !== sliceVal()) sliceSel.value = sliceVal();
     if (fmtSel.value !== st.prefs.format) fmtSel.value = st.prefs.format;
   }
   scope.add(statusSub(() => schedule(render)));
   scope.add(prefSub(() => schedule(render)));
   if (!lp.available) {
-    for (const c of [bars, vol, fb, slot, follow, speed, reverse]) c.setDisabled(true, lp.reason);
+    for (const c of [bars, vol, fb, slot, follow, speed]) c.setDisabled(true, lp.reason);
     sliceSel.disabled = true; fmtSel.disabled = true;
   }
   render();

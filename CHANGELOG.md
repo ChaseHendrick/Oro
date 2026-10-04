@@ -3,6 +3,14 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
+
+**New**
+* **Slices you can play and edit.** With the sampler in Slices, the sequencer Note row becomes Slice and each step picks a slice. Drag, add and delete the marks on the wave. They snap to a zero crossing. Equal slices and Find transients can be run again.
+* **Looper Speed.** One slider. The middle is normal speed and reads the same samples as before. Right goes faster, left slows down, stops, then plays backward. Pitch follows the speed.
+* **Stereo takes.** Import, Grab loop and Record output keep both channels, up to 16 seconds. The microphone stays mono.
+* **Vocoder.** A track effect. The microphone, or another track, shapes this track. Bands, formant and sibilance. It is not a stand-in: the modulator is the previous block of that track, or the live microphone when Voice is on.
+
 ## 2.13.0 (October 2026): Sampler, looper tape, tuner
 
 **New**

@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.13.0. Guitar pedals are in
+going on under the hood. It describes version 2.14.0. Guitar pedals are in
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -586,7 +586,7 @@ one voice is: oscillator (path over terrain, then Lift and Fold) → plus Sub an
 Drive → filter → amp envelope → pan. Because Sub and Air go in before the filter, the
 filter and the amp envelope shape them too.
 
-### Sampler (2.13)
+### Sampler (2.14)
 
 The **Sampler** card is the first card on the Sound tab. It plays one recorded sample from
 the keyboard instead of the terrain, and the track's filter, envelopes, effects and mixer
@@ -595,20 +595,32 @@ store a sampler.
 
 * **Sampler** turns it on. The drum kit and the sampler cannot both play: turning the
   sampler on turns the drum kit off, and turning the drum kit on turns the sampler off.
-  The sample itself stays.
-* **Record** (2, 4, 8 or 16 seconds), **Import**, or **Grab loop** fills the sample. Audio
-  is kept as 16-bit mono, at most 16 seconds. Grab loop does nothing if the looper is empty.
-  Recording asks for the microphone and has not been tried with a real one.
-* The waveform shows the sample. Drag the start and end handles to set the region (the same
-  Start and End knobs). Speed, Start, End and, in Granular mode, Position can be modulated.
+  The sample itself stays. **Tune** on the card opens the tuner. Settings > Voice still
+  has it too, so the microphone path stays easy to find.
+* **Take** is Mic, File, Loop or Output, and one button does that take. Mic and Output
+  can be 2, 4, 8 or 16 seconds. Mic is 16-bit mono. File, Loop and Output keep both
+  channels when the source has them, still at most 16 seconds. The chip on the wave says
+  Mono or Stereo. Grab loop does nothing if the looper is empty. Recording asks for the
+  microphone and has not been tried with a real one. Record output prints what you hear,
+  effects included, and does not use the Loop tab's Resample button (that one still makes
+  a wavetable terrain).
+* The waveform shows the sample as two bands. Drag the edges to set the region. Speed,
+  Start and End, and in Granular mode Position, can be modulated. Start and End are not
+  knobs on the card.
 * **Playback:** Chromatic (pitch follows the key), One-shot (plays through, ignoring the
   key release), Held, Slices, or Granular. **Direction:** Forward, Reverse or Ping-pong.
   **Loop** repeats the region. Root and Fine set which key plays the sample at its own pitch.
+  Level, Speed, Attack and Decay sit on one row. Speed has a detent at normal.
 * **Granular** sprays short grains around Position. Size, Density, Spread, Jitter and Reverse
   amount appear only in that mode. The same notes render the same samples, so a bounce matches
   what you heard.
-* **Slice on transients** (Slices mode, and only when the sample has no slices yet) places
-  slice points. Those points are stored but not edited on the card.
+* **Slices.** With no marks, the sample is sixteen even pieces and keys from Root play them
+  in turn. Drag a mark to move it (it cannot cross its neighbour). On release it snaps to a
+  nearby zero crossing, unless you hold Alt. Double-click empty space to add one, up to 32.
+  Right-click or hold to delete. The last mark clears the slices. **Equal slices** (4, 8 or
+  16) and **Find transients** can be used again. On the sequencer, the Note row is labelled
+  Slice and each step picks one. Until you touch a step it still follows the key, so an old
+  pattern sounds the same.
 
 ### Smart controls (2.8)
 
@@ -1704,9 +1716,10 @@ stretch a loop that is already recorded.
 * **Feedback** sets how much of the loop each overdub pass keeps: 100% keeps everything and
   adds the new playing on top; lower values let older layers fade a little on every pass,
   like tape echo. It never goes above 100%, so a loop cannot grow by itself.
-* **Reverse** plays the loop backward. Pitch goes with the direction.
-* **Half**, **Normal** and **Double** set the tape speed. Pitch follows the speed. Normal
-  forward playback reads the same samples as before these controls existed.
+* **Speed** is one slider. The middle is normal speed (exactly the same read as before this
+  control existed). To the right it goes faster, up to double. To the left it slows down,
+  stops, then plays backward, down to double speed in reverse. Pitch follows the speed.
+  Double-click or Backspace returns to normal.
 * Drag the waveform under the transport to **scrub**. The playhead follows your finger, and
   a fast move is quieter than a slow one. Let go and the loop continues from there. Scrubbing
   does not record.
@@ -2766,11 +2779,11 @@ effect menu, Mix amount and four controls named for that algorithm. Bypass or Mi
 passes dry audio through. Effects are applied after voice pan and before the track's level and sends,
 and their tails continue after notes release. Patches include the rack.
 
-The 30 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
+The 31 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
 Phaser, Overdrive, Distortion, Decimator, Granular pitch shift, Four-band EQ, Sidechain
 ducking, Multiband compression, Compressor, Limiter, Tremolo, Auto pan, Ring modulation,
 Envelope wah, Low-pass filter, High-pass filter, Comb resonator, Stereo width, Warmth,
-Noise gate, Tape colour, Frequency shifter, Hyper dimension and Filter sequencer. Multiband
+Noise gate, Tape colour, Frequency shifter, Hyper dimension, Filter sequencer and Vocoder. Multiband
 compression uses three bands with upward and downward compression; it is not a copy of any
 branded compressor.
 
@@ -2779,7 +2792,11 @@ or down, or left up and right down), with Feedback and Delay for spiralling echo
 **Hyper dimension** spreads six detuned delay voices and short cross reflections across the
 stereo field to widen and thicken even a mono track. **Filter sequencer** steps a resonant
 low-pass through one of eight eight-step patterns in sixteenth notes, synced to the song
-tempo and position.
+tempo and position. **Vocoder** uses the microphone, or one other track, to shape this
+track: Bands (8 to 32), Formant (a shift in semitones) and Sibilance. The other track is
+the previous audio block, the same timing as sidechain ducking. The microphone is the live
+Voice input. If Voice is off, the slot says so and a Voice button opens Settings > Voice.
+The rack's Sidechain menu is still only for ducking.
 
 Routing offers Serial, Four parallel, Parallel pairs, Middle split, Input split, Output
 fan, Input fan, Mid/side, Low/high and Left/right splits. Parallel branches are averaged.

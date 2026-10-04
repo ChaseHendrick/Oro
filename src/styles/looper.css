@@ -109,10 +109,10 @@
 }
 .loop-btn-icon { display: grid; }
 
-/* Tape: reverse, half / normal / double, and a strip you drag to scrub. */
+/* Tape speed (center is normal) and a strip you drag to scrub. */
 .loop-tape { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .loop-tape-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.loop-tape-controls .seg { flex: 1 1 180px; }
+.loop-tape-controls .mslider { flex: 1 1 160px; min-width: 0; }
 .loop-wave-wrap {
   position: relative;
   height: 72px;
@@ -131,5 +131,5 @@
 .loop-wave.is-active { cursor: grabbing; }
 @media (pointer: coarse) {
   .loop-wave-wrap { height: 88px; }
-  .loop-tape-controls .toggle, .loop-tape-controls .seg-btn { min-height: 44px; }
+  .loop-tape-controls .mslider { min-height: 44px; }
 }

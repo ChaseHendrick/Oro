@@ -756,6 +756,7 @@ class Part {
     this.ddL = null; this.ddR = null; this.ddW = 0; this.ddN = 0;
     this.tail = 0;
     this.effects = new TrackEffects(sr); this.sidechainIndex = -1; this.rawPeak = 0; this.previousRawPeak = 0;
+    this.prevL = new Float64Array(256); this.prevR = new Float64Array(256); this.fxMod = new Float64Array(8);
     this.recording = null; this.textures = noiseTextures(sr);
 
     // voice bus at the oversampled rate with the decimator history in front
@@ -1046,6 +1047,7 @@ export class OroDSP {
     this.dryDelayN = 0;
     this.guitar = 0; this.sGuitar = 0;  // Guitar Level link source (0..1), smoothed like the marble
     this.voice = 0; this.sVoice = 0;    // Voice Level link source (0..1, v1.4 microphone envelope), smoothed the same way
+    this.micRing = new Float32Array(Math.max(2048, this.sr | 0)); this.micW = 0; this.micR = 0;
     this.transport = { playing: false, beatTime: 0, beat: 0 };
     // v2.8 send buses: built the first time a part sends to them
     this.sendFx = null;
@@ -1167,6 +1169,23 @@ export class OroDSP {
     return fr === 0 ? t[i] : t[i] + (t[i + 1] - t[i]) * fr;
   }
 
+  /** One microphone sample for the vocoder, or 0 when the ring is empty. A long backlog is skipped so the modulator stays near the present. */
+  readMic() {
+    const ring = this.micRing;
+    if (!ring) return 0;
+    const size = ring.length;
+    let avail = this.micW - this.micR;
+    if (avail < 0) avail += size;
+    if (!avail) return 0;
+    if (avail > 1024) {
+      this.micR = this.micW - 256;
+      if (this.micR < 0) this.micR += size;
+    }
+    const s = ring[this.micR];
+    if (++this.micR === size) this.micR = 0;
+    return s;
+  }
+
   handleMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
@@ -1230,6 +1249,16 @@ export class OroDSP {
       case 'dryDelay': this.dryDelayN = Math.round(Math.max(0, Math.min(finiteOr(msg.samples, 0), MAX_DRY_DELAY_SEC * this.sr))); break;
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
+      case 'voicePcm': {
+        const pcm = msg.pcm;
+        if (!pcm || typeof pcm.length !== 'number') break;
+        const ring = this.micRing, size = ring.length;
+        for (let i = 0; i < pcm.length; i++) {
+          ring[this.micW] = finiteOr(pcm[i], 0);
+          if (++this.micW === size) this.micW = 0;
+        }
+        break;
+      }
       case 'quality': this.setQuality(msg.mode); break;
       case 'surround': {
         const L = msg.layout ? SURROUND_LAYOUTS[msg.layout] || null : null;
@@ -1792,11 +1821,13 @@ export class OroDSP {
     if (!Number.isFinite(note)) return;
     const time = finiteOr(msg.time, 0);
     const vel = finiteOr(msg.vel, 0.8);
+    const tag = typeof msg.tag === 'string' ? msg.tag : null;
+    const slice = Number.isInteger(msg.slice) && msg.slice >= 0 && msg.slice < 32 ? msg.slice : null;
     if (time <= 0 || time <= this.lastTime) {
-      if (type === 1) this.noteOn(P, note, vel, typeof msg.tag === 'string' ? msg.tag : null); else this.noteOff(P, note);
+      if (type === 1) this.noteOn(P, note, vel, tag, slice); else this.noteOff(P, note);
       return;
     }
-    this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0, tag: typeof msg.tag === 'string' ? msg.tag : null });
+    this.insertEvent({ type, part: P.index, note, vel, time, p: null, ramp: 0, tag, slice });
   }
 
   /**
@@ -2132,7 +2163,7 @@ export class OroDSP {
   /**
    * 2.13 {t:'sampler', part, on, cfg, pcm?, rate?, keep?}: switch a track's
    * sampler on or off, set its playback settings and (unless `keep`) its
-   * audio (Float32Array mono at `rate`).
+   * audio (Float32Array at `rate`, optional `pcmR` of the same length).
    */
   setSampler(part, msg) {
     const P = this.partAt(part);
@@ -2140,7 +2171,11 @@ export class OroDSP {
     P.smpOn = !!msg.on;
     if (!P.smpOn) { if (P.smp) P.smp.allOff(); return; }
     if (!P.smp) P.smp = new SamplerPlayer(this.sr);
-    if (!msg.keep) P.smp.setData(msg.pcm instanceof Float32Array ? msg.pcm : null, finiteOr(msg.rate, this.sr));
+    if (!msg.keep) {
+      const pcm = msg.pcm instanceof Float32Array ? msg.pcm : null;
+      const pcmR = pcm && msg.pcmR instanceof Float32Array && msg.pcmR.length === pcm.length ? msg.pcmR : null;
+      P.smp.setData(pcm, finiteOr(msg.rate, this.sr), pcmR);
+    }
     P.smp.configure(msg.cfg);
   }
 
@@ -2176,7 +2211,7 @@ export class OroDSP {
     P.kit.preview(data, msg.pcm ? finiteOr(msg.rate, this.sr) : this.sr, clamp01(finiteOr(msg.vel, 0.9)), clamp01(finiteOr(msg.gain, 0.8)), Math.max(-24, Math.min(24, finiteOr(msg.pitch, 0))));
   }
 
-  noteOn(P, note, vel, tag = null) {
+  noteOn(P, note, vel, tag = null, slice = null) {
     // v2.8 a frozen part's sequencer and arpeggiator are in its loop; other
     // notes (keys, MIDI) play live on top of it (v2.9)
     if (P.frozen !== null && P.fzTarget >= 1 && (tag === 'seq' || tag === 'arp')) return;
@@ -2187,7 +2222,7 @@ export class OroDSP {
       this.science.noteOn();
       if (P.smp.heldCount() === 0) this.retrigLfos(P); else this.partMods(P);
       const pp = P.partPlain;
-      P.smp.noteOn(note, this.samplerSemis(P, note), vel * this.velGain(P, vel), pp[M_SMP_START], pp[M_SMP_END]);
+      P.smp.noteOn(note, this.samplerSemis(P, note), vel * this.velGain(P, vel), pp[M_SMP_START], pp[M_SMP_END], Number.isInteger(slice) ? slice : null);
       return;
     }
     if (!(vel > 0)) { this.noteOff(P, note); return; }
@@ -4592,9 +4627,29 @@ export class OroDSP {
         let level=0;
         if (src >= 0) level=parts[src].previousRawPeak;
         else if (src === -2) { for (let j=0;j<count;j++) if (j !== i) level+=parts[j].previousRawPeak; }
+        const wantMod = P.effects.wantsMod;
+        const mod = wantMod ? P.fxMod : null;
         for (let n=pos;n<pos+seg;n++) {
+          if (wantMod) {
+            let micHeld = 0, micHave = false;
+            const slots = P.effects.slots;
+            for (let s = 0; s < 4; s++) {
+              let ml = 0, mr = 0;
+              if (slots[s].type === 31) {
+                const idx = slots[s].modIndex;
+                if (idx >= 0 && idx < parts.length && idx !== i) {
+                  const Q = parts[idx];
+                  if (n < Q.prevL.length) { ml = Q.prevL[n]; mr = Q.prevR[n]; }
+                } else if (idx === -3) {
+                  if (!micHave) { micHeld = this.readMic(); micHave = true; }
+                  ml = micHeld; mr = micHeld;
+                }
+              }
+              mod[s * 2] = ml; mod[s * 2 + 1] = mr;
+            }
+          }
           const side=src === -1 ? Math.max(Math.abs(oL[n]),Math.abs(oR[n])) : level;
-          const fx=P.effects.processSample(oL[n],oR[n],side); oL[n]=fx.L; oR[n]=fx.R;
+          const fx=P.effects.processSample(oL[n],oR[n],side,mod); oL[n]=fx.L; oR[n]=fx.R;
         }
       }
       if (over) this.frozenAdd(P, oL, oR, pos, seg);
@@ -4808,6 +4863,10 @@ export class OroDSP {
       const P = this.parts[i];
       if (i >= this.count && this.dormant(P)) continue;
       P.previousRawPeak=P.rawPeak; P.rawPeak=0;
+      const pn = Math.min(n, P.outL.length);
+      if (P.prevL.length < pn) { P.prevL = new Float64Array(P.outL.length); P.prevR = new Float64Array(P.outR.length); }
+      P.prevL.set(P.outL.subarray(0, pn));
+      P.prevR.set(P.outR.subarray(0, pn));
       P.ensureBus(n);
       P.busL.fill(0, P.hist, P.hist + P.os * n);
       P.busR.fill(0, P.hist, P.hist + P.os * n);
@@ -4830,7 +4889,7 @@ export class OroDSP {
         const P = this.parts[ev.part];
         if (!P || ev.part >= this.count) continue;
         if (ev.type === 2) this.applyParams(P, ev.p, ev.ramp, ev.time, true);
-        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel, ev.tag);
+        else if (ev.type === 1) this.noteOn(P, ev.note, ev.vel, ev.tag, ev.slice);
         else this.noteOff(P, ev.note);
       }
       if (this.ctrlRemain <= 0) {

@@ -49,4 +49,21 @@ describe('selected track effects controls', () => {
     expect(parseTyped(fxParamScale('delay', 0), '250ms')).toBe(.25);
     panel.dispose();
   });
+  it('offers a vocoder modulator of the microphone or another track, not this one', () => {
+    const { store, panel } = setup();
+    choose(panel.el.querySelector('[aria-label="Slot A effect"]'), 'vocoder');
+    expect(store.get('parts.0.trackFx.slots.0')).toEqual(defaultFxSlot('vocoder'));
+    const mod = panel.el.querySelector('[aria-label="Slot A modulator"]');
+    expect(mod.options[0].textContent).toBe('Microphone');
+    expect(Array.from(mod.options).map(o => o.value)).toContain(store.get('parts.1.id'));
+    expect(Array.from(mod.options).map(o => o.value)).not.toContain(store.get('parts.0.id'));
+    const voice = panel.el.querySelector('.tfx-voice');
+    expect(voice.hidden).toBe(false);
+    expect(voice.textContent).toContain('Turn Voice on to use the microphone');
+    expect(panel.el.querySelector('[aria-label="Slot A Vocoder "]')).toBeNull();
+    choose(mod, store.get('parts.1.id'));
+    expect(store.get('parts.0.trackFx.slots.0.mod')).toBe(store.get('parts.1.id'));
+    expect(voice.hidden).toBe(true);
+    panel.dispose();
+  });
 });

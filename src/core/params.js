@@ -490,6 +490,17 @@ export function stepProb(step) {
 export function stepRatchet(step) {
   return clamp(Math.round(finiteOr(step && step.ratchet, 1)), 1, RATCHET_MAX);
 }
+/**
+ * A step's sampler slice, or null when the step does not name one.
+ * Absent means the slice follows the note, so an old pattern is unchanged
+ * until that cell is edited. Stored only when set (0..31).
+ */
+export function stepSlice(step) {
+  if (!step || step.slice == null) return null;
+  const n = Math.round(Number(step.slice));
+  if (!Number.isInteger(n) || n < 0 || n >= 32) return null;
+  return n;
+}
 
 function mix32(h) {
   h ^= h >>> 16; h = Math.imul(h, 0x7feb352d);

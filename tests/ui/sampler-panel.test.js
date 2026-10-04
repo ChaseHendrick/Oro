@@ -3,7 +3,8 @@ import { SAMPLER_MAX_B64, SAMPLER_MAX_SECONDS, SAMPLER_RATE, sanitizeSampler } f
 import { pcmToBase64 } from '../../src/dsp/drum-kit.js';
 import {
   REGION_GAP, midiNoteName, maxPcmSamples, cleanSampleName, fitSample, mixToMono, loopToSample,
-  waveformPeaks, moveRegionHandle, pickRegionHandle,
+  waveformPeaks, moveRegionHandle, pickRegionHandle, pickSliceMark, moveSliceMark, addSliceMark,
+  deleteSliceMark, evenSliceMarks, nearestZeroCross, MIN_SLICE_FRAMES,
 } from '../../src/ui/sampler-model.js';
 
 describe('sampler sample fit', () => {
@@ -47,7 +48,7 @@ describe('sampler sample fit', () => {
 });
 
 describe('sampler loop grab', () => {
-  it('mixes stereo to mono and ignores an empty loop', () => {
+  it('keeps both channels of a loop and ignores an empty one', () => {
     const mono = mixToMono(new Float32Array([1, 1, 1]), new Float32Array([-1, 1]));
     expect([...mono]).toEqual([0, 1, 1]);
     expect([...mixToMono(new Float32Array([0.5, -0.5]), null)]).toEqual([0.5, -0.5]);
@@ -58,18 +59,25 @@ describe('sampler loop grab', () => {
       R: new Float32Array([-1, -1, -1, -1]),
       sampleRate: 48000,
     });
-    expect([...fit.data]).toEqual([0, 0, 0, 0]);
+    expect([...fit.data]).toEqual([1, 1, 1, 1]);
+    expect([...fit.right]).toEqual([-1, -1, -1, -1]);
+    expect(fit.stereo).toBe(true);
     expect(fit.rate).toBe(48000);
     expect(fit.trimmed).toBe(false);
     expect(loopToSample(null)).toBeNull();
     expect(loopToSample({ L: new Float32Array(0), R: new Float32Array(0), sampleRate: 48000 })).toBeNull();
+    const one = loopToSample({ L: new Float32Array([0.5, -0.5]), R: new Float32Array(0), sampleRate: 48000 });
+    expect([...one.data]).toEqual([0.5, -0.5]);
+    expect(one.stereo).toBe(false);
   });
 
   it('caps a long loop without throwing', () => {
     const n = SAMPLER_RATE * 20;
     const fit = loopToSample({ L: new Float32Array(n).fill(0.4), R: new Float32Array(n).fill(0.2), sampleRate: SAMPLER_RATE });
     expect(fit.data.length).toBe(SAMPLER_RATE * SAMPLER_MAX_SECONDS);
-    expect(fit.data[0]).toBeCloseTo(0.3);
+    expect(fit.data[0]).toBeCloseTo(0.4);
+    expect(fit.right[0]).toBeCloseTo(0.2);
+    expect(fit.stereo).toBe(true);
     expect(fit.trimmed).toBe(true);
   });
 });
@@ -108,5 +116,37 @@ describe('sampler waveform region', () => {
     expect(midiNoteName(60)).toBe('C4');
     expect(midiNoteName(69)).toBe('A4');
     expect(midiNoteName(0)).toBe('C-1');
+  });
+});
+
+describe('slice marks', () => {
+  it('hits a mark before the empty wave, and will not cross a neighbour', () => {
+    const marks = [0, 1000, 4000];
+    expect(pickSliceMark(20, 100, marks, 10000, 8)).toBe(-1);
+    expect(pickSliceMark(10, 100, marks, 10000, 8)).toBe(1);
+    const moved = moveSliceMark(1, 3900, marks, 10000);
+    expect(moved[1]).toBe(4000 - MIN_SLICE_FRAMES);
+    expect(moved[0]).toBe(0);
+    expect(moved[2]).toBe(4000);
+  });
+
+  it('adds, refuses the limit and a tight gap, and the last mark clears the list', () => {
+    const added = addSliceMark(2000, [0], 10000);
+    expect(added.added).toBe(true);
+    expect(added.slices).toEqual([0, 2000]);
+    expect(addSliceMark(100, [0], 10000).reason).toBe('gap');
+    const full = Array.from({ length: 32 }, (_, i) => i * 1000);
+    expect(addSliceMark(50000, full, 80000).reason).toBe('limit');
+    expect(deleteSliceMark(1, [0, 2000, 4000])).toEqual([0, 4000]);
+    expect(deleteSliceMark(0, [0])).toEqual([]);
+  });
+
+  it('places even marks and snaps to a zero crossing', () => {
+    expect(evenSliceMarks(4, 48000)).toEqual([0, 12000, 24000, 36000]);
+    const left = new Float32Array(1000);
+    for (let i = 0; i < left.length; i++) left[i] = Math.sin(2 * Math.PI * i / 100);
+    const at = nearestZeroCross(left, null, 30, 48000, 12);
+    expect(Math.abs(left[at])).toBeLessThan(0.1);
+    expect(Math.abs(at - 30)).toBeLessThanOrEqual(Math.round(48000 * 0.012));
   });
 });

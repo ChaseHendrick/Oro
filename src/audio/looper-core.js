@@ -85,11 +85,16 @@ const HALF_PI = Math.PI / 2;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 const finite = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
-/** Tape speed is only half, normal or double. Anything else stays normal. */
+/** Tape speed magnitude, 0 to 2. Exactly 0.5, 1 and 2 stay exact. Near 1 snaps to 1 so the integer playhead still applies. 0 is a stop. */
 export function sanitizeTapeSpeed(v) {
   const n = Number(v);
-  if (n === 0.5 || n === 2) return n;
-  return 1;
+  if (!Number.isFinite(n)) return 1;
+  const a = Math.abs(n);
+  if (a === 0.5 || a === 1 || a === 2) return a;
+  if (a < 1e-4) return 0;
+  if (Math.abs(a - 1) < 1e-4) return 1;
+  if (a > 2) return 2;
+  return a;
 }
 
 function wrapIndex(i, len) {
@@ -198,7 +203,7 @@ export class LooperCore {
 
     // Tape. `rate` is the smoothed signed speed. `frac` is set only while the
     // integer +1 path is not in use, so a normal forward loop never reads it.
-    this.speed = 1;                    // 0.5 | 1 | 2
+    this.speed = 1;                    // 0..2. Exactly 1, forward, is the integer read.
     this.reverse = false;
     this.rate = 1;
     this.frac = false;
@@ -287,7 +292,8 @@ export class LooperCore {
   }
 
   /**
-   * Tape controls. `rate` is 0.5, 1 or 2 (the speed; sign comes from `reverse`).
+   * Tape controls. `rate` is a speed from 0 to 2 (the sign comes from
+   * `reverse`). Exactly 1 forward stays on the integer playhead. 0 is a stop.
    * `scrub` is a 0..1 position while the pointer is down, or null to let go.
    * Omitted fields are left alone, so a scrub move does not reset the speed.
    */
@@ -970,6 +976,15 @@ export class LooperCore {
       this.pos = p - 1 < 0 ? len - 1 : p - 1;
       this.fpos = this.pos;
       return [sl * g, sr * g];
+    }
+
+    if (this.rate === 0) {
+      if (!this.frac) {
+        this.fpos = this.pos;
+        this.frac = true;
+        this.dubAt = -1;
+      }
+      return [0, 0];
     }
 
     if (!this.frac) {

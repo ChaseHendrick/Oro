@@ -162,13 +162,19 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       if (record) smpSent.delete(i);
       return { t: 'sampler', part: i, on: 0 };
     }
-    const key = s.sample ? s.sample.data : '';
+    const right = s.sample && typeof s.sample.right === 'string' ? s.sample.right : '';
+    const key = s.sample ? s.sample.data + (right ? '\n' + right : '') : '';
     const msg = { t: 'sampler', part: i, on: 1, cfg: samplerConfig(s) };
     if (!full && smpSent.get(i) === key) msg.keep = 1;
     else if (s.sample) {
-      let pcm = pcmCache.get(key);
-      if (!pcm) { pcm = base64ToPcm(key); if (pcmCache.size > 64) pcmCache.clear(); pcmCache.set(key, pcm); }
+      let pcm = pcmCache.get(s.sample.data);
+      if (!pcm) { pcm = base64ToPcm(s.sample.data); if (pcmCache.size > 64) pcmCache.clear(); pcmCache.set(s.sample.data, pcm); }
       msg.pcm = pcm; msg.rate = s.sample.rate;
+      if (right) {
+        let pcmR = pcmCache.get(right);
+        if (!pcmR) { pcmR = base64ToPcm(right); pcmCache.set(right, pcmR); }
+        if (pcmR.length === pcm.length) msg.pcmR = pcmR;
+      }
     } else msg.pcm = null;
     if (record) smpSent.set(i, key);
     return msg;
@@ -182,7 +188,16 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const fx = sanitizeTrackFx(store.get(`parts.${i}.trackFx`));
     const tracks = trackIds(store.get('parts'));
     const source = fx.sidechain === 'mix' ? -2 : fx.sidechain === 'self' ? -1 : tracks.indexOf(fx.sidechain);
-    return { t: 'trackFx', part: i, fx, sidechainIndex: source === i ? -1 : source };
+    const slots = fx.slots.map((slot) => {
+      if (slot.type !== 'vocoder') return slot;
+      let modIndex = -3;
+      if (slot.mod && slot.mod !== 'mic') {
+        const j = tracks.indexOf(slot.mod);
+        modIndex = j >= 0 && j !== i ? j : -4;
+      }
+      return { ...slot, modIndex };
+    });
+    return { t: 'trackFx', part: i, fx: { ...fx, slots }, sidechainIndex: source === i ? -1 : source };
   }
 
   function noiseMsg(i) {

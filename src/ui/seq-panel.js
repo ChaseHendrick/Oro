@@ -11,10 +11,11 @@
 // a Lock row that edits one chosen parameter's lock on each step.
 
 import {
-  SEQ_STEPS, SEQ_RATES, ARP_MODES, ARP_RHYTHMS, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, RATCHET_MAX, stepToMidi, clamp, defaultStep,
+  SEQ_STEPS, SEQ_RATES, ARP_MODES, ARP_RHYTHMS, NOTE_NAMES, SCALES, SCALE_NAMES, MAX_PATTERNS, RATCHET_MAX, stepToMidi, stepSlice, clamp, defaultStep,
   activePatternIndex, patternPath, stepProb, stepRatchet,
   PLOCK_IDS, PLOCK_MAX, PART_PARAM_MAP, CHAIN_MAX, CHAIN_REPEATS_MAX, toNorm, fromNorm, formatValue,
 } from '../core/params.js';
+import { EVEN_SLICES, sanitizeSampler } from '../dsp/sampler.js';
 import { addPattern, selectPattern, removePattern } from '../core/tracks.js';
 import { createGhostBar } from './ghost-ui.js';
 import { h, createScope, setText, setAttr, listen, call, has } from './dom.js';
@@ -403,6 +404,21 @@ export function createSeqPanel(ctx) {
     if (!cur || cur[field] === value) return;
     store.set(`${path}.${field}`, value, { source: 'ui' });
   };
+  /** Slices playback on this track: how many slices, and the sample's root. Null otherwise. */
+  function sliceView() {
+    const s = sanitizeSampler(store.get(`parts.${sel()}.sampler`));
+    if (!s || !s.on || s.mode !== 3) return null;
+    const count = s.slices && s.slices.length ? s.slices.length : EVEN_SLICES;
+    return { count, root: s.root };
+  }
+  /** The slice this step will play, 0-based. A stored slice wins. Otherwise the note picks one. */
+  function heardSlice(step, view, baseOct, scaleRoot, scaleType) {
+    const named = stepSlice(step);
+    if (named != null) return Math.min(view.count - 1, named);
+    const midi = stepToMidi(step, baseOct, scaleRoot, scaleType);
+    const n = view.count;
+    return ((Math.round(midi) - view.root) % n + n) % n;
+  }
 
   function render() {
     renderPatterns();
@@ -412,6 +428,12 @@ export function createSeqPanel(ctx) {
     const len = clamp(store.get(`${path}.length`) || 16, 1, 16);
     const baseOct = store.get(`${path}.baseOctave`) ?? 3;
     const root = store.get('global.scaleRoot') ?? 9, scaleType = store.get('global.scaleType') ?? 1;
+    const slices = sliceView();
+    const noteLabel = labels.children[2];
+    if (noteLabel) {
+      setText(noteLabel, slices ? 'Slice' : 'Note');
+      noteLabel.title = slices ? 'Which slice this step plays' : '';
+    }
     for (let i = 0; i < SEQ_STEPS; i++) {
       const s = st[i] || defaultStep();
       const midi = stepToMidi(s, baseOct, root, scaleType);
@@ -420,11 +442,26 @@ export function createSeqPanel(ctx) {
       cols[i].classList.toggle('is-on', !!s.on);
       setAttr(cells.on[i], 'aria-pressed', String(!!s.on));
       cells.on[i].classList.toggle('is-accent', !!s.accent);
-      setText(cells.degree[i], name);
-      setAttr(cells.degree[i], 'aria-valuenow', String(s.degree));
-      setAttr(cells.degree[i], 'aria-valuetext', `${name}, scale degree ${s.degree + 1}`);
+      if (slices) {
+        const k = heardSlice(s, slices, baseOct, root, scaleType);
+        setText(cells.degree[i], String(k + 1));
+        setAttr(cells.degree[i], 'aria-label', `Step ${i + 1} slice`);
+        setAttr(cells.degree[i], 'aria-valuenow', String(k + 1));
+        setAttr(cells.degree[i], 'aria-valuemin', '1');
+        setAttr(cells.degree[i], 'aria-valuemax', String(slices.count));
+        setAttr(cells.degree[i], 'aria-valuetext', `Slice ${k + 1} of ${slices.count}`);
+      } else {
+        setText(cells.degree[i], name);
+        setAttr(cells.degree[i], 'aria-label', `Step ${i + 1} note`);
+        setAttr(cells.degree[i], 'aria-valuenow', String(s.degree));
+        setAttr(cells.degree[i], 'aria-valuemin', null);
+        setAttr(cells.degree[i], 'aria-valuemax', null);
+        setAttr(cells.degree[i], 'aria-valuetext', `${name}, scale degree ${s.degree + 1}`);
+      }
       setText(cells.octave[i], s.octave > 0 ? '+' + s.octave : String(s.octave));
       cells.octave[i].classList.toggle('is-zero', !s.octave);
+      cells.octave[i].classList.toggle('is-dim', !!slices);
+      setAttr(cells.octave[i], 'aria-disabled', slices ? 'true' : null);
       setAttr(cells.octave[i], 'aria-valuenow', String(s.octave));
       cells.vel[i].firstChild.style.transform = `scaleY(${s.vel})`;
       setAttr(cells.vel[i], 'aria-valuenow', String(Math.round(s.vel * 100)));
@@ -493,7 +530,7 @@ export function createSeqPanel(ctx) {
     return toNorm(def, v);
   }
   const invalidate = () => schedule(render);
-  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || /^parts\.\d+(\.(patterns|activePattern|seqOn|chain).*)?$/.test(path)) invalidate(); }));
+  scope.add(store.subscribe('parts', (path) => { if (path === 'parts' || /^parts\.\d+(\.(patterns|activePattern|seqOn|chain|sampler).*)?$/.test(path)) invalidate(); }));
   scope.add(store.subscribe('global.scaleRoot', invalidate));
   scope.add(store.subscribe('global.scaleType', invalidate));
   scope.add(store.subscribe('parts', (path) => { if (/^parts\.\d+\.params\./.test(path) && path.endsWith('.' + plockId)) invalidate(); }));
@@ -574,7 +611,16 @@ export function createSeqPanel(ctx) {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       e.preventDefault();
       cell.focus({ preventScroll: true });
-      st = { id: e.pointerId, y: e.clientY, v: (steps()[i] || {}).degree || 0, moved: false };
+      st = { id: e.pointerId, y: e.clientY, v: (steps()[i] || {}).degree || 0, moved: false, slice: false };
+      const view = sliceView();
+      if (view) {
+        const baseOct = store.get(`${seqPath()}.baseOctave`) ?? 3;
+        const root = store.get('global.scaleRoot') ?? 9;
+        const scaleType = store.get('global.scaleType') ?? 1;
+        st.slice = true;
+        st.v = heardSlice(steps()[i] || {}, view, baseOct, root, scaleType);
+        st.count = view.count;
+      }
       try { cell.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       cell.classList.add('is-active');
     });
@@ -583,8 +629,13 @@ export function createSeqPanel(ctx) {
       const d = Math.round((st.y - e.clientY) / 9);
       if (d !== 0 || st.moved) {
         st.moved = true;
-        const next = clamp(st.v + d, -21, 28);
-        if (next !== (steps()[i] || {}).degree) { setStep(i, 'degree', next); previewStep(i); }
+        if (st.slice) {
+          const next = clamp(st.v + d, 0, (st.count || 1) - 1);
+          if (next !== stepSlice(steps()[i])) { setStep(i, 'slice', next); previewStep(i); }
+        } else {
+          const next = clamp(st.v + d, -21, 28);
+          if (next !== (steps()[i] || {}).degree) { setStep(i, 'degree', next); previewStep(i); }
+        }
       }
     });
     const end = () => { if (st && !st.moved) previewStep(i); st = null; cell.classList.remove('is-active'); };
@@ -597,12 +648,22 @@ export function createSeqPanel(ctx) {
       if (Math.abs(acc) < 30) return;
       const dir = acc < 0 ? 1 : -1;
       acc = 0;
+      const view = sliceView();
+      if (view) {
+        const baseOct = store.get(`${seqPath()}.baseOctave`) ?? 3;
+        const root = store.get('global.scaleRoot') ?? 9;
+        const scaleType = store.get('global.scaleType') ?? 1;
+        const cur = heardSlice(steps()[i] || {}, view, baseOct, root, scaleType);
+        setStep(i, 'slice', clamp(cur + dir, 0, view.count - 1));
+        return;
+      }
       setStep(i, 'degree', clamp(((steps()[i] || {}).degree || 0) + dir, -21, 28));
     }, { passive: false });
   });
   cells.octave.forEach((cell, i) => {
     let st = null;
     scope.on(cell, 'pointerdown', (e) => {
+      if (sliceView()) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       e.preventDefault();
       cell.focus({ preventScroll: true });
@@ -610,12 +671,13 @@ export function createSeqPanel(ctx) {
       try { cell.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     });
     scope.on(cell, 'pointermove', (e) => {
-      if (!st || st.id !== e.pointerId) return;
+      if (sliceView() || !st || st.id !== e.pointerId) return;
       const d = Math.round((st.y - e.clientY) / 14);
       if (d !== 0) st.moved = true;
       setStep(i, 'octave', clamp(st.v + d, -2, 2));
     });
     const end = () => {
+      if (sliceView()) { st = null; return; }
       if (st && !st.moved) {
         // A plain click cycles 0 -> +1 -> +2 -> -2 -> -1 -> 0.
         const v = (steps()[i] || {}).octave || 0;
@@ -714,8 +776,18 @@ export function createSeqPanel(ctx) {
           case 'ArrowUp': case 'ArrowDown': case 'PageUp': case 'PageDown': {
             const dir = e.key === 'ArrowUp' || e.key === 'PageUp' ? 1 : -1;
             const big = e.key.startsWith('Page');
-            if (row === 'degree') { setStep(i, 'degree', clamp(s.degree + dir * (big ? 7 : 1), -21, 28)); previewStep(i); }
-            else if (row === 'octave') setStep(i, 'octave', clamp(s.octave + dir, -2, 2));
+            if (row === 'degree') {
+              const view = sliceView();
+              if (view) {
+                const baseOct = store.get(`${seqPath()}.baseOctave`) ?? 3;
+                const root = store.get('global.scaleRoot') ?? 9;
+                const scaleType = store.get('global.scaleType') ?? 1;
+                const cur = heardSlice(s, view, baseOct, root, scaleType);
+                setStep(i, 'slice', clamp(cur + dir * (big ? 4 : 1), 0, view.count - 1));
+              } else setStep(i, 'degree', clamp(s.degree + dir * (big ? 7 : 1), -21, 28));
+              previewStep(i);
+            }
+            else if (row === 'octave') { if (!sliceView()) setStep(i, 'octave', clamp(s.octave + dir, -2, 2)); }
             else if (row === 'vel') setStep(i, 'vel', clamp(Math.round((s.vel + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0, 1));
             else if (row === 'gate') setStep(i, 'gate', clamp(Math.round((s.gate + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0.05, 1));
             else if (row === 'prob') setStep(i, 'prob', clamp(Math.round((stepProb(s) + dir * (big ? 0.2 : 0.05)) * 100) / 100, 0, 1));
@@ -764,7 +836,10 @@ export function createSeqPanel(ctx) {
     if (!s) return;
     const p = sel();
     const note = stepToMidi(s, store.get(`${seqPath()}.baseOctave`) ?? 3, store.get('global.scaleRoot') ?? 9, store.get('global.scaleType') ?? 1);
-    call(music.router, 'noteOn', p, note, s.vel ?? 0.8, 'ui-preview');
+    const named = stepSlice(s);
+    if (named != null && sliceView() && music.router._engineOn) {
+      music.router._engineOn(p, note, s.vel ?? 0.8, 0, 'ui-preview', 0, named);
+    } else call(music.router, 'noteOn', p, note, s.vel ?? 0.8, 'ui-preview');
     clearTimeout(previewOff);
     previewOff = setTimeout(() => call(music.router, 'noteOff', p, note, 'ui-preview'), 180);
   }

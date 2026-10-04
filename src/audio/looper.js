@@ -128,9 +128,10 @@ export function createLooper(ctx, { input, output, worklet }) {
     setMute(on) { post({ t: 'mute', v: !!on }); },
     setFeedback(v) { post({ t: 'feedback', v }); },
     /**
-     * Tape. `rate` is 0.5, 1 or 2. `reverse` flips direction. `scrub` is a
-     * 0..1 position while the pointer is down, or null to release. Omit a
-     * field to leave it unchanged.
+     * Tape. `rate` is a speed from 0 to 2. `reverse` plays backward. Exactly
+     * 1 forward is the original integer read. `scrub` is a 0..1 position
+     * while the pointer is down, or null to release. Omit a field to leave
+     * it unchanged.
      */
     setTape({ rate, reverse, scrub } = {}) {
       const msg = { t: 'tape' };

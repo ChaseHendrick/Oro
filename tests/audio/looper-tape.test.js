@@ -1,7 +1,7 @@
 // Tape controls on the looper: varispeed (pitch follows speed), reverse,
 // scrub, once-per-index overdub, and a bit-identical rate +1 path.
 import { describe, it, expect } from 'vitest';
-import { LooperCore } from '../../src/audio/looper-core.js';
+import { LooperCore, sanitizeTapeSpeed } from '../../src/audio/looper-core.js';
 
 const BLOCK = 128;
 
@@ -100,6 +100,28 @@ describe('looper tape: unity stays an integer read', () => {
 });
 
 describe('looper tape: varispeed and reverse', () => {
+  it('keeps half, normal and double exact, and a speed in between', () => {
+    expect(sanitizeTapeSpeed(0.5)).toBe(0.5);
+    expect(sanitizeTapeSpeed(1)).toBe(1);
+    expect(sanitizeTapeSpeed(2)).toBe(2);
+    expect(sanitizeTapeSpeed(1.25)).toBe(1.25);
+    expect(sanitizeTapeSpeed(1.00005)).toBe(1);
+    expect(sanitizeTapeSpeed(0)).toBe(0);
+    expect(sanitizeTapeSpeed(4)).toBe(2);
+    expect(sanitizeTapeSpeed(Number.NaN)).toBe(1);
+  });
+
+  it('a stop is silent and finite', () => {
+    const r = rig();
+    record(r, (f) => Math.sin(f * 0.05));
+    r.send({ t: 'tape', rate: 0 });
+    untilRate(r, 0);
+    r.clearOut();
+    r.run(128);
+    expect(r.out().every((v) => v === 0)).toBe(true);
+    expect(Number.isFinite(r.core.fpos)).toBe(true);
+  });
+
   it('reverse plays samples backward, one integer step at a time', () => {
     const r = rig();
     const len = record(r, (f) => ((f % 997) - 498) / 500);

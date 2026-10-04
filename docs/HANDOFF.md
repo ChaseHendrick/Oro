@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-04 for Oro 2.13.0 (section 0 is the current state; see 10.8). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-04 for Oro 2.14.0 (section 0 is the current state; see 10.9). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -12,7 +12,12 @@ separate future features; they are outside the 2.0 expansion.
 
 * **Released:** Oro **2.12.0** (live mode, GPU Resonator, listening modes, 3D sound,
   surround export). GitHub Release v2.12.0 has all downloads; the website serves 2.12.0.
-* **In progress, shipping:** Oro **2.13.0** (Sampler, looper tape, granular mode, tuner).
+* **In progress, not committed:** Oro **2.14.0** on branch `claude/oro-2.13` (working tree
+  on top of 2.13.0). Editable slice marks, sequencer slice picks, a bipolar looper Speed
+  slider (exact +1.00× still uses the integer playhead), stereo sampler takes, and a
+  vocoder track effect (type index 31, appended). Plugin, Ableton Link and a piano roll
+  were researched as interface only and are not started.
+* **Shipped in the branch, not yet on main:** Oro **2.13.0** (Sampler, looper tape, granular mode, tuner).
   Branch **`claude/oro-2.13`**, based on `main`. With the sampler off, three rendered scenes
   matched the 2.12.0 engine sample for sample (max difference 0). The full Vitest suite
   passed locally (1879). Not tested with a real microphone, real pedals, or surround hardware.
@@ -726,3 +731,19 @@ Scrub during an open overdub waits until the undo snapshot finishes.
 **Next:** merge `claude/oro-2.13` when CI is green so the desktop release publishes, and merge the
 website PR so https://www.hendrickresearch.com/music/oro/ serves this build. Desktop download
 links stay on the previous release until that workflow finishes.
+
+### 10.9 Oro 2.14.0: slices, tape speed, stereo takes, vocoder
+
+Working tree on `claude/oro-2.13`, not committed. `package.json` is 2.14.0.
+
+* Sampler slices are edited on the wave (drag, add, delete, snap to a zero crossing). The
+  sequencer Note row becomes Slice and writes `step.slice` only when a step is touched.
+  Old patterns keep the key mapping.
+* Looper Speed is one bipolar slider. Bend 0 is exactly +1.00× and stays on the integer
+  playhead. Left of centre plays backward. Saved sessions that had Half/Normal/Double and
+  Reverse are converted once.
+* Import, Grab loop and Record output keep stereo. The microphone stays mono.
+* Vocoder is track-effect type 31 (appended, so older type numbers are unchanged). The
+  modulator is another track's previous block, or microphone audio posted into the engine
+  while Voice is on. `mod` is stored only on a vocoder slot.
+* Not started: plugin, Ableton Link, piano roll. Do not name the hardware sampler.

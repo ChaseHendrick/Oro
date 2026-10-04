@@ -124,7 +124,10 @@ export function freezeSignature(part, global = {}) {
   const ut = part.userTerrain || {};
   const refs = [ut.A ? ut.A.data : null, ut.B ? ut.B.data : null, part.noiseRecording || null];
   for (const p of (part.drum && part.drum.pads) || []) refs.push(p && p.sample ? p.sample.data : null);
-  if (part.sampler) refs.push(part.sampler.sample ? part.sampler.sample.data : null);
+  if (part.sampler) {
+    refs.push(part.sampler.sample ? part.sampler.sample.data : null);
+    if (part.sampler.sample && part.sampler.sample.right) refs.push(part.sampler.sample.right);
+  }
   return [json, ...refs];
 }
 

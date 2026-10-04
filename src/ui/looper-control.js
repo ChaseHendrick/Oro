@@ -25,7 +25,7 @@ export const LOOPER_PREFS_KEY = 'orograph.looper';
 export const EXPORT_FORMATS = Object.freeze(['pcm24', 'float32']);
 export const LOOPER_PREF_DEFAULTS = Object.freeze({
   bars: DEFAULT_BARS, volume: 1, feedback: 1, slot: 'A', slice: 'auto', root: 48, format: 'pcm24', follow: 0,
-  speed: 1, reverse: 0,
+  speed: 1,
 });
 /** Relative tempo difference below which a loop counts as already in time. */
 const FIT_TOLERANCE = 0.001;
@@ -41,14 +41,61 @@ const VALID = {
   root: v => Number.isInteger(v) && v >= 24 && v <= 84,
   format: v => EXPORT_FORMATS.includes(v),
   follow: v => v === 0 || v === 1,
-  speed: v => v === 0.5 || v === 1 || v === 2,
-  reverse: v => v === 0 || v === 1,
+  speed: v => typeof v === 'number' && Number.isFinite(v) && v >= -2 && v <= 2,
 };
+
+/** Signed tape rate, -2..2. Exactly +/-1, +/-0.5, +/-2 and 0 stay exact. Near +/-1 snaps so the integer playhead still applies. */
+export function quantizeSignedSpeed(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  const c = n < -2 ? -2 : n > 2 ? 2 : n;
+  if (Math.abs(c) < 1e-4) return 0;
+  if (Math.abs(c - 1) < 1e-4) return 1;
+  if (Math.abs(c + 1) < 1e-4) return -1;
+  if (c === 0.5 || c === -0.5 || c === 2 || c === -2) return c;
+  return c;
+}
+
+/**
+ * Slider bend -1..1. Center is exactly +1.00x. The right half runs up to
+ * +2.00x. The left half runs down through a stop to 2.00x backward.
+ */
+export function tapeBendToRate(bend) {
+  const b = Math.max(-1, Math.min(1, Number(bend) || 0));
+  if (Math.abs(b) < 1e-4) return 1;
+  return quantizeSignedSpeed(b >= 0 ? 1 + b : 1 + b * 3);
+}
+
+/** Inverse of tapeBendToRate. */
+export function tapeRateToBend(rate) {
+  const r = quantizeSignedSpeed(rate);
+  if (r >= 1) return Math.max(0, Math.min(1, r - 1));
+  return Math.max(-1, Math.min(0, (r - 1) / 3));
+}
+
+/** "1.00×" or "2.00× back". */
+export function tapeSpeedText(rate) {
+  const r = quantizeSignedSpeed(rate);
+  const text = `${Math.abs(r).toFixed(2)}\u00d7`;
+  return r < -1e-6 ? `${text} back` : text;
+}
+
+function signedSpeedFrom(src) {
+  if (!src || typeof src.speed !== 'number' || !Number.isFinite(src.speed)) return 1;
+  const sp = src.speed;
+  const rev = src.reverse;
+  const legacy = (sp === 0.5 || sp === 1 || sp === 2) && (rev === 0 || rev === 1);
+  return quantizeSignedSpeed(legacy ? (rev ? -sp : sp) : sp);
+}
 
 export function sanitizeLooperPrefs(src) {
   const out = { ...LOOPER_PREF_DEFAULTS };
   if (!src || typeof src !== 'object') return out;
-  for (const k of Object.keys(out)) if (VALID[k](src[k])) out[k] = src[k];
+  for (const k of Object.keys(out)) {
+    if (k === 'speed') continue;
+    if (VALID[k](src[k])) out[k] = src[k];
+  }
+  out.speed = signedSpeedFrom(src);
   return out;
 }
 
@@ -148,8 +195,8 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       looper.setBars(prefs.bars);
       looper.setVolume(prefs.volume);
       looper.setFeedback(prefs.feedback);
-      if (typeof looper.setTape === 'function' && (prefs.speed !== 1 || prefs.reverse)) {
-        looper.setTape({ rate: prefs.speed, reverse: !!prefs.reverse });
+      if (typeof looper.setTape === 'function' && prefs.speed !== 1) {
+        looper.setTape({ rate: Math.abs(prefs.speed), reverse: prefs.speed < 0 });
       }
     }
   }
@@ -255,7 +302,7 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       if (key === 'bars') looper.setBars(prefs.bars);
       else if (key === 'volume') looper.setVolume(prefs.volume);
       else if (key === 'feedback') looper.setFeedback(prefs.feedback);
-      else if ((key === 'speed' || key === 'reverse') && typeof looper.setTape === 'function') looper.setTape({ rate: prefs.speed, reverse: !!prefs.reverse });
+      else if (key === 'speed' && typeof looper.setTape === 'function') looper.setTape({ rate: Math.abs(prefs.speed), reverse: prefs.speed < 0 });
       else if (key === 'follow' && prefs.follow) scheduleFit();
     }
     events.emit('prefs', { ...prefs });

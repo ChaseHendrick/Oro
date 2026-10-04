@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TrackEffects, FX_TYPES, defaultTrackFx, defaultFxSlot } from '../../src/dsp/track-effects.js';
+import { TrackEffects, FX_TYPES, defaultTrackFx, defaultFxSlot, sanitizeTrackFx } from '../../src/dsp/track-effects.js';
 import { FX_TYPE_MAP, FILTER_SEQ_PATTERNS, fxParamScale, formatFxParam, freqShiftHz } from '../../src/dsp/track-fx-config.js';
 
 const SR = 24000, TAU = Math.PI * 2;
@@ -24,8 +24,9 @@ function noise(seed = 1) { let x = seed; return () => { x ^= x << 13; x ^= x >>>
 
 describe('new track effects: catalogue', () => {
   it('appends the three effects after the existing 27 so saved racks keep their meaning', () => {
-    expect(FX_TYPES.length).toBe(31);
-    expect(FX_TYPES.slice(-3).map(type => type.id)).toEqual(NEW);
+    expect(FX_TYPES.length).toBe(32);
+    expect(FX_TYPES.slice(-4, -1).map(type => type.id)).toEqual(NEW);
+    expect(FX_TYPES[FX_TYPES.length - 1].id).toBe('vocoder');
     expect(FX_TYPE_MAP.tape.index).toBe(27);
     for (const id of NEW) { expect(FX_TYPE_MAP[id].params).toHaveLength(4); expect(FX_TYPE_MAP[id].defaults).toHaveLength(4); }
   });
@@ -152,5 +153,59 @@ describe('filter sequencer', () => {
     const fx = rack('filterseq', { p1: 2 / 7, p2: 0, p3: 0, p4: 0 });
     const out = render(fx, .5, i => .3 * Math.sin(TAU * 500 * i / SR));
     expect(amplitude(out.L, 500, SR / 10)).toBeGreaterThan(.29);
+  });
+});
+
+describe('vocoder', () => {
+  it('stores a modulator only on a vocoder slot, so older racks stay the same', () => {
+    const plain = sanitizeTrackFx({ slots: [{ type: 'delay', mod: 'mic' }] });
+    expect(plain.slots[0].mod).toBeUndefined();
+    expect(Object.keys(plain.slots[1])).toEqual(['type', 'mix', 'p1', 'p2', 'p3', 'p4']);
+    const voc = sanitizeTrackFx({ slots: [{ type: 'vocoder' }] });
+    expect(voc.slots[0].mod).toBe('mic');
+    expect(sanitizeTrackFx({ slots: [{ type: 'vocoder', mod: 'track-2' }] }).slots[0].mod).toBe('track-2');
+    expect(sanitizeTrackFx({ slots: [{ type: 'vocoder', mod: 'nope!' }] }).slots[0].mod).toBe('mic');
+    expect(FX_TYPE_MAP.vocoder.index).toBe(31);
+    expect(FX_TYPE_MAP.filterseq.index).toBe(30);
+    expect(formatFxParam('vocoder', 0, (16 - 8) / 24)).toBe('16');
+    expect(formatFxParam('vocoder', 1, 0.5)).toBe('+0.0 st');
+    expect(formatFxParam('vocoder', 2, 0.4)).toBe('40%');
+    expect(defaultFxSlot('vocoder').mod).toBe('mic');
+  });
+  it('lets the modulator open the carrier, and goes quiet when the modulator stops', () => {
+    const fx = rack('vocoder', { p3: 0 });
+    expect(fx.wantsMod).toBe(true);
+    const mods = new Float64Array(8);
+    const N = Math.round(0.35 * SR);
+    const saw = (i) => ((((i * 110) / SR) % 1) * 2 - 1);
+    let loud = 0;
+    for (let i = 0; i < N; i++) {
+      const carrier = saw(i);
+      const mod = 0.8 * Math.sin(TAU * 180 * i / SR);
+      mods[0] = mod; mods[1] = mod;
+      const y = fx.processSample(carrier * 0.6, carrier * 0.5, 0, mods);
+      if (i > SR * 0.12) loud += y.L * y.L;
+      expect(Number.isFinite(y.L) && Number.isFinite(y.R)).toBe(true);
+      expect(Math.abs(y.L)).toBeLessThan(8);
+    }
+    expect(Math.sqrt(loud / (N - SR * 0.12))).toBeGreaterThan(0.01);
+    let quiet = 0;
+    const tail = Math.round(0.35 * SR);
+    for (let i = 0; i < tail; i++) {
+      mods[0] = 0; mods[1] = 0;
+      const y = fx.processSample(saw(N + i) * 0.6, saw(N + i) * 0.5, 0, mods);
+      if (i > SR * 0.2) quiet += y.L * y.L;
+    }
+    expect(Math.sqrt(quiet / (tail - SR * 0.2))).toBeLessThan(0.008);
+  });
+  it('passes the carrier through unchanged at Mix 0', () => {
+    const fx = rack('vocoder', { mix: 0 });
+    const mods = new Float64Array(8);
+    for (let i = 0; i < 2000; i++) {
+      mods[0] = Math.sin(i * 0.2); mods[1] = mods[0];
+      const L = Math.sin(i * 0.07) * 0.4, R = Math.cos(i * 0.05) * 0.3;
+      const y = fx.processSample(L, R, 0, mods);
+      expect(y.L).toBe(L); expect(y.R).toBe(R);
+    }
   });
 });
