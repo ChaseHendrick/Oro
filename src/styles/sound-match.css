@@ -1,0 +1,3 @@
+.sound-match { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+.sound-match[hidden] { display: none; }
+.sound-match-hint, .sound-match-status { margin: 0; color: var(--text-2); font-size: 12px; }

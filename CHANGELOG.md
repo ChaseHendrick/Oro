@@ -3,6 +3,16 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.15.0 (October 2026): Piano roll, jam, lessons, and the open list
+
+**New**
+* **Piano roll.** On the Pattern line, next to Capture. Extra notes can start between the 16 steps. The grid stays. Probability, ratchet, accent, slide, the dot and step locks stay on the grid. One automation lane. A step lock on that same control wins for the whole step.
+* **Jam.** The top bar opens a side panel. Start makes an invite (a direct connection offer). A friend pastes it, sends the reply back, and the host applies it. Chat and notes you play (not the sequencer) cross that connection. Each computer still makes its own sound. Voice is optional, push to talk on N, and it never enters the synth, a bounce, or the looper. The invite contains a network address. A public STUN server is off unless you ask. Oro does not provide a relay, so some networks cannot connect. This screen connects one friend.
+* **Learn.** Help has Open Learn. Eleven short lessons. Leaving a lesson puts your session back. Two badges: finish one lesson, finish them all.
+* **Match a sound.** Next to Match a song. Experimental. It picks a terrain and a path from a short list. It does not render each patch, so it is a starting point, not a copy of the recording.
+* **Ableton Link controls, desktop only.** Settings, MIDI, under Clock. The Link library is GPL and is not in this MIT app, so the status is "Not in this build" and nothing is contacted. While the switch is on, the tempo is read-only and the top bar shows LINK instead of EXT.
+* **Plugin host contract.** Open the app with `?plugin=1`. The tempo is read-only and the top bar shows EXT. `orograph.host` lists outputs (output 1 is the mix) and the first automated parameters. This is not a VST, AU or CLAP file.
+
 ## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
 
 **New**

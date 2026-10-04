@@ -62,7 +62,7 @@ const CSP_DIRECTIVES = Object.freeze([
   ["img-src", "'self'", 'data:', 'blob:'],
   ["font-src", "'self'", 'data:'],
   ["media-src", "'self'", 'data:', 'blob:'],
-  ["connect-src", "'self'", 'data:', 'blob:'],
+  ["connect-src", "'self'", 'data:', 'blob:', 'stun:stun.l.google.com:19302'],
   ["worker-src", "'self'", 'blob:'],
   ["object-src", "'none'"],
   ["base-uri", "'self'"],

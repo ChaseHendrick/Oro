@@ -11,6 +11,7 @@ export const SHORTCUTS = [
     { keys: ['R'], text: 'Record on / off (saves a WAV)' },
     { keys: ['Shift', 'P'], text: 'Preview the selected part with a short phrase (P alone plays a note)', join: '+' },
     { keys: ['Shift', 'L'], text: 'Live mode: full-screen pads, setlist and big controls', join: '+' },
+    { keys: ['N'], text: 'Jam voice: hold to talk while voice is on (push to talk). Change the key in Jam.' },
   ] },
   { group: 'Looper', items: [
     { keys: ['Q'], text: 'Loop: record, then play, then overdub' },

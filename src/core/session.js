@@ -52,6 +52,8 @@ export function createAutosave({
   let saveRevision = 0, inFlight = false;
   let firstChange = null;   // time of the oldest unsaved change
 
+  let payload = () => store.serialize();
+
   function clear() {
     if (timer != null) { timers.clearTimeout(timer); timer = null; }
   }
@@ -62,7 +64,7 @@ export function createAutosave({
     const unsavedSince = firstChange, revision = ++saveRevision;
     firstChange = null;
     try {
-      const result = writeDurable(SESSION_KEY, JSON.stringify(store.serialize()), storage);
+      const result = writeDurable(SESSION_KEY, JSON.stringify(payload()), storage);
       inFlight = !result.immediate;
       latestSave = result.done.then(ok => {
         if (revision === saveRevision) {
@@ -91,6 +93,7 @@ export function createAutosave({
     flush,
     pending: () => firstChange != null || inFlight,
     settled: () => latestSave,
+    setPayload(fn) { payload = typeof fn === 'function' ? fn : () => store.serialize(); },
     dispose() { clear(); },
   };
 }

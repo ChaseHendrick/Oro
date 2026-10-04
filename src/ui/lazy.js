@@ -86,4 +86,6 @@ export const chunks = {
   soundMap: lazy(() => import('./sound-map-view.js')),
   live: lazy(() => import('../live/live-view.js')),   // 2.12 live performance mode
   sampler: lazy(() => import('./sampler-panel.js')),
+  jam: lazy(() => import('./jam-panel.js')),
+  learn: lazy(() => import('../learn/learn-ui.js')),
 };

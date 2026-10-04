@@ -48,6 +48,11 @@ import { createStrainSuggestion, watchEngineStrain } from './audio-strain.js';
 import { installBounceReminder } from './bounce-reminder.js';
 import { openBounce, suggestedBounceBars } from './bounce.js';
 import { initControllers } from './gamepad-boot.js';
+import { createLink } from '../link/link.js';
+import { pluginRequested } from '../plugin/host.js';
+import { found as recordFind } from '../core/fun.js';
+import { getVersions } from '../core/versions.js';
+import { takeRescue, clearRescue } from '../learn/rescue.js';
 import { mappingControl } from '../midi/midi.js';
 
 function emitter() {
@@ -251,6 +256,14 @@ export function createUI(root, modules = {}) {
     },
     learn: null,
     announce(text) { live.region && (live.region.textContent = text); },
+    autosave: modules.autosave || null,
+    link: createLink(),
+    plugin: pluginRequested(),
+    found: recordFind,
+    pauseVersions(on) {
+      const versions = getVersions();
+      if (versions && versions.scheduler && versions.scheduler.pause) versions.scheduler.pause(!!on);
+    },
   };
   live.region = h('div', { class: 'visually-hidden', 'aria-live': 'polite' });
   layers.host.appendChild(live.region);
@@ -438,6 +451,40 @@ export function createUI(root, modules = {}) {
   };
   // 2.12 live performance mode (src/live/), loaded on first use: the top bar's Live button and Shift+L
   ctx.toggleLive = () => chunks.live.run((m) => m.toggleLive(ctx), 'Live mode');
+  ctx.openJam = () => chunks.jam.run((m) => {
+    if (!ctx.jam) {
+      ctx.jam = m.createJamPanel(ctx);
+      layers.host.appendChild(ctx.jam.el);
+      scope.add(ctx.jam.dispose);
+    }
+    if (ctx.jam.el.hidden) ctx.jam.open();
+    else ctx.jam.close();
+    return ctx.jam;
+  }, 'Jam');
+  ctx.openLearn = () => {
+    if (helpModal && helpModal.isOpen()) helpModal.close();
+    return chunks.learn.run((m) => {
+      if (!ctx.learnPanel) {
+        ctx.learnPanel = m.createLearn({
+          ...ctx,
+          storage: typeof localStorage !== 'undefined' ? localStorage : undefined,
+          onLessonStart(snap) {
+            try { takeRescue(() => snap || ctx.store.serialize(), localStorage); } catch { /* private mode */ }
+          },
+          onLessonEnd(snap) {
+            if (snap && ctx.store) {
+              try { ctx.store.load(snap, { source: 'learn' }); } catch { /* keep the lesson */ }
+            }
+            try { clearRescue(localStorage); } catch { /* ignore */ }
+          },
+        });
+        layers.host.appendChild(ctx.learnPanel.el);
+        scope.add(ctx.learnPanel.dispose);
+      }
+      ctx.learnPanel.open();
+      return ctx.learnPanel;
+    }, 'Learn');
+  };
   const topbar = safely('top bar', () => createTopbar(ctx, topbarEl));
   if (topbar) scope.add(topbar.dispose);
   ctx.togglePlay = () => { if (topbar) topbar.togglePlay(); };   // v2.11 game controller Start button

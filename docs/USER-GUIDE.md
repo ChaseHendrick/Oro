@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.14.0. Guitar pedals are in
+going on under the hood. It describes version 2.15.0. Guitar pedals are in
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -2391,6 +2391,38 @@ checked for repeating beat periods between 60 and 200 BPM; the key from how stro
 the 12 notes sounds overall, compared with the Krumhansl-Kessler key profiles. Silence,
 noise and music without a steady beat or clear key give a low confidence message.
 
+### Piano roll (2.15)
+
+**Piano roll** sits on the Pattern line, next to Capture. It does not replace the 16-step grid. The grid still holds probability, ratchet, accent, slide, the dot and parameter locks. The roll can place extra notes that start part way through a step. The Note cell on the grid keeps the first note.
+
+One lane under the roll draws a curve for one control. If that same control has a step lock, the lock wins for the whole step. The hint in the panel says so. The song is still the pattern chain. There is no arranger and no second lane.
+
+### Jam together (2.15)
+
+**Jam** in the top bar opens a side panel, so the keyboard still plays. **Start jam** builds an invite code. Send it to one friend. It contains your network address. They paste it, press **Join**, and send the reply code back. You paste that under the invite and press **Apply reply**.
+
+Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are heard when they arrive. They are not locked to one shared clock. This screen connects one friend, not a room of six.
+
+**Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it.
+
+**Use a public STUN server** asks Google's STUN server for help crossing some networks. It is off by default. Some networks need a relay. Oro does not provide one, so Join can fail. Chat is plain text, 500 characters. Leave restores the session you had before you joined.
+
+Checked in automated tests of the codes, the chat rules and the note relay. Not checked with two computers on a real network.
+
+### Learn (2.15)
+
+Help includes **Open Learn**. Eleven lessons cover the land, paths, aliasing, filters, modulation, the dot, rhythm, tuning, the Resonator and Imprint. Each one puts your session back when you finish or close it. A steady outline marks the control a step is talking about. Glossary words are buttons. Progress stays on this computer. Finish one lesson, or all of them, for a badge.
+
+### Match a sound (2.15)
+
+**Match a sound**, next to Match a song, takes an audio file and suggests a terrain and a path. It is experimental. It does not play each candidate through the synth, so treat the result as a starting point, not a copy of the file.
+
+### Link and a plugin host (2.15)
+
+Ableton Link needs a native library whose licence is GPL. Oro is MIT, so that library is not included and the app does not speak Link on the network. In the desktop app, Settings > MIDI shows the switches under Clock. Turning Link on shows "Not in this build", makes the tempo read-only, and shows LINK in the top bar instead of EXT. The browser build hides those rows.
+
+A plugin file (VST, AU or CLAP) is not part of this version. Adding `?plugin=1` to the address marks the page as hosted: the tempo is read-only, the top bar shows EXT, and the page exposes a small list of outputs and parameters for a host shell. Output 1 is the mix. Extra live outputs are not wired into the audio engine.
+
 ---
 
 ## 15. Guitar pedals
@@ -2530,6 +2562,7 @@ typing in a text field.
 | R | Record on / off (saves a WAV) |
 | Shift + P | Preview the selected part with a short phrase (P alone plays a note) |
 | Shift + L | Live mode: full-screen pads, setlist and big controls |
+| N | Jam voice: hold to talk while voice is on (push to talk) |
 
 **Looper**
 

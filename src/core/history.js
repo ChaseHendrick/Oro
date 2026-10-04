@@ -12,7 +12,7 @@
 import { deepClone } from './store.js';
 import { PART_PARAM_MAP, GLOBAL_PARAM_MAP } from './params.js';
 
-const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock', 'version']);
+const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock', 'version', 'jam', 'learn', 'plugin']);
 const SHARED = ['userTerrain', 'noiseRecording'];
 
 /** A drum kit with each pad's sample string shared (strings are immutable). */
@@ -96,9 +96,10 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
     notify();
   }
 
+  let paused = false;
   const off = store.subscribe('', (path, value, meta = {}) => {
     if (path === 'ui' || String(path).startsWith('ui.')) return;
-    if (IGNORE.has(meta.source)) {
+    if (paused || IGNORE.has(meta.source)) {
       // a wholesale replacement that is not an edit becomes the new start
       if (path === '' && meta.source !== 'history' && !pending) { cur = snapshotState(store); }
       return;
@@ -140,6 +141,17 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
     /** Undo back until `count` edits remain (for the history list). */
     undoTo(count) { let n = 0; while (past.length > Math.max(0, count) && this.undo()) n++; return n; },
     flush: commit,
+    pause(on) {
+      paused = !!on;
+      if (paused) { timers.clearTimeout(timer); timer = 0; pending = null; }
+      else cur = snapshotState(store);
+    },
+    reset() {
+      timers.clearTimeout(timer); timer = 0; pending = null;
+      past = []; future = [];
+      cur = snapshotState(store);
+      notify();
+    },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     dispose() { off(); timers.clearTimeout(timer); listeners.clear(); },
   };

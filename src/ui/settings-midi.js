@@ -9,6 +9,7 @@ import { createSegmented, createToggle, createSelect } from './controls.js';
 import { icon } from './icons.js';
 import { mpcGuide } from './mpc-guide.js';
 import { mappingControl } from '../midi/midi.js';
+import { desktopApp } from '../link/link.js';
 
 const STATUS_TEXT = {
   idle: ['Not connected yet', 'Press Connect MIDI and allow access when your browser asks.'],
@@ -208,6 +209,28 @@ export function createMidiSettings(ctx) {
     row('Follow MPC clock', 'The MPC sets the tempo and starts / stops Oro', follow.el),
     row('Send clock to MPC', 'Oro sets the tempo. On the MPC set Sync Receive to MIDI Clock.', sendClock.el),
     clockStatus);
+  const link = ctx.link;
+  const linkOn = h('input', { type: 'checkbox', 'aria-label': 'Ableton Link' });
+  const linkStart = h('input', { type: 'checkbox', 'aria-label': 'Link start and stop' });
+  const linkStatus = h('p', { class: 'setting-hint link-status' });
+  function paintLink() {
+    if (!link) { linkStatus.textContent = ''; return; }
+    linkOn.checked = !!link.on;
+    linkStart.checked = !!link.startStop;
+    linkStatus.textContent = link.on ? link.status() : 'Link is off.';
+  }
+  if (link) {
+    scope.on(linkOn, 'change', () => { link.setOn(linkOn.checked); paintLink(); });
+    scope.on(linkStart, 'change', () => { link.setStartStop(linkStart.checked); paintLink(); });
+    scope.add(link.onChange(paintLink));
+    paintLink();
+  }
+  const linkBlock = h('div', { class: 'link-rows' },
+    row('Ableton Link', 'Tempo with other apps on this computer. The Link library is not in this build, so turning it on does not join a session.', linkOn),
+    row('Start and stop', 'Follow play and stop from Link when a library is present.', linkStart),
+    linkStatus);
+  if (!desktopApp()) linkBlock.hidden = true;
+  clock.append(linkBlock);
 
   // ------------------------------------------------------------ Q-Link wizard
   const wizard = h('section', { class: 'settings-group', 'aria-labelledby': 'midi-qlink' });
