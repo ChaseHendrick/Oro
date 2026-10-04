@@ -385,25 +385,45 @@ pads with a physical controller. The spec as agreed:
   tabs from the catalogs), check predicates, progress persistence, snapshot and restore
   around a lesson, and a scan that fails on em dashes in lesson text.
 
-### 10.4 GPU Resonator (work in progress on its own branch)
+### 10.4 GPU Resonator (merged for 2.12, experimental)
 
-- **Code**: branch `claude/gpu-resonator-wip` (commit `a6ab926`, based on 2.10.0). It was
-  pushed unfinished on purpose so the work isn't lost; merge or rebase it onto the current
-  main before continuing.
-- **Idea**: run the 2.10 Resonator's 2D FDTD membrane on the GPU (WebGPU compute shaders in
-  WGSL) at 128², 192² or 256² grids instead of the CPU's 24² to 36², from a worker (the
-  AudioWorklet thread can't use WebGPU). The GPU advances many samples per dispatch, reads
-  back the pickup signal and streams it to the worklet through a ring buffer. The CPU
+- **Code**: the work-in-progress branch `claude/gpu-resonator-wip` (commit `a6ab926`, based
+  on 2.10.0) is merged onto 2.11.0 on the 2.12 branch. Modules: `src/dsp/reso-gpu-kernel.js`
+  (WGSL kernels and their f32 JS mirror), `reso-gpu-plan.js` (block planner, `JsMembrane`),
+  `reso-gpu-frame.js` (frame format, kept tiny so the worklet bundle stays lean),
+  `reso-ring.js`, `reso-gpu-policy.js`, `reso-feed.js` (audio-thread side, `ResoGpuLink`),
+  `src/audio/reso-gpu.js`, `reso-gpu-host.js`, `reso-gpu-worker.js` (all loaded only when the
+  GPU engine is chosen) and `src/ui/reso-engine-row.js`.
+- **Idea**: run the 2.10 Resonator's 2D FDTD membrane on the GPU (WebGPU compute shaders) at
+  128, 192 or 256 cells a side instead of the CPU's 24 to 36, from a worker where the browser
+  offers WebGPU there (the AudioWorklet thread can't use WebGPU). The GPU advances 256
+  internal samples per job, reads back the pickups and streams them to the worklet (SAB rings
+  when cross-origin isolated, else MessagePort chunks whose buffers are recycled). The CPU
   Resonator stays the zero-latency default; Oro falls back to it if WebGPU is missing, the
   adapter is lost, or the GPU falls behind real time.
-- **Done on the branch**: the WGSL kernel and a JS mirror of it, the block planner, the ring
-  buffer, the fallback rules, the worklet feed with a crossfade, the GPU host and worker,
-  the engine hookup (bounces included), the Resonator card's Engine (CPU / GPU) and GPU
-  detail controls, and a user-guide section. 13 new tests pass; the JS mirror matches the
-  CPU membrane within 1e-4.
-- **Measured**: pitch ceiling about 1.4 kHz at every GPU detail (the CPU version tops out
-  near 650 Hz); added latency 32 ms by design.
-- **Remaining**: run the full test suite and the build on the branch; a GPU-vs-JS
-  comparison in a browser with WebGPU (the headless run here was interrupted, so the GPU
-  path itself has not been verified on a real GPU); check the controls at the 5K2K and
-  MacBook sizes; then changelog and release.
+- **Settings**: `ui.resoEngine` ('cpu' or 'gpu') and `ui.resoGpuDetail` (128, 192, 256) live in
+  the non-persisted `ui` branch, so nothing new is saved and `migrate.js` needs no change. With
+  the CPU engine the output is bit-identical to 2.11 (checked by hashing renders of main and
+  this branch at 44.1, 48 and 96 kHz, Resonator Off, Strike and Resonate, Standard and
+  Pristine).
+- **Done in the merge**: the one conflict (dsp-core message switch) kept 2.11's `stemTap` and
+  the `resoGpu` link; stems export (2.11) renders the GPU membranes too; the ScriptProcessor
+  fallback forwards GPU status; the host drops stale membranes when a rebuilt DSP attaches;
+  clearer fallback status and notice; Engine row spacing. Tests: 19 GPU tests (kernel mirror
+  vs CPU membrane within 1e-4, offline capture/render/play through the DSP at 44.1, 48 and
+  96 kHz, buffer reuse, CPU default untouched).
+- **Measured**: pitch ceiling about 1.4 kHz on flat land and about 800 Hz to 1 kHz on the
+  built-in terrains at every GPU detail (CPU: about 340 to 520 Hz on the same terrains);
+  added latency 768 internal samples by design, 32 ms at 48 and 96 kHz, 34.8 ms at 44.1 kHz.
+- **Checked in a browser, software adapter only**: headless Chromium 141 with SwiftShader
+  WebGPU. The WGSL kernel matches the JS mirror within 7.6e-7 absolute (at most about 4e-6
+  of the peak) at 128, 192 and 256, for Strike and Resonate, across sub-step changes (pitch
+  jumps), and through the worker path; with no
+  adapter, choosing GPU falls back cleanly with a notice; with SwiftShader (about 20 s per
+  10.7 ms block) live playing falls back as designed. Layout checked at 5120x2160@1,
+  1512x982@2 and 390x844@3.
+- **Still unverified**: anything on a real GPU (real-time speed and headroom per detail and
+  per number of tracks, Apple, NVIDIA, AMD and Intel drivers, device loss in practice), the
+  SharedArrayBuffer transport (the app is not cross-origin isolated, so the MessagePort path
+  is what runs), WebGPU inside the Electron app on each OS, and a long live session for
+  glitches during the ARM crossfade and fallback. Freeze still uses the CPU Resonator.

@@ -68,6 +68,7 @@ import { MAX_NOISE_SECONDS } from './noise-recording.js';
 import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
 import { MasterOperator, OPERATOR_ACTIONS } from './damage.js';
 import { Resonator } from './resonator.js';
+import { ResoGpuLink } from './reso-feed.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -1048,6 +1049,7 @@ export class OroDSP {
     // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
     this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
+    this.resoGpu = null;           // 2.12 GPU Resonator link (reso-feed.js), made on the first resoGpu message
     this.dryOut = 1;               // v2.11 stems export: 0 renders only the sends (a send-return stem)
     this.partStreams = false;      // v2.11 stems export: per-part random streams (streamOf)
     this.segTime = 0;              // context time of the segment being rendered
@@ -1218,6 +1220,7 @@ export class OroDSP {
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
       case 'stemTap': if (msg.dry !== undefined) this.dryOut = msg.dry === 0 ? 0 : 1; if (msg.streams !== undefined) this.partStreams = !!msg.streams; break;
+      case 'resoGpu': (this.resoGpu || (this.resoGpu = new ResoGpuLink(this))).message(msg); break;
       case 'tracks': this.setTracks(msg); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
@@ -1348,6 +1351,7 @@ export class OroDSP {
     P.reso.configure(mode, prm[PI.resoMix], prm[PI.resoDecay], prm[PI.resoTone], prm[PI.resoSize], prm[PI.resoListen]);
     P.resoMode = P.reso.mode;
     if (Math.abs(prm[PI.morph] - P.resoMorph) > 0.01) { P.resoMorph = prm[PI.morph]; P.reso.dirty = true; }
+    if (this.resoGpu) this.resoGpu.ensure(P);   // 2.12 GPU Resonator
   }
 
   /** Stiffness and lowest mode of the part's membrane from its terrains (about 1 ms at the standard grid). */
@@ -1355,6 +1359,7 @@ export class OroDSP {
     P.resoMorph = P.params[PI.morph];
     P.reso.derive(P.terrA, P.terrB, clamp01(P.resoMorph));
     P.resoAt = this.blockTime + 0.05;
+    if (P.reso.feed) P.reso.feed.terrain();
   }
 
   /** Note pitch (Hz) as the voice computes it, without modulation. */

@@ -178,6 +178,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       const m = e.data;
       if (m && m.t === 'tele') onTele(m);
       else if (m?.t === 'load') { lastLoad = m; events.emit('load', m); }
+      else if (m?.t === 'resoGpu') onResoGpu(m);
     };
     n.onprocessorerror = (e) => recover(e);
     n.connect(fx.dryIn, 0);
@@ -193,7 +194,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   async function buildScriptSource(init) {
     const { OroDSP } = await import('../dsp/dsp-core.js');
     const dsp = new OroDSP(ctx.sampleRate);
-    dsp.postMessage = (m) => { if (m && m.t === 'tele') onTele(m); };
+    dsp.postMessage = (m) => { if (m && m.t === 'tele') onTele(m); else if (m && m.t === 'resoGpu') onResoGpu(m); };
     for (const m of init) dsp.handleMessage(m);
     let sp;
     try { sp = ctx.createScriptProcessor(SCRIPT_BUFFER, 0, 8); } catch { sp = ctx.createScriptProcessor(SCRIPT_BUFFER, 1, 8); }
@@ -264,6 +265,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
           await buildScriptSource(init);
         }
         events.emit('state', { state: ctx.state, mode: dspMode });
+        // a new DSP needs its own link to the GPU Resonator host
+        if (resoGpu) { const port = resoGpu.connect(); send([{ t: 'resoGpu', op: 'attach', port, grid: resoGpuGrid }], [port]); }
       })().finally(() => { rebuilding = null; });
     }
     return rebuilding;
@@ -424,6 +427,55 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     return true;
   }
   const offQuality = store.subscribe('ui.audioQuality', () => { applyQuality(store.get('ui.audioQuality')); });
+
+  // 2.12 GPU Resonator: store ui.resoEngine ('cpu' | 'gpu', session only) and
+  // ui.resoGpuDetail (128 | 192 | 256). The GPU code loads only when chosen.
+  let resoGpu = null, resoGpuGrid = null, resoGpuSeq = 0;
+  const resoGrid = () => ({ n: [128, 192, 256].includes(Number(store.get('ui.resoGpuDetail'))) ? Number(store.get('ui.resoGpuDetail')) : 128, sub: { 128: 16, 192: 24, 256: 32 }[Number(store.get('ui.resoGpuDetail'))] || 16 });
+  function onResoGpu(m) {
+    events.emit('resoGpu', m);
+    if (m.ev === 'fallback' && store.get('ui.resoEngine') === 'gpu') store.set('ui.resoEngine', 'cpu', { source: 'engine' });
+  }
+  async function applyResoEngine() {
+    const seq = ++resoGpuSeq;
+    const want = store.get('ui.resoEngine') === 'gpu' && !disposed;
+    const grid = resoGrid();
+    if (!want || (resoGpuGrid && resoGpuGrid.n !== grid.n)) {
+      if (resoGpu) { send({ t: 'resoGpu', op: 'detach' }); resoGpu.dispose(); resoGpu = null; resoGpuGrid = null; events.emit('resoGpu', { ev: 'stopped' }); }
+      if (!want) return;
+    }
+    if (resoGpu) return;
+    try {
+      const mod = await import('./reso-gpu.js');
+      const g = await mod.createResoGpu({ onStatus: (st) => {
+        events.emit('resoGpu', { ev: 'host', ...st });
+        if (st.lost) onResoGpu({ t: 'resoGpu', ev: 'fallback', reason: st.reason });
+      } });
+      if (seq !== resoGpuSeq || disposed) { g.dispose(); return; }
+      resoGpu = g; resoGpuGrid = grid;
+      const port = g.connect();
+      send([{ t: 'resoGpu', op: 'attach', port, grid }], [port]);
+      events.emit('resoGpu', { ev: 'started', where: g.where, latencyMs: 1000 * (await import('../dsp/reso-gpu-plan.js')).gpuLatencySec(ctx ? ctx.sampleRate : 48000) });
+    } catch (err) {
+      if (seq === resoGpuSeq) onResoGpu({ t: 'resoGpu', ev: 'fallback', reason: String((err && err.message) || err) });
+    }
+  }
+  const offResoEngine = [store.subscribe('ui.resoEngine', applyResoEngine), store.subscribe('ui.resoGpuDetail', applyResoEngine)];
+  /**
+   * Bounce and stems with the GPU engine on: render the pass's membranes on
+   * the GPU first (reso-gpu.js offlineResoInit) and return the extra init
+   * messages that play them, or null (GPU engine off, no Resonator in the
+   * pass, or the GPU failed: the pass then uses the CPU Resonator).
+   */
+  async function gpuResoInit({ init, late, frames, sampleRate, isCancelled = null }) {
+    if (!resoGpu) return null;
+    try {
+      return await (await import('./reso-gpu.js')).offlineResoInit(resoGpu, { init, late, frames, sampleRate, grid: resoGpuGrid, isCancelled });
+    } catch (err) {
+      if (!(err && err.message === 'cancelled')) console.warn('[audio] GPU Resonator render fell back to the CPU', err);
+      return null;
+    }
+  }
 
   // Marble updates arrive ~30 times a second per rolling part; one port
   // message per task carries all of them, and unchanged values are dropped.
@@ -694,10 +746,11 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         for (const pass of passes) {
           const stage = pass.solo === null ? 'mix' : 'stem';
           const { init, late } = passInit({ snapshot, terrains, events: evs, solo: pass.solo });
+          const gpuInit = await gpuResoInit({ init, late, frames, sampleRate: sr });
           const r = await renderPass({
-            sampleRate: sr, frames, init, late, global, fx: o.fx, workletCode,
+            sampleRate: sr, frames, init: gpuInit ? [...init, ...gpuInit] : init, late, global, fx: o.fx, workletCode,
             computeIR,
-            forceMainThread: dspMode !== 'worklet' && !opts.worklet,
+            forceMainThread: (dspMode !== 'worklet' && !opts.worklet) || !!gpuInit,
             onFrames: (f) => progress(stage, pass.solo, f),
           });
           if (disposed) throw new Error('The audio engine was shut down');
@@ -744,10 +797,13 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
           if (isCancelled()) return false;
           const pass = passes[i];
           const { init, late } = passInit({ snapshot, terrains, events: pass.events || [], solo: pass.solo ?? null, extra: pass.extra || [] });
+          const n = Math.max(QUANTUM_FRAMES, Math.round(typeof frames === 'function' ? frames(i) : frames));
+          const gpuInit = await gpuResoInit({ init, late, frames: n, sampleRate: sr, isCancelled });
+          if (isCancelled()) return false;
           const r = await renderPass({
-            sampleRate: sr, frames: Math.max(QUANTUM_FRAMES, Math.round(typeof frames === 'function' ? frames(i) : frames)),
-            init, late, global, fx: true, workletCode, computeIR, tap: pass.tap || null, isCancelled,
-            forceMainThread: dspMode !== 'worklet',
+            sampleRate: sr, frames: n,
+            init: gpuInit ? [...init, ...gpuInit] : init, late, global, fx: true, workletCode, computeIR, tap: pass.tap || null, isCancelled,
+            forceMainThread: dspMode !== 'worklet' || !!gpuInit,
             onFrames: (f) => onFrames(i, f),
           });
           if (disposed) throw new Error('The audio engine was shut down');
@@ -912,6 +968,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       }
       terrain.dispose();
       offQuality();
+      for (const off of offResoEngine) off();
+      if (resoGpu) { resoGpu.dispose(); resoGpu = null; }
       offTracks();
       sync.dispose();
       generator.dispose();
