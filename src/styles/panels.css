@@ -457,6 +457,13 @@
 .dock-tab:hover { color: var(--text); background: var(--panel-hover); }
 .dock-tab[aria-selected="true"] { color: var(--text); background: var(--panel-active); box-shadow: var(--shadow-1), var(--inset-hi); }
 .dock-tab[aria-selected="true"]::before { content: ''; position: absolute; left: -6px; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--part); box-shadow: 0 0 8px var(--part-glow); }
+/* Short laptops (dock is 236px): five tabs at 44px plus the rail's padding
+   run past the dock and the last tab, Loop, is clipped. Tighten instead of scrolling. */
+@media (max-height: 860px) and (min-width: 900px) {
+  .dock-rail { padding: 4px 6px; gap: 2px; }
+  .dock-tab { min-height: 36px; max-height: 46px; gap: 1px; }
+  .dock-tab .icon { width: 16px; height: 16px; }
+}
 .dock-body { position: relative; min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; container-name: dock; }
 .dock-body::after {
   content: ''; position: absolute; left: 0; right: 10px; bottom: 0; height: 26px;

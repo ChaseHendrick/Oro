@@ -21,6 +21,9 @@ separate future features; they are outside the 2.0 expansion.
   cycle of the land under the path, not the filter chain), Link controls that
   report "Not in this build" because the GPL library is not vendored, and a plugin
   host contract behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
+* **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout
+  (a Play view that gives the land the window, Shape / Move / Time around it).
+  It is not built. Do not start that layout unless the owner asks.
 * **Still not done:** a compiled plugin, a real Link session (the library is GPL
   and is not in this MIT repo), a TURN relay, a jam tried on two real computers,
   a Playwright two-browser run, live multi-out, and the hardware checks in 10.6.
