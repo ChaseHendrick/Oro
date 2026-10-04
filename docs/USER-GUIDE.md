@@ -2401,7 +2401,7 @@ One lane under the roll draws a curve for one control. If that same control has 
 
 **Jam** in the top bar opens a side panel, so the keyboard still plays. **Start jam** builds an invite code. **Invite another** builds the next one, up to five friends. Each code contains your network address. A friend pastes one code, presses **Join**, and sends the reply code back. You paste that and press **Apply reply**.
 
-Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are stamped on the host's clock and held back by a small steady delay, so they keep their spacing instead of arriving smeared. Leave restores the session you had before you joined.
+Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are stamped on the host's clock and held back by a small steady delay, so they keep their spacing instead of arriving smeared. Leave restores the session you had before you joined, and drops jam notes that had not played yet.
 
 **Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local and turn off if you press them again. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it. You can join voice before or after the invite. The connection already has an audio channel, so the microphone does not need a second code. The host can mute chat, mute a mic, remove someone, ban them for this jam, lock the jam, or clear chat. Choose the person in the list first when the action needs one.
 
@@ -2411,7 +2411,7 @@ Checked in automated tests of the codes, the chat rules, the clock ping and the 
 
 ### Learn (2.15)
 
-Help includes **Open Learn**. Eleven lessons cover the land, paths, aliasing, filters, modulation, the dot, rhythm, tuning, the Resonator and Imprint. Each one puts your session back when you finish or close it. A steady outline marks the control a step is talking about. Glossary words are buttons. Progress stays on this computer. Finish one lesson, or all of them, for a badge.
+Help includes **Open Learn**. Eleven lessons cover the land, paths, aliasing, filters, modulation, the dot, rhythm, tuning, the Resonator and Imprint. Each one puts your session back when you finish or close it. Opening Learn again while a lesson is open stays on that step. A steady outline marks the control a step is talking about. Glossary words are buttons. Progress stays on this computer. Finish one lesson, or all of them, for a badge.
 
 ### Match a sound (2.15)
 

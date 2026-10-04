@@ -29,6 +29,8 @@ export function createJamPanel(ctx) {
   let pingTimer = 0;
   let pingId = 1;
   let selectedPeer = '';
+  let jamEpoch = 0;
+  const heldJam = new Set();
   let micStream = null;
   let micTrack = null;
   const clock = createClockSync();
@@ -193,8 +195,24 @@ export function createJamPanel(ctx) {
     const parts = ctx.store.get('parts') || [];
     const idx = parts.findIndex((p) => p && p.id === msg.track);
     if (idx < 0 || !Number.isFinite(msg.n)) return;
-    if (msg.v > 0 && typeof ctx.engine.noteOn === 'function') ctx.engine.noteOn(idx, msg.n, msg.v, 0, 'jam');
-    else if (typeof ctx.engine.noteOff === 'function') ctx.engine.noteOff(idx, msg.n, 0, 'jam');
+    const key = `${idx}:${msg.n}`;
+    if (msg.v > 0 && typeof ctx.engine.noteOn === 'function') {
+      ctx.engine.noteOn(idx, msg.n, msg.v, 0, 'jam');
+      heldJam.add(key);
+    } else if (typeof ctx.engine.noteOff === 'function') {
+      ctx.engine.noteOff(idx, msg.n, 0, 'jam');
+      heldJam.delete(key);
+    }
+  }
+
+  function silenceJam() {
+    if (ctx.engine && typeof ctx.engine.noteOff === 'function') {
+      for (const key of heldJam) {
+        const cut = key.indexOf(':');
+        ctx.engine.noteOff(Number(key.slice(0, cut)), Number(key.slice(cut + 1)), 0, 'jam');
+      }
+    }
+    heldJam.clear();
   }
 
   function playRemote(msg) {
@@ -209,7 +227,8 @@ export function createJamPanel(ctx) {
     if (!plan) return;
     const localAt = guest ? clock.toLocal(plan.at) : plan.at;
     const delay = Math.max(0, localAt - localNow);
-    setTimeout(() => playEngine(msg), delay);
+    const epoch = jamEpoch;
+    setTimeout(() => { if (epoch === jamEpoch) playEngine(msg); }, delay);
   }
 
   function watchLocalNotes() {
@@ -228,6 +247,8 @@ export function createJamPanel(ctx) {
   }
 
   function stopNotes() {
+    jamEpoch++;
+    silenceJam();
     if (noteOff) { noteOff(); noteOff = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = 0; }
   }

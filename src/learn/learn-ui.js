@@ -74,6 +74,7 @@ export function createLearn(ctx = {}) {
   let snapshot = null;
 
   function showList() {
+    if (snapshot) endLesson();
     lesson = null;
     body.replaceChildren(...LESSONS.map((item) => {
       const b = h('button', { type: 'button', class: 'learn-item' },
@@ -156,7 +157,10 @@ export function createLearn(ctx = {}) {
 
   return {
     el, close, highlightSelector, progress, applySetup,
-    open() { el.hidden = false; showList(); },
+    open() {
+      el.hidden = false;
+      if (!lesson) showList();
+    },
     dispose: scope.dispose,
   };
 }

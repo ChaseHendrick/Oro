@@ -18,6 +18,7 @@ explains every feature in detail.
 * Jam chat is delivered to everyone else once. The line uses the name from the list.
 * Mute, Deafen and Open mic switch off again when pressed. Join voice opens the microphone on the jam connection and plays other people through the page, not through the synth.
 * Match a sound can be closed without applying a patch, and its panel sits under the key bar instead of inside that row.
+* Opening Learn again while a lesson is open keeps that step. Closing still puts the session back. Leaving a jam stops notes that were waiting to play.
 
 ## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
 
