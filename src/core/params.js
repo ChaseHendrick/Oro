@@ -171,8 +171,8 @@ export const PART_PARAMS = [
   // Mixer
   P('level',      'Level',   'mix', 'lin', 0, 1, 0.75),
   P('pan',        'Pan',     'mix', 'lin', -1, 1, 0,     { mod: true }),
-  P('delaySend',  'Delay',   'mix', 'lin', 0, 1, 0.12),
-  P('reverbSend', 'Reverb',  'mix', 'lin', 0, 1, 0.22),
+  P('delaySend',  'Delay',   'mix', 'lin', 0, 1, 0.12, { hint: 'Send to the Master delay (Mix tab, Master), after the level fader' }),
+  P('reverbSend', 'Reverb',  'mix', 'lin', 0, 1, 0.22, { hint: 'Send to the Master reverb (Mix tab, Master), after the level fader' }),
   P('mute',       'Mute',    'mix', 'bool', 0, 1, 0),
   P('solo',       'Solo',    'mix', 'bool', 0, 1, 0),
   // Added after v0.1 contract (appended so numeric slots stay stable)
@@ -244,8 +244,8 @@ export const PART_PARAMS = [
   P('funcSmooth', 'Smooth', 'func', 'lin', 0, 1, 0, { hint: 'Straight lines (0) to S curves between the points (1)' }),
   // v2.8 send effects (src/dsp/send-fx.js): post-fader sends to the two shared
   // return buses. At 0 (the default) the buses do not run at all.
-  P('sendA', 'Send A', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the shared Send A reverb, after the level fader' }),
-  P('sendB', 'Send B', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the shared Send B delay, after the level fader' }),
+  P('sendA', 'Send A', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the Send A reverb (Mix tab, Send effects), a second reverb with its own settings, after the level fader' }),
+  P('sendB', 'Send B', 'mix', 'lin', 0, 1, 0, { hint: 'Send to the Send B delay (Mix tab, Send effects), a second delay with its own settings, after the level fader' }),
   // 2.10 Resonator (src/dsp/resonator.js): the track's terrain as a ringing
   // membrane. Off (the default) runs nothing and changes nothing.
   P('resoOn', 'Resonator', 'reso', 'enum', 0, RESO_MODES.length - 1, 0, { options: RESO_MODES, hint: 'Strike: every note hits the land like a drum skin at the dot. Resonate: the track\'s own sound makes the land ring' }),
@@ -360,7 +360,9 @@ export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide'
   // v2.4: the Turing looping random source (global) and the track's Function (per voice)
   'Turing', 'Function',
   // v2.10 live weather (global, src/dsp/weather-sources.js): Wind, Rain and Clouds 0..1, Temp -1..1
-  'Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds'];
+  'Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds',
+  // v2.11 game controller right stick (global, src/dsp/pad-sources.js): -1..1
+  'Pad Stick X', 'Pad Stick Y'];
 export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
 export const MAX_LINKS = 8;
 export function defaultLinks() {

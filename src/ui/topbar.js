@@ -24,7 +24,7 @@ export function createTopbar(ctx, container) {
   const { store, binder, music, midi } = ctx;
 
   // ---------------------------------------------------------------- brand
-  const brand = h('div', { class: 'brand' }, h('span', { class: 'brand-mark', html: brandGlyph(26) }), h('span', { class: 'brand-word' }, 'OROGRAPH'));
+  const brand = h('div', { class: 'brand' }, h('span', { class: 'brand-mark', html: brandGlyph(26) }), h('span', { class: 'brand-word' }, 'ORO'));
 
   // ---------------------------------------------------------------- tracks
   // Tabs, add and track menu: src/ui/track-tabs.js.
@@ -177,7 +177,10 @@ export function createTopbar(ctx, container) {
     scope.add(hist.on(renderHist));
   }
   renderHist();
-  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
+  // v2.11 version history (loaded on demand)
+  const versionsBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Version history', 'aria-haspopup': 'dialog', dataset: { tip: 'Version history: earlier saves of this session' }, html: icon('versions') });
+  scope.on(versionsBtn, 'click', () => { import('./version-panel.js').then(m => m.openVersionHistory(ctx)).catch(err => console.warn('[ui] version history failed', err)); });
+  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   // On hendrickresearch.com (served under /music/oro/) a way back to the site's Music page.
   const siteBack = isOnSite()

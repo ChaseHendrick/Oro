@@ -76,7 +76,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     try {
       ctx = new AC(sampleRate ? { latencyHint: 'interactive', sampleRate } : { latencyHint: 'interactive' });
     } catch {
-      try { ctx = new AC(); } catch (err) { console.warn('[audio] Web Audio is unavailable', err); ctx = null; }
+      // A rate the browser or device refuses (96 kHz on some hardware): run at the device's own rate.
+      try { ctx = new AC({ latencyHint: 'interactive' }); } catch {
+        try { ctx = new AC(); } catch (err) { console.warn('[audio] Web Audio is unavailable', err); ctx = null; }
+      }
     }
   }
 
@@ -121,6 +124,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let pedalMsg = null, guitarMsg = null, dryDelayMsg = null;
   let voiceMsg = null;            // v1.4 Voice Level link source
   let weatherMsg = null;          // v2.10 live weather link sources
+  let padMsg = null;              // v2.11 game controller right stick link sources
   let pedalCompMs = 0;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
@@ -129,6 +133,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     if (guitarMsg && guitarMsg.v) out.push({ ...guitarMsg });
     if (voiceMsg && voiceMsg.v) out.push({ ...voiceMsg });
     if (weatherMsg) out.push({ ...weatherMsg, snap: true });
+    if (padMsg) out.push({ ...padMsg, snap: true });
     controllers.forEach((c, part) => {
       if (c.bend) out.push({ t: 'bend', part, v: c.bend });
       if (c.wheel) out.push({ t: 'wheel', part, v: c.wheel });
@@ -561,6 +566,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       weatherMsg = { t: 'weather', v: Array.from(values) };
       post({ ...weatherMsg, snap: !!snap });
     },
+    /** 2.11 game controller right stick [x, y], -1..1 (the DSP smooths it). */
+    setPadStick(x, y) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      padMsg = { t: 'pad', v: [clamp(x, -1, 1), clamp(y, -1, 1)] };
+      post(padMsg);
+    },
     controlSource(part, source, v) {
       if (!validPart(part) || !['expression','sustainLevel','breath'].includes(source) || !Number.isFinite(v)) return;
       controllers[part][source] = clamp(v, 0, 1); post({ t: source, part, v: controllers[part][source] });
@@ -704,6 +715,49 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       }
     },
     get bouncing() { return bouncing; },
+
+    /**
+     * 2.11 stems export (src/audio/stems.js): render `passes` one at a time,
+     * handing each AudioBuffer to `onPass(buffer, pass, index)` before the
+     * next starts, so only one is held. A pass is { solo, extra, events }
+     * (see passInit); `frames(index)` gives each pass its length. Stops
+     * between passes when isCancelled() says so (resolves false).
+     */
+    async renderPasses({ sampleRate, frames, passes = [], onPass, onFrames = () => {}, isCancelled = () => false } = {}) {
+      if (disposed) throw new Error('The audio engine was shut down');
+      if (bouncing) throw new Error('A bounce is already running');
+      bouncing = true;
+      try {
+        const sr = Math.round(finiteOr(sampleRate, ctx ? ctx.sampleRate : 48000));
+        await terrain.whenIdle();
+        sync.flush();
+        const snapshot = offlineSnapshot(sr);
+        const terrains = terrain.messages();
+        const global = { ...(store.get('global') || {}) };
+        const irs = new Map();
+        const computeIR = (irOpts) => {
+          const key = JSON.stringify(irOpts);
+          if (!irs.has(key)) irs.set(key, genPromise.then(g => g.run({ kind: 'ir', ...irOpts })));
+          return irs.get(key);
+        };
+        for (let i = 0; i < passes.length; i++) {
+          if (isCancelled()) return false;
+          const pass = passes[i];
+          const { init, late } = passInit({ snapshot, terrains, events: pass.events || [], solo: pass.solo ?? null, extra: pass.extra || [] });
+          const r = await renderPass({
+            sampleRate: sr, frames: Math.max(QUANTUM_FRAMES, Math.round(typeof frames === 'function' ? frames(i) : frames)),
+            init, late, global, fx: true, workletCode, computeIR, tap: pass.tap || null, isCancelled,
+            forceMainThread: dspMode !== 'worklet',
+            onFrames: (f) => onFrames(i, f),
+          });
+          if (disposed) throw new Error('The audio engine was shut down');
+          await onPass(r.buffer, pass, i);
+        }
+        return true;
+      } finally {
+        bouncing = false;
+      }
+    },
 
     /**
      * v2.8 Freeze: render track `part`'s loop offline (src/audio/freeze.js):

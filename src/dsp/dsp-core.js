@@ -50,6 +50,7 @@ import {
   travelBlock, prepareEven, evenPhase, pingPong, shapePathPoint,
 } from './paths.js';
 import { fastSin, fastCos, mulberry32 } from './terrain-math.js';
+const STREAM_SEEDS = { rng: 0x6f726f67, extensionRng: 0x82edfe, unisonRng: 0x5e1f22, linkRng: 0x11c5 };
 import { generateTerrain, buildMipChain } from './terrains.js';
 import { subWave, PROFILE_PARTIALS, profileRatio, ColourNoise, noiseTextures, fadeLoop, loopSample, KarplusStrong } from './oscillator-extras.js';
 import { AnalogFilter } from './analog-filters.js';
@@ -57,6 +58,7 @@ import { SixStageEnvelope, skewLfoPhase, steppedLfo } from './modulation-extras.
 import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
 import { WeatherBank } from './weather-sources.js';
+import { PadBank } from './pad-sources.js';
 import { Filter2 } from './filter2.js';
 import { KitPlayer } from './drum-kit.js';
 import { renderLibraryDrum } from './drum-library.js';
@@ -157,13 +159,14 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
   L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19,
   L_SCIENCE = 20, L_SCIENCE_END = 26, L_SWIRLX = 27, L_SWIRLY = 28,
-  L_TURING = 29, L_FUNC = 30, L_WEATHER = 31, L_WEATHER_END = 34;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
+  L_TURING = 29, L_FUNC = 30, L_WEATHER = 31, L_WEATHER_END = 34, L_PAD = 35, L_PAD_END = 36;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
 for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE, L_EXPRESSION, L_SUSTAIN, L_BREATH]) if (s < NSRC) PART_SOURCE[s] = 1;
 for (let s = L_SCIENCE; s <= L_SCIENCE_END && s < NSRC; s++) PART_SOURCE[s] = 1;
 if (L_TURING < NSRC) PART_SOURCE[L_TURING] = 1;
 for (let s = L_WEATHER; s <= L_WEATHER_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.10 live weather (global)
+for (let s = L_PAD; s <= L_PAD_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.11 game controller right stick (global)
 const SCI_TURING = 7;
 const SCIENCE_KEYS = { sciNeuronCurrent: 'neuronCurrent', sciNeuronKick: 'neuronKick', sciNeuronTemp: 'neuronTemp', sciNeuronRate: 'neuronRate',
   sciLorenzRate: 'lorenzRate', sciPendEnergy: 'pendEnergy', sciPendRate: 'pendRate', sciSmoothTime: 'smoothTime', sciSmoothness: 'smoothness',
@@ -910,6 +913,7 @@ class Part {
       else if (s === L_BREATH) x=this.breath;
       else if (s === L_TURING) x = science ? science[SCI_TURING] : 0;
       else if (s >= L_WEATHER && s <= L_WEATHER_END) x = this.weather ? this.weather[s - L_WEATHER] : 0;
+      else if (s >= L_PAD && s <= L_PAD_END) x = this.pad ? this.pad[s - L_PAD] : 0;
       else if (s >= L_SCIENCE && s <= L_SCIENCE_END) x = science ? science[s - L_SCIENCE] : 0;
       else if (s >= L_MACRO && s < L_MACRO + 4) x = macros[s - L_MACRO];
       else x = 0;
@@ -1010,7 +1014,8 @@ export class OroDSP {
     this.postMessage = () => {};
     this.parts = [];
     this.weather = new WeatherBank();   // v2.10 live weather Link sources (global), read by every part
-    for (let i = 0; i < MAX_PARTS; i++) { const P = new Part(i, this.sr, this.os); P.weather = this.weather.out; this.parts.push(P); }
+    this.pad = new PadBank();           // v2.11 game controller right stick Link sources (global)
+    for (let i = 0; i < MAX_PARTS; i++) { const P = new Part(i, this.sr, this.os); P.weather = this.weather.out; P.pad = this.pad.out; this.parts.push(P); }
     // Parts (tracks) in use: 0..count-1. The rest only render while they fade
     // out after being removed (see setTracks and dormant()).
     this.count = DEFAULT_PARTS;
@@ -1043,6 +1048,8 @@ export class OroDSP {
     // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
     this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
+    this.dryOut = 1;               // v2.11 stems export: 0 renders only the sends (a send-return stem)
+    this.partStreams = false;      // v2.11 stems export: per-part random streams (streamOf)
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
     this.kGate = 1 / (this.sr * FREEZE_GATE_TIME);
@@ -1158,6 +1165,7 @@ export class OroDSP {
       case 'global': this.setGlobal(msg.p); break;
       case 'noiseRecording': this.setNoiseRecording(msg.part, msg.data); break;
       case 'weather': this.weather.set(msg.v, !!msg.snap); break;
+      case 'pad': this.pad.set(msg.v, !!msg.snap); break;
       case 'expression': case 'sustainLevel': case 'breath': {
         const P=this.partAt(msg.part); if (P) P[msg.t]=clamp01(finiteOr(msg.v,0)); break;
       }
@@ -1209,6 +1217,7 @@ export class OroDSP {
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
+      case 'stemTap': if (msg.dry !== undefined) this.dryOut = msg.dry === 0 ? 0 : 1; if (msg.streams !== undefined) this.partStreams = !!msg.streams; break;
       case 'tracks': this.setTracks(msg); break;
       case 'watch': {
         // part -1 (or any negative) turns telemetry off, e.g. for offline bounces
@@ -1292,6 +1301,7 @@ export class OroDSP {
     }
     const P = new Part(i, this.sr, this.os);
     P.weather = this.weather.out;
+    P.pad = this.pad.out;
     P.rc.dcR = this.dcR;
     const air = this.airTabs[String(this.os)];
     if (air) { P.rc.tiltA = air.a; P.rc.airNorm = air.tab; }
@@ -1481,6 +1491,7 @@ export class OroDSP {
     if (s >= L_SCIENCE && s <= L_SCIENCE_END) return this.science.out[s - L_SCIENCE];
     if (s === L_TURING) return this.science.out[SCI_TURING];
     if (s >= L_WEATHER && s <= L_WEATHER_END) return this.weather.out[s - L_WEATHER];
+    if (s >= L_PAD && s <= L_PAD_END) return this.pad.out[s - L_PAD];
     return 0;
   }
 
@@ -2132,7 +2143,7 @@ export class OroDSP {
       v.note = note;
       v.gate = true;
       v.order = ++this.voiceCounter;
-      v.rand = this.linkRng() * 2 - 1;
+      v.rand = this.streamOf(P, 'linkRng')() * 2 - 1;
       v.press = 0; v.slide = 0;
       if (!legato) {
         v.vel = vel;
@@ -2193,10 +2204,21 @@ export class OroDSP {
     v.order = ++this.voiceCounter;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
-    v.rand = this.linkRng() * 2 - 1;
+    v.rand = this.streamOf(P, 'linkRng')() * 2 - 1;
     this.triggerExtraEnvelopes(P,v,true);
     v.stringOn=false;
     if (P.resoMode === 1) this.resoStrike(P, v);
+  }
+
+  /**
+   * The random stream a note of part P draws from: the shared one, or (v2.11
+   * stems export, {t:'stemTap', streams: 1}) the part's own, so a track
+   * sounds the same rendered alone as in the mix.
+   */
+  streamOf(P, name) {
+    if (!this.partStreams) return this[name];
+    const s = P.stemStreams || (P.stemStreams = {});
+    return s[name] || (s[name] = mulberry32((STREAM_SEEDS[name] + Math.imul(P.index + 1, 0x9e3779b1)) >>> 0));
   }
 
   startVoice(P, v, note, vel, glideFrom) {
@@ -2209,13 +2231,14 @@ export class OroDSP {
     v.order = ++this.voiceCounter;
     v.pitch = glideFrom >= 0 ? glideFrom : note;
     v.phase[0] = 0;
-    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? this.rng() : k < 8 ? this.extensionRng() : this.unisonRng();
-    if (P.uniMode === 3) for (let k = 0; k < MAX_UNISON; k++) v.uPos[k] = this.unisonRng() * 2 - 1;
+    const r0 = this.streamOf(P, 'rng'), r1 = this.streamOf(P, 'extensionRng'), r2 = this.streamOf(P, 'unisonRng');
+    for (let k = 1; k < MAX_UNISON; k++) v.phase[k] = k < 4 ? r0() : k < 8 ? r1() : r2();
+    if (P.uniMode === 3) for (let k = 0; k < MAX_UNISON; k++) v.uPos[k] = r2() * 2 - 1;
     v.fnPh = 0;
     v.uniPrev = 0;
     v.envStage = ATTACK;
     v.env2Stage = ATTACK;
-    v.rand = this.linkRng() * 2 - 1;
+    v.rand = this.streamOf(P, 'linkRng')() * 2 - 1;
     v.press = 0; v.slide = 0;
     v.sPress = P.pressure; v.sSlide = P.slide;
     // a fresh noise stream per note, so stacked voices never hiss in unison
@@ -2929,6 +2952,7 @@ export class OroDSP {
     this.tabBudget = TABLE_BUDGET;
     this.science.step(elapsed / this.sr, this.transport.playing ? this.currentBeats() : null, 60 / this.tempo);
     this.weather.step(elapsed / this.sr);
+    this.pad.step(elapsed / this.sr);
     let anySolo = false;
     const count = this.count;
     for (let i = 0; i < count; i++) if (this.parts[i].params[PI.solo] >= 0.5) anySolo = true;
@@ -4504,13 +4528,14 @@ export class OroDSP {
       }
       let gn = P.gain, dl = P.dly, rv = P.rev;
       const dgn = P.dGain, ddl = P.dDly, drv = P.dRev;
+      const dm = this.dryOut;
       let vectorGain=P.vectorGain; const dv=P.dVector;
       const vg0 = vectorGain;
       for (let n = pos; n < pos + seg; n++) {
         gn += dgn; dl += ddl; rv += drv;
         vectorGain+=dv;
         const l = oL[n]*vectorGain, r = oR[n]*vectorGain;
-        outL[n] += l * gn; outR[n] += r * gn;
+        outL[n] += l * gn * dm; outR[n] += r * gn * dm;
         if (dlyL) { dlyL[n] += l * dl; dlyR[n] += r * dl; }
         if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
       }

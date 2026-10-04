@@ -12,6 +12,7 @@ export const PREF_DEFAULTS = Object.freeze({
   theme: 'system',
   quality: 'high',
   fpsCap: 0,
+  renderScale: 'auto', // 3D map resolution: 'auto' or 'full' (v2.11)
   renderStyle: 'relief',
   view: 'orbit',
   savedCameraViews: [],
@@ -26,12 +27,14 @@ export const PREF_DEFAULTS = Object.freeze({
   lastCamera: null,   // the camera when the app was last closed (v2.1)
   dayNight: 0,        // tint the map by the local hour (v2.9)
   pet: 0,             // the pet on the map (v2.9)
+  smartOpen: 1,       // the Smart controls card in the Sound tab is open (2.11)
 });
 
 const VALID = {
   theme: v => ['system', 'dark', 'light'].includes(v),
   quality: v => ['high', 'medium', 'low'].includes(v),
   fpsCap: v => [0, 30, 60, 120].includes(v),
+  renderScale: v => ['auto', 'full'].includes(v),
   renderStyle: v => ['relief', 'wire', 'contour', 'heat', 'points', 'normals'].includes(v),
   view: v => CAMERA_VIEWS.includes(v),
   savedCameraViews: v => Array.isArray(v),
@@ -46,6 +49,7 @@ const VALID = {
   lastCamera: v => v === null || !!sanitizeCameraView(v),
   dayNight: v => v === 0 || v === 1,
   pet: v => v === 0 || v === 1,
+  smartOpen: v => v === 0 || v === 1,
 };
 
 /** Keep only known keys with valid values; fill the rest from defaults. */
@@ -74,7 +78,7 @@ export function savePrefs(prefs, storage = globalThis.localStorage) {
 }
 
 // Store-backed keys (live in store.ui so visuals and other modules can react).
-export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderStyle', 'palette', 'autoRotate', 'audioQuality'];
+export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderScale', 'renderStyle', 'palette', 'autoRotate', 'audioQuality'];
 
 /**
  * Restore preferences into the store and keep them persisted. Returns an

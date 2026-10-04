@@ -29,11 +29,10 @@ import { createMapPanel } from './map-panel.js';
 import { createDock, DOCK_TABS } from './dock.js';
 import { createPiano } from './piano.js';
 import { openModPopover } from './mod-popover.js';
-import { openSettings } from './settings.js';
 import { createPedalRig } from './pedal-rig.js';
 import { createVoiceRig } from './voice-rig.js';
 import { createLooperControl } from './looper-control.js';
-import { openHelp } from './help.js';
+import { chunks, deferredDialog, prefetchWhenIdle } from './lazy.js';
 import { createStartOverlay } from './start-overlay.js';
 import { installShortcuts } from './shortcuts.js';
 import { icon } from './icons.js';
@@ -45,6 +44,10 @@ import { installPostcards } from './postcard.js';
 
 import { createFunFeatures } from './fun-features.js';
 import { initWeather } from './weather-panel.js';
+import { createStrainSuggestion, watchEngineStrain } from './audio-strain.js';
+import { installBounceReminder } from './bounce-reminder.js';
+import { openBounce, suggestedBounceBars } from './bounce.js';
+import { initControllers } from './gamepad-boot.js';
 
 function emitter() {
   const map = new Map();
@@ -252,6 +255,8 @@ export function createUI(root, modules = {}) {
   layers.host.appendChild(live.region);
   // v2.10 live weather: resumes polling only if it was turned on before (off by default).
   try { initWeather(ctx); } catch (err) { console.warn('[ui] weather', err); }
+  // v2.11 game controllers and haptics: loaded only if they were turned on before (off by default).
+  try { initControllers(ctx); } catch (err) { console.warn('[ui] controllers', err); }
 
   // MIDI learn: one at a time, Esc cancels, toasts report the result.
   let learning = null;
@@ -285,12 +290,28 @@ export function createUI(root, modules = {}) {
   // v1.2 looper: one control shared by the top bar, the Loop tab, shortcuts and MIDI.
   ctx.looper = null;
   try {
-    ctx.looper = createLooperControl({ store, engine, music, toast, startAudio: () => ctx.startAudio(), download: downloadBlob });
+    ctx.looper = createLooperControl({ store, engine, music, toast, quietUndo: () => !!(ctx.eggs && ctx.eggs.undoKeyClaimed()), startAudio: () => ctx.startAudio(), download: downloadBlob });
     scope.add(ctx.looper.dispose);
     if (midi) scope.add(listen(midi, 'action', (e) => { if (e && typeof e.id === 'string' && e.id.startsWith('looper.')) ctx.looper.action(e.id); }));
   } catch (err) {
     console.warn('[ui] the looper is unavailable', err);
     ctx.looper = null;
+  }
+
+  // 2.11: the Pristine, 96 kHz safety net and bounce reminders, both fed by the DSP load meter.
+  ctx.bounceReminder = null;
+  try {
+    const strain = createStrainSuggestion({ store, engine, toast });
+    const openBounceNow = () => {
+      const anchor = root.querySelector('.bounce-btn') || root;
+      openBounce(ctx, anchor, { bars: suggestedBounceBars(store.get('')) });
+    };
+    ctx.bounceReminder = installBounceReminder(ctx, { openBounce: openBounceNow });
+    scope.add(ctx.bounceReminder.dispose);
+    // One toast at a time: the quality suggestion first, a bounce reminder for dropouts otherwise.
+    scope.add(watchEngineStrain(engine, (reason) => { if (!strain.offer(reason) && reason === 'dropouts') ctx.bounceReminder.dropout(); }));
+  } catch (err) {
+    console.warn('[ui] audio strain and bounce reminders are unavailable', err);
   }
 
   // v2.9 secrets, badges and the coin slot (Free Play off).
@@ -416,6 +437,7 @@ export function createUI(root, modules = {}) {
   };
   const topbar = safely('top bar', () => createTopbar(ctx, topbarEl));
   if (topbar) scope.add(topbar.dispose);
+  ctx.togglePlay = () => { if (topbar) topbar.togglePlay(); };   // v2.11 game controller Start button
   ctx.viewport = viewport;
   const overlay = safely('viewport overlay', () => createViewportOverlay(ctx, viewport));
   if (overlay) scope.add(overlay.dispose);
@@ -467,7 +489,8 @@ export function createUI(root, modules = {}) {
     if (settingsModal && settingsModal.isOpen()) { if (tab) settingsModal.select(tab); return settingsModal; }
     if (helpModal && helpModal.isOpen()) helpModal.close();
     layers.closeAll('dialog');
-    settingsModal = openSettings(ctx, tab || 'general', { onClose: () => store.set('ui.settingsOpen', 0, { source: 'ui' }) });
+    // Settings and Help load on first use (2.11, src/ui/lazy.js).
+    settingsModal = deferredDialog(chunks.settings, (m) => m.openSettings(ctx, tab || 'general', { onClose: () => store.set('ui.settingsOpen', 0, { source: 'ui' }) }), 'Settings');
     store.set('ui.settingsOpen', 1, { source: 'ui' });
     return settingsModal;
   }
@@ -475,7 +498,7 @@ export function createUI(root, modules = {}) {
     if (helpModal && helpModal.isOpen()) return helpModal;
     if (settingsModal && settingsModal.isOpen()) settingsModal.close();
     layers.closeAll('dialog');
-    helpModal = openHelp(ctx, { onClose: () => store.set('ui.helpOpen', 0, { source: 'ui' }) });
+    helpModal = deferredDialog(chunks.help, (m) => m.openHelp(ctx, { onClose: () => store.set('ui.helpOpen', 0, { source: 'ui' }) }), 'Help');
     store.set('ui.helpOpen', 1, { source: 'ui' });
     return helpModal;
   }
@@ -563,6 +586,8 @@ export function createUI(root, modules = {}) {
 
   root.classList.add('is-ready');
   applyPartColours();
+  // Warm the lazy panels once start-up has settled.
+  prefetchWhenIdle(Object.values(chunks));
 
   const api = {
     ctx,

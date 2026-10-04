@@ -4,6 +4,7 @@
 // -trackN plus the track's name (-track3-bass).
 
 import { partCount } from '../core/tracks.js';
+import { SEQ_RATES, LINK_SOURCES, activeChain, activePatternIndex } from '../core/params.js';
 import { h, createScope, setText, listen, has, downloadBlob } from './dom.js';
 import { openPopover } from './layers.js';
 import { recordingName } from './record.js';
@@ -32,12 +33,24 @@ export function bounceSeconds(bars, bpm) {
   return (Math.max(1, bars) * 4 * 60) / Math.max(1, bpm || 120);
 }
 
+const WEATHER_FIRST = LINK_SOURCES.indexOf('Weather Wind');
+
+/** True when any track has a link from a live weather source (held still during a bounce). */
+export function usesWeatherLinks(store) {
+  const n = partCount(store);
+  for (let i = 0; i < n; i++) {
+    const links = store.get(`parts.${i}.links`);
+    if (Array.isArray(links) && links.some(l => l && Number(l.src) >= WEATHER_FIRST && Number(l.amt) !== 0)) return true;
+  }
+  return false;
+}
+
 export function bounceSupported(ctx) {
   return has(ctx.engine, 'bounce') && !!ctx.music && has(ctx.music, 'renderEvents');
 }
 
 /** A throwaway binding over a local value, so the shared controls can drive popover options. */
-function localBinding(def, initial) {
+export function localBinding(def, initial) {
   let value = initial;
   const fns = new Set();
   return {
@@ -49,14 +62,32 @@ function localBinding(def, initial) {
   };
 }
 
-export function openBounce(ctx, anchor) {
+/**
+ * Bars that cover the whole pattern, or the whole song when a track's song
+ * mode is on: the longest sequenced track, rounded up to a Length choice.
+ */
+export function suggestedBounceBars(state) {
+  let beats = 0;
+  for (const part of (state && Array.isArray(state.parts) ? state.parts : [])) {
+    if (!part || !part.seqOn || !Array.isArray(part.patterns) || !part.patterns.length) continue;
+    const patternBeats = (k) => { const p = part.patterns[k] || {}; return (Number(p.length) || 16) * (SEQ_RATES[p.rate]?.beats ?? 0.25); };
+    const chain = activeChain(part);
+    const b = chain ? chain.reduce((sum, e) => sum + patternBeats(e.pattern) * e.repeats, 0) : patternBeats(activePatternIndex(part));
+    beats = Math.max(beats, b);
+  }
+  if (!beats) return 4;
+  const bars = Math.ceil(beats / 4 - 1e-9);
+  return BOUNCE_BARS.find(b => b >= bars) || BOUNCE_BARS[BOUNCE_BARS.length - 1];
+}
+
+export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
   const scope = createScope();
   const { store, engine, music } = ctx;
   const ok = bounceSupported(ctx);
   let busy = false;
 
   const barsSel = h('select', { class: 'select-native', 'aria-label': 'Bars to render' }, BOUNCE_BARS.map(b => h('option', { value: String(b) }, `${b} bar${b > 1 ? 's' : ''}`)));
-  barsSel.value = '4';
+  barsSel.value = BOUNCE_BARS.includes(wantBars) ? String(wantBars) : '4';
   const tailSel = h('select', { class: 'select-native', 'aria-label': 'Reverb and delay tail' }, BOUNCE_TAILS.map(t => h('option', { value: String(t) }, t ? `${t} s tail` : 'No tail')));
   tailSel.value = '2';
   const output = localBinding({ id: 'bounceOutput', label: 'Files', default: 'mix' }, 'mix');
@@ -72,6 +103,7 @@ export function openBounce(ctx, anchor) {
   const go = h('button', { type: 'button', class: 'btn btn--primary btn--sm', html: icon('bounce') + '<span>Render WAV</span>', disabled: !ok });
   // v2.9: the same bars as notes, one MIDI track per sequencer that is on
   const midiBtn = h('button', { type: 'button', class: 'btn btn--sm', 'aria-label': 'Save the sequencers as a MIDI file', dataset: { tip: 'Save these bars of every track whose sequencer is on as a .mid file' } }, 'Save MIDI');
+  const stemsBtn = h('button', { type: 'button', class: 'btn btn--sm btn--ghost', 'aria-haspopup': 'dialog' }, 'Export stems...');
   const bar = h('div', { class: 'bounce-progress', hidden: true, role: 'progressbar', 'aria-label': 'Render progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, h('span', { class: 'bounce-fill' }));
   const status = h('p', { class: 'popover-note bounce-status', role: 'status', 'aria-live': 'polite' });
   const length = h('p', { class: 'bounce-length mono' });
@@ -82,11 +114,14 @@ export function openBounce(ctx, anchor) {
     h('p', { class: 'popover-note' }, ok
       ? 'Renders the sequencers and arpeggiators offline at the current tempo, sample-exact and faster than real time. Parts without a pattern stay silent.'
       : 'Bouncing needs the audio and music engines, which are not available here yet. Record still captures everything you play.'),
+    ok && usesWeatherLinks(store) ? h('p', { class: 'popover-note bounce-weather' }, 'Live weather links hold still at their current readings while the bounce renders.') : null,
     h('div', { class: 'bounce-grid' }, field('Length', sel(barsSel)), field('Tail', sel(tailSel))),
     field('Files', outSeg.el),
     h('div', { class: 'bounce-row' }, h('span', { class: 'bounce-row-text' }, 'Effects', h('span', { class: 'setting-hint' }, 'Delay, reverb, chorus and warmth')), fxToggle.el),
     length, bar, status,
-    h('div', { class: 'bounce-actions' }, midiBtn, go));
+    h('div', { class: 'bounce-actions' }, midiBtn, go),
+    // v2.11 stems, returns, MIDI and a README in one zip (loaded on demand)
+    h('div', { class: 'bounce-actions' }, stemsBtn));
 
   const renderLength = () => {
     const bars = Number(barsSel.value);
@@ -114,6 +149,14 @@ export function openBounce(ctx, anchor) {
     setText(status, `Rendering... ${Math.round((p.done / p.total) * 100)}%`);
   }));
 
+  scope.on(stemsBtn, 'click', async () => {
+    if (busy) return;
+    try {
+      const { openStemsDialog } = await import('./stems-dialog.js');
+      pop.close('stems');
+      openStemsDialog(ctx);
+    } catch (err) { console.warn('[ui] stems dialog failed to load', err); }
+  });
   scope.on(midiBtn, 'click', () => {
     try { setText(status, saveSessionMidi(store, Number(barsSel.value), music)); } catch (err) { console.warn('[ui] MIDI export failed', err); setText(status, 'The MIDI file could not be made.'); }
   });
@@ -144,6 +187,7 @@ export function openBounce(ctx, anchor) {
       setProgress(1);
       setText(status, saved > 1 ? `Done. ${saved} files are on their way to your downloads.` : 'Done. Check your downloads.');
       ctx.toast('Bounce saved', { kind: 'success', detail: bounceName(started) });
+      ctx.bus?.emit?.('bounce:done');
     } catch (err) {
       console.warn('[ui] bounce failed', err);
       setText(status, 'The render did not finish. Try fewer bars, or use Record instead.');
@@ -154,5 +198,6 @@ export function openBounce(ctx, anchor) {
     }
   });
 
-  return openPopover(ctx.layers, anchor, body, { className: 'popover--bounce', label: 'Bounce to WAV', placement: 'bottom-end', onClose: () => scope.dispose() });
+  const pop = openPopover(ctx.layers, anchor, body, { className: 'popover--bounce', label: 'Bounce to WAV', placement: 'bottom-end', onClose: () => scope.dispose() });
+  return pop;
 }

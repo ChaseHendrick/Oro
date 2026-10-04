@@ -1,0 +1,38 @@
+/* 2.11 game controllers and haptics (Settings > Controllers), Golf power, Match a song. */
+
+.pad-check { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
+.pad-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.pad-range { width: min(220px, 100%); accent-color: var(--accent); }
+.pad-out { min-width: 3.5em; color: var(--text-2); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.pad-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; font-size: var(--fs-sm); }
+.pad-buttons { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.pad-btn {
+  padding: 2px 7px; border: 1px solid var(--border); border-radius: var(--r-sm, 6px);
+  color: var(--text-2); background: var(--panel-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
+}
+.pad-btn.is-down { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); }
+.pad-axes { display: grid; gap: 6px; }
+.pad-axis { display: grid; grid-template-columns: 9em 1fr; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); }
+.pad-axis-track { position: relative; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; }
+.pad-axis-fill { position: absolute; left: calc(50% - 4px); top: 0; width: 8px; height: 100%; border-radius: 4px; background: var(--accent); }
+.pad-map-wrap { overflow-x: auto; }
+.pad-map { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.pad-map th, .pad-map td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--divider); vertical-align: middle; }
+.pad-map th[scope="row"] { font-weight: 500; }
+.pad-map-cur { color: var(--text-2); white-space: nowrap; }
+
+.golf-power { height: 6px; margin-top: 4px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; }
+.golf-power[hidden] { display: none; }
+.golf-power-fill { display: block; width: 0; height: 100%; background: var(--accent); }
+
+.match-pop { display: grid; gap: 10px; max-width: min(380px, calc(100vw - 32px)); }
+.match-drop {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px;
+  border: 1px dashed var(--border); border-radius: var(--r-lg); color: var(--text-2); font-size: var(--fs-sm);
+}
+.match-drop.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.match-result { display: grid; gap: 8px; }
+.match-result[hidden] { display: none; }
+.match-actions { flex-wrap: wrap; }
+.match-vol { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
+.match-vol .pad-range { width: 120px; }

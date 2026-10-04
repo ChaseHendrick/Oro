@@ -1,4 +1,4 @@
-// Settings dialog: General, Audio, MIDI & MPC, Voice, Pedals, Operator, Shortcuts, Updates, About. An accessible
+// Settings dialog: General, Audio, MIDI & MPC, Controllers, Voice, Pedals, Operator, Shortcuts, Updates, About. An accessible
 // modal with a vertical tab list (horizontal on narrow screens).
 
 import { h, createScope, call, has, listen } from './dom.js';
@@ -12,7 +12,8 @@ import { createVoiceSettings } from './settings-voice.js';
 import { createUpdatesTab } from './updates-tab.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { STYLES, VIEWS } from './viewport-overlay.js';
-import { openBounce, bounceSupported } from './bounce.js';
+import { openBounce, bounceSupported, localBinding } from './bounce.js';
+import { bounceReminderEnabled, setBounceReminderEnabled } from './bounce-reminder.js';
 import { createPalettePicker } from './palettes.js';
 import { createTuningSettings } from './tuning-settings.js';
 import { icon } from './icons.js';
@@ -25,6 +26,7 @@ export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
   { id: 'audio', label: 'Audio', icon: 'speaker' },
   { id: 'midi', label: 'MIDI & MPC', icon: 'midi' },
+  { id: 'controllers', label: 'Controllers', icon: 'gamepad' },
   { id: 'voice', label: 'Voice', icon: 'mic' },
   { id: 'pedals', label: 'Pedals', icon: 'pedal' },
   { id: 'operator', label: 'Operator', icon: 'bolt' },
@@ -71,6 +73,10 @@ function generalTab(ctx, scope) {
   const fps = createSegmented(ctx, binder.uiValue('fpsCap', [0, 30, 60, 120], 0), {
     label: 'Frame rate', options: [{ value: 0, label: 'Uncapped' }, { value: 30, label: '30' }, { value: 60, label: '60' }, { value: 120, label: '120' }],
   });
+  // v2.11: Auto caps the map's drawing buffer and lowers it while frames run slow.
+  const resolution = createSegmented(ctx, binder.uiValue('renderScale', ['auto', 'full'], 'auto'), {
+    label: 'Map resolution', options: [{ value: 'auto', label: 'Auto' }, { value: 'full', label: 'Full' }],
+  });
   const style = createSegmented(ctx, via(binder.uiValue('renderStyle', STYLES.map(s => s.value), 'relief'), 'setRenderStyle'), { label: 'Map style', options: STYLES.map(s => ({ ...s, label: s.label.replace('Wireframe', 'Wire').replace('Contours', 'Contour').replace('Heat map', 'Heat') })) });
   const camera = createSegmented(ctx, via(binder.uiValue('view', VIEWS.map(v => v.value), 'orbit'), 'setView'), { label: 'Camera view', options: VIEWS.map(v => ({ ...v, label: v.label.replace(' view', '') })) });
   const palette = createPalettePicker(ctx);
@@ -99,6 +105,7 @@ function generalTab(ctx, scope) {
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, '3D map'),
       row('Visual quality', 'Lower it if the map stutters on this computer', quality.el),
       row('Frame rate', 'Uncapped draws the map as often as the screen refreshes. A cap saves battery and heat; the sound is never affected.', fps.el),
+      row('Map resolution', 'Auto keeps the 3D map under about 4.5 million pixels and lowers its detail while frames run slow, which helps large and Retina screens. Full always draws every device pixel.', resolution.el),
       row('Camera view', 'Six angles. Save your own from the map toolbar.', camera.el),
       row('Map style', null, style.el),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Palette'), h('div', { class: 'setting-hint' }, 'Colours of the land, from valleys to peaks')), palette.el),
@@ -136,6 +143,11 @@ function audioTab(ctx, scope) {
   const deviceWrap = h('div', { class: 'device-pick' });
   const bounceBtn = h('button', { type: 'button', class: 'btn btn--sm', html: icon('bounce') + '<span>Bounce...</span>', disabled: !bounceSupported(ctx) });
   scope.on(bounceBtn, 'click', () => openBounce(ctx, bounceBtn));
+  // 2.11 bounce reminders, per computer, on by default.
+  const remindBinding = localBinding({ id: 'bounceReminder', label: 'Remind me to bounce', default: 1 }, bounceReminderEnabled() ? 1 : 0);
+  scope.add(remindBinding.subscribe(() => { setBounceReminderEnabled(!!remindBinding.get()); ctx.bounceReminder?.refresh(); }));
+  const remindToggle = createToggle(ctx, remindBinding, { label: 'Remind me to bounce', className: 'toggle--switch', ariaLabel: 'Remind me to bounce' });
+  scope.add(remindToggle.dispose);
 
   function render() {
     status.textContent = '';
@@ -210,7 +222,8 @@ function audioTab(ctx, scope) {
     h('section', { class: 'settings-group', 'aria-label': 'Tuning (saved with the session)' }, h('h3', { class: 'group-title' }, 'Tuning'), tuning.el),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Export'),
-      row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn)));
+      row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn),
+      row('Remind me to bounce', 'A small note, at most every 15 minutes, when the audio drops out while playing or after 20 minutes of playing with changes since your last bounce. The desktop app also asks when you close it. Kept on this computer.', remindToggle.el)));
 }
 
 export function shortcutsList() {
@@ -225,7 +238,7 @@ export function shortcutsList() {
 function aboutTab() {
   return h('div', { class: 'settings-pane about' },
     h('div', { class: 'about-head' },
-      h('div', { class: 'about-word' }, 'OROGRAPH'),
+      h('div', { class: 'about-word' }, 'ORO'),
       h('div', { class: 'about-version' }, `Version ${VERSION}`)),
     h('p', null, 'Wave terrain synthesis traces a closed path across a landscape once per cycle, and the height under the moving point becomes the sound. Pitch is how fast the path is traced; timbre is the shape of the land it crosses.'),
     h('p', null, 'Oro is an independent, clean-room implementation inspired by the idea of a terrain synthesizer. Terrain Synth is a trademark of Conductive Labs; Oro is not affiliated with or endorsed by Conductive Labs.'),
@@ -246,6 +259,16 @@ export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {
     general: () => generalTab(ctx, scope),
     audio: () => audioTab(ctx, scope),
     midi: () => { const m = createMidiSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
+    // v2.11 game controllers and haptics: the pane's code loads when the tab is opened
+    controllers: () => {
+      const pane = h('div', { class: 'settings-pane' }, h('p', { class: 'settings-note' }, 'Loading…'));
+      import('./settings-controllers.js').then((mod) => {
+        const m = mod.createControllerSettings(ctx);
+        scope.add(m.dispose);
+        pane.replaceChildren(m.el);
+      }).catch(() => pane.replaceChildren(h('p', { class: 'settings-note' }, 'Controller settings could not load.')));
+      return pane;
+    },
     voice: () => { const m = createVoiceSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     pedals: () => { const m = createPedalSettings(ctx); scope.add(m.dispose); return h('div', { class: 'settings-pane' }, m.el); },
     operator: () => { const m = createOperatorSettings(ctx); scope.add(m.dispose); return m.el; },

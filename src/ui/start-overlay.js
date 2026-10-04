@@ -16,7 +16,7 @@ export function createStartOverlay(ctx, host) {
   ];
   const card = h('div', { class: 'start-card', role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'start-title', 'aria-describedby': 'start-desc' },
     h('div', { class: 'start-mark', html: brandGlyph(44) }),
-    h('h1', { class: 'start-title', id: 'start-title' }, 'OROGRAPH'),
+    h('h1', { class: 'start-title', id: 'start-title' }, 'ORO'),
     h('p', { class: 'start-desc', id: 'start-desc' }, 'A 3D wave terrain synthesizer: the sound is the land under a moving dot.'),
     startBtn,
     hasEngine ? null : h('p', { class: 'start-warn' }, 'Audio could not start in this browser, but you can still explore the map and controls.'),

@@ -18,14 +18,16 @@ export function createToaster(host) {
     setTimeout(() => el.remove(), 220);
   }
 
-  function toast(message, { kind = 'info', timeout, action, detail } = {}) {
+  // `actions` (2.11): several buttons, e.g. Step down / Keep / Don't ask again. Each dismisses the toast.
+  function toast(message, { kind = 'info', timeout, action, actions, detail } = {}) {
+    const buttons = (actions || (action ? [action] : [])).map(a => h('button', { type: 'button', class: 'toast-action', onClick: () => { dismiss(el); a.onClick?.(); } }, a.label));
     const ms = timeout ?? (kind === 'error' ? 7000 : kind === 'warn' ? 5500 : 3600);
     const el = h('div', { class: ['toast', `is-${kind}`], role: kind === 'error' ? 'alert' : 'status' },
       h('span', { class: 'toast-icon', html: icon(ICONS[kind] || 'info'), 'aria-hidden': 'true' }),
       h('div', { class: 'toast-body' },
         h('div', { class: 'toast-msg' }, message),
         detail ? h('div', { class: 'toast-detail' }, detail) : null),
-      action ? h('button', { type: 'button', class: 'toast-action', onClick: () => { dismiss(el); action.onClick?.(); } }, action.label) : null,
+      buttons.length > 1 ? h('div', { class: 'toast-actions' }, buttons) : buttons[0] || null,
       h('button', { type: 'button', class: 'toast-close', 'aria-label': 'Dismiss notification', html: icon('close'), onClick: () => dismiss(el) }));
     region.appendChild(el);
     while (region.children.length > MAX) region.firstElementChild.remove();

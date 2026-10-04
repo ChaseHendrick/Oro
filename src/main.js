@@ -20,11 +20,19 @@ import { createPresets } from './presets/presets.js';
 import { createMidi } from './midi/midi.js';
 import { createUI } from './ui/app.js';
 import { savedContextSampleRate } from './pedals/rig-settings.js';
+import { seedNewInstallDefaults } from './core/first-run.js';
 import { installConsoleEgg } from './ui/eggs.js';
 
+// Start-up timing marks (2.11): 'oro:boot' once the main chunk has run,
+// 'oro:ui' once the interface is built. Read with performance.getEntriesByType('mark').
+const mark = (name) => { try { performance.mark(name); } catch { /* old browsers */ } };
+
 async function boot() {
+  mark('oro:boot');
   const root = document.getElementById('app');
   const saved = await loadSessionAsync();
+  // 2.11: a computer with nothing saved starts at Pristine, 96 kHz (existing choices are kept).
+  seedNewInstallDefaults({ hasSession: !!saved });
   const store = createStore(saved || defaultState());
   // Saves a moment after changes, at least every couple of seconds while a dot
   // keeps moving, and at once when the page is hidden or closed.
@@ -36,8 +44,8 @@ async function boot() {
   store.subscribe('parts', persist);
   store.subscribe('', (path) => { if (path === '') persist(); });
 
-  // Settings > Pedals > Sample rate (per computer): Auto, 44.1 kHz (the MPC XL)
-  // or 48 kHz. The context cannot change rate while running, so the choice
+  // Settings > Pedals > Sample rate (per computer): Auto, 44.1 kHz (the MPC XL),
+  // 48 kHz or 96 kHz (the new-install default; a device that refuses it runs at its own rate). The context cannot change rate while running, so the choice
   // applies here, at start-up.
   const engine = await createEngine({ store, sampleRate: savedContextSampleRate() });
   const presets = createPresets({ store });
@@ -78,6 +86,10 @@ async function boot() {
     const saved = await Promise.all([autosave.settled(), presets.settled()]);
     return saved.every(Boolean);
   } });
+
+  mark('oro:ui');
+  // v2.11 version history (src/core/versions.js), loaded after the app is up
+  import('./core/versions.js').then(m => m.startVersions({ store })).catch(err => console.warn('[orograph] version history unavailable', err));
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };

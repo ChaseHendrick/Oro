@@ -98,11 +98,12 @@ export function looperProgress(st, nowMs = 0) {
  * @param {object|null} o.engine        needs engine.looper
  * @param {object|null} [o.music]       transport for the tempo (follows MIDI clock)
  * @param {(msg, opts) => void} [o.toast]
+ * @param {() => boolean} [o.quietUndo] true to skip the "Nothing to undo" toast (the B of the Konami code)
  * @param {() => Promise} [o.startAudio]
  * @param {(blob, name) => void} [o.download]
  * @param {Storage} [o.storage]
  */
-export function createLooperControl({ store, engine = null, music = null, toast = () => {}, startAudio = async () => true, download = () => {}, storage = globalThis.localStorage, resample = resampleToWavetable } = {}) {
+export function createLooperControl({ store, engine = null, music = null, toast = () => {}, quietUndo = () => false, startAudio = async () => true, download = () => {}, storage = globalThis.localStorage, resample = resampleToWavetable } = {}) {
   const events = createEmitter();
   const looper = engine && engine.looper ? engine.looper : null;
   const available = !!(looper && looper.available);
@@ -131,7 +132,7 @@ export function createLooperControl({ store, engine = null, music = null, toast 
       if (prefs.follow && st.posAt - lastPosCheck > 1000) { lastPosCheck = st.posAt; if (needsFit()) scheduleFit(); }
     }));
     offs.push(looper.on('error', (e) => { if (e && e.reason === 'memory') toast('The looper ran out of memory', { kind: 'error', detail: 'Try a shorter loop, or Clear to free the undo layers.' }); }));
-    offs.push(looper.on('info', (e) => { if (e && e.reason === 'nothing-to-undo') toast('Nothing to undo', { kind: 'info', timeout: 1600 }); }));
+    offs.push(looper.on('info', (e) => { if (e && e.reason === 'nothing-to-undo' && !quietUndo()) toast('Nothing to undo', { kind: 'info', timeout: 1600 }); }));
     // Settings travel to the worklet once at start.
     if (available) {
       looper.setBars(prefs.bars);

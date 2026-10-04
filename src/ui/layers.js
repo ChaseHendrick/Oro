@@ -2,7 +2,7 @@
 // decides what Esc closes (always the top-most layer) and which layers an
 // outside click dismisses. Every layer is { el, anchor, modal, close(reason) }.
 
-import { h, focusables } from './dom.js';
+import { h, focusables, uiZoom } from './dom.js';
 
 export function createLayers() {
   const host = h('div', { class: 'layer-host' });
@@ -63,11 +63,14 @@ const MARGIN = 8;
 
 /** Place `el` next to an anchor element or a {x, y} point, inside the window. */
 export function placeFloating(el, anchor, placement = 'bottom-start', gap = 6) {
+  // Work in window pixels; the layer host may be zoomed on large screens (2.11),
+  // so the element's own sizes and the final position are scaled by the zoom.
+  const z = el.closest && el.closest('.layer-host') ? uiZoom() : 1;
   const vw = window.innerWidth, vh = window.innerHeight;
   el.style.left = '0px';
   el.style.top = '0px';
   el.style.maxHeight = '';
-  const pw = el.offsetWidth, ph = el.offsetHeight;
+  const pw = el.offsetWidth * z, ph = el.offsetHeight * z;
   let rect;
   if (anchor instanceof Element) rect = anchor.getBoundingClientRect();
   else rect = { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y, width: 0, height: 0 };
@@ -84,7 +87,7 @@ export function placeFloating(el, anchor, placement = 'bottom-start', gap = 6) {
     else x = rect.left;
     const room = finalSide === 'bottom' ? below : above;
     if (ph > room && room > 120) {
-      el.style.maxHeight = room + 'px';
+      el.style.maxHeight = (room / z) + 'px';
       if (finalSide === 'top') y = rect.top - gap - room;
     }
   } else {
@@ -93,11 +96,11 @@ export function placeFloating(el, anchor, placement = 'bottom-start', gap = 6) {
     x = finalSide === 'right' ? rect.right + gap : rect.left - gap - pw;
     y = align === 'end' ? rect.bottom - ph : align === 'center' ? rect.top + rect.height / 2 - ph / 2 : rect.top;
   }
-  const h2 = el.offsetHeight;
+  const h2 = el.offsetHeight * z;
   x = Math.max(MARGIN, Math.min(x, vw - pw - MARGIN));
   y = Math.max(MARGIN, Math.min(y, vh - h2 - MARGIN));
-  el.style.left = Math.round(x) + 'px';
-  el.style.top = Math.round(y) + 'px';
+  el.style.left = Math.round(x / z) + 'px';
+  el.style.top = Math.round(y / z) + 'px';
   el.dataset.side = finalSide;
   return finalSide;
 }

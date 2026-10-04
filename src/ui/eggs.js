@@ -52,6 +52,25 @@ export function createKonami(onMatch) {
     },
     reset() { i = 0; },
     position: () => i,
+    /** True when `e` would continue or complete a sequence already under way (read before feed()). */
+    continues(e) {
+      if (!e || e.repeat || i === 0) return false;
+      if (e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target)) return false;
+      return seqKey(e) === KONAMI[i];
+    },
+  };
+}
+
+/**
+ * Remembers whether the latest B press belonged to the Konami sequence, so the
+ * looper's "Nothing to undo" toast (B is the looper undo key) stays quiet for
+ * that press. Any B press outside the sequence clears it again.
+ */
+export function createUndoKeyGuard(konami) {
+  let claimed = false;
+  return {
+    note(e) { if (e && !e.repeat && seqKey(e) === 'b') claimed = konami.continues(e); },
+    claimed: () => claimed,
   };
 }
 
@@ -136,7 +155,7 @@ export function createFunToaster(toast, timers = { setTimeout: (f, ms) => setTim
 
 /**
  * Wires the secrets into the running app. ctx: { store, music, presets, toast,
- * layers, binder }. Returns { reveal, dropped, spilled, repaired, unlockPath, dispose }
+ * layers, binder }. Returns { reveal, dropped, spilled, repaired, unlockPath, undoKeyClaimed, dispose }
  * (ctx.eggs), used by the Operator panel and the path picker.
  */
 export function installEggs(ctx) {
@@ -175,7 +194,12 @@ export function installEggs(ctx) {
     reveal('konami', again ? 'The cabinet is already open' : 'Cabinet unlocked',
       'A Cabinet terrain is in the Image library of the map panel and a Cabinet patch is in the patch browser.');
   });
-  const onKey = (e) => { if (ctx.layers && ctx.layers.hasModal && ctx.layers.hasModal()) { konami.reset(); return; } konami.feed(e); };
+  const undoGuard = createUndoKeyGuard(konami);
+  const onKey = (e) => {
+    if (ctx.layers && ctx.layers.hasModal && ctx.layers.hasModal()) { konami.reset(); return; }
+    undoGuard.note(e);
+    konami.feed(e);
+  };
   window.addEventListener('keydown', onKey, true);
   subs.push(() => window.removeEventListener('keydown', onKey, true));
 
@@ -237,6 +261,8 @@ export function installEggs(ctx) {
       if (op && op.drop === 1 && op.water === 1 && state && state.dmg >= SHORT_CIRCUIT_DMG) reveal('short-circuit', 'That was not good for the circuits.');
     },
     repaired() { found('badge', 'repair-crew'); },
+    /** True while the latest B press was part of the Konami sequence (looper undo stays quiet). */
+    undoKeyClaimed: () => undoGuard.claimed(),
     unlockPath() { return reveal('oro-path', 'A new path: Oro', 'It traces the letters O, R and O.'); },
     dispose() { for (const u of subs.splice(0)) { try { u(); } catch { /* ignore */ } } },
   };

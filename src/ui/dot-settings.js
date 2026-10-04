@@ -12,7 +12,7 @@ import { createKnob } from './knob.js';
 import { createSegmented, createToggle, createStepper } from './controls.js';
 import { openPopover } from './layers.js';
 import { icon } from './icons.js';
-import { startGolf, golfActive } from './golf.js';
+import { chunks } from './lazy.js';
 
 const pct = (v) => Math.round(v * 100) + '%';
 
@@ -99,9 +99,11 @@ export function openDotSettings(ctx, anchor) {
   const golfBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--xs golf-start', dataset: { tip: 'Play 9 or 18 holes with the marble, or practise on the driving range. Esc quits and puts the dot back.' } }, 'Golf');
   if (!ctx.visuals || !ctx.visuals.fun) { golfBtn.disabled = true; golfBtn.dataset.tip = 'Golf needs the 3D map, which is not running'; }
   scope.on(golfBtn, 'click', () => {
-    if (golfActive()) return;
+    // Golf loads on first use (2.11); it cannot be active before then.
+    const golf = chunks.golf.get();
+    if (golf && golf.golfActive()) return;
     if (pop) pop.close();
-    startGolf(ctx);
+    chunks.golf.run(m => { if (!m.golfActive()) m.startGolf(ctx); }, 'Golf');
   });
   const fun = h('div', { class: 'dot-line dot-line--end dot-fun' }, golfBtn);
 

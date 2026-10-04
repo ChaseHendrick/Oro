@@ -79,10 +79,10 @@ export function createMixPanel(ctx) {
     h('div', { class: 'master-body' },
       h('div', { class: 'master-fx' },
         h('div', { class: 'fx-card' },
-          h('div', { class: 'fx-title' }, h('span', null, 'Delay'), delayTime.el),
+          h('div', { class: 'fx-title' }, h('span', { dataset: { tip: "The master delay, fed by each track's Delay knob" } }, 'Master delay'), delayTime.el),
           h('div', { class: 'knob-row' }, g('delayFeedback', { ariaLabel: l => `Delay ${l}` }), g('delayTone', { ariaLabel: l => `Delay ${l}` }), g('delayLevel', { ariaLabel: l => `Delay ${l}` }))),
         h('div', { class: 'fx-card' },
-          h('div', { class: 'fx-title' }, h('span', null, 'Reverb')),
+          h('div', { class: 'fx-title' }, h('span', { dataset: { tip: "The master reverb, fed by each track's Reverb knob" } }, 'Master reverb')),
           h('div', { class: 'knob-row' }, g('reverbSize', { ariaLabel: l => `Reverb ${l}` }), g('reverbDamp', { ariaLabel: l => `Reverb ${l}` }), g('reverbLevel', { ariaLabel: l => `Reverb ${l}` }))),
         h('div', { class: 'fx-card' },
           h('div', { class: 'fx-title' }, h('span', null, 'Colour')),
@@ -173,7 +173,7 @@ function createStrip(ctx, i) {
     h('div', { class: 'strip-body' },
       h('div', { class: 'strip-fader' }, h('div', { class: 'fader-wrap' }, level.el, meter), levelVal),
       h('div', { class: 'strip-knobs' }, knobs.map(k => k.el), pedalKnob ? pedalKnob.el : null)),
-    h('div', { class: 'strip-sends', role: 'group', 'aria-label': `Track ${i + 1} sends to the shared returns` }, sendKnobs.map(k => k.el)),
+    h('div', { class: 'strip-sends', role: 'group', 'aria-label': `Track ${i + 1} Send A and Send B, to the second reverb and delay` }, sendKnobs.map(k => k.el)),
     h('footer', { class: 'strip-foot' }, mute.el, solo.el, freezeBtn, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
 
   function render() {
@@ -282,13 +282,14 @@ function createSendSection(ctx, scope, g) {
   const A = (id, label) => g(id, { ariaLabel: () => `Send A ${label}` });
   const B = (id, label) => g(id, { ariaLabel: () => `Send B ${label}` });
   return h('section', { class: 'mix-sends', 'aria-labelledby': 'sec-sends' },
-    h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-sends' }, 'Send effects')),
+    h('header', { class: 'section-head' }, h('h3', { class: 'section-title', id: 'sec-sends' }, 'Send effects A and B')),
+    h('p', { class: 'sends-note sends-intro' }, "A second reverb and delay with their own settings, fed by each track's Send A and Send B knobs. The Delay and Reverb knobs on each track feed the Master delay and reverb instead."),
     h('div', { class: 'sends-body' },
       h('div', { class: 'fx-card fx-card--send' },
-        h('div', { class: 'fx-title' }, h('span', null, 'Send A reverb')),
+        h('div', { class: 'fx-title' }, h('span', { dataset: { tip: "Fed by each track's Send A knob" } }, 'Send A: reverb')),
         h('div', { class: 'knob-row' }, A('sendASize', 'size'), A('sendADecay', 'decay'), A('sendADamp', 'damping'), A('sendAPredelay', 'pre-delay'), A('sendAReturn', 'return level'))),
       h('div', { class: 'fx-card fx-card--send' },
-        h('div', { class: 'fx-title' }, h('span', null, 'Send B delay'), h('span', { class: 'sends-toggles' }, syncT.el, pingT.el)),
+        h('div', { class: 'fx-title' }, h('span', { dataset: { tip: "Fed by each track's Send B knob" } }, 'Send B: delay'), h('span', { class: 'sends-toggles' }, syncT.el, pingT.el)),
         h('div', { class: 'knob-row' }, timeBox, msKnob, B('sendBFeedback', 'feedback'), B('sendBTone', 'tone'), B('sendBReturn', 'return level'))),
       h('div', { class: 'fx-card fx-card--freeze' },
         h('div', { class: 'fx-title' }, h('span', null, 'Freeze')),

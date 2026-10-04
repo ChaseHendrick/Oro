@@ -4,7 +4,7 @@
 // the terrain with the same maths the oscillator uses.
 
 import { PART_PARAM_MAP, fromNorm, MOD_PARAM_IDS } from '../core/params.js';
-import { h, createScope, watchSize, watchVisibility } from './dom.js';
+import { h, createScope, watchSize, watchVisibility, pixelRatioOf } from './dom.js';
 import { addLoop } from './frame.js';
 import { pathPoint, shapePathPoint, makeTransform, applyTransform, terrainHeight, shapeHeight, cyclePhase } from './dsp-bridge.js';
 
@@ -84,7 +84,7 @@ export function findTrigger(buf, limit = buf.length >> 1) {
 
 function sizeCanvas(c, size) {
   if (!size.width || !size.height) return 0;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = pixelRatioOf(2);  // the scopes sit in a zoomed overlay on large screens
   const w = Math.max(1, Math.round(size.width * dpr)), hgt = Math.max(1, Math.round(size.height * dpr));
   if (c.width !== w || c.height !== hgt) { c.width = w; c.height = hgt; }
   return dpr;

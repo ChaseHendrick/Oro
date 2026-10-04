@@ -1,0 +1,43 @@
+/* 2.11 Export stems dialog and Version history panel (loaded with them). */
+.stems-modal, .version-modal { width: min(560px, calc(100vw - 24px)); }
+.stems-dialog, .version-panel { padding: 16px 22px 20px; }
+.stems-dialog .popover-note { max-width: none; margin: 0 0 12px; }
+.stems-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.stems-grid .select { width: 100%; }
+.stems-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; margin-bottom: 10px; }
+.stems-check { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; font-size: var(--fs); color: var(--text); }
+.stems-check .setting-hint { display: block; }
+.stems-check input { accent-color: var(--accent); margin-top: 2px; }
+.stems-modal .input, .version-modal .input {
+  font: inherit; font-size: var(--fs); color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 6px 8px; min-width: 0;
+}
+.stems-modal .input:focus-visible, .version-modal .input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.stems-pattern { width: 100%; font-family: var(--font-mono); }
+.stems-info { font-size: var(--fs-sm); color: var(--text-2); margin: 4px 0 8px; }
+.stems-status:empty, .version-status:empty { display: none; }
+.stems-dialog .bounce-actions { gap: 8px; }
+
+.version-panel .popover-note { max-width: none; margin: 0 0 12px; }
+.version-save { display: flex; gap: 8px; margin-bottom: 8px; }
+.version-save .input { flex: 1; }
+.version-list { max-height: min(60vh, 520px); overflow: auto; margin-top: 8px; }
+.version-day-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); margin: 12px 0 6px; text-transform: none; }
+.version-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.version-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; }
+.version-head { display: flex; gap: 10px; align-items: baseline; }
+.version-time { font-size: var(--fs-sm); color: var(--text-2); min-width: 64px; }
+.version-name { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.version-rename { display: flex; gap: 6px; flex: 1; }
+.version-rename .input { flex: 1; }
+.version-meta, .version-diff { font-size: var(--fs-sm); color: var(--text-3); margin-top: 2px; }
+.version-diff:empty { display: none; }
+.version-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.version-bar {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: calc(100vw - 24px);
+  background: var(--panel-solid); color: var(--text); border: 1px solid var(--accent);
+  border-radius: var(--r); padding: 8px 12px; box-shadow: var(--shadow-2); font-size: var(--fs);
+}
+.version-bar[hidden] { display: none; }

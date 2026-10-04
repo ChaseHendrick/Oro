@@ -311,7 +311,7 @@ export function createPedalSettings(ctx) {
     row('Compensate', 'Sequencer and arp notes of parts through the pedals go out early by the round trip, so the pedal return lands on the grid. Send parts also delay their dry sound to match. Notes you play live cannot go out early.', compOn.el),
     row('Offset', 'Added to the measured round trip, in ms (use it alone if you cannot ping)', offsetIn),
     compOut,
-    row('Sample rate', 'Match the audio device. The MPC XL runs at 44.1 kHz. Auto lets the browser choose. Applies after a restart.', rateSeg.el),
+    row('Sample rate', 'Match the audio device. The MPC XL runs at 44.1 kHz. New installs start at 96 kHz; if the device refuses it, Oro runs at the device rate. Auto lets the browser choose. Applies after a restart.', rateSeg.el),
     rateOut, h('div', { class: 'btn-row' }, reloadBtn));
 
   root.append(sendGroup, retGroup, guitarGroup, pingGroup);

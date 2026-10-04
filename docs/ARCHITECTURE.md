@@ -370,8 +370,16 @@ access. `src/ui/updates-tab.js` awaits `ctx.prepareUpdate()` before requesting a
 restart. That callback flushes and awaits both session and preset storage.
 
 NSIS installed copies and AppImage copies use electron-updater. Other current packages
-use the fixed public GitHub release endpoint and manual download link. macOS remains a
-manual path while the app lacks the signing identity required for automatic installation.
+use the fixed public GitHub release endpoint and manual download link. macOS lacks the
+signing identity Squirrel.Mac requires, so by default it is a manual path. From 2.11 the
+opt-in `autoInstall` preference uses `electron/mac-update.cjs` instead: it downloads the
+release zip for `process.arch`, verifies its sha512 against `latest-mac.yml`, unpacks it
+with `ditto`, checks `CFBundleShortVersionString`, and on quit or Restart now starts a
+detached shell script that swaps the bundle after the app exits (restoring a backup on
+failure, logging to `mac-update.log` in userData). It refuses translocated, read-only or
+unwritable locations. The swap has not yet been exercised on every macOS version.
+`electron/close-guard.cjs` adds the bounce reminder to the window close flow; the preload
+exposes `orographDesktop.session` for it.
 `.github/workflows/desktop.yml` validates and publishes the three platform update manifests
 and relevant differential blockmaps beside the existing downloads. A new release is
 assembled as a draft before its binary and metadata assets become visible to clients.
@@ -451,3 +459,38 @@ or the 512 terrain/audio source resolution.
   (`devicemotion`), the static on-screen hint and Bookkeeping (`src/core/bookkeeping.js`,
   localStorage only); `createOperatorSettings` is Settings > Operator. The MIDI module emits
   `monitor` events (`{bytes, port, time}`) only while someone listens.
+
+## Performance (2.11)
+
+**Lazy-loading boundaries.** `src/ui/lazy.js` lists every chunk that loads on
+first use (`chunks`): Settings (with its MIDI, Pedals, Voice, Updates and Tuning
+tabs and the MPC guide), Help, Golf, the image library, Real
+places / night sky, Data, Formula terrain, Imprint and the drum Sound map.
+Call sites use `chunks.x.run(m => m.open...(...))`; Settings and Help go
+through `deferredDialog`, which returns a modal-like handle at once (open
+until closed, remembers `select(tab)`) and opens the real dialog when the
+chunk arrives. `prefetchWhenIdle` warms all chunks a few seconds after
+start-up, so later clicks open synchronously. Rapier (physics for Roll) was
+already lazy: `loadRapier()` in `src/visual/physics.js` imports it when a
+track first rolls, with the built-in marble running until it is ready. The
+DSP's `dsp-core` chunk loads only for the ScriptProcessor fallback, offline
+bounce and freeze. `postcard.js` reads `VERSION` from the Settings chunk with
+a dynamic import inside its async functions, so it does not pin Settings in
+the main chunk. The single-file build inlines every chunk.
+
+**Start-up timing.** `src/main.js` sets `performance.mark('oro:boot')` when
+the main chunk has run and `'oro:ui'` when the interface is built.
+
+**Shaders.** Where `KHR_parallel_shader_compile` exists, `createVisuals`
+compiles every scene shader in the background (`renderer.compileAsync`)
+and frames skip the GPU work until it finishes (dots, physics and sound keep
+running); without the extension nothing changes.
+
+**Render budget.** `src/visual/resolution.js`. Settings > General > Map
+resolution: Auto (default) caps the 3D canvas's drawing buffer at about
+4.5 megapixels (`MAX_PIXELS`) and the browser scales it up with CSS; a
+dynamic scale (0.5 to 1 of that ratio) steps down after slow frames and back
+up after steady headroom, judged against the display frame or the frame-rate
+cap. Full draws device pixels up to the quality preset's pixel-ratio cap, as
+before. The pref is `ui.renderScale` ('auto' | 'full'). Only the 3D canvas is
+scaled; the interface, minimap and 2D panels stay at native resolution.

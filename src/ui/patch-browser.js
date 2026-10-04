@@ -82,6 +82,10 @@ export function createPatchBrowser(ctx) {
     setText(nameEl, name);
     setText(catEl, cat || (ok ? 'Patch' : 'No presets'));
     open.setAttribute('aria-label', `Patch: ${name}. Open the browser`);
+    // The name can be cut short in the top bar: the full name on hover and keyboard focus.
+    open.dataset.tip = name;
+    open.dataset.tipTitle = cat || 'Patch';
+    open.dataset.tipFocus = '1';
   }
   scope.add(store.subscribe('ui.selectedPart', render));
   scope.add(store.subscribe('parts', (path) => { if (/^parts(\.\d(\.patchName)?)?$/.test(path)) render(); }));

@@ -3,6 +3,44 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.11.0 (October 2026)
+
+**New**
+* **Export stems.** One zip with a WAV per track, the effect returns, the full mix, MIDI for
+  every track, a tempo map and a README. 44.1 to 96 kHz, 16 or 24-bit with dither or 32-bit
+  float, wet or dry, pre or post fader. With master processing off (the default) the stems add
+  up to the mix exactly. Cancel stops at once; the desktop app asks where to save.
+* **Version history.** Oro keeps versions of your session as you work, grouped by day, with a
+  note of what changed. Preview one, keep it or go back; restoring is undoable.
+* **Game controllers and haptics.** Steer the dot and play notes with a controller, route the
+  right stick with Links, play Golf with it, and feel the bass as rumble (phones can pulse on
+  the beat). Off until you turn them on.
+* **Match a song.** Drop in a song and Oro estimates its tempo and key and sets itself to match.
+* **Automatic updates on Mac (optional).** Oro can download, check and install updates itself
+  when you quit. New in 2.11 and not yet tested on every macOS version.
+* **Bounce reminders.** A gentle "Bounce now" note when audio struggles, after a long session,
+  or when you close with unbounced changes. Turn them off in Settings.
+* **New installs start at Pristine quality and 96 kHz**, and Oro offers to step down if your
+  computer struggles. Existing settings are kept.
+
+**Big and sharp screens**
+* Ultrawide and 5K2K monitors (up to 5120 by 2160) and MacBook Retina screens: the interface
+  scales up on very large screens, the keyboard shows more octaves, the Sound tab uses more
+  columns, and drawn displays stay crisp.
+* **Map resolution** (Auto or Full): Auto keeps the 3D map smooth on very large or very
+  sharp screens by capping its drawing size and lowering it while frames are slow.
+
+**Faster**
+* Rarely used panels load when first opened, so Oro starts with less to download, and
+  shaders compile in the background where the browser allows it.
+
+**Polish**
+* The mixer's two kinds of reverb and delay are labelled clearly (master effects and send
+  effects A and B).
+* The Smart controls card can be collapsed. The ghost dot shows on the flat map too.
+* Fixes for clipped text in the track effects rack, the postcard dialog's padding, the ghost
+  buttons, the top bar on phones and the old "OROGRAPH" wordmark.
+
 ## 2.10.0 (October 2026)
 
 * **Resonator: hear the shape of the land.** The track's terrain also becomes a vibrating

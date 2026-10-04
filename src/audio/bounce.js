@@ -31,6 +31,9 @@ const IR_WAIT_MS = 30000;
 // The DSP schedules these by their `time` field (docs/ARCHITECTURE.md, Round D).
 const TIMED = new Set(['noteOn', 'noteOff', 'params']);
 
+/** The error a cancelled render rejects with (err.cancelled). */
+export function cancelError() { const e = new Error('Export cancelled'); e.name = 'CancelError'; e.cancelled = true; return e; }
+const CANCEL_CHECK_FRAMES = 32 * QUANTUM;
 const finite = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -159,7 +162,7 @@ export function bufferStats(buffer) {
  * Render with the DSP on this thread (no worklet in the offline context):
  * returns its dry / delay / reverb outputs as three stereo AudioBuffers.
  */
-export async function renderDspHere(octx, init, late, frames, onFrames = () => {}) {
+export async function renderDspHere(octx, init, late, frames, onFrames = () => {}, isCancelled = null) {
   const { OroDSP } = await import('../dsp/dsp-core.js');
   const sr = octx.sampleRate;
   const dsp = new OroDSP(sr);
@@ -175,7 +178,8 @@ export async function renderDspHere(octx, init, late, frames, onFrames = () => {
     while (li < late.length && late[li].time <= t + 1e-9) dsp.handleMessage(late[li++].msg);
     dsp.process(ch[0].subarray(f, f + n), ch[1].subarray(f, f + n), ch[2].subarray(f, f + n), ch[3].subarray(f, f + n),
       ch[4].subarray(f, f + n), ch[5].subarray(f, f + n), n, t);
-    if (nowMs() - t0 > YIELD_MS) { onFrames(f + n); await yieldTask(); t0 = nowMs(); }
+    if (isCancelled && (f & (CANCEL_CHECK_FRAMES - 1)) === 0 && isCancelled()) throw cancelError();
+    if (nowMs() - t0 > YIELD_MS) { onFrames(f + n); await yieldTask(); t0 = nowMs(); if (isCancelled && isCancelled()) throw cancelError(); }
   }
   onFrames(frames);
   return bufs;
@@ -194,11 +198,17 @@ export async function renderDspHere(octx, init, late, frames, onFrames = () => {
  * @param {Function} [o.computeIR]
  * @param {(frames: number) => void} [o.onFrames] progress within the pass
  */
-export async function renderPass({ sampleRate, frames, init, late = [], global = {}, fx = true, workletCode, computeIR = null, onFrames = () => {}, forceMainThread = false }) {
+export async function renderPass({ sampleRate, frames, init, late = [], global = {}, fx = true, workletCode, computeIR = null, onFrames = () => {}, forceMainThread = false, tap = null, isCancelled = null }) {
   const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!OAC) throw new Error('This browser cannot render offline; use Record instead');
   const octx = new OAC({ numberOfChannels: 2, length: frames, sampleRate });
-  const graph = createFx(octx, { global, destination: octx.destination, computeIR, effects: fx });
+  // v2.11 tap 'bus': record the sum before the master chorus, warmth, volume and limiter
+  const sink = tap === 'bus' ? octx.createGain() : null;
+  const graph = createFx(octx, { global, destination: sink || octx.destination, computeIR, effects: fx });
+  if (sink) graph.bus.connect(octx.destination);
+  let cancelled = false, rejectCancel = null;
+  const cancelled$ = new Promise((_, reject) => { rejectCancel = reject; });
+  cancelled$.catch(() => {});
   const sends = (connect) => { connect(graph.dryIn, 0); if (fx) { connect(graph.delayIn, 1); connect(graph.reverbIn, 2); } };
   // Suspend points: frame -> actions, merged so two never share a render quantum.
   const points = new Map();
@@ -222,9 +232,13 @@ export async function renderPass({ sampleRate, frames, init, late = [], global =
     for (const e of late) if (!at(Math.round(e.time * sampleRate), () => node.port.postMessage(e.msg))) early.push(e.msg);
     if (early.length) node.port.postMessage(early);
     for (let k = 1; k < PROGRESS_POINTS; k++) { const f = Math.round(frames * k / PROGRESS_POINTS); at(f, () => onFrames(f)); }
+    // v2.11 cancel: look every half second of audio and stop there (the context is left suspended)
+    if (isCancelled) for (let f = Math.round(sampleRate / 2); f < frames; f += Math.round(sampleRate / 2)) at(f, () => { if (!cancelled && isCancelled()) { cancelled = true; rejectCancel(cancelError()); } });
   } else {
     via = 'main-thread';
-    const bufs = await renderDspHere(octx, init, late, frames, (f) => onFrames(0.5 * f));
+    let bufs;
+    try { bufs = await renderDspHere(octx, init, late, frames, (f) => onFrames(0.5 * f), isCancelled); }
+    catch (err) { graph.dispose(); throw err; }
     sends((dst, out) => {
       const s = octx.createBufferSource();
       s.buffer = bufs[out];
@@ -236,6 +250,7 @@ export async function renderPass({ sampleRate, frames, init, late = [], global =
   for (const [frame, fns] of points) {
     octx.suspend(frame / sampleRate).then(() => {
       for (const fn of fns) { try { fn(); } catch (err) { console.error('[audio] bounce step failed', err); } }
+      if (cancelled) return undefined;
       return octx.resume();
     }).catch((err) => console.error('[audio] bounce suspend failed', err));
   }
@@ -243,7 +258,7 @@ export async function renderPass({ sampleRate, frames, init, late = [], global =
   await Promise.race([graph.whenReverbReady(), new Promise(r => setTimeout(r, IR_WAIT_MS))]);
   let buffer;
   try {
-    buffer = await octx.startRendering();
+    buffer = isCancelled ? await Promise.race([octx.startRendering(), cancelled$]) : await octx.startRendering();
   } finally {
     try { if (node) { node.port.onmessage = null; node.disconnect(); } } catch { /* ignore */ }
     graph.dispose();

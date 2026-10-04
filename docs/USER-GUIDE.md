@@ -616,6 +616,9 @@ yourself afterwards, the smart knob takes it over again the next time you turn i
 Right-click a smart knob to **MIDI Learn** it; a mapped knob always works on the track you
 have selected.
 
+Click the **Smart controls** heading to fold the card away when you do not need it, and
+again to open it (2.11). This computer remembers whether it is open.
+
 Smart controls are saved with the track, in scenes and with patches you save. Loading a
 patch replaces the track's smart controls with the patch's own, or clears them for a patch
 that has none (including the factory patches). Tracks that never use smart controls are
@@ -1227,7 +1230,7 @@ track menu (the track tab's menu, or the mixer strip's) has the same commands:
   the bar it was recorded from. You can play any track meanwhile, including the same track's
   keys. The ghost's knob moves and dot path drive the sound without moving your knobs, so
   your settings stay as they are and Undo is not filled up. A translucent ghost dot shows the
-  recorded path on the map, and the track's dot follows it while you are not holding it.
+  recorded path on the map (the 3D view and the flat map), and the track's dot follows it while you are not holding it.
 * **Stop ghost** (or stopping the transport) silences it and gives the track its own knob
   values back. A ghost that is on plays again with the next Play.
 * **Clear ghost** removes it. Recording a new ghost replaces the old one.
@@ -1385,8 +1388,10 @@ patch is named after the word; save it if you want to keep it.
 The **Mix** tab has a channel strip for each part:
 
 * **Level** fader with an activity meter.
-* **Pan**, **Delay** send and **Reverb** send.
-* **Send A** and **Send B**: sends to the two shared send effects (2.8, below).
+* **Pan**, **Delay** send and **Reverb** send: these feed the **Master delay** and **Master
+  reverb** (the Master section).
+* **Send A** and **Send B**, the row under them: these feed a second reverb and delay, the
+  **Send effects A and B** at the end of the tab (2.8, below), with their own settings.
 * **M** (mute), **S** (solo) and the **Freeze** button (the snowflake, 2.8, below).
 * **Pedal** send with **Pre** and **Ins**, shown only while the pedal send is switched on
   (see [Guitar pedals](#15-guitar-pedals)).
@@ -1397,8 +1402,8 @@ The **Master** section:
 
 | Effect | Controls |
 |---|---|
-| **Delay** | A stereo ping-pong delay synced to the tempo. **Time** (1/2 down to 1/32, including dotted and triplet values), **Feedback**, **Tone** (dark and full to thin and bright) and **Return**. Changing the time bends the pitch smoothly, like a tape delay, instead of clicking. |
-| **Reverb** | A convolution reverb whose impulse response Oro generates itself. **Size**, **Damp** (how quickly the highs die away) and **Return**. |
+| **Master delay** | A stereo ping-pong delay synced to the tempo. **Time** (1/2 down to 1/32, including dotted and triplet values), **Feedback**, **Tone** (dark and full to thin and bright) and **Return**. Changing the time bends the pitch smoothly, like a tape delay, instead of clicking. |
+| **Master reverb** | A convolution reverb whose impulse response Oro generates itself. **Size**, **Damp** (how quickly the highs die away) and **Return**. |
 | **Colour** | **Chorus** (on the whole mix) and **Warmth** (soft saturation that keeps the loudness about the same as you turn it up). |
 | **Volume** | The master fader, with a stereo peak meter. |
 | **Ceiling** | The output limiter's ceiling, from −6 dB to 0 dB (default −0.3 dB). Peaks never go above it, and quieter material passes at the same level whatever the ceiling. |
@@ -1413,12 +1418,12 @@ A** is a reverb and **Send B** a delay. Turn up a track's **Send A** or **Send B
 its strip to send it there. The sends are taken after the level fader, so they follow the
 fader, mute, solo and the vector mix. Both start at 0.
 
-Their settings are in the **Send effects** section at the end of the Mix tab:
+Their settings are in the **Send effects A and B** section at the end of the Mix tab:
 
 | Effect | Controls |
 |---|---|
-| **Send A reverb** | **Size**, **Decay** (0.3 s to 12 s: the time the reverb takes to fall by 60 dB, before Damping takes the highs away sooner), **Damping**, **Pre-delay** (0 to 250 ms of silence before the reverb starts) and **Return** (its level in the mix). |
-| **Send B delay** | **Sync** on: **Time** is a note value (1/2 down to 1/32, with dotted and triplet values) at the tempo. Sync off: **Time** in milliseconds (20 ms to 2 s). Times longer than 2 s are held at 2 s. **Feedback**, **Tone** (dark to bright echoes), **Ping-pong** (echoes alternate left and right; off, they stay where the sound was) and **Return**. |
+| **Send A: reverb** | **Size**, **Decay** (0.3 s to 12 s: the time the reverb takes to fall by 60 dB, before Damping takes the highs away sooner), **Damping**, **Pre-delay** (0 to 250 ms of silence before the reverb starts) and **Return** (its level in the mix). |
+| **Send B: delay** | **Sync** on: **Time** is a note value (1/2 down to 1/32, with dotted and triplet values) at the tempo. Sync off: **Time** in milliseconds (20 ms to 2 s). Times longer than 2 s are held at 2 s. **Feedback**, **Tone** (dark to bright echoes), **Ping-pong** (echoes alternate left and right; off, they stay where the sound was) and **Return**. |
 
 The returns join the mix before chorus, warmth, volume and the limiter, so recordings,
 bounces and stems include them (a stem carries that track's own sends). They are separate
@@ -1489,7 +1494,65 @@ offline, faster than real time and sample-exact, without you having to play alon
 
 Only what the sequencers, arpeggiators and dot locks play is rendered; parts without a
 pattern stay silent. Files are 24-bit WAVs named like
-`orograph-bounce-20261002-143015.wav`, and stems add `-part1`, `-part2` and so on.
+`oro-bounce-20261002-143015.wav`, and stems add the track number and name
+(`-track1-bass`, `-track2-pad` and so on).
+
+Live weather sources (Mod tab, Links) hold still at their latest readings while a bounce
+renders, so the file does not depend on when you made it. The Bounce popover says so when
+any track links from a weather source.
+
+### Bounce reminders (2.11)
+
+Playing live through a struggling computer can glitch; a bounce renders offline and
+can't. With **Settings > Audio > Remind me to bounce** on (the default, kept on this
+computer), Oro suggests a bounce with a small note that has **Bounce now** and **Not now**.
+It never opens a dialog by itself, and it shows at most one note every 15 minutes:
+
+* when the audio drops out while the transport is playing;
+* after 20 minutes of playing with changes since your last bounce.
+
+In the desktop app, closing the window with changes since your last bounce asks once
+whether to bounce first; **Close** closes as usual, and your session is saved either way.
+The browser version does not add a leave-page prompt for this. **Bounce now** opens Bounce
+with a length that covers the whole pattern, or the whole song when song mode is on.
+Turn the setting off and none of these appear.
+
+### Export stems (2.11)
+
+**Export stems...** at the bottom of the Bounce popover renders every track on its own and
+saves one **.zip** you can drop into a DAW. All files start on the first beat and have the
+same length, so placing them at bar 1 (time 0) lines them up sample for sample.
+
+* **Length**: 1 to 128 bars, or **Whole song**: until the longest song-mode chain has played
+  once (without chains, one pass of the longest pattern).
+* **Tail**: **Auto** renders until the mix falls below -90 dB (at most 30 seconds), or a fixed
+  0 to 8 seconds.
+* **Sample rate**: 44.1, 48, 88.2 or 96 kHz. **Bit depth**: 16 or 24-bit integer, or 32-bit
+  float. **Dither** (TPDF) applies to 16 and 24-bit files.
+* **Stems**: **Wet** keeps each track's delay, reverb, Send A and Send B; **Dry** leaves them
+  out. With dry stems you can add the **send returns** as their own files (Send A reverb,
+  Send B delay, and the master delay and reverb), so stems plus returns add up to the mix.
+  Returns are only offered with dry stems: wet stems already hold their sends, so separate
+  returns would count them twice.
+* **Master processing on stems** (off by default): when off, every stem and return is taken
+  before the master chorus, warmth, volume and limiter, so they add up exactly to
+  `Mix (no master processing)`, which is saved next to the normal full mix for comparison.
+  When on, every file goes through the master chain like the mix; warmth and the limiter
+  are not linear, so the sum is then close to the mix but not exact.
+* **Fader**: **Post-fader** uses each track's level; **Pre-fader** renders every track at
+  full level.
+* **Normalise**: **Off** keeps the session's levels; **Peak, common gain** raises every file
+  by the same amount (the loudest peaks at -1 dBFS) so the balance stays; **Peak, each file**
+  normalises each on its own.
+* **File names**: a pattern such as `{index} {track name} {tempo}bpm {key}`, made safe for
+  every computer (for example `01 Bass 112bpm A Minor.wav`). The full mix is `00`.
+
+Each track plays through its own track effects. The zip also holds a MIDI file of every track, `Tempo map.mid` (Oro's tempo is
+constant, so this is one tempo event at bar 1) and a `README.txt` with the tempo, key,
+tuning, format, length and each track's settings. The dialog shows the expected size, warns
+above 1.5 GB and refuses past 3.5 GB. Files are rendered and encoded one at a time;
+**Cancel** stops within moments, even in the middle of a file, and nothing is saved. In the
+desktop app a save dialog asks where to put the zip; in a browser it downloads.
 
 ### Looper (1.2)
 
@@ -1626,6 +1689,31 @@ are kept. Undo covers sounds, patterns, tracks, links, effects and loaded patche
 scenes; the moving dot, settings and the view are not part of it. Text fields keep their
 own undo.
 
+### Version history (2.11)
+
+The **clock button** next to Undo and Redo opens **Version history**: earlier saves of your
+session, grouped by day (Today, Yesterday, then dates). Oro saves a version when the session
+has changed and then rested for about two minutes (or after ten minutes of steady changes),
+when you switch away from Oro or close it with unsaved changes (at most once a minute), and
+when you press **Save version** (with an optional name). An
+unchanged session never makes a new automatic version.
+
+Each version shows its time, name, track count, tempo and key, and what changed since the
+one before ("Cutoff, track 2; new pattern on track 3"). For each one:
+
+* **Preview** loads it for a listen, with a bar at the bottom: **Keep this** makes it your
+  session, **Go back** returns to what you had. Closing Oro while previewing keeps your
+  session, not the preview.
+* **Restore** makes it your session right away. What you had is saved as a version first,
+  and Undo brings it back.
+* **Rename**, **Delete**, and **Export** (a session file you can import from the patch
+  browser as a scene).
+
+Oro keeps every version from the last 7 days, then one per day for 60 days, plus every named
+version. Versions share large data such as imported terrains, recordings and drum samples,
+so many versions take little space; past 200 MB the oldest unnamed versions go first.
+Versions live in this browser (or the desktop app) only.
+
 ## 13. Settings
 
 Open **Settings** with the gear button or the **,** key.
@@ -1690,10 +1778,23 @@ computer, not part of a patch.
 | Mode | What it does | Cost |
 |---|---|---|
 | **Eco** | Runs the oscillator at the output rate (no oversampling) and reads slightly smoother terrain. | Lightest. Some aliasing on high notes. |
-| **Standard** | Two times oversampling. The default. | Balanced. |
+| **Standard** | Two times oversampling. The default before 2.11. | Balanced. |
 | **High** | Four times oversampling in two stages. | Roughly twice the oscillator work of Standard. Cleaner high notes. |
 | **Pristine** | Standard, plus a band-limited single cycle per voice, rebuilt about every 256 samples and crossfaded, whenever the loop is steady. Falls back to Standard for a voice whose loop is being moved at audio rate. | Extra work per voice. The cleanest tone. |
 | **Raw** | Two times oversampling with the terrain smoothing switched off. | Like Standard. Deliberately gritty and digital: aliasing on purpose. |
+
+**New defaults in 2.11.** A new install (a computer with no saved Oro session or
+settings) starts at **Pristine** quality and a **96 kHz** sample rate (Settings > Pedals >
+Sample rate). If you already used Oro, nothing changes: your quality and sample rate stay
+as they were, including the old defaults (Standard and Auto). If the browser or audio
+device does not accept 96 kHz, Oro runs at the device's own rate without an error, and
+Settings > Audio shows the rate actually in use.
+
+If this computer cannot keep up (more than three dropouts within 10 seconds, or the DSP
+load above 90% for 5 seconds), Oro shows a small note once per session: "Audio is
+struggling at Pristine, 96 kHz. Step down to High?" **Step down** switches to High,
+**Keep** leaves everything as it is, and **Don't ask again** stops the note on this
+computer. Oro never changes the setting without asking.
 
 ### Voice (1.4)
 
@@ -1973,6 +2074,72 @@ version:
 None of this has been tested on a physical MPC XL yet. The steps come from Akai's
 documentation, so treat menu names as guidance and use the MPC's MIDI monitor to confirm
 what is being sent.
+
+### Game controllers and haptics (2.11)
+
+Oro can be played with a game controller. It is off by default: open **Settings >
+Controllers** and turn on **Use game controllers**. The settings are kept on this computer
+(not in your session), and Oro only reads the controller while this is on and one is
+connected. Most browsers only show a controller after you press one of its buttons.
+
+With a controller in the standard layout (most Xbox, PlayStation and Switch Pro style pads):
+
+| Input | What it does |
+|---|---|
+| Left stick | Moves the dot of the selected track (faster the further you push; set **Dot speed** and **Deadzone**) |
+| Right stick | Two Link sources, **Pad Stick X** and **Pad Stick Y** (-1 to 1, up is +1) |
+| Left trigger | Plays the root of the key; how far you pull it sets the velocity |
+| Right trigger | Plays a triad on the root, with velocity |
+| A, B, X, Y | Notes 1 to 4 of the current key and scale; hold LB for notes 5 to 8 |
+| D-pad up and down | Octave up and down |
+| D-pad left and right | Previous and next track |
+| Start | Play or stop |
+
+On a drum kit track the triggers play pads 1 and 2 and A, B, X, Y play pads 1 to 4 (5 to 8
+with LB). The triggers are notes rather than Link sources so they can be played like keys.
+
+Every action can be reassigned: choose **Assign** next to it in the mapping table and press
+the button (or move the stick) you want. Esc cancels; **Reset the mapping** goes back to the
+defaults. The **Input test** shows the buttons and sticks as you use them, which helps with
+controllers that are not in the standard layout.
+
+**Golf with a controller.** In Golf the left stick turns the aim, holding either trigger
+charges the shot (the bar under the aim shows the power) and letting go shoots. A goes back to
+the tee on the driving range or on to the next hole; B quits.
+
+**Haptics.** Also off by default, in the same tab:
+
+- **Rumble with the bass**: a short rumble on notes of the track playing lowest (or drum kit
+  pad 1), a bump when a golf ball is hit and a longer one when it drops in the hole. Set the
+  strength, and use **Test rumble** to check it.
+- **Pulse on the beat** (phones): a short vibration on each beat while the transport plays,
+  longer on the first beat of the bar. It never runs with Reduce motion on and stops when
+  Oro is hidden.
+
+Where the browser or device cannot do it, the tab says "not supported on this device".
+These features have not been tested with every controller or phone.
+
+### Match a song: key and tempo (2.11)
+
+In the Seq tab's global bar (next to Key and Scale), **Match a song** finds the tempo and key
+of a piece of music so Oro can play along. Drop an audio file on the panel, choose one, or
+record about 10 seconds from the microphone while the song plays. The audio is analysed in
+your browser and never uploaded; only the first 90 seconds are used.
+
+Oro shows something like "About 124 BPM, A minor (next: C major)", with how sure it is.
+**Apply tempo and key** sets the global tempo, key and scale (Major or Minor) as one step,
+so a single Undo puts them back. **Tempo only**, **Key only**, **Use** the next best key, or
+**Use** the half or double tempo are there when the first guess is not right. Relative keys
+(A minor and C major share their notes) and half or double tempos are the usual mix-ups.
+
+When audio is running, **Play the song along** loops the file as a simple backing track
+with its own volume. It goes straight to your speakers: it is not recorded, not in the
+looper, and does not follow Oro's tempo.
+
+How it works: the tempo comes from how the sound's spectrum changes over time (onsets),
+checked for repeating beat periods between 60 and 200 BPM; the key from how strongly each of
+the 12 notes sounds overall, compared with the Krumhansl-Kessler key profiles. Silence,
+noise and music without a steady beat or clear key give a low confidence message.
 
 ---
 
@@ -2413,9 +2580,10 @@ The Windows installer and Linux AppImage can download an update inside the app. 
 to be saved. A failed save keeps the app open. It never restarts in the middle of playing
 or installs an update simply because you quit.
 
-Current Mac builds use ad hoc signing, so they show a release notice and **Download latest
-release** for manual replacement. Windows portable copies and Linux archives use the same
-manual path. Browser users get the hosted version when they reload the site; an offline
+Mac builds are not signed by Apple, so the built-in macOS updater cannot install them.
+By default a Mac shows a release notice and **Download latest release** for manual
+replacement (see Automatic updates on Mac below to opt in). Windows portable copies and
+Linux archives use the manual path. Browser users get the hosted version when they reload the site; an offline
 HTML copy is updated by downloading the new file. Saved patches and scenes remain in
 their existing storage. Export your library if you also move to another browser or computer.
 
@@ -2423,6 +2591,31 @@ Updates come from the public Oro GitHub releases. The supported desktop installe
 verifies downloaded artifact checksums. Release publishing includes the update metadata
 and hashes; bumping the version and completing the release routine makes the next release
 available to existing copies with checks enabled. This does not require an account.
+
+### Automatic updates on Mac (2.11)
+
+**Settings > Updates > Install updates automatically** is off by default and appears only
+on a Mac. When it is on and a check (Check now, on launch, or periodically) finds a new
+release, Oro:
+
+1. downloads `Oro-mac-arm64.zip` (Apple silicon) or `Oro-mac-x64.zip` (Intel) in the
+   background, without touching the audio;
+2. checks it against the sha512 checksum published in the release's `latest-mac.yml`, and
+   refuses it if they differ or if the version is not newer;
+3. unpacks it and checks that the app inside has the expected version;
+4. replaces the app when you quit Oro, or right away if you choose **Restart now** (after
+   your session is saved). A small helper waits for Oro to close, keeps the old app as a
+   backup, moves the new one into place, clears the macOS download flag on it only if it
+   is set, and puts the old app back if any step fails. When you quit, the new version
+   opens the next time you start Oro; Restart now reopens it straight away.
+
+Oro never installs while you play unless you choose Restart now. Oro must run from a
+folder it can write to, such as Applications or Applications in your home folder. If macOS
+runs it from a temporary read-only copy (this happens when you open it straight from the
+download or the disk image), the Updates tab says so: move Oro to Applications, open it
+from there, and try again. The helper writes a log, `mac-update.log`, in Oro's data folder
+(`~/Library/Application Support/Orograph`). This is new in 2.11 and not yet tested on every
+macOS version; if an update does not take, download the new version manually.
 
 
 ### Browser performance
