@@ -282,6 +282,15 @@ untested).
 
 ### 10.1 Live performance mode
 
+**Implemented in 2.12** (`src/live/`: `setup.js` saved data and pure helpers, `controller.js`
+pads, quantised queue and setlist, `wake.js` wake lock and full screen, `live-view.js` and
+`live-edit.js` the lazy-loaded view and its dialogs, `src/styles/live.css`; tests in
+`tests/live/live.test.js`). The saved setup is the optional session key `live`, sanitized by
+`sanitizeLive` in `src/core/migrate.js` and left out when unused; scenes never carry it and
+loading a scene or a setlist song keeps it. Untested on hardware: Screen Wake Lock (the desktop
+app's permission policy now allows `screen-wake-lock`), Electron full screen, MIDI Learn on
+pads with a physical controller. The spec as agreed:
+
 - **Full-screen, distraction-free view** (Fullscreen API, with a maximised overlay as
   fallback; Esc or a visible Exit leaves). The map stays as a large backdrop (or a calmer
   flat view). Large, high-contrast controls readable at a distance, dark by default.

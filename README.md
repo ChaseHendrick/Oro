@@ -95,6 +95,10 @@ few lines.
   when you quit (new in 2.11, not yet tested on every macOS version). Portable/archive
   copies offer release notices and manual downloads. Older copies need one manual
   upgrade to gain the updater.
+* **Live mode (2.12).** A full-screen stage view: 16 big pads that switch scenes and
+  patterns on the next bar or beat, mute and solo tracks, hit drums, play chords or recall
+  macro and smart control presets; a setlist with Now and Next, notes and cues; large
+  faders, tap tempo and Panic; a lock that ignores stray taps; keyboard and MIDI mapping.
 * **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
   camera views, keyboard shortcuts for the main actions, and a layout that
   works on a phone.

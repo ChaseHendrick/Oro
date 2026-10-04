@@ -598,3 +598,14 @@ describe('screen wake lock and full screen', () => {
     expect(await enterFullscreen(el, doc)).toBe(true);
   });
 });
+
+describe('live mode text', () => {
+  it('uses no em or en dashes in anything it shows', async () => {
+    const fs = await import('node:fs');
+    const files = ['src/live/setup.js', 'src/live/controller.js', 'src/live/live-view.js', 'src/live/live-edit.js', 'src/live/wake.js', 'src/styles/live.css'];
+    for (const f of files) {
+      const text = fs.readFileSync(new URL(`../../${f}`, import.meta.url), 'utf8');
+      expect(text, f).not.toMatch(/[–—]/);
+    }
+  });
+});

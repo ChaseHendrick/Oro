@@ -1679,6 +1679,106 @@ fires each time its value rises past the middle (use momentary buttons).
 
 ---
 
+## Live mode (2.12)
+
+Live mode turns Oro into a stage instrument: one full-screen view with 16 big pads, a
+setlist, large faders and the transport, readable from a few steps away. Open it with the
+**four-squares button** in the top bar or **Shift+L**. It asks the browser for full screen;
+where full screen is not offered it fills the window instead. Leave with **Exit**, **Esc** or
+Shift+L. The 3D map stays behind the controls (dimmed by default; choose Map, Dimmed map or
+Off in **Setlist > Options**; Off stops drawing the map, which saves power). The colours are
+a dark, high-contrast set of their own unless you choose **Match the app theme**.
+
+While live mode is open Oro asks the screen to stay awake (Screen Wake Lock, where the
+browser offers it) and asks again when you come back to the window. Nothing on the live
+screen flashes or blinks.
+
+**Pads.** Each pad has a label, a colour and a job:
+
+* **Scene**: load one of your scenes (or a factory scene). This replaces the session, like
+  loading it from the patch browser; Undo brings the old one back.
+* **Section**: switch every track that has pattern N to pattern N together.
+* **Pattern on a track**, **Track mute** and **Track solo** (mute and solo switch on and off).
+* **Drum pad**: hit one pad of a drum kit track.
+* **Note or chord**: play up to eight notes on a track (or the selected track) for as long as
+  you hold the pad.
+* **Macro preset** and **Smart control preset**: set the four macros, or a track's smart
+  controls, to stored positions.
+
+Tracks and patterns are chosen by number (track 2, pattern 3), so a pad keeps working when
+the setlist loads another song.
+
+The first time you open live mode the pads are built from your session: row 1 holds your
+saved scenes, then sections when tracks have several patterns (otherwise solos of tracks 1
+to 4), row 2 mutes tracks 1 to 4, row 3 plays the first four drum pads of a kit track (or
+four chords in the key: I, IV, V and vi in major and minor keys), and row 4 switches the
+selected track between its first four patterns. Press **Edit pads**, then a pad, to change
+what it does, its label, its colour and its quantise setting. **Done** ends editing. The
+first edit saves all 16 pads with the session.
+
+**Quantise.** Each pad can wait for the next **Bar** or **Beat**, or act at once (**Off**).
+Scenes, sections and patterns wait for the bar by default; everything else acts at once.
+While the transport plays, a waiting pad shows a steady outline and a ring that fills until
+the line (with reduced motion, a still dashed ring instead), plus "Next bar" or "Next beat".
+Press it again before then to cancel. Changes to what the sequencer plays are applied just
+before the line, so the first step on the line already plays the new pattern or scene. A
+newer change of the same thing (another scene, another pattern on the same track) replaces
+the one waiting. When the transport is stopped every pad acts at once, and pressing Stop
+applies whatever was still waiting.
+
+States: a pad with a coloured top edge is ready; a pad filled with its colour is on (its
+scene loaded last, its pattern playing, its track muted, its notes held, its preset in
+place); a dashed, faded pad cannot act now (for example its track does not exist in this
+song), and an empty pad has a dashed outline.
+
+**Big controls.** Play and stop, the tempo with minus and plus buttons and **Tap** (tap four
+times in time), **Panic** (stops every note and anything waiting), and faders for the four
+macros, the selected track's eight smart controls (a fader shows Off until that smart
+control has a target) and the master volume. Drag a fader, or focus it and use the arrow
+keys (Shift for fine steps, Page Up and Page Down for big ones). While Oro follows an
+external MIDI clock the tempo shows that clock and cannot be changed here.
+
+**Setlist.** **Setlist** opens the song list: add your saved scenes or versions from
+version history (or save the current session as a scene and add it), put them in order,
+and give each one notes: a key, a tempo and cues (for example "intro twice"). The notes are
+for you; a song brings its own tempo and key. The top of the live screen shows **Now** (with
+its notes and cues) and **Next**, the bar and beat, and the time. **Next** and **Previous**
+(the arrow keys, or MIDI) move through the list. When the transport is stopped the song
+loads at once; while it plays, **Song changes while playing** decides: **At the next bar**
+(the default; press Next again to cancel), **Ask first, then at the next bar** (press Next
+again, or Go, to confirm; Esc cancels the question) or **At once**. Loading a song never
+changes your pads or the setlist itself.
+
+**Lock.** **Lock** makes every click and tap outside the pads do nothing, so a stray touch
+cannot stop the music or open a dialog. To unlock, press and hold the lock button for about a
+second. Keys and MIDI keep working while locked, and **Esc always leaves live mode**, locked
+or not.
+
+**Keys.** 1 to 0 and Q to Y play pads 1 to 16 (row by row), Space plays and stops, Left
+and Up go to the previous song, Right and Down to the next, and Esc or Shift+L leaves. The
+note keys and Oro's other single-key shortcuts are off while live mode is open, and typing in
+a text field is never taken over. Cmd/Ctrl+Z still undoes.
+
+**MIDI.** Right-click a pad (or open it in Edit pads) and choose **MIDI Learn** to map a
+controller button to it; mapped buttons fire on each press. **Setlist > MIDI Learn** maps
+Previous song, Next song and Play / stop. Right-click a fader for MIDI Learn too: macro,
+smart control and volume faders use the same mappings as their knobs elsewhere in Oro.
+MIDI Learn listens for a CC (a knob, fader or button that sends control changes); pads
+that send notes cannot be learned this way. Mappings are saved on this computer with your
+other MIDI settings.
+
+**What is saved.** The pads, the setlist, the song change choice, the lock, the backdrop and
+the colours are saved with the session (and with versions in version history), but not
+inside scenes, so loading a scene keeps them. Edits to the pads and the setlist can be
+undone; the lock, backdrop and colours are not undo steps. Sessions that never used live mode
+are saved exactly as before.
+
+Not yet tested on real hardware: the Screen Wake Lock (and whether the desktop app grants
+it), full screen in the desktop app, and MIDI Learn on pads with a physical controller.
+Everything else was checked in Chromium at sizes from a phone (390 by 844) to 5120 by 2160.
+
+---
+
 ## Undo (2.6)
 
 **Undo** and **Redo** sit at the left of the top bar's buttons; **Cmd+Z** (Ctrl+Z on Windows
@@ -2279,6 +2379,7 @@ typing in a text field.
 | C / V | Keyboard velocity down / up |
 | R | Record on / off (saves a WAV) |
 | Shift + P | Preview the selected part with a short phrase (P alone plays a note) |
+| Shift + L | Live mode: full-screen pads, setlist and big controls |
 
 **Looper**
 
@@ -2299,6 +2400,15 @@ typing in a text field.
 | , | Settings |
 | ? | Help |
 | Esc | Close menus and dialogs, cancel MIDI Learn |
+
+**Live mode (2.12)**
+
+| Keys | Action |
+|---|---|
+| 1 ... 0, Q ... Y | Play pads 1 to 16 (the note keys are off in live mode) |
+| Space | Play / stop |
+| Left, Up / Right, Down | Previous / next song in the setlist |
+| Esc or Shift + L | Leave live mode (also when the lock is on) |
 
 **Knobs**
 

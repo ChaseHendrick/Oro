@@ -3,6 +3,31 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.12.0 (unreleased)
+
+**New**
+* **Live mode.** A full-screen view for playing on stage (the four-squares button or
+  Shift+L), with the 3D map as a dimmed backdrop and large, high-contrast controls that never
+  flash.
+  * 16 pads that load a scene, switch a section or one track's pattern, mute or solo a
+    track, hit a drum pad, play a note or chord, or recall macro or smart control presets.
+    Each has a label, a colour and its own quantise (Off, Beat or Bar). While playing, a
+    waiting pad shows a steady ring until the line; press again to cancel. The first pads
+    are built from your session, and Edit pads changes any of them.
+  * A setlist of saved scenes or versions with notes (key, tempo, cues), a large Now and
+    Next, the bar and beat, and the time. Song changes while playing wait for the next bar,
+    ask first, or happen at once, as you choose.
+  * Play and stop, tempo with Tap, Panic, and big faders for the macros, the selected
+    track's smart controls and the volume.
+  * Lock: clicks and taps outside the pads are ignored until you hold the lock button. Esc
+    always leaves.
+  * Keys 1 to 0 and Q to Y play the pads, Space plays and stops, the arrows move through the
+    setlist; pads, Next, Previous and Play can be MIDI-learned.
+  * The screen stays awake while live mode is open where the browser allows it. The live
+    setup saves with your session; sessions that never use it are unchanged.
+  * Not yet tested on real hardware: Screen Wake Lock, full screen in the desktop app and
+    MIDI Learn on pads with a physical controller.
+
 ## 2.11.0 (October 2026)
 
 **New**
