@@ -3,6 +3,15 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.15.1 (October 2026): Lane, jam notes, and small fixes
+
+**Fixes**
+* Shift moves the automation lane with the steps. Clear removes the lane. A pattern that is shorter than its curve keeps the curve, so the next save does not throw it away. Changing which control the lane moves gives the previous control back to its knob. A step with no curve point does the same.
+* A chord note in the piano roll uses that step's slice. A second copy of the same pitch does not cut the first note.
+* A failed jam invite no longer uses up one of the five places. Apply reply finishes the invite named in the code, not only the latest one. Leave sends note-offs and goodbye, so the other side drops those notes and frees the place. A note-off waits until its note-on has a time. The guest ping slows down once the clock has settled. Starting a jam or joining again closes the previous connection.
+* Learn's Nyquist, Filter and LFO words open their definitions.
+* The tempo cannot be dragged while Link, a plugin host, or an external MIDI clock is in charge. Live mode's tempo buttons follow the same rule.
+
 ## 2.15.0 (October 2026): Piano roll, jam, lessons, and the open list
 
 **New**

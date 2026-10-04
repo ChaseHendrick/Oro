@@ -85,17 +85,20 @@ describe('pattern edits', () => {
     seq.length = 4;
     seq.steps[0].on = 1; seq.steps[0].degree = 5;
     seq.steps[6].on = 1;
+    seq.lane = { id: 'cutoff', curve: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
     store.set('parts.0.patterns.0', seq);
     shiftPattern(store, 0, 1);
     let st = store.get('parts.0.patterns.0.steps');
     expect(st[1]).toMatchObject({ on: 1, degree: 5 });
     expect(st[0].on).toBe(0);
     expect(st[6].on).toBe(1); // outside the length: untouched
+    expect(store.get('parts.0.patterns.0.lane').curve.slice(0, 8)).toEqual([0, 0, 0, 1, 1, 0, 0, 0]);
     shiftPattern(store, 0, -1);
     shiftPattern(store, 0, -1);
     st = store.get('parts.0.patterns.0.steps');
     expect(st[3]).toMatchObject({ on: 1, degree: 5 });
     clearPattern(store, 0);
     expect(store.get('parts.0.patterns.0.steps').every(s => !s.on)).toBe(true);
+    expect(store.get('parts.0.patterns.0.lane')).toBeNull();
   });
 });

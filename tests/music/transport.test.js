@@ -345,3 +345,53 @@ describe('transport: stalls', () => {
     music.transport.stop();
   });
 });
+
+describe('piano roll playback', () => {
+  it('returns a control when the lane changes, and when the curve runs out', () => {
+    const { clock, engine, store, music } = setup({ tempo: 120 });
+    fillPattern(store, 0, { steps: 8 });
+    const full = Array.from({ length: 32 }, () => 1);
+    store.set('parts.0.patterns.0.lane', { id: 'cutoff', curve: full });
+    const own = store.get('parts.0.params.cutoff');
+    music.transport.play();
+    clock.advance(0.05);
+    const high = engine.of('params').filter((e) => e.part === 0 && e.p.cutoff > 17000);
+    expect(high.length).toBeGreaterThan(0);
+    store.set('parts.0.patterns.0.lane', { id: 'resonance', curve: full });
+    clock.advance(0.4);
+    const back = engine.of('params').filter((e) => e.part === 0 && Object.prototype.hasOwnProperty.call(e.p, 'cutoff'));
+    expect(back.some((e) => e.p.cutoff === own)).toBe(true);
+    music.transport.stop();
+
+    engine.clear();
+    store.set('parts.0.patterns.0.lane', { id: 'cutoff', curve: [1, 1, 1, 1] });
+    music.transport.play();
+    clock.advance(0.5);
+    const restored = engine.of('params').filter((e) => e.part === 0 && e.p.cutoff === own);
+    expect(restored.length).toBeGreaterThan(0);
+    music.transport.stop();
+  });
+
+  it('plays an extra on the step slice and skips a copy of the first note', () => {
+    const { clock, engine, store, music } = setup({ tempo: 120 });
+    fillPattern(store, 0, { steps: 4, on: (i) => i === 0, degree: () => 0 });
+    const seq = store.get('parts.0.patterns.0');
+    seq.steps[0] = {
+      ...seq.steps[0], on: 1, degree: 0, octave: 0, slice: 2,
+      extras: [{ degree: 0, octave: 0, q: 2, vel: 0.5, gate: 0.5 }, { degree: 4, octave: 0, q: 1, vel: 0.6, gate: 0.4 }],
+    };
+    store.set('parts.0.patterns.0', seq);
+    const slices = [];
+    const real = engine.noteOn.bind(engine);
+    engine.noteOn = (p, n, v, t, source, slice) => { slices.push(slice); real(p, n, v, t); };
+    music.transport.play();
+    clock.advance(0.05);
+    const ons = engine.ons(0);
+    const first = stepToMidi({ degree: 0, octave: 0 }, 3, 9, 1);
+    const extra = stepToMidi({ degree: 4, octave: 0 }, 3, 9, 1);
+    expect(ons.filter((e) => e.note === first)).toHaveLength(1);
+    expect(ons.filter((e) => e.note === extra)).toHaveLength(1);
+    expect(slices.filter((s) => s === 2).length).toBeGreaterThanOrEqual(2);
+    music.transport.stop();
+  });
+});

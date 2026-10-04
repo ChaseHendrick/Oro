@@ -343,6 +343,7 @@ export function createDragNumber(ctx, binding, { label, format, parse, step = 1,
     setAttr(input, 'aria-valuetext', fmt(v) + (suffix ? ' ' + suffix : ''));
   }
   function nudge(dir, big) {
+    if (input.readOnly || input.disabled) return;
     const v = binding.get();
     if (exp) {
       binding.set(fromNorm(def, clamp(toNorm(def, v) + dir * (big ? 0.05 : 0.01), 0, 1)));
@@ -351,6 +352,7 @@ export function createDragNumber(ctx, binding, { label, format, parse, step = 1,
     }
   }
   function commit() {
+    if (input.readOnly) { editing = false; render(); return; }
     const v = parser(input.value);
     if (Number.isFinite(v)) binding.set(clamp(v, def.min, def.max));
     editing = false;
@@ -359,7 +361,7 @@ export function createDragNumber(ctx, binding, { label, format, parse, step = 1,
 
   let st = null;
   scope.on(input, 'pointerdown', (e) => {
-    if (editing || input.disabled) return;
+    if (editing || input.disabled || input.readOnly) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     st = { id: e.pointerId, y: e.clientY, x: e.clientX, v: binding.get(), n: toNorm(def, binding.get()), moved: false };
@@ -392,11 +394,12 @@ export function createDragNumber(ctx, binding, { label, format, parse, step = 1,
   scope.on(input, 'keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commit(); input.blur(); }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); editing = false; render(); input.blur(); }
+    else if (input.readOnly) return;
     else if (e.key === 'ArrowUp') { e.preventDefault(); nudge(1, e.shiftKey); editing = false; render(); editing = true; input.select(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); nudge(-1, e.shiftKey); editing = false; render(); editing = true; input.select(); }
   });
   scope.on(input, 'wheel', (e) => {
-    if (input.disabled) return;
+    if (input.disabled || input.readOnly) return;
     e.preventDefault();
     nudge((e.deltaY || e.deltaX) < 0 ? 1 : -1, e.shiftKey);
   }, { passive: false });

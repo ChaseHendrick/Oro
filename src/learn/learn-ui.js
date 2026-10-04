@@ -15,12 +15,12 @@ function memoryStorage() {
 
 function renderText(text, onTerm) {
   const frag = [];
-  const re = /\[\[([a-z0-9-]+)\|([^\]]+)\]\]/g;
+  const re = /\[\[([A-Za-z0-9-]+)\|([^\]]+)\]\]/g;
   let last = 0;
   let m;
   while ((m = re.exec(text))) {
     if (m.index > last) frag.push(document.createTextNode(text.slice(last, m.index)));
-    const id = m[1];
+    const id = m[1].toLowerCase();
     const btn = h('button', { type: 'button', class: 'learn-term' }, m[2]);
     btn.addEventListener('click', () => onTerm(id));
     frag.push(btn);

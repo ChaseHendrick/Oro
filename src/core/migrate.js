@@ -170,10 +170,12 @@ export function sanitizePattern(src, n = 1) {
     out.steps.push(step);
   }
   if (s.lane && typeof s.lane === 'object' && PLOCK_IDS.includes(s.lane.id) && Array.isArray(s.lane.curve)) {
-    const n = out.length * 4;
-    if (s.lane.curve.length === n) {
-      out.lane = { id: s.lane.id, curve: s.lane.curve.map((v) => clamp(num(v, 0), 0, 1)) };
+    const curve = [];
+    for (const v of s.lane.curve) {
+      if (curve.length >= SEQ_STEPS * 4) break;
+      curve.push(clamp(num(v, 0), 0, 1));
     }
+    if (curve.length) out.lane = { id: s.lane.id, curve };
   }
   return out;
 }

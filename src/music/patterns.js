@@ -8,6 +8,7 @@
 import { SEQ_STEPS, SCALES, SCALE_NAMES, defaultStep, activeSeq, patternPath, clamp } from '../core/params.js';
 import { isTrack } from '../core/tracks.js';
 import { keepLocks } from './locks.js';
+import { shiftLane } from './roll.js';
 
 /** Small deterministic PRNG (mulberry32) so tests and "same seed" are repeatable. */
 export function makeRng(seed = 1) {
@@ -131,14 +132,18 @@ export function randomizePattern(store, part, { density = 0.6, rng = Math.random
   return steps;
 }
 
-/** Every step back to default, dot locks included. */
+/** Every step back to default, dot locks included. The lane goes too. */
 export function clearPattern(store, part) {
   const p = partIndex(store, part);
   if (p == null) return;
-  store.set(`${patternPath(store, p)}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'music' });
+  const path = patternPath(store, p);
+  store.batch(() => {
+    store.set(`${path}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'music' });
+    store.set(`${path}.lane`, null, { source: 'music' });
+  });
 }
 
-/** Rotate the active steps (within the pattern length) by one step, wrapping. Locks move with their steps. */
+/** Rotate the active steps (within the pattern length) by one step, wrapping. Locks and the lane move with their steps. */
 export function shiftPattern(store, part, dir = 1) {
   const p = partIndex(store, part);
   if (p == null) return;
@@ -150,5 +155,9 @@ export function shiftPattern(store, part, dir = 1) {
   const steps = seq.steps.map(s => ({ ...s }));
   const head = steps.slice(0, len);
   const rotated = head.map((_, i) => head[((i - d) % len + len) % len]);
-  store.set(`${path}.steps`, [...rotated, ...steps.slice(len)], { source: 'music' });
+  const lane = shiftLane(seq.lane, len, d);
+  store.batch(() => {
+    store.set(`${path}.steps`, [...rotated, ...steps.slice(len)], { source: 'music' });
+    if (lane) store.set(`${path}.lane`, lane, { source: 'music' });
+  });
 }

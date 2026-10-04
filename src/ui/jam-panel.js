@@ -2,7 +2,7 @@
 // Invite codes carry a network address. Voice never enters the synth engine.
 
 import { h, createScope, setText, isTypingTarget } from './dom.js';
-import { packCode, unpackCode } from '../jam/codes.js';
+import { packCode, unpackCode, readReply } from '../jam/codes.js';
 import { createHostRoom, createGuestRoom } from '../jam/relay.js';
 import { createPeerSession, rtcAvailable } from '../jam/rtc.js';
 import { createVoicePolicy, createVoiceSink, DEFAULT_PTT_KEY } from '../jam/voice.js';
@@ -31,6 +31,11 @@ export function createJamPanel(ctx) {
   let selectedPeer = '';
   let jamEpoch = 0;
   const heldJam = new Set();
+  const onAt = new Map();
+  const waitingOff = new Map();
+  const heldLocal = new Set();
+  const pendingBySlot = new Map();
+  let pingFn = null;
   let micStream = null;
   let micTrack = null;
   const clock = createClockSync();
@@ -187,48 +192,104 @@ export function createJamPanel(ctx) {
     remoteAudios.length = 0;
   }
 
+  function dropLinks() {
+    for (const session of sessions) {
+      try { session.link.close(); } catch { /* already */ }
+    }
+    sessions = [];
+    pending = null;
+    pendingBySlot.clear();
+    heldLocal.clear();
+    guest = null;
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = 0; }
+    clock.reset();
+    buffers.clear();
+  }
+
   function sessionOpts(extra) {
     return { stun: !!stun.checked, onRemoteAudio: hearRemote, ...extra };
   }
+
+  function jamKey(who, idx, n) { return `${who}\t${idx}\t${n}`; }
+  function localKey(track, n) { return `${track}\t${n}`; }
+
+  function silenceFrom(who) {
+    if (!(ctx.engine && typeof ctx.engine.noteOff === 'function')) {
+      if (who == null) heldJam.clear();
+      return;
+    }
+    for (const key of [...heldJam]) {
+      const parts = key.split('\t');
+      if (who != null && parts[0] !== who) continue;
+      ctx.engine.noteOff(Number(parts[1]), Number(parts[2]), 0, 'jam');
+      heldJam.delete(key);
+      onAt.delete(key);
+      waitingOff.delete(key);
+    }
+  }
+
+  function silenceJam() { silenceFrom(null); }
 
   function playEngine(msg) {
     const parts = ctx.store.get('parts') || [];
     const idx = parts.findIndex((p) => p && p.id === msg.track);
     if (idx < 0 || !Number.isFinite(msg.n)) return;
-    const key = `${idx}:${msg.n}`;
+    const key = jamKey(msg.from || 'remote', idx, msg.n);
     if (msg.v > 0 && typeof ctx.engine.noteOn === 'function') {
       ctx.engine.noteOn(idx, msg.n, msg.v, 0, 'jam');
       heldJam.add(key);
     } else if (typeof ctx.engine.noteOff === 'function') {
+      if (!heldJam.has(key)) return;
       ctx.engine.noteOff(idx, msg.n, 0, 'jam');
       heldJam.delete(key);
     }
-  }
-
-  function silenceJam() {
-    if (ctx.engine && typeof ctx.engine.noteOff === 'function') {
-      for (const key of heldJam) {
-        const cut = key.indexOf(':');
-        ctx.engine.noteOff(Number(key.slice(0, cut)), Number(key.slice(cut + 1)), 0, 'jam');
-      }
-    }
-    heldJam.clear();
   }
 
   function playRemote(msg) {
     if (!msg || !ctx.engine || !ctx.store || !Number.isFinite(msg.at)) return;
     const localNow = performance.now();
     const jamNow = guest ? clock.toHost(localNow) : localNow;
-    const key = msg.from || 'remote';
-    let buffer = buffers.get(key);
-    if (!buffer) { buffer = createJitterBuffer(); buffers.set(key, buffer); }
+    const who = msg.from || 'remote';
+    let buffer = buffers.get(who);
+    if (!buffer) { buffer = createJitterBuffer(); buffers.set(who, buffer); }
     buffer.observe(msg.at, jamNow, clock.jitter || 0);
-    const plan = scheduleNote({ at: msg.at, on: msg.v > 0, now: jamNow, buffer });
+    const parts = ctx.store.get('parts') || [];
+    const idx = parts.findIndex((p) => p && p.id === msg.track);
+    const noteKey = idx >= 0 && Number.isFinite(msg.n) ? jamKey(who, idx, msg.n) : null;
+    const on = msg.v > 0;
+    if (!on && noteKey && !onAt.has(noteKey)) {
+      waitingOff.set(noteKey, msg);
+      return;
+    }
+    const plan = scheduleNote({ at: msg.at, on, now: jamNow, buffer, onAt: !on && noteKey ? onAt.get(noteKey) : null });
     if (!plan) return;
+    if (on && noteKey) onAt.set(noteKey, plan.at);
+    else if (noteKey) onAt.delete(noteKey);
     const localAt = guest ? clock.toLocal(plan.at) : plan.at;
     const delay = Math.max(0, localAt - localNow);
     const epoch = jamEpoch;
     setTimeout(() => { if (epoch === jamEpoch) playEngine(msg); }, delay);
+    if (on && noteKey && waitingOff.has(noteKey)) {
+      const off = waitingOff.get(noteKey);
+      waitingOff.delete(noteKey);
+      playRemote(off);
+    }
+  }
+
+  function releaseSent() {
+    const localNow = performance.now();
+    const at = guest ? clock.toHost(localNow) : localNow;
+    for (const key of heldLocal) {
+      const cut = key.indexOf('\t');
+      const msg = { t: 'note', track: key.slice(0, cut), n: Number(key.slice(cut + 1)), v: 0, at };
+      if (host && host.postNote) host.postNote(msg);
+      else if (guest && guest.send) guest.send(msg);
+    }
+    heldLocal.clear();
+    try {
+      if (guest && guest.send) guest.send({ t: 'bye' });
+      else if (host && host.postBye) host.postBye();
+    } catch { /* already closed */ }
   }
 
   function watchLocalNotes() {
@@ -241,6 +302,9 @@ export function createJamPanel(ctx) {
       if (!track) return;
       const localNow = performance.now();
       const msg = { t: 'note', track, n: ev.note, v: ev.on ? ev.vel : 0, at: guest ? clock.toHost(localNow) : localNow };
+      const key = localKey(track, ev.note);
+      if (ev.on) heldLocal.add(key);
+      else heldLocal.delete(key);
       if (host && host.postNote) host.postNote(msg);
       else if (guest && guest.send) guest.send(msg);
     });
@@ -249,6 +313,8 @@ export function createJamPanel(ctx) {
   function stopNotes() {
     jamEpoch++;
     silenceJam();
+    onAt.clear();
+    waitingOff.clear();
     if (noteOff) { noteOff(); noteOff = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = 0; }
   }
@@ -259,9 +325,15 @@ export function createJamPanel(ctx) {
     const session = createPeerSession(sessionOpts());
     if (!session) { note('This browser cannot open a direct connection.'); return; }
     const joined = host.accept(session.link);
-    if (!joined.ok) { note(joined.reason === 'full' ? 'This jam already has five friends.' : 'Nobody else can join right now.'); return; }
+    if (!joined.ok) {
+      try { session.link.close(); } catch { /* already */ }
+      note(joined.reason === 'full' ? 'This jam already has five friends.' : 'Nobody else can join right now.');
+      return;
+    }
     sessions.push(session);
+    session.peerId = joined.id;
     pending = session;
+    pendingBySlot.set(joined.id, session);
     if (micTrack && session.setMic) await session.setMic(micTrack);
     try {
       const desc = await session.offer();
@@ -270,6 +342,12 @@ export function createJamPanel(ctx) {
       another.hidden = sessions.length >= 5;
       note('Send this code to a friend. It contains your network address.');
     } catch (err) {
+      sessions = sessions.filter((s) => s !== session);
+      pendingBySlot.delete(joined.id);
+      if (pending === session) pending = null;
+      try { host.drop(joined.id); } catch { /* already */ }
+      try { session.link.close(); } catch { /* already */ }
+      another.hidden = sessions.length >= 5;
       note(err && err.message ? err.message : 'The invite could not be made.');
     }
   }
@@ -281,13 +359,26 @@ export function createJamPanel(ctx) {
   scope.on(el.querySelector('.jam-start'), 'click', async () => {
     if (!rtcAvailable()) { note('This browser cannot open a direct connection.'); return; }
     if (host) { await offerSlot(); return; }
+    if (guest || sessions.length) {
+      releaseSent();
+      stopNotes();
+      dropLinks();
+    }
     note('Looking for a friend.');
     hostJam = jamId();
     host = createHostRoom({ name: nameInput.value || 'Host', jam: hostJam, now: () => performance.now() });
     guest = null;
     host.on('chat', (msg) => addLine(`${personName(msg.from)}: ${msg.text}`));
     host.on('note', playRemote);
-    host.on('roster', renderRoster);
+    host.on('bye', ({ id }) => silenceFrom(id));
+    host.on('roster', (list) => {
+      const ids = new Set((Array.isArray(list) ? list : []).map((p) => p.id));
+      sessions = sessions.filter((s) => !s.peerId || ids.has(s.peerId));
+      for (const id of [...pendingBySlot.keys()]) if (!ids.has(id)) pendingBySlot.delete(id);
+      if (pending && pending.peerId && !ids.has(pending.peerId)) pending = null;
+      another.hidden = sessions.length >= 5;
+      renderRoster(list);
+    });
     rememberSession();
     watchLocalNotes();
     another.hidden = false;
@@ -297,9 +388,21 @@ export function createJamPanel(ctx) {
   scope.on(el.querySelector('.jam-join'), 'click', async () => {
     if (!rtcAvailable()) { note('This browser cannot open a direct connection.'); return; }
     if (host) { note('You are hosting. Apply the reply on this computer.'); return; }
+    let got;
     try {
-      const got = await unpackCode(joinIn.value, 'invite');
-      const session = createPeerSession(sessionOpts({ polite: true }));
+      got = await unpackCode(joinIn.value, 'invite');
+    } catch (err) {
+      note(err && err.message ? err.message : 'That code could not be read.');
+      return;
+    }
+    if (guest || sessions.length) {
+      releaseSent();
+      stopNotes();
+      dropLinks();
+    }
+    let session = null;
+    try {
+      session = createPeerSession(sessionOpts({ polite: true }));
       if (!session) { note('This browser cannot open a direct connection.'); return; }
       if (micTrack && session.setMic) await session.setMic(micTrack);
       const desc = await session.answer(got.payload.desc);
@@ -310,8 +413,14 @@ export function createJamPanel(ctx) {
         onNote: playRemote,
         onChat: (msg) => addLine(`${personName(msg.from)}: ${msg.text}`),
         onRoster: (msg) => renderRoster(msg.peers),
+        onBye: () => silenceJam(),
+        onSys: (msg) => { if (msg && msg.kind === 'leave' && msg.who) silenceFrom(msg.who); },
         onPong: (msg) => {
           clock.add(msg.t0, msg.t1, msg.t2, performance.now());
+          if (pingTimer && pingFn) {
+            clearInterval(pingTimer);
+            pingTimer = setInterval(pingFn, pingInterval(clock.count));
+          }
           if (clock.rtt != null) note(`Connected. About ${Math.round(clock.rtt)} ms round trip.`);
         },
       });
@@ -320,6 +429,7 @@ export function createJamPanel(ctx) {
       watchLocalNotes();
       if (pingTimer) clearInterval(pingTimer);
       const ping = () => { if (guest) guest.send({ t: 'ping', id: pingId++, t0: performance.now() }); };
+      pingFn = ping;
       ping();
       pingTimer = setInterval(ping, pingInterval(clock.count));
       const code = await packCode('reply', { v: 1, jam: got.payload.jam, slot: got.payload.slot || 'p1', desc });
@@ -329,15 +439,26 @@ export function createJamPanel(ctx) {
       if (replyHint) replyHint.hidden = false;
       note('Send this reply back to the host.');
     } catch (err) {
+      if (session && !sessions.includes(session)) {
+        try { session.link.close(); } catch { /* already */ }
+      }
+      releaseSent();
+      stopNotes();
+      dropLinks();
+      restoreSession();
       note(err && err.message ? err.message : 'That code could not be read.');
     }
   });
   scope.on(el.querySelector('.jam-reply-apply'), 'click', async () => {
-    if (!pending || !host) { note('Start a jam, then paste the reply here.'); return; }
+    if (!host) { note('Start a jam, then paste the reply here.'); return; }
     try {
       const got = await unpackCode(joinIn.value, 'reply');
-      await pending.acceptReply(got.payload.desc);
-      pending = null;
+      const reply = readReply(got.payload);
+      const session = (reply && pendingBySlot.get(reply.slot)) || pending;
+      if (!session) { note('Start a jam, then paste the reply here.'); return; }
+      await session.acceptReply((reply && reply.desc) || got.payload.desc);
+      if (reply) pendingBySlot.delete(reply.slot);
+      if (pending === session) pending = null;
       note('Reply applied. Chat and played notes use the direct connection.');
     } catch (err) {
       note(err && err.message ? err.message : 'That reply could not be read.');
@@ -446,28 +567,29 @@ export function createJamPanel(ctx) {
     if (!selectedPeer || selectedPeer === 'h') { note('Choose a person in the list first.'); return; }
     if (act === 'muteChat') { host.muteChat(selectedPeer); addLine('Chat muted for that person.'); }
     else if (act === 'muteMic') { host.mod.act('h', 'muteMic', { target: selectedPeer }); addLine('Mic muted for that person.'); }
-    else if (act === 'remove') { host.drop(selectedPeer); selectedPeer = ''; }
+    else if (act === 'remove') {
+      host.drop(selectedPeer);
+      sessions = sessions.filter((s) => s.peerId !== selectedPeer);
+      another.hidden = sessions.length >= 5;
+      selectedPeer = '';
+    }
     else if (act === 'ban') {
       const person = host.roster().find((p) => p.id === selectedPeer);
       if (person && person.fp) host.ban(person.fp);
       host.drop(selectedPeer);
+      sessions = sessions.filter((s) => s.peerId !== selectedPeer);
+      another.hidden = sessions.length >= 5;
       selectedPeer = '';
       addLine('That person is banned for this jam.');
     }
   });
   scope.on(el.querySelector('.jam-leave'), 'click', async () => {
+    releaseSent();
     stopNotes();
     await releaseMic();
     dropRemoteAudio();
-    for (const session of sessions) {
-      try { session.link.close(); } catch { /* already */ }
-    }
-    sessions = [];
-    pending = null;
+    dropLinks();
     host = null;
-    guest = null;
-    clock.reset();
-    buffers.clear();
     people = [];
     voice.keyUp(voice.key);
     voice.setMuted(false);

@@ -95,7 +95,7 @@ few lines.
   backward to the left, with pitch following the speed. Drag the waveform to scrub.
   Normal forward playback is unchanged.
 * **Vocoder (2.14).** A track effect. The microphone or another track shapes this one.
-* **Piano roll (2.15).** Extra notes between the 16 steps, plus one automation lane. The grid stays. A step lock still wins on its step.
+* **Piano roll (2.15).** Extra notes between the 16 steps, plus one automation lane. The grid stays. A step lock still wins on its step. Shift moves the lane with the steps. Clear removes it.
 * **Jam (2.15).** A direct connection for chat and the notes you play, with up to five friends. Notes wait on a shared clock. Voice is optional and stays out of the recording. The invite contains a network address.
 * **Learn (2.15).** Eleven short lessons, opened from Help. Your session is put back when you leave.
 * **Match a sound (2.15).** Compares a file with one cycle of each land and path. Experimental, and not a copy of the sound.
