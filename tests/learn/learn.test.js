@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { validateAll, BADGE_IDS } from '../../src/learn/index.js';
+import { validateAll, BADGE_IDS, glossaryLinks } from '../../src/learn/index.js';
 import { applySetup, runCheck } from '../../src/learn/engine.js';
 import { createProgress } from '../../src/learn/progress.js';
 import { TARGETS } from '../../src/learn/targets.js';
@@ -15,6 +15,13 @@ describe('learn', () => {
     expect(res.errors).toEqual([]);
     expect(LESSONS).toHaveLength(11);
     for (const lesson of LESSONS) expect(lesson.steps.length).toBeGreaterThanOrEqual(5);
+    const text = JSON.stringify(LESSONS);
+    expect(text).toContain('[[Nyquist|');
+    expect(text).toContain('[[Filter|');
+    expect(text).toContain('[[LFO|');
+    expect(glossaryLinks(LESSONS.find((l) => l.id === 'alias'))).toContain('nyquist');
+    expect(glossaryLinks(LESSONS.find((l) => l.id === 'filters'))).toContain('filter');
+    expect(glossaryLinks(LESSONS.find((l) => l.id === 'modulation'))).toContain('lfo');
   });
 
   it('finds each highlight snippet in its file', () => {

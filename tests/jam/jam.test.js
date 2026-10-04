@@ -68,6 +68,14 @@ describe('jam clock, jitter and ownership', () => {
     expect(snapBeats('16')).toBe(0.25);
   });
 
+  it('keeps a note-off after the note-on it ends', () => {
+    const buf = createJitterBuffer();
+    buf.observe(1000, 1000, 0);
+    const on = scheduleNote({ at: 1000, on: true, now: 1000, buffer: buf });
+    const off = scheduleNote({ at: 1005, on: false, now: 1000, buffer: buf, onAt: on.at });
+    expect(off.at).toBeGreaterThanOrEqual(on.at + 5);
+  });
+
   it('lets only the owner edit, and caps tracks at four', () => {
     const own = createOwnership();
     expect(own.canEditTrack('h', 't1')).toBe(true);
@@ -133,6 +141,34 @@ describe('jam relay', () => {
     expect(heard.map((m) => m.n)).toEqual([60]);
     expect(other.map((m) => m.from)).toEqual(['p1']);
     expect(sender.seen().some((m) => m.t === 'note')).toBe(false);
+  });
+
+  it('frees an invite slot when that guest leaves', () => {
+    const host = createHostRoom();
+    const ids = [];
+    for (let i = 0; i < 5; i++) {
+      const [a] = createMemoryLink();
+      const joined = host.accept(a);
+      expect(joined.ok).toBe(true);
+      ids.push(joined.id);
+    }
+    const [extra] = createMemoryLink();
+    expect(host.accept(extra).reason).toBe('full');
+    host.drop(ids[0]);
+    const [again] = createMemoryLink();
+    expect(host.accept(again).ok).toBe(true);
+  });
+
+  it('tells the host when a guest says goodbye', () => {
+    const [a, b] = createMemoryLink();
+    const host = createHostRoom();
+    const joined = host.accept(a);
+    const left = [];
+    host.on('bye', (msg) => left.push(msg.id));
+    const guest = createGuestRoom({ link: b, name: 'Sam' });
+    guest.send({ t: 'bye' });
+    expect(left).toEqual([joined.id]);
+    expect(host.roster().some((p) => p.id === joined.id)).toBe(false);
   });
 
   it('negotiates an audio sender and can swap the microphone', async () => {

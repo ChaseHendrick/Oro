@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.15.0. Guitar pedals are in
+going on under the hood. It describes version 2.15.1. Guitar pedals are in
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -2395,13 +2395,13 @@ noise and music without a steady beat or clear key give a low confidence message
 
 **Piano roll** sits on the Pattern line, next to Capture. It does not replace the 16-step grid. The grid still holds probability, ratchet, accent, slide, the dot and parameter locks. The roll can place extra notes that start part way through a step. The Note cell on the grid keeps the first note. Tap a note in the roll to remove it. The step numbers sit over the same columns as the notes. A step whose octave is not zero still appears, on the pitch that step plays.
 
-One lane under the roll draws a curve for one control. If that same control has a step lock, the lock wins for the whole step. The hint in the panel says so. The song is still the pattern chain. There is no arranger and no second lane.
+One lane under the roll draws a curve for one control. If that same control has a step lock, the lock wins for the whole step. The hint in the panel says so. Shift moves that curve with the steps. Clear removes it. A shorter pattern keeps the curve, and a step with no point on it returns the control to the knob. Changing the lane's control gives the previous one back. The song is still the pattern chain. There is no arranger and no second lane.
 
 ### Jam together (2.15)
 
 **Jam** in the top bar opens a side panel, so the keyboard still plays. **Start jam** builds an invite code. **Invite another** builds the next one, up to five friends. Each code contains your network address. A friend pastes one code, presses **Join**, and sends the reply code back. You paste that and press **Apply reply**.
 
-Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are stamped on the host's clock and held back by a small steady delay, so they keep their spacing instead of arriving smeared. Leave restores the session you had before you joined, and drops jam notes that had not played yet.
+Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are stamped on the host's clock and held back by a small steady delay, so they keep their spacing instead of arriving smeared. A note-off is not played before the note it ends. Leave restores the session you had before you joined, tells the others to drop the notes you were holding, and frees your place in the five.
 
 **Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local and turn off if you press them again. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it. You can join voice before or after the invite. The connection already has an audio channel, so the microphone does not need a second code. The host can mute chat, mute a mic, remove someone, ban them for this jam, lock the jam, or clear chat. Choose the person in the list first when the action needs one.
 

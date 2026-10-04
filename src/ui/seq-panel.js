@@ -25,6 +25,7 @@ import { icon } from './icons.js';
 import { createDrumPanel } from './drum-panel.js';
 import { createMidiFileTools } from './midi-file-tools.js';
 import { createPianoRoll } from './piano-roll.js';
+import { shiftLane } from '../music/roll.js';
 import { CHORD_PRESET_NAMES, CHORD_LEARNED, sanitizeChord, chordNotes, learnChord } from '../music/chord-trigger.js';
 
 export function midiName(m) {
@@ -40,7 +41,11 @@ const tidyValue = (v) => Number(v.toPrecision(5));
 
 // Local pattern tools so editing still works if the music module is missing.
 function localClear(store, part) {
-  store.set(`${patternPath(store, part)}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'ui' });
+  const path = patternPath(store, part);
+  store.batch(() => {
+    store.set(`${path}.steps`, Array.from({ length: SEQ_STEPS }, defaultStep), { source: 'ui' });
+    store.set(`${path}.lane`, null, { source: 'ui' });
+  });
 }
 function localShift(store, part, dir) {
   const path = patternPath(store, part);
@@ -48,7 +53,11 @@ function localShift(store, part, dir) {
   const len = clamp(store.get(`${path}.length`) || SEQ_STEPS, 1, SEQ_STEPS);
   const head = steps.slice(0, len), tail = steps.slice(len);
   const rotated = dir > 0 ? [head[len - 1], ...head.slice(0, len - 1)] : [...head.slice(1), head[0]];
-  store.set(`${path}.steps`, [...rotated, ...tail].map(s => ({ ...s })), { source: 'ui' });
+  const lane = shiftLane(store.get(`${path}.lane`), len, dir > 0 ? 1 : -1);
+  store.batch(() => {
+    store.set(`${path}.steps`, [...rotated, ...tail].map(s => ({ ...s })), { source: 'ui' });
+    if (lane) store.set(`${path}.lane`, lane, { source: 'ui' });
+  });
 }
 function localRandom(store, part, density = 0.6) {
   const scaleLen = (SCALES[SCALE_NAMES[store.get('global.scaleType')]] || SCALES.Minor).length;
