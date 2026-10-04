@@ -1,4 +1,4 @@
-.learn-card { position: fixed; left: 12px; bottom: 12px; z-index: 40; width: min(420px, calc(100% - 24px)); max-height: min(70vh, 560px); overflow: auto; padding: 12px; background: var(--panel-solid, var(--bg-1)); color: var(--text); border-radius: 10px; border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); }
+.learn-card { position: fixed; left: 12px; bottom: 12px; z-index: 80; width: min(420px, calc(100% - 24px)); max-height: min(70vh, 560px); overflow: auto; padding: 12px; background: var(--panel-solid, var(--bg-1)); color: var(--text); border-radius: 10px; border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); }
 .learn-card[hidden] { display: none; }
 .learn-head, .learn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .learn-item { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; margin: 4px 0; }

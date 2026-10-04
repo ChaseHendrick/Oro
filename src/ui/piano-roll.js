@@ -84,11 +84,15 @@ export function createPianoRoll(ctx) {
     const length = clamp(Math.round(pat.length) || 16, 1, SEQ_STEPS);
     const steps = pat.steps || [];
     const list = rows();
-    ruler.replaceChildren(...Array.from({ length }, (_, i) => h('span', { class: 'roll-num' }, String(i + 1))));
+    const rowH = 16;
+    const track = h('div', { class: 'roll-ruler-track', style: { gridTemplateColumns: `repeat(${length}, minmax(0, 1fr))` } },
+      ...Array.from({ length }, (_, i) => h('span', { class: 'roll-num' }, String(i + 1))));
+    ruler.replaceChildren(h('span', { 'aria-hidden': 'true' }), track);
     keys.replaceChildren(...list.map((r) => {
       const black = BLACK.has(((r.midi % 12) + 12) % 12);
       return h('span', { class: black ? 'roll-key is-black' : 'roll-key' }, midiName(r.midi));
     }));
+    grid.style.height = `${Math.max(rowH, list.length * rowH)}px`;
     const noteEls = [];
     for (let i = 0; i < length; i++) {
       const notes = notesOf(steps[i] || defaultStep());
@@ -157,7 +161,10 @@ export function createPianoRoll(ctx) {
     if (e.button === 2) return;
     const note = e.target && e.target.closest ? e.target.closest('.roll-note') : null;
     if (note) {
-      selected = { step: Number(note.dataset.step), degree: Number(note.dataset.degree), octave: Number(note.dataset.octave) };
+      const i = Number(note.dataset.step);
+      const cur = (pattern().steps || [])[i] || defaultStep();
+      writeStep(i, eraseNote(cur, { degree: Number(note.dataset.degree), octave: Number(note.dataset.octave) }));
+      selected = null;
       return;
     }
     paintAt(e);

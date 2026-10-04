@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { TERRAINS, PATHS } from '../../src/dsp/catalog.js';
-import { featuresOf, searchFromFeatures, searchPatch, applyPatch, CANDIDATES } from '../../src/music/sound-match.js';
+import { featuresOf, searchFromFeatures, searchPatch, applyPatch, CANDIDATES, renderCandidateWave } from '../../src/music/sound-match.js';
 
 describe('match a sound', () => {
   it('hears a sine near its frequency and silence as quiet', () => {
@@ -37,6 +37,10 @@ describe('match a sound', () => {
     }
     const found = searchPatch(new Float32Array(64), 48000);
     expect(found.tried).toBe(CANDIDATES.length);
+    const wave = renderCandidateWave(CANDIDATES[0]);
+    let spread = 0;
+    for (let i = 1; i < wave.length; i++) spread += Math.abs(wave[i] - wave[0]);
+    expect(spread).toBeGreaterThan(0);
   });
 
   it('writes the chosen patch through the store', () => {

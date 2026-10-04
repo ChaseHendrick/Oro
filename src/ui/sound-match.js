@@ -16,7 +16,7 @@ export function createSoundMatch(ctx, { decode } = {}) {
   useBtn.hidden = true;
   const panel = h('div', { class: 'sound-match', hidden: true },
     h('h3', { class: 'section-title' }, 'Match a sound'),
-    h('p', { class: 'sound-match-hint' }, 'Experimental. This picks a terrain and a path from a short list. It does not render each patch, so the result is a starting point, not a copy of the sound.'),
+    h('p', { class: 'sound-match-hint' }, 'Experimental. Oro plays one cycle of each land and path and keeps the closest spectrum. Filters and effects are not part of the search.'),
     file, searchBtn, useBtn, status);
   panel.hidden = true;
   const button = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Match a sound');

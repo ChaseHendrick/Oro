@@ -96,9 +96,9 @@ few lines.
   Normal forward playback is unchanged.
 * **Vocoder (2.14).** A track effect. The microphone or another track shapes this one.
 * **Piano roll (2.15).** Extra notes between the 16 steps, plus one automation lane. The grid stays. A step lock still wins on its step.
-* **Jam (2.15).** A direct connection for chat and the notes you play, with one friend. Voice is optional and stays out of the recording. The invite contains a network address.
-* **Learn (2.15).** Eleven short lessons from Help. Your session is restored when you leave.
-* **Match a sound (2.15).** Suggests a terrain and a path from a file. Experimental, and not a copy of the sound.
+* **Jam (2.15).** A direct connection for chat and the notes you play, with up to five friends. Notes wait on a shared clock. Voice is optional and stays out of the recording. The invite contains a network address.
+* **Learn (2.15).** Eleven short lessons, opened from Help. Your session is put back when you leave.
+* **Match a sound (2.15).** Compares a file with one cycle of each land and path. Experimental, and not a copy of the sound.
 * **Link and plugin (2.15).** Desktop Link switches are visible, but the GPL Link library is not included. `?plugin=1` exposes a host parameter list. There is no VST, AU or CLAP file.
 * **Tuner (2.13).** Settings > Voice, and Tune on the Sampler card, show the note and cents from the
   microphone. It only listens, and it follows the reference pitch.

@@ -102,6 +102,21 @@ describe('jam relay', () => {
     expect(host.visible().some((e) => e.from === joined.id)).toBe(false);
   });
 
+  it('answers a clock ping so a guest can estimate the round trip', () => {
+    const [a, b] = createMemoryLink();
+    let t = 5000;
+    const host = createHostRoom({ now: () => t });
+    host.accept(a);
+    const pongs = [];
+    const guest = createGuestRoom({ link: b, name: 'Sam', onPong: (m) => pongs.push(m) });
+    t = 5010;
+    guest.send({ t: 'ping', id: 3, t0: 5000 });
+    expect(pongs).toHaveLength(1);
+    expect(pongs[0].t0).toBe(5000);
+    expect(pongs[0].t1).toBe(5010);
+    expect(pongs[0].id).toBe(3);
+  });
+
   it('relays a note to the other guest and to the host', () => {
     const [ha, ga] = createMemoryLink();
     const [hb, gb] = createMemoryLink();

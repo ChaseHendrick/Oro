@@ -1,15 +1,14 @@
 .piano-roll { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .piano-roll[hidden] { display: none; }
 .roll-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.roll-ruler, .roll-body { display: grid; grid-template-columns: 52px 1fr; gap: 4px; min-width: 0; }
-.roll-ruler { padding-left: 0; }
+.roll-ruler { display: grid; grid-template-columns: 52px 1fr; gap: 4px; min-width: 0; }
+.roll-ruler-track { display: grid; min-width: 0; }
 .roll-num { font-size: 11px; color: var(--text-3, var(--text-2)); text-align: center; }
-.roll-ruler { grid-template-columns: 52px repeat(auto-fit, minmax(0, 1fr)); }
-.roll-body { max-height: 280px; overflow: auto; }
+.roll-body { display: grid; grid-template-columns: 52px 1fr; gap: 4px; min-width: 0; max-height: 280px; overflow: auto; }
 .roll-keys { display: flex; flex-direction: column; }
 .roll-key { font-size: 10px; line-height: 16px; height: 16px; color: var(--text-2); white-space: nowrap; }
 .roll-key.is-black { color: var(--text-3, var(--text-2)); padding-left: 8px; }
-.roll-grid { position: relative; min-height: 220px; background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: 6px; }
+.roll-grid { position: relative; background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: 6px; }
 .roll-note { position: absolute; background: var(--accent); border: 0; border-radius: 3px; min-height: 8px; padding: 0; }
 .roll-note.is-first { outline: 1px solid var(--text); }
 .roll-lane { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

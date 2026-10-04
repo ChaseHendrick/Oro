@@ -14,16 +14,16 @@ separate future features; they are outside the 2.0 expansion.
   GitHub Release are still **2.14.0** until this lands on `main`. A push to `main`
   runs `.github/workflows/desktop.yml` and publishes the desktop release. Do not
   merge until "Test and build the web app" is green on the commit that will land.
-* **In 2.15.0:** piano roll (quarter-step extras, one lane, step locks win), Jam
-  (one WebRTC offer and reply, chat, key notes, push-to-talk voice that never
-  enters the engine), Learn (11 lessons, two badges), Match a sound (no synth
-  render unless a caller injects one), Link controls that report "Not in this
-  build" because the GPL library is not vendored, and a plugin host contract
-  behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
-* **Still not done:** a compiled plugin, a real Link session, a TURN relay, jam
-  across two machines, Playwright jam e2e, shared musical clock for jam notes,
-  more than one friend from the Jam panel, live multi-out, the hardware checks
-  in 10.6, and `node dev/dsp/bench.mjs 1` against main.
+* **In 2.15.0:** piano roll (quarter-step extras, one lane, step locks win, numbers
+  line up with the grid, tap a note to erase it), Jam (up to five invite codes,
+  chat both ways, key notes held to a shared clock, push-to-talk voice that never
+  enters the engine), Learn (11 lessons, two badges), Match a sound (one real
+  cycle of the land under the path, not the filter chain), Link controls that
+  report "Not in this build" because the GPL library is not vendored, and a plugin
+  host contract behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
+* **Still not done:** a compiled plugin, a real Link session (the library is GPL
+  and is not in this MIT repo), a TURN relay, a jam tried on two real computers,
+  a Playwright two-browser run, live multi-out, and the hardware checks in 10.6.
 * **Checks:** full Vitest suite on this machine, 1917 passed and 1 failed (the
   lazy chunk list). That list was updated and `tests/ui/lazy.test.js` then passed.
   Not re-run as a second full pass after that one-line test fix.
@@ -748,20 +748,23 @@ On a new branch, not merged. `package.json` is 2.15.0.
   is the same path as before. The grid is still there.
 * **Jam** (`src/jam/`, `src/ui/jam-panel.js`). The six modules from commit 946f266 plus
   chat, moderation, speaking, voice, sync, rtc, relay and the panel. Start calls
-  `RTCPeerConnection` when the browser has it and packs the offer. Join packs an answer.
-  Apply reply sets the remote description. One peer from this panel. Notes use the
-  existing `note` message and play on arrival (`engine.noteOn` with source `jam`, not
-  the router). Sequencer, preview and ghost are not sent. Voice constraints are echo
-  cancellation, noise suppression and AGC. The sink throws if handed `{ oroEngine: true }`.
-  Autosave while joined writes the pre-join session object. History ignores `jam`.
-  Not done: TURN, two-machine check, Playwright e2e, clock-aligned notes, five guests
-  from the panel.
+  `RTCPeerConnection` when the browser has it. Invite another makes the next
+  code, up to five (`p1` to `p5`). Apply reply sets the remote description on
+  the invite that is still waiting. Chat arrives on both sides. Notes use the
+  `note` message, stamped on the host clock. Guests ping so they can convert.
+  Playback goes through the jitter buffer and `engine.noteOn` with source
+  `jam`, not the router. Sequencer, preview and ghost are not sent. Voice
+  constraints are echo cancellation, noise suppression and AGC. The sink throws
+  if handed `{ oroEngine: true }`. Autosave while joined writes the pre-join
+  session object. History ignores `jam`.
+  Not done: TURN, two real computers, Playwright e2e.
 * **Learn** (`src/learn/`). Eleven lessons, five steps each. Highlights are selectors
   whose snippets the test greps in real files. No em dash or en dash in lesson text.
   Badges `lesson-complete` and `all-lessons`. Rescue key `oro.learn.rescue` is restored
   once on boot if a lesson was left open, then cleared.
-* **Match a sound** (`src/music/sound-match.js`). `searchPatch` without a render function
-  does not run the synth. The UI says so.
+* **Match a sound** (`src/music/sound-match.js`). The search renders one cycle of
+  each candidate: path sample, centre 0.5, size 0.28, bilinear height. That is
+  the voice's reading of the land, not the filters, effects or envelopes.
 * **Link** (`src/link/link.js`). Status is empty when off, "Not in this build" when on
   and the library is missing. Rows are hidden unless the user agent contains `Electron/`.
   Do not vendor the GPL library into this MIT repo.

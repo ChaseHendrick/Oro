@@ -4,6 +4,9 @@
 // unless that render is passed in.
 
 import { TERRAINS, PATHS, TERRAIN_INDEX, PATH_INDEX } from '../dsp/catalog.js';
+import { generateTerrain } from '../dsp/terrains.js';
+import { samplePath } from '../dsp/paths.js';
+import { sampleBilinear } from '../dsp/terrain-math.js';
 
 const BANDS = 32;
 
@@ -100,6 +103,39 @@ export function buildCandidates() {
 
 export const CANDIDATES = buildCandidates();
 
+const terrainCache = new Map();
+
+function terrainOf(id) {
+  if (terrainCache.has(id)) return terrainCache.get(id);
+  const index = TERRAIN_INDEX[id];
+  const data = Number.isInteger(index) ? generateTerrain(index, { size: 64 }) : null;
+  const size = data ? Math.round(Math.sqrt(data.length)) : 0;
+  const table = data && size ? { data, size } : null;
+  terrainCache.set(id, table);
+  return table;
+}
+
+/**
+ * One cycle of the land under the path, before filters and effects.
+ * Path points sit near radius 1. Size 0.28 around the middle of the map
+ * is the same reading the voice uses: centre plus the path, then bilinear.
+ */
+export function renderCandidateWave(candidate, n = 512) {
+  const out = new Float32Array(n);
+  const table = candidate && terrainOf(candidate.terrain);
+  const shape = candidate ? PATH_INDEX[candidate.path] : undefined;
+  if (!table || !Number.isInteger(shape)) return out;
+  const pts = samplePath(shape, 2, 0.5, n);
+  const orbit = 0.28;
+  for (let i = 0; i < n; i++) {
+    const u = 0.5 + pts[i * 2] * orbit;
+    const v = 0.5 + pts[i * 2 + 1] * orbit;
+    const h = sampleBilinear(table.data, table.size, u, v);
+    out[i] = Number.isFinite(h) ? h * 2 - 1 : 0;
+  }
+  return out;
+}
+
 export function searchFromFeatures(sampleFeatures, list) {
   let best = null;
   for (const item of list) {
@@ -110,11 +146,10 @@ export function searchFromFeatures(sampleFeatures, list) {
 }
 
 /**
- * Search. `renderCandidate(candidate) -> Float32Array` is optional. Without
- * it, the ranking uses only the sample's own features against empty
- * candidate spectra, which is not a synth render.
+ * Search. The default render is one cycle of the terrain under the path.
+ * Pass a function to use a different recording of each candidate.
  */
-export function searchPatch(samples, rate, renderCandidate) {
+export function searchPatch(samples, rate, renderCandidate = renderCandidateWave) {
   const sample = featuresOf(samples, rate);
   const list = CANDIDATES.map((c) => {
     if (typeof renderCandidate !== 'function') return { ...c, features: { spec: [], env: [] } };

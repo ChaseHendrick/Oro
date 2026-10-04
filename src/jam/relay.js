@@ -7,7 +7,7 @@ import { createChat } from './chat.js';
 
 const GUEST_IDS = ['p1', 'p2', 'p3', 'p4', 'p5'];
 
-export function createHostRoom({ name = 'Host', jam = 'jamroom1' } = {}) {
+export function createHostRoom({ name = 'Host', jam = 'jamroom1', now = () => Date.now() } = {}) {
   const mod = createModeration();
   const chat = createChat();
   const peers = new Map();
@@ -63,6 +63,11 @@ export function createHostRoom({ name = 'Host', jam = 'jamroom1' } = {}) {
       return;
     }
     if (!peer.hello) return;
+    if (msg.t === 'ping') {
+      const t1 = now();
+      send(peer.link, { t: 'pong', id: msg.id, t0: msg.t0, t1, t2: now() });
+      return;
+    }
     if (msg.t === 'note') {
       const down = { t: 'note', from: id, track: msg.track, n: msg.n, v: msg.v, at: msg.at };
       broadcast(down, id);
@@ -97,6 +102,7 @@ export function createHostRoom({ name = 'Host', jam = 'jamroom1' } = {}) {
     localBlock: (id, on) => mod.localBlock(id, on),
     visible() { return chat.entries().filter((e) => !mod.localBlocked(e.from)); },
     on(type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
+    drop(id) { remove(id); },
     postLocal(text) {
       const posted = chat.post({ from: HOST_ID, text, name });
       if (!posted.ok) return posted;
@@ -110,15 +116,20 @@ export function createHostRoom({ name = 'Host', jam = 'jamroom1' } = {}) {
   };
 }
 
-export function createGuestRoom({ link, name = 'Guest', onNote } = {}) {
+export function createGuestRoom({ link, name = 'Guest', onNote, onChat, onPong, onRoster } = {}) {
   const chat = createChat();
   const seen = [];
   link.onmessage((raw) => {
     const msg = decodeMessage(raw, 'down');
     if (!msg) return;
     seen.push(msg);
-    if (msg.t === 'chat') chat.post({ from: msg.from, text: msg.text, at: msg.at, name: msg.from });
+    if (msg.t === 'chat') {
+      chat.post({ from: msg.from, text: msg.text, at: msg.at, name: msg.from });
+      if (typeof onChat === 'function') onChat(msg);
+    }
     if (msg.t === 'note' && typeof onNote === 'function') onNote(msg);
+    if (msg.t === 'pong' && typeof onPong === 'function') onPong(msg);
+    if (msg.t === 'roster' && typeof onRoster === 'function') onRoster(msg);
   });
   link.send(encodeMessage({ t: 'hello', v: PROTOCOL_VERSION, name }));
   return {

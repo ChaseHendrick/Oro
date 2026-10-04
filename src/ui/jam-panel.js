@@ -8,6 +8,8 @@ import { createPeerSession, rtcAvailable } from '../jam/rtc.js';
 import { createVoicePolicy, createVoiceSink, DEFAULT_PTT_KEY } from '../jam/voice.js';
 import { createSpeaking } from '../jam/speaking.js';
 import { guardAutosave, shouldSendSched } from '../jam/sync.js';
+import { createClockSync, pingInterval } from '../jam/clock.js';
+import { createJitterBuffer, scheduleNote } from '../jam/jitter.js';
 import '../styles/jam.css';
 
 export function createJamPanel(ctx) {
@@ -17,12 +19,18 @@ export function createJamPanel(ctx) {
   const sink = createVoiceSink();
   let host = null;
   let guest = null;
-  let session = null;
+  let sessions = [];
+  let pending = null;
   let preJoin = null;
   let open = false;
   let unread = 0;
   let captureKey = false;
   let noteOff = null;
+  let pingTimer = 0;
+  let pingId = 1;
+  let selectedPeer = '';
+  const clock = createClockSync();
+  const buffers = new Map();
 
   const nameInput = h('input', { class: 'jam-name', maxlength: '24', value: 'Player', 'aria-label': 'Your name' });
   const stun = h('input', { type: 'checkbox', 'aria-label': 'Use a public STUN server' });
@@ -52,6 +60,7 @@ export function createJamPanel(ctx) {
     h('p', { class: 'jam-hint' }, 'Some networks need a relay. Oro does not provide one, so Join can fail.'),
     h('div', { class: 'jam-row' },
       h('button', { type: 'button', class: 'btn btn--sm jam-start' }, 'Start jam'),
+      h('button', { type: 'button', class: 'btn btn--sm jam-another', hidden: true }, 'Invite another'),
       h('button', { type: 'button', class: 'btn btn--sm jam-join' }, 'Join'),
       h('button', { type: 'button', class: 'btn btn--sm jam-reply-apply' }, 'Apply reply')),
     h('p', { class: 'jam-hint' }, 'Send this code to a friend. It contains your network address.'),
@@ -75,6 +84,9 @@ export function createJamPanel(ctx) {
     modBox,
     h('button', { type: 'button', class: 'btn btn--ghost btn--sm jam-leave' }, 'Leave'));
   el.hidden = true;
+
+  const another = el.querySelector('.jam-another');
+  another.hidden = true;
 
   function setOpen(on) {
     open = !!on;
@@ -121,13 +133,37 @@ export function createJamPanel(ctx) {
     } catch { return 'jamroom1'; }
   }
 
-  function playRemote(msg) {
-    if (!msg || !ctx.engine || !ctx.store) return;
+  function renderRoster(list) {
+    const people = Array.isArray(list) ? list : [];
+    roster.replaceChildren(...people.map((p) => {
+      const late = p.rtt == null ? '' : ` ${p.rtt} ms`;
+      const li = h('li', null, h('button', { type: 'button', class: p.id === selectedPeer ? 'jam-person is-on' : 'jam-person' }, `${p.name}${late}`));
+      li.querySelector('button').addEventListener('click', () => { selectedPeer = p.id; renderRoster(people); });
+      return li;
+    }));
+  }
+
+  function playEngine(msg) {
     const parts = ctx.store.get('parts') || [];
     const idx = parts.findIndex((p) => p && p.id === msg.track);
     if (idx < 0 || !Number.isFinite(msg.n)) return;
     if (msg.v > 0 && typeof ctx.engine.noteOn === 'function') ctx.engine.noteOn(idx, msg.n, msg.v, 0, 'jam');
     else if (typeof ctx.engine.noteOff === 'function') ctx.engine.noteOff(idx, msg.n, 0, 'jam');
+  }
+
+  function playRemote(msg) {
+    if (!msg || !ctx.engine || !ctx.store || !Number.isFinite(msg.at)) return;
+    const localNow = performance.now();
+    const jamNow = guest ? clock.toHost(localNow) : localNow;
+    const key = msg.from || 'remote';
+    let buffer = buffers.get(key);
+    if (!buffer) { buffer = createJitterBuffer(); buffers.set(key, buffer); }
+    buffer.observe(msg.at, jamNow, clock.jitter || 0);
+    const plan = scheduleNote({ at: msg.at, on: msg.v > 0, now: jamNow, buffer });
+    if (!plan) return;
+    const localAt = guest ? clock.toLocal(plan.at) : plan.at;
+    const delay = Math.max(0, localAt - localNow);
+    setTimeout(() => playEngine(msg), delay);
   }
 
   function watchLocalNotes() {
@@ -138,7 +174,8 @@ export function createJamPanel(ctx) {
       const part = ctx.store && ctx.store.get(`parts.${ev.part}`);
       const track = part && part.id;
       if (!track) return;
-      const msg = { t: 'note', track, n: ev.note, v: ev.on ? ev.vel : 0, at: Math.max(0, Number(ev.time) || 0) };
+      const localNow = performance.now();
+      const msg = { t: 'note', track, n: ev.note, v: ev.on ? ev.vel : 0, at: guest ? clock.toHost(localNow) : localNow };
       if (host && host.postNote) host.postNote(msg);
       else if (guest && guest.send) guest.send(msg);
     });
@@ -146,44 +183,77 @@ export function createJamPanel(ctx) {
 
   function stopNotes() {
     if (noteOff) { noteOff(); noteOff = null; }
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = 0; }
   }
+
+  async function offerSlot() {
+    if (!host) return;
+    if (sessions.length >= 5) { note('This jam already has five friends.'); return; }
+    const session = createPeerSession({ stun: !!stun.checked });
+    if (!session) { note('This browser cannot open a direct connection.'); return; }
+    const joined = host.accept(session.link);
+    if (!joined.ok) { note(joined.reason === 'full' ? 'This jam already has five friends.' : 'Nobody else can join right now.'); return; }
+    sessions.push(session);
+    pending = session;
+    try {
+      const desc = await session.offer();
+      const code = await packCode('invite', { v: 1, jam: hostJam, slot: joined.id, host: nameInput.value || 'Host', desc });
+      inviteOut.value = code;
+      another.hidden = sessions.length >= 5;
+      note('Send this code to a friend. It contains your network address.');
+    } catch (err) {
+      note(err && err.message ? err.message : 'The invite could not be made.');
+    }
+  }
+
+  let hostJam = '';
 
   scope.on(button, 'click', () => setOpen(!open));
   scope.on(el.querySelector('.jam-close'), 'click', () => setOpen(false));
   scope.on(el.querySelector('.jam-start'), 'click', async () => {
     if (!rtcAvailable()) { note('This browser cannot open a direct connection.'); return; }
+    if (host) { await offerSlot(); return; }
     note('Looking for a friend.');
-    session = createPeerSession({ stun: !!stun.checked });
-    if (!session) { note('This browser cannot open a direct connection.'); return; }
-    const id = jamId();
-    host = createHostRoom({ name: nameInput.value || 'Host', jam: id });
+    hostJam = jamId();
+    host = createHostRoom({ name: nameInput.value || 'Host', jam: hostJam, now: () => performance.now() });
     guest = null;
-    host.accept(session.link);
-    host.on('chat', (msg) => addLine(msg.text));
+    host.on('chat', (msg) => addLine(`${msg.from || 'Friend'}: ${msg.text}`));
     host.on('note', playRemote);
+    host.on('roster', renderRoster);
     rememberSession();
     watchLocalNotes();
-    try {
-      const desc = await session.offer();
-      const code = await packCode('invite', { v: 1, jam: id, slot: 'p1', host: nameInput.value || 'Host', desc });
-      inviteOut.value = code;
-      note('Send this code to a friend. It contains your network address.');
-    } catch (err) {
-      note(err && err.message ? err.message : 'The invite could not be made.');
-    }
+    another.hidden = false;
+    await offerSlot();
   });
+  scope.on(another, 'click', () => { offerSlot(); });
   scope.on(el.querySelector('.jam-join'), 'click', async () => {
     if (!rtcAvailable()) { note('This browser cannot open a direct connection.'); return; }
+    if (host) { note('You are hosting. Apply the reply on this computer.'); return; }
     try {
       const got = await unpackCode(joinIn.value, 'invite');
-      session = createPeerSession({ stun: !!stun.checked, polite: true });
+      const session = createPeerSession({ stun: !!stun.checked, polite: true });
       if (!session) { note('This browser cannot open a direct connection.'); return; }
       const desc = await session.answer(got.payload.desc);
-      guest = createGuestRoom({ link: session.link, name: nameInput.value || 'Guest', onNote: playRemote });
+      sessions = [session];
+      guest = createGuestRoom({
+        link: session.link,
+        name: nameInput.value || 'Guest',
+        onNote: playRemote,
+        onChat: (msg) => addLine(`${msg.from || 'Friend'}: ${msg.text}`),
+        onRoster: (msg) => renderRoster(msg.peers),
+        onPong: (msg) => {
+          clock.add(msg.t0, msg.t1, msg.t2, performance.now());
+          if (clock.rtt != null) note(`Connected. About ${Math.round(clock.rtt)} ms round trip.`);
+        },
+      });
       host = null;
       rememberSession();
       watchLocalNotes();
-      const code = await packCode('reply', { v: 1, jam: got.payload.jam, slot: 'p1', desc });
+      if (pingTimer) clearInterval(pingTimer);
+      const ping = () => { if (guest) guest.send({ t: 'ping', id: pingId++, t0: performance.now() }); };
+      ping();
+      pingTimer = setInterval(ping, pingInterval(clock.count));
+      const code = await packCode('reply', { v: 1, jam: got.payload.jam, slot: got.payload.slot || 'p1', desc });
       replyOut.hidden = false;
       replyOut.value = code;
       const replyHint = el.querySelector('.jam-reply');
@@ -194,11 +264,12 @@ export function createJamPanel(ctx) {
     }
   });
   scope.on(el.querySelector('.jam-reply-apply'), 'click', async () => {
-    if (!session || !host) { note('Start a jam before applying a reply.'); return; }
+    if (!pending || !host) { note('Start a jam, then paste the reply here.'); return; }
     try {
       const got = await unpackCode(joinIn.value, 'reply');
-      await session.acceptReply(got.payload.desc);
-      note('Reply applied. Chat and notes use the direct connection.');
+      await pending.acceptReply(got.payload.desc);
+      pending = null;
+      note('Reply applied. Chat and played notes use the direct connection.');
     } catch (err) {
       note(err && err.message ? err.message : 'That reply could not be read.');
     }
@@ -206,10 +277,14 @@ export function createJamPanel(ctx) {
   scope.on(el.querySelector('.jam-send'), 'click', () => {
     const text = chatInput.value;
     if (!text.trim()) return;
-    if (host) host.postLocal(text);
-    else if (guest) guest.say(text);
-    else addLine(text);
-    log.appendChild(h('p', { class: 'jam-line' }, text));
+    if (host) {
+      const posted = host.postLocal(text);
+      if (posted && posted.ok) addLine(`You: ${text}`);
+      else note('That message was not sent.');
+    } else if (guest) {
+      guest.say(text);
+      addLine(`You: ${text}`);
+    } else addLine(text);
     chatInput.value = '';
   });
   scope.on(el.querySelector('.jam-voice-join'), 'click', () => {
@@ -244,11 +319,36 @@ export function createJamPanel(ctx) {
   });
   scope.on(el.querySelector('.jam-mute'), 'click', () => voice.setMuted(true));
   scope.on(el.querySelector('.jam-deafen'), 'click', () => voice.setDeaf(true));
+  scope.on(modBox, 'click', (e) => {
+    const act = e.target && e.target.dataset ? e.target.dataset.act : '';
+    if (!act || !host) { note('Only the host can do that.'); return; }
+    if (act === 'lock') { host.mod.act('h', host.mod.locked() ? 'unlock' : 'lock'); note(host.mod.locked() ? 'The jam is locked.' : 'The jam is open.'); return; }
+    if (act === 'clearChat') { host.chat.clear(); log.replaceChildren(); addLine('Chat cleared.'); return; }
+    if (act === 'reclaim') { host.mod.act('h', 'reclaim'); note('Tracks belong to the host again.'); return; }
+    if (!selectedPeer || selectedPeer === 'h') { note('Choose a person in the list first.'); return; }
+    if (act === 'muteChat') { host.muteChat(selectedPeer); addLine('Chat muted for that person.'); }
+    else if (act === 'muteMic') { host.mod.act('h', 'muteMic', { target: selectedPeer }); addLine('Mic muted for that person.'); }
+    else if (act === 'remove') { host.drop(selectedPeer); selectedPeer = ''; }
+    else if (act === 'ban') {
+      const person = host.roster().find((p) => p.id === selectedPeer);
+      if (person && person.fp) host.ban(person.fp);
+      host.drop(selectedPeer);
+      selectedPeer = '';
+      addLine('That person is banned for this jam.');
+    }
+  });
   scope.on(el.querySelector('.jam-leave'), 'click', () => {
     stopNotes();
-    if (session && session.link) { try { session.link.close(); } catch { /* already */ } }
-    session = null;
-    host = null; guest = null;
+    for (const session of sessions) {
+      try { session.link.close(); } catch { /* already */ }
+    }
+    sessions = [];
+    pending = null;
+    host = null;
+    guest = null;
+    clock.reset();
+    buffers.clear();
+    another.hidden = true;
     restoreSession();
     note('You left the jam.');
     setOpen(false);
@@ -258,7 +358,7 @@ export function createJamPanel(ctx) {
   speaking.push(0);
 
   return {
-    el, button, voice, sink, iceServers,
+    el, button, voice, sink,
     open: () => setOpen(true), close: () => setOpen(false), dispose: scope.dispose,
   };
 }

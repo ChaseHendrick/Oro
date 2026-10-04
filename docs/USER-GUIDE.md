@@ -2393,21 +2393,21 @@ noise and music without a steady beat or clear key give a low confidence message
 
 ### Piano roll (2.15)
 
-**Piano roll** sits on the Pattern line, next to Capture. It does not replace the 16-step grid. The grid still holds probability, ratchet, accent, slide, the dot and parameter locks. The roll can place extra notes that start part way through a step. The Note cell on the grid keeps the first note.
+**Piano roll** sits on the Pattern line, next to Capture. It does not replace the 16-step grid. The grid still holds probability, ratchet, accent, slide, the dot and parameter locks. The roll can place extra notes that start part way through a step. The Note cell on the grid keeps the first note. Tap a note in the roll to remove it. The step numbers sit over the same columns as the notes.
 
 One lane under the roll draws a curve for one control. If that same control has a step lock, the lock wins for the whole step. The hint in the panel says so. The song is still the pattern chain. There is no arranger and no second lane.
 
 ### Jam together (2.15)
 
-**Jam** in the top bar opens a side panel, so the keyboard still plays. **Start jam** builds an invite code. Send it to one friend. It contains your network address. They paste it, press **Join**, and send the reply code back. You paste that under the invite and press **Apply reply**.
+**Jam** in the top bar opens a side panel, so the keyboard still plays. **Start jam** builds an invite code. **Invite another** builds the next one, up to five friends. Each code contains your network address. A friend pastes one code, presses **Join**, and sends the reply code back. You paste that and press **Apply reply**.
 
-Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are heard when they arrive. They are not locked to one shared clock. This screen connects one friend, not a room of six.
+Each computer plays its own copy of the sound. The connection carries chat and the notes you play on the keys. Sequencer notes are not sent. Notes are stamped on the host's clock and held back by a small steady delay, so they keep their spacing instead of arriving smeared. Leave restores the session you had before you joined.
 
-**Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it.
+**Join voice** is optional. Headphones are recommended. Push to talk (hold N, or another key you choose in the panel) or open mic. Mute and Deafen are local. Voice plays through the page, not through Oro's engine, so bounces, the looper and stems do not record it. The host can mute chat, mute a mic, remove someone, ban them for this jam, lock the jam, or clear chat. Choose the person in the list first when the action needs one.
 
-**Use a public STUN server** asks Google's STUN server for help crossing some networks. It is off by default. Some networks need a relay. Oro does not provide one, so Join can fail. Chat is plain text, 500 characters. Leave restores the session you had before you joined.
+**Use a public STUN server** asks Google's STUN server for help crossing some networks. It is off by default. Some networks need a relay. Oro does not provide one, so Join can fail. Chat is plain text, 500 characters.
 
-Checked in automated tests of the codes, the chat rules and the note relay. Not checked with two computers on a real network.
+Checked in automated tests of the codes, the chat rules, the clock ping and the note relay. Not checked with two computers on a real network.
 
 ### Learn (2.15)
 
@@ -2415,7 +2415,7 @@ Help includes **Open Learn**. Eleven lessons cover the land, paths, aliasing, fi
 
 ### Match a sound (2.15)
 
-**Match a sound**, next to Match a song, takes an audio file and suggests a terrain and a path. It is experimental. It does not play each candidate through the synth, so treat the result as a starting point, not a copy of the file.
+**Match a sound**, next to Match a song, takes an audio file and compares it with one cycle of each land and path. That cycle is the height of the land under the path, the same reading the voice uses, before the filter and the effects. It is experimental. Treat the result as a starting point, not a copy of the file.
 
 ### Link and a plugin host (2.15)
 
