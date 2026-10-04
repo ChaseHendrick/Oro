@@ -11,6 +11,7 @@ import { createEnvGraph } from './env-graph.js';
 import { createSmartPanel } from './smart-panel.js';
 import { decodeNoiseRecording, encodeNoiseRecording, MAX_NOISE_SECONDS } from '../dsp/noise-recording.js';
 import { timeStretch } from '../dsp/time-stretch.js';
+import { createResoEngineRow } from './reso-engine-row.js';
 
 function card(title, aside, ...children) {
   const id = 'sec-' + title.toLowerCase().replace(/\W+/g, '-');
@@ -27,6 +28,8 @@ export function createSoundPanel(ctx) {
     return knob.el;
   };
 
+  // 2.12 GPU Resonator: Engine / GPU detail / status (null without WebGPU)
+  const resoEngineRow = () => { const r = createResoEngineRow(ctx); if (!r) return null; scope.add(r.dispose); return r.el; };
   const select = (id, label) => {
     const c = createSelect(ctx, binder.partParam(id), { label, className: 'select--sm' });
     scope.add(c.dispose);
@@ -121,7 +124,8 @@ export function createSoundPanel(ctx) {
       h('div', { class: 'knob-grid knob-grid--4' }, ...['pluck','pluckDecay','pluckTone','pluckDispersion'].map(id => k(id, { size: 'sm' })))),
     card('Resonator', select('resoOn', 'Resonator mode'),
       h('p', { class: 'reso-note' }, 'The land rings like a drum skin: peaks are stiff, valleys slack. Uses noticeable CPU while it rings.'),
-      h('div', { class: 'knob-grid knob-grid--5' }, ...['resoMix', 'resoDecay', 'resoTone', 'resoSize', 'resoListen'].map(id => k(id, { size: 'sm', ariaLabel: (l) => `Resonator ${l}` })))),
+      h('div', { class: 'knob-grid knob-grid--5' }, ...['resoMix', 'resoDecay', 'resoTone', 'resoSize', 'resoListen'].map(id => k(id, { size: 'sm', ariaLabel: (l) => `Resonator ${l}` }))),
+      resoEngineRow()),
     card('Filter', ftype.el,
       h('div', { class: 'filter-grid' },
         k('cutoff', { size: 'lg', className: 'is-hero' }), k('resonance'), k('drive'), k('filterEnv'), k('keyTrack'), formantKnob)),
