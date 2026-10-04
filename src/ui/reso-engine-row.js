@@ -22,7 +22,7 @@ export function createResoEngineRow(ctx) {
   const field = (label, el) => h('label', { class: 'sound-field' }, h('span', { class: 'mini-label' }, label), h('div', { class: 'select select--sm' }, el));
   const detailField = field('GPU detail', detailSel);
   const el = h('div', { class: 'sound-selects reso-engine' }, field('Engine', engineSel), detailField, status);
-  let noticed = false, latency = 0;
+  let noticed = false, latency = 0, started = false;
   const render = () => {
     const gpu = store.get('ui.resoEngine') === 'gpu';
     engineSel.value = gpu ? 'gpu' : 'cpu';
@@ -30,21 +30,27 @@ export function createResoEngineRow(ctx) {
     detailField.hidden = !gpu;
     if (!gpu && !status.dataset.fallback) status.textContent = '';
   };
-  scope.on(engineSel, 'change', () => { status.dataset.fallback = ''; store.set('ui.resoEngine', engineSel.value, { source: 'ui' }); if (engineSel.value === 'gpu') status.textContent = 'Starting the GPU...'; });
+  scope.on(engineSel, 'change', () => { status.dataset.fallback = ''; status.title = ''; store.set('ui.resoEngine', engineSel.value, { source: 'ui' }); if (engineSel.value === 'gpu') status.textContent = 'Starting the GPU...'; });
   scope.on(detailSel, 'change', () => store.set('ui.resoGpuDetail', Number(detailSel.value), { source: 'ui' }));
   scope.add(store.subscribe('ui.resoEngine', render));
   scope.add(store.subscribe('ui.resoGpuDetail', render));
   if (engine && typeof engine.on === 'function') {
     scope.add(engine.on('resoGpu', (m) => {
-      if (m.ev === 'started') { latency = m.latencyMs; status.textContent = `Running, adds about ${Math.round(latency)} ms`; }
+      if (m.ev === 'started') { started = true; latency = m.latencyMs; status.textContent = `Running, adds about ${Math.round(latency)} ms`; }
       else if (m.ev === 'status' && store.get('ui.resoEngine') === 'gpu') {
         status.textContent = !m.onGpu ? 'Starting the GPU...'
           : m.headroomMs < 3 ? `Falling behind (${Math.round(m.latencyMs)} ms latency)` : `Running, adds about ${Math.round(m.latencyMs)} ms`;
       } else if (m.ev === 'fallback') {
+        // the engine has already switched the store back to the CPU
         status.dataset.fallback = '1';
-        status.textContent = 'Back on the CPU';
-        if (!noticed && ctx.toast) { noticed = true; ctx.toast('The Resonator is back on the CPU', { kind: 'info', detail: m.reason }); }
-      }
+        status.textContent = started ? 'Back on the CPU' : 'GPU unavailable, using the CPU';
+        status.title = m.reason || '';
+        if (!noticed && ctx.toast) {
+          noticed = true;
+          ctx.toast(started ? 'The Resonator is back on the CPU' : 'The GPU Resonator could not start', { kind: 'info', detail: `${m.reason}. The CPU Resonator plays instead.` });
+        }
+        started = false;
+      } else if (m.ev === 'stopped') started = false;
     }));
   }
   render();

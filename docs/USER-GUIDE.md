@@ -1983,21 +1983,24 @@ The skin follows terrain A and B blended by the Morph knob's set position (modul
 
 **CPU.** This is the most expensive control in Oro: a ringing skin costs about as much as several voices, and it doubles for notes above roughly 220 to 350 Hz at Standard and High (the simulation then takes two smaller steps per sample). Measured on a slow test machine, one ringing skin took about 6 percent of a core at Eco, 12 to 25 percent at Standard and 14 to 30 percent at High. It costs nothing while Off, while the skin is at rest (it stops computing once it has died away) or while Mix is at 0. Use it on one or two tracks, or choose Eco on a slow computer.
 
-### GPU Resonator (2.12)
+### GPU Resonator (2.12, experimental)
 
-Where the browser offers WebGPU, the Resonator card shows two more choices:
+The Resonator can also run on the graphics card, through WebGPU, on a much finer skin. It is new in 2.12 and so far has been checked only on a software WebGPU adapter, not on real graphics cards, so treat it as experimental. The CPU Resonator stays the default and sounds exactly as before.
 
-- **Engine**: **CPU** (the default, exactly as in 2.10, with no added delay) or **GPU (WebGPU)**. The choice is for the whole app and lasts until you reload the page.
-- **GPU detail**: the size of the skin's grid on the graphics card: **Fine (128)**, **Finer (192)** or **Finest (256)** cells a side, against 24 to 36 on the CPU. A finer grid follows the land more closely and rings with many more overtones.
-- A short status next to them: running (with the added delay), falling behind, or back on the CPU.
+Where the browser offers WebGPU, the Resonator card shows more choices under the knobs:
+
+- **Engine**: **CPU** (the default, with no added delay) or **GPU (WebGPU)**. The choice is for the whole app, is not saved with the session, and lasts until you reload the page.
+- **GPU detail** (with the GPU engine): the size of the skin's grid on the graphics card: **Fine (128)**, **Finer (192)** or **Finest (256)** cells a side, against 24 to 36 on the CPU. A finer grid follows the land more closely and rings with many more overtones.
+- A short status line: starting, running (with the added delay), falling behind, or back on the CPU. Hover it for the reason after a fallback.
 
 The GPU runs the same physics as the CPU Resonator (stiffness from the height of the land, Decay, Tone, fixed edges, the same pitch tracking), so the controls above work the same way. What changes:
 
-- **Pitch ceiling.** Every GPU detail plays notes at their own pitch up to about 1.4 kHz on flat land (about 1 kHz on hilly land), against roughly 300 to 650 Hz on the CPU. Above it notes still ring whole octaves lower. Higher notes take more steps per sample, so they cost the graphics card more, especially at Finest.
-- **Delay.** The audio thread cannot use the graphics card, so the skin is computed ahead in blocks of 256 steps and streamed back. Its sound comes out a fixed 768 steps late, about 32 ms (the dry sound is not delayed). That is fine for pads, drones and sympathetic ringing but noticeable on fast percussive playing; keep the CPU engine for that.
-- **Browser support.** It needs WebGPU (`navigator.gpu` with a graphics adapter). Oro runs the GPU work in a background worker when the browser offers WebGPU there, else on the page itself. Without WebGPU the Engine choice is not shown at all.
-- **Fallback.** If the GPU cannot start, the device is lost, or it falls behind real time (three gaps within two seconds, or one gap longer than a quarter second), the track switches back to the CPU Resonator with a short crossfade and you see a one-time notice. The audio thread never waits for the graphics card: a late block is bridged by letting the last value fade.
-- **Bounce.** With the GPU engine on, a bounce first runs the song once to record what the skin hears, renders the skins on the GPU as fast as the card allows, then renders the song with them, at the same 32 ms delay as when you play live. Bouncing takes a little longer than with the CPU engine. If the GPU cannot render, the bounce uses the CPU Resonator.
+- **Pitch ceiling.** On flat land every GPU detail plays notes at their own pitch up to about 1.4 kHz; on the built-in terrains the ceiling is about 800 Hz to 1 kHz, against roughly 300 to 650 Hz on the CPU. Above it notes still ring whole octaves lower. Higher notes take more steps per sample, so they cost the graphics card more, especially at Finest.
+- **Delay.** The audio thread cannot use the graphics card, so the skin is computed ahead in blocks and streamed back. By design its sound comes out a fixed 768 skin steps late: about 32 ms at 48 and 96 kHz, about 35 ms at 44.1 kHz (the dry sound is not delayed). That suits pads, drones and sympathetic ringing but is noticeable on fast percussive playing; keep the CPU engine for that.
+- **Browser support.** It needs WebGPU (`navigator.gpu` with a graphics adapter). Whether WebGPU is there depends on the browser and its version, the operating system and the graphics driver, so it may be missing even on a fast computer. Without `navigator.gpu` the Engine choice is not shown. If the browser has WebGPU but no usable graphics adapter, choosing GPU shows "GPU unavailable, using the CPU" and a notice with the reason, and the CPU Resonator keeps playing. Oro runs the GPU work in a background worker when the browser offers WebGPU there, else on the page itself.
+- **Speed.** Whether a graphics card keeps up in real time depends on the card, the GPU detail, the note's pitch and how many tracks use the Resonator. Start with Fine (128) and one track.
+- **Fallback.** If the GPU cannot start, the device is lost, or it falls behind real time (three gaps within two seconds, or one gap longer than a quarter second), the Engine goes back to CPU for every track, with a short crossfade, and you see a one-time notice. The audio thread never waits for the graphics card: a late block is bridged by letting the last value fade.
+- **Bounce and stems.** With the GPU engine on, a bounce or a stems export first runs the song once to record what each skin hears, renders the skins on the GPU as fast as the card allows, then renders the song with them, with the same delay as when you play live. This takes longer than with the CPU engine. If the GPU cannot render, the CPU Resonator is used. Freeze still renders a track with the CPU Resonator.
 
 ### Imprint (2.10)
 

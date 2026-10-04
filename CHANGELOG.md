@@ -3,6 +3,19 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.12.0 (unreleased)
+
+**New**
+* **GPU Resonator (experimental).** Where the browser offers WebGPU, the Resonator card has an
+  Engine choice: the CPU (the default, unchanged) or the graphics card, which runs the drum skin
+  on a much finer grid (128, 192 or 256 cells a side instead of 24 to 36), with more overtones
+  and notes at their own pitch up to about 1.4 kHz on flat land (about 800 Hz to 1 kHz on the
+  built-in terrains). Its sound comes out about 32 ms late by design (35 ms at 44.1 kHz).
+  WebGPU availability varies by browser, operating system and graphics driver; when it is
+  missing, fails or falls behind, Oro goes back to the CPU Resonator with a short crossfade and
+  a notice. Bounces and stems render it on the graphics card too. So far checked only on a
+  software WebGPU adapter, not yet on real graphics cards.
+
 ## 2.11.0 (October 2026)
 
 **New**
