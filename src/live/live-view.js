@@ -49,13 +49,6 @@ export function toggleLive(ctx) {
 const inkFor = (hex) => (luminance(hexToRgb(hex)) > 0.32 ? '#05070d' : '#ffffff');
 const pct = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
 
-function activatesOnSpace(el) {
-  if (!el || !el.tagName) return false;
-  const role = el.getAttribute && el.getAttribute('role');
-  if (!(el.tagName === 'BUTTON' || el.tagName === 'SUMMARY' || role === 'button')) return false;
-  try { return el.matches(':focus-visible'); } catch { return true; }
-}
-
 export function openLive(ctx) {
   if (current) return current;
   const { store, music, presets, layers, midi } = ctx;
@@ -532,8 +525,8 @@ export function openLive(ctx) {
   scope.add(() => clearTimeout(holdTimer));
   lockBtn.addEventListener('pointerdown', (e) => { if (e.button > 0) return; if (live.setup().lock) { e.preventDefault(); holdStart(); } });
   for (const t of ['pointerup', 'pointerleave', 'pointercancel']) lockBtn.addEventListener(t, holdEnd);
-  lockBtn.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat && live.setup().lock) { e.preventDefault(); holdStart(); } });
-  lockBtn.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') holdEnd(); });
+  lockBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.repeat && live.setup().lock) { e.preventDefault(); holdStart(); } });
+  lockBtn.addEventListener('keyup', (e) => { if (e.key === 'Enter') holdEnd(); });
   lockBtn.addEventListener('click', (e) => {
     if (live.setup().lock) { e.preventDefault(); if (e.detail !== 0 && !holdTimer) say('Hold the lock button to unlock. Esc still leaves live mode.'); return; }
     if (Date.now() - unlockedAt < 1500) { unlockedAt = 0; return; }
@@ -565,7 +558,6 @@ export function openLive(ctx) {
     }
     const onFader = e.target && e.target.closest && e.target.closest('.live-fader');
     if ((a.kind === 'next' || a.kind === 'prev') && onFader) { e.stopImmediatePropagation(); return; }   // the fader moves
-    if (a.kind === 'play' && activatesOnSpace(e.target)) { e.stopImmediatePropagation(); return; }    // Space presses the focused button
     e.preventDefault();
     e.stopImmediatePropagation();
     if (e.repeat) return;
@@ -573,6 +565,8 @@ export function openLive(ctx) {
     act(a, { hold: true });
   };
   const onKeyUp = (e) => {
+    // Space is always play / stop here (Enter presses a focused button), so it must not click one on release.
+    if ((e.code === 'Space' || e.key === ' ') && !isTypingTarget(e.target) && !(layers && layers.hasModal && layers.hasModal())) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     if (!heldKeys.has(e.code)) return;
     const i = heldKeys.get(e.code);
     heldKeys.delete(e.code);
