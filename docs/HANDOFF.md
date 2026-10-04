@@ -282,6 +282,15 @@ untested).
 
 ### 10.1 Live performance mode
 
+**Implemented in 2.12** (`src/live/`: `setup.js` saved data and pure helpers, `controller.js`
+pads, quantised queue and setlist, `wake.js` wake lock and full screen, `live-view.js` and
+`live-edit.js` the lazy-loaded view and its dialogs, `src/styles/live.css`; tests in
+`tests/live/live.test.js`). The saved setup is the optional session key `live`, sanitized by
+`sanitizeLive` in `src/core/migrate.js` and left out when unused; scenes never carry it and
+loading a scene or a setlist song keeps it. Untested on hardware: Screen Wake Lock (the desktop
+app's permission policy now allows `screen-wake-lock`), Electron full screen, MIDI Learn on
+pads with a physical controller. The spec as agreed:
+
 - **Full-screen, distraction-free view** (Fullscreen API, with a maximised overlay as
   fallback; Esc or a visible Exit leaves). The map stays as a large backdrop (or a calmer
   flat view). Large, high-contrast controls readable at a distance, dark by default.
@@ -326,7 +335,7 @@ untested).
   history cleared on leave unless saved, @name highlights, unread badge.
 - **Voice chat**: opt-in "Join voice", getUserMedia with echo cancellation, noise
   suppression and AGC; Opus tracks; the host forwards each joiner's voice to the others.
-  Push-to-talk (V by default) or open mic, per-person volume, mute, deafen, a steady speaking
+  Push-to-talk (N by default, rebindable; V is the keyboard velocity key) or open mic, per-person volume, mute, deafen, a steady speaking
   ring. Voice uses a separate gain path, never captured by bounces, recordings or stems, never
   through Oro's effects, never recorded. Recommend headphones.
 - **Moderation**: the host is owner and can make moderators. Owner and moderators can mute a
@@ -346,6 +355,70 @@ untested).
   one machine (connect via codes, the host starts the transport, a joiner's note is scheduled
   on the host, loops align within a few ms, a chat message arrives, then a chat mute drops
   the next one).
+
+#### Notes from the first attempt (2.12 cycle, postponed)
+
+**Code so far.** Six pure modules, unfinished and untested (no test files yet), are on branch
+`claude/jam-wip` (commit 946f266, based on 2.11.0): `src/jam/codes.js` (deflate-raw plus
+base64url, check word, `sdpFingerprint` as the ban key), `protocol.js` (message types,
+`sanitizeMessage`/`decodeMessage` with size caps), `framing.js` (chunking for data-channel
+message limits), `clock.js` (NTP-style sync keeping the lowest-RTT samples), `jitter.js`
+(delay = max(40 ms, transit + 2 x jitter), snap choices) and `ownership.js`.
+
+**Hook points (verified in the code).**
+- Store (`src/core/store.js`): `set(path, value, {source})`; `serialize()` omits `ui`;
+  `load(state, meta)` replaces everything and emits path `''`; writes to a missing `parts.N` are ignored.
+- Undo (`src/core/history.js`): add `'jam'` to the `IGNORE` set. There is no `clear()`/`reset()`;
+  add one for join and leave. Undo restores a whole snapshot via `store.load(..., {source:'history'})`,
+  so after an undo the jam layer must put back tracks you do not own.
+- Version history (`src/core/versions.js`) has its own IGNORE list; pause it while a guest with
+  `getVersions().scheduler.pause(true/false)` so the host's session is not saved into your history.
+- Autosave (`src/main.js`) serializes the live store on `global`/`parts`/`''` changes. As a guest it
+  would overwrite your own saved session with the host's; guard it to keep writing your pre-join snapshot.
+- Sanitizers (`src/core/migrate.js`): `migrateState(src)` for a whole session, `sanitizePart(src, i)` for
+  one track. Use them on everything received.
+- Track ids (`src/core/tracks.js`, `/^[\w-]{1,24}$/`); `watchTracks` only reacts to `''` and `parts`.
+- Notes (`src/music/router.js`): the `'sched'` event `{part, note, vel, on, time, source}` fires for every
+  engine note (MIDI out and ghost listen to it). Send live playing from `'sched'` (skip seq, preview,
+  ghost); on receipt call `engine.noteOn(part, note, vel, time, 'jam')` directly, not the router, or chords
+  and the arp are applied twice. `engine.cancelNotes(after, tag)` exists.
+- Clock (`src/music/timing.js`): `createTimebase` gives `now()`, `audioToPerf`, `perfToAudio` (heard time).
+- Transport (`src/music/transport.js`): `timeAtBeat`, `beatAt`, `nextGridTime(div, from)` (for snap).
+  `play()` always starts at now + 0.06 s + the largest lead, so add a small `align({beat, time})` to
+  start or re-anchor on the host timeline. Detect local play presses via the transport `'state'` event.
+- Fakes: `tests/music/fakes.js` has `createFakeClock`, `createFakeEngine`, `createMemoryStorage`.
+- Keeping voice out of recordings (`src/audio/engine.js`): the recorder takes `fx.output`, the looper taps
+  `fx.masterTap`, bounces use `bounce.js renderPass`. Play voice only through `<audio>` elements that never
+  touch the engine's AudioContext; test it with a source scan (no `src/audio` file imports `src/jam`) and a
+  voice sink given an engine whose context throws if touched. (`stems.js` was not read in detail.)
+- UI: lazy-load like `topbar.js` does `import('./version-panel.js')`; helpers in `src/ui/lazy.js`.
+  `openModal` makes the app inert and `shortcuts.js`/`piano.js` ignore keys while `layers.hasModal()`, so make
+  Jam a non-modal side panel. `isTypingTarget` is in `src/ui/dom.js`. Icons (`src/ui/icons.js`) have `mic`
+  and `speaker` only. Badges: `BADGES` in `src/core/fun-catalog.js`. Help cards: `CARDS` in `src/ui/help.js`.
+- Electron: the CSP in `electron/serve.cjs` has no WebRTC rule (check it); `policy.cjs` grants audio-only capture.
+
+**Push-to-talk key: N (changed from V).** V is taken: `piano.js` uses C and V for keyboard velocity and
+`SHORTCUTS` lists them. A search of `src` finds no binding for N (or I), and N is not a piano key, so the
+default push-to-talk key is N. Make it rebindable in the Jam settings, skip typing targets, only listen
+while voice is on in push-to-talk mode, and add it to `SHORTCUTS` and the help. (`eggs.js` was searched
+for N and I; no matches.)
+
+**Still to write.** Pure: `chat` (rate limit, log, @name, unread, filter), `moderation` (roles, mute, ban,
+lock, local block), `relay`/`host-room`, `guest-room`, `speaking` (thresholds with hold for a steady ring).
+Glue: `rtc.js` (RTCPeerConnection behind a link interface with an in-memory fake for tests), `sync.js`
+(store/router/transport bridge), `voice.js`, `jam-ui.js`, `src/ui/jam-panel.js`, `src/styles/jam.css`.
+Voice idea (not built): the host offer pre-creates 5 audio transceivers and forwards voices with
+`replaceTrack`, avoiding renegotiation. Saved data: none in the session; name, STUN opt-in, PTT key and
+the filter list in localStorage; saved chat as a downloaded text file.
+
+**Risks (mostly guesses).** Chrome mDNS host candidates may not resolve in a sandbox (e2e-only fallback
+`--disable-features=WebRtcHideLocalIpsWithMdns`); data channels may cap messages around 256 KB (hence
+framing); remote audio may need a media element; physics-driven dots move locally and will drift apart
+between computers; run e2e host and guest in separate browser contexts so localStorage is not shared.
+
+**Build order.** Tests for the six modules; chat and moderation; host and guest rooms over an in-memory
+link; `transport.align`, `'jam'` in history IGNORE, `history.reset`, versions pause, autosave guard;
+`sync.js`; `rtc.js`; voice; UI and CSS; `scripts/e2e-jam.mjs`; docs.
 
 ### 10.3 Learn: in-depth interactive lessons
 
@@ -376,25 +449,170 @@ untested).
   tabs from the catalogs), check predicates, progress persistence, snapshot and restore
   around a lesson, and a scan that fails on em dashes in lesson text.
 
-### 10.4 GPU Resonator (work in progress on its own branch)
+#### Notes from the first attempt (2.12 cycle, postponed)
 
-- **Code**: branch `claude/gpu-resonator-wip` (commit `a6ab926`, based on 2.10.0). It was
-  pushed unfinished on purpose so the work isn't lost; merge or rebase it onto the current
-  main before continuing.
-- **Idea**: run the 2.10 Resonator's 2D FDTD membrane on the GPU (WebGPU compute shaders in
-  WGSL) at 128², 192² or 256² grids instead of the CPU's 24² to 36², from a worker (the
-  AudioWorklet thread can't use WebGPU). The GPU advances many samples per dispatch, reads
-  back the pickup signal and streams it to the worklet through a ring buffer. The CPU
+No code was written. These notes come from reading the code and docs; anything marked GUESS was not verified.
+
+**Catalogs and APIs.**
+- Params (`src/core/params.js`): `PART_PARAMS`, `PART_PARAM_MAP`, `GLOBAL_PARAM_MAP`, `MOD_PARAM_IDS`, `MOD_FIELDS`,
+  `LINK_SOURCES`, `DOT_MODES`, `defaultState(count)`, `stepProb`, `stepRatchet`, `PLOCK_IDS`. Defaults worth knowing:
+  `pathOrder` 2 (the Ellipse has a small epicycle; Order 1 gives a plain circle), `size` 0.22, `cutoff` 9000.
+- Terrains and paths (`src/dsp/catalog.js`): `TERRAINS`, `PATHS`, `TERRAIN_INDEX`, `PATH_INDEX`; `user` is the
+  Imported terrain; the `oro` path is hidden.
+- Dock tabs (`src/ui/dock.js` `DOCK_TABS`: sound, mod, seq, mix, loop): open with `store.set('ui.panel', id)`. On
+  phones `setMobileTab` in `app.js` only follows `ui.panel` when the mobile tab is not `map` or `keys`, so click
+  `.mtab[data-tab=id]` there. `ctx.bus.emit('mod-view', 'links')` switches the Mod tab to Links and Macros.
+- Settings tabs (`src/ui/settings.js` `SETTINGS_TABS`): `ctx.openSettings(tab)`. Quality is `ui.audioQuality`
+  (saved per computer in `orograph.settings`); modes are `QUALITY_MODES` in `src/dsp/dsp-core.js`.
+- Tuning: root-level `tuning`; built-ins `TUNINGS`/`TUNING_MAP` in `src/dsp/tuning.js`; write
+  `sanitizeTuning(x) || undefined` as `src/ui/tuning-settings.js` does.
+- Store: `serialize()`, `load(state, meta)`; scene loads use `store.load(state, { source: 'scene', [REPLACE_TRACKS]: true })`.
+- Notes: `music.router.noteOn(target, note, vel, source)`/`noteOff`. Source `'ui'` counts as a person
+  (`isPersonSource` in `src/music/capture.js`) and lands in the Capture buffer. GUESS: a custom `'learn'` source avoids that.
+- Undo (`src/core/history.js`): IGNORE set is physics, engine, prefs, transport, theme, history, load, voice, lock,
+  version; there is no pause. Version history (`src/core/versions.js`): own IGNORE set,
+  `getVersions().scheduler.pause(on)`, `installCloseHooks` (capture-phase pagehide); its preview is a good model for
+  snapshot and restore.
+- Badges: `found('badge', id)` in `src/core/fun.js`; add `lesson-complete` and `all-lessons` to `BADGES` in
+  `src/core/fun-catalog.js`; `onFun` in `src/ui/eggs.js` already shows the toast.
+- Lazy loading: add `learn: lazy(() => import('../learn/...'))` to `chunks` in `src/ui/lazy.js`; a lazy module can
+  import its own CSS as `src/ui/stems-dialog.js` does.
+- Entry point: the phone top bar is full (the theme button hides below 480 px), so put Learn in the Help dialog
+  (`src/ui/help.js`, `ctx.openHelp`) and add `ctx.openLearn` in `src/ui/app.js`.
+- Highlight targets: `.knob[data-param=id]`, `.mod-row[data-param=id]`, `[data-viewport]`, `.scope-card`,
+  `.path-picker`, `button[aria-label="Choose terrain A"]`, `.seg--dot`, `.seq-grid`, `.toggle--seq`,
+  `.seq-chain-box`, `.links-list`, `.links-macros`, `.links-science`, `select[aria-label="Filter type"]`,
+  `select[aria-label="Resonator mode"]`, `#tuning-preset`, the "Audio quality" radiogroup.
+- Modals: `openModal` makes the app inert, so the lesson card must be non-modal, in `layers.host` (modal backdrop
+  z 120, popovers z 125). `layers.host` is scaled by `--ui-zoom` on big screens (`uiZoom()` in `src/ui/dom.js`).
+
+**Planned engine.** `src/learn/engine.js` (pure validation, checks, setup, runner), `lessons.js`, `glossary.js`,
+`targets.js` (highlight names, each with a selector plus a file and string a test greps for), `progress.js`
+(key `oro.learn.v1`, try/catch like `fun.js`), `rescue.js`, `learn-ui.js`, `learn.css`.
+- Lesson `{ id, title, level, minutes, summary, setup[], steps[5..12], sources[] }`; step
+  `{ id, title, text[] with [[term|label]] glossary links, setup[], highlight, check, hint, play }`.
+- Setup actions: terrain, path, param, global, mod, dot, pattern, link, tab, settings, note, quality, tuning, stop.
+- Checks: param, global, mod, dot, link, steps (on, prob, ratchet, plocks), drum, chain, ui, tuning, smart,
+  userTerrain, all/any; ops eq, gte, lte, near (tolerance, value list, wrap for Dot X and Y), in, moved.
+- Each lesson runs on a fresh `defaultState(1)`; on exit restore state plus `ui.selectedPart`, `ui.panel`,
+  `ui.audioQuality` and whether the transport was playing. Add a history `pause()` and use
+  `versions.scheduler.pause(true)` so lesson edits never become undo steps or versions.
+
+**Proposed lessons (sources in brackets).**
+1. Sound and harmonics: Spectra terrain, Scan path (Order 1, Shape 0.5, Size 0.5), move Dot Y. Verified in
+   `genSpectra`: Dot Y 0 sine, about 0.167 triangle, 0.25 saw, 0.333 square, 0.5 pulse; rows mirror (v and 1 minus v
+   sound the same). Harmonics view: 16 harmonics on a 48 dB scale, Sub bar first (`src/ui/scope.js`). [USER-GUIDE 3, 5]
+2. Wave terrain synthesis: size 0 is silent; the map is a torus. [USER-GUIDE 1, 6; RESEARCH 3.1 to 3.3; ARCHITECTURE "Coordinates"]
+3. Paths in depth: Laps, Pace, Travel, Ping-pong, Key>Size. [USER-GUIDE 6; `src/dsp/paths.js`]
+4. Aliasing, Nyquist and quality: the bandwidth rule is tagged [I] in RESEARCH 3.7, so say "about".
+   [USER-GUIDE quality table; `QUALITY` and `mipRaw` in `dsp-core.js`]
+5. Filters and envelopes. [USER-GUIDE 7; ranges from params]
+6. Modulation: LFOs, Links, macros, smart controls, function generator, science sources. [USER-GUIDE 7, 8;
+   `src/ui/mod-panel.js`, `src/ui/links-panel.js`]
+7. The dot's physics: Roll, Drift, Explore, Tour, Pendulum, Golf. [USER-GUIDE 4]
+8. Rhythm: sequencer, Prob, Ratchet, parameter locks, song mode, drum kit, slicing; step fields `prob`, `ratchet`,
+   `plocks`; kit is `parts.N.drum.on`. [USER-GUIDE 9]
+9. Tuning: Bohlen-Pierce is 13 equal steps of 3/1. [USER-GUIDE Microtuning; `src/dsp/tuning.js`]
+10. The Resonator: leapfrog finite differences on 24, 32 or 36 nodes per side at about 24 kHz; stability bound
+    lam2 + 2mu < 0.5 (COURANT 0.49), the 2D CFL limit c dt/dx <= 1/sqrt(2) without damping; LAM2_MAX 0.45 sets the
+    pitch ceiling; a uniform square membrane has modes proportional to sqrt(m^2 + n^2), so overtones are inharmonic.
+    [header of `src/dsp/resonator.js`; Kac 1966, but do not state the answer to Kac's question]
+11. Imprint and real places. [USER-GUIDE Imprint, Real places]
+
+**Citable sources (from RESEARCH.md).** Bischoff, Gold and Horton (CMJ 2(3), 1978); Mitsuhashi (JAES 30(10), 1982);
+Borgonovo and Haus (CMJ 10(3), 1986); Roads, Computer Music Tutorial pp. 163 to 167; S. James
+(doi 10.26686/wgtn.22123283); the Zabetian thesis (vbn.aau.dk); Wikipedia pages on Jacobi-Anger, Lissajous, Rose,
+Hypotrochoid, Superformula and Chebyshev; the CCRMA DC blocker page; plus Kac (1966).
+
+**Skip.** Reflecting edges (Oro wraps as a torus); naming commercial products (RESEARCH section 1 is about one);
+exact even-harmonic levels on the Spectra square (rows are interpolated; say "much smaller").
+
+**Risks.** Autosave writes the session on page hide (`src/main.js`), so a phone killing the page mid-lesson could
+save the practice state as the user's session: keep a rescue copy that `main.js` restores at boot, plus a
+capture-phase pagehide restore. Loading the practice session with `REPLACE_TRACKS` revives frozen tracks. Block
+lessons while a version preview is open. Restore Learn's own changes to `ui.audioQuality` and the `mapCollapsed`
+pref. Golf's design notes are a good model for a temporary mode that never changes the session.
+
+**Tests.** Schema (every param, path, terrain, tab and link source exists, imported from the real modules;
+`settings.js` and `dock.js` import under `tests/ui/fake-dom.js`); every highlight target's string exists in its
+file; check predicates incl. near, wrap, moved; progress persistence with fake storage; snapshot and restore
+(`serialize()` identical, undo history unchanged, ui keys back); every glossary link resolves; a scan failing on
+em or en dashes in lesson and glossary text; badges listed in `BADGES`.
+
+### 10.4 GPU Resonator (merged for 2.12, experimental)
+
+- **Code**: the work-in-progress branch `claude/gpu-resonator-wip` (commit `a6ab926`, based
+  on 2.10.0) is merged onto 2.11.0 on the 2.12 branch. Modules: `src/dsp/reso-gpu-kernel.js`
+  (WGSL kernels and their f32 JS mirror), `reso-gpu-plan.js` (block planner, `JsMembrane`),
+  `reso-gpu-frame.js` (frame format, kept tiny so the worklet bundle stays lean),
+  `reso-ring.js`, `reso-gpu-policy.js`, `reso-feed.js` (audio-thread side, `ResoGpuLink`),
+  `src/audio/reso-gpu.js`, `reso-gpu-host.js`, `reso-gpu-worker.js` (all loaded only when the
+  GPU engine is chosen) and `src/ui/reso-engine-row.js`.
+- **Idea**: run the 2.10 Resonator's 2D FDTD membrane on the GPU (WebGPU compute shaders) at
+  128, 192 or 256 cells a side instead of the CPU's 24 to 36, from a worker where the browser
+  offers WebGPU there (the AudioWorklet thread can't use WebGPU). The GPU advances 256
+  internal samples per job, reads back the pickups and streams them to the worklet (SAB rings
+  when cross-origin isolated, else MessagePort chunks whose buffers are recycled). The CPU
   Resonator stays the zero-latency default; Oro falls back to it if WebGPU is missing, the
   adapter is lost, or the GPU falls behind real time.
-- **Done on the branch**: the WGSL kernel and a JS mirror of it, the block planner, the ring
-  buffer, the fallback rules, the worklet feed with a crossfade, the GPU host and worker,
-  the engine hookup (bounces included), the Resonator card's Engine (CPU / GPU) and GPU
-  detail controls, and a user-guide section. 13 new tests pass; the JS mirror matches the
-  CPU membrane within 1e-4.
-- **Measured**: pitch ceiling about 1.4 kHz at every GPU detail (the CPU version tops out
-  near 650 Hz); added latency 32 ms by design.
-- **Remaining**: run the full test suite and the build on the branch; a GPU-vs-JS
-  comparison in a browser with WebGPU (the headless run here was interrupted, so the GPU
-  path itself has not been verified on a real GPU); check the controls at the 5K2K and
-  MacBook sizes; then changelog and release.
+- **Settings**: `ui.resoEngine` ('cpu' or 'gpu') and `ui.resoGpuDetail` (128, 192, 256) live in
+  the non-persisted `ui` branch, so nothing new is saved and `migrate.js` needs no change. With
+  the CPU engine the output is bit-identical to 2.11 (checked by hashing renders of main and
+  this branch at 44.1, 48 and 96 kHz, Resonator Off, Strike and Resonate, Standard and
+  Pristine).
+- **Done in the merge**: the one conflict (dsp-core message switch) kept 2.11's `stemTap` and
+  the `resoGpu` link; stems export (2.11) renders the GPU membranes too; the ScriptProcessor
+  fallback forwards GPU status; the host drops stale membranes when a rebuilt DSP attaches;
+  clearer fallback status and notice; Engine row spacing. Tests: 19 GPU tests (kernel mirror
+  vs CPU membrane within 1e-4, offline capture/render/play through the DSP at 44.1, 48 and
+  96 kHz, buffer reuse, CPU default untouched).
+- **Measured**: pitch ceiling about 1.4 kHz on flat land and about 800 Hz to 1 kHz on the
+  built-in terrains at every GPU detail (CPU: about 340 to 520 Hz on the same terrains);
+  added latency 768 internal samples by design, 32 ms at 48 and 96 kHz, 34.8 ms at 44.1 kHz.
+- **Checked in a browser, software adapter only**: headless Chromium 141 with SwiftShader
+  WebGPU. The WGSL kernel matches the JS mirror within 7.6e-7 absolute (at most about 4e-6
+  of the peak) at 128, 192 and 256, for Strike and Resonate, across sub-step changes (pitch
+  jumps), and through the worker path; with no
+  adapter, choosing GPU falls back cleanly with a notice; with SwiftShader (about 20 s per
+  10.7 ms block) live playing falls back as designed. Layout checked at 5120x2160@1,
+  1512x982@2 and 390x844@3.
+- **Still unverified**: anything on a real GPU (real-time speed and headroom per detail and
+  per number of tracks, Apple, NVIDIA, AMD and Intel drivers, device loss in practice), the
+  SharedArrayBuffer transport (the app is not cross-origin isolated, so the MessagePort path
+  is what runs), WebGPU inside the Electron app on each OS, and a long live session for
+  glitches during the ARM crossfade and fallback. Freeze still uses the CPU Resonator.
+
+### 10.5 Listening modes, 3D and surround (2.12)
+
+- **Code**: branch `feat-spatial`. Listening modes in `src/audio/listen.js` (inserted between
+  the master analyser and `mainOut`, after the recorder, looper and offline taps; Normal is
+  two gain-1 nodes). 3D in `src/dsp/spatial.js` (per-track head model inside the DSP, so
+  bounces, freezes and stems include it), params `space`, `spaceAz`, `spaceEl`, `spaceDist`,
+  `spaceAir` appended to PART_PARAMS (not modulatable: the stage is per track, not per
+  voice), kept by patch loads like the sends. Surround: DSP `{t:'surround'}` mode, a fifth
+  worklet output (live) and an N-channel offline pass in `renderPass` (export), mixed down in
+  `src/audio/stems.js`; WAVE_FORMAT_EXTENSIBLE writer in `src/audio/wav.js`.
+- **Unverified**: live surround on a real 5.1 or 7.1 device (no hardware here; the device
+  channel setup, the fifth output and the master-volume follow are untested); how convincing
+  the 3D is on real headphones for different listeners; the surround file in a DAW (the
+  header reads back in our decoder; not yet opened in a DAW). While live surround is on,
+  Record and the looper capture only front left and right, and the master limiter does not
+  act on the extra channels.
+
+### 10.6 Small follow-ups found while building 2.12
+
+- **Live mode keys**: the 16 pad keys are fixed (1 to 0 and Q to Y). Let people choose their
+  own, with a key-capture setting and conflict checks against the note keys and shortcuts.
+- **Freeze and the GPU Resonator**: Freeze still renders the Resonator on the CPU, so a frozen
+  track does not sound like its GPU version.
+- **Real-hardware checks still owed**: Screen Wake Lock and full screen in the desktop app,
+  MIDI Learn (CC and the new note learn) with a physical controller, touch on a real phone or
+  tablet, the GPU Resonator on Apple, NVIDIA, AMD and Intel graphics (speed, device loss, the
+  Electron app), live 5.1 output, and how convincing the 3D sound is on real headphones.
+- **CPU timing test**: `tests/dsp/perf.test.js` (16 voices x unison 2 under 35% of a core)
+  fails on a busy machine, on main as well; it passes on CI. Consider a looser bound or a retry
+  when the load average is high.
+- **Bounces are not bit-repeatable with the master reverb or delay on**: two back-to-back
+  bounces of the same session differ in their bytes (found while testing 2.12; it happens on
+  2.11 too, in Normal listening mode). Likely the reverb impulse response or render timing.
+  Worth finding so bounces are reproducible.

@@ -12,6 +12,7 @@ import { createEmitter } from '../music/emitter.js';
 import { createTimebase } from '../music/timing.js';
 import { isMpcPort, detectMpcPort } from './mpc.js';
 import { applySmartKnob, SMART_KNOBS } from '../core/smart.js';
+import { LIVE_ACTIONS } from '../live/setup.js';
 import { createClockFollower, clockBytes, parseSongPosition, CLOCK, START, CONTINUE, STOP, SONG_POSITION, CLOCK_ACTIVE_MS } from './clock.js';
 
 export const STORAGE_KEY = 'orograph.midi';
@@ -54,7 +55,14 @@ const LEARNABLE_MAX_CC = 119;
 // v1.2: buttons that can be MIDI-learned. A mapped CC fires the action when it
 // crosses 64 upwards (press on a momentary button); the UI listens for
 // midi.on('action', {id}) and does the rest.
-export const LEARNABLE_ACTIONS = Object.freeze(['looper.main', 'looper.stop', 'looper.undo', 'looper.clear', 'looper.mute', 'looper.resample']);
+// 2.12 live mode: the 16 pads, Next and Previous song, and Play / stop (appended).
+/** v2.12: what a mapping listens to, for labels: "CC 20" or "note 36". */
+export function mappingControl(m) {
+  if (m && Number.isInteger(m.note)) return `note ${m.note}`;
+  return `CC ${m && m.cc != null ? m.cc : '?'}`;
+}
+
+export const LEARNABLE_ACTIONS = Object.freeze(['looper.main', 'looper.stop', 'looper.undo', 'looper.clear', 'looper.mute', 'looper.resample', ...LIVE_ACTIONS]);
 const ACTION_REPEAT_MS = 250;     // a controller that only sends "press" (127) still retriggers after this
 
 const STATUS_TEXT = {
@@ -139,10 +147,17 @@ function sanitizeMappings(list) {
   const out = [];
   for (const m of Array.isArray(list) ? list : []) {
     const target = sanitizeTarget(m && m.target);
-    const cc = Number(m && m.cc);
-    if (!target || !Number.isInteger(cc) || cc < 0 || cc > LEARNABLE_MAX_CC) continue;
+    if (!target) continue;
     const channel = m.channel == null ? null : Number(m.channel);
     if (channel !== null && !isChannel(channel)) continue;
+    // v2.12: buttons (actions) can also be learned from a note, e.g. drum pads.
+    const note = m.note == null ? null : Number(m.note);
+    if (note !== null) {
+      if (target.scope === 'action' && Number.isInteger(note) && note >= 0 && note <= 127) out.push({ note, channel, target });
+      continue;
+    }
+    const cc = Number(m.cc);
+    if (!Number.isInteger(cc) || cc < 0 || cc > LEARNABLE_MAX_CC) continue;
     out.push({ cc, channel, target });
   }
   return out;
@@ -402,7 +417,32 @@ export async function createMidi({
     emitter.emit('activity', { dir, kind, port: (port && port.name) || '' });
   }
 
+  // v2.12: notes learned as buttons fire their action and are not played.
+  const noteHits = (ch, note) => mappings.filter(m => m.note === note && (m.channel == null || m.channel === ch));
+  const swallowed = new Set();
+  function noteAction(input, ch, note, vel) {
+    if (learnPending && learnPending.target.scope === 'action') {
+      const { target, resolve } = learnPending;
+      learnPending = null;
+      const mapping = { note, channel: ch, target };
+      mappings = mappings.filter(m => !sameTarget(m.target, target) && !(m.note === note && (m.channel === ch || m.channel == null)));
+      mappings.push(mapping);
+      persist();
+      emitter.emit('learn', { target, note, channel: ch });
+      emitChange('mappings');
+      resolve({ ...mapping, target: { ...target } });
+      swallowed.add(`${input && input.id}:${ch}:${note}`);
+      return true;
+    }
+    const hits = noteHits(ch, note);
+    if (!hits.length) return false;
+    for (const m of hits) emitter.emit('action', { id: m.target.id, value: vel });
+    swallowed.add(`${input && input.id}:${ch}:${note}`);
+    return true;
+  }
+
   function noteOnIn(input, ch, note, vel) {
+    if (noteAction(input, ch, note, vel)) return;
     if (padLearnPending) {
       const p = padLearnPending;
       padLearnPending = null;
@@ -423,6 +463,7 @@ export async function createMidi({
   }
 
   function noteOffIn(input, ch, note) {
+    if (swallowed.delete(`${input && input.id}:${ch}:${note}`)) return;
     if (!router) return;
     const key = `${input.id}:${ch}:${note}`;
     const held = heldIn.get(key);
@@ -491,7 +532,7 @@ export async function createMidi({
       const { target, resolve } = learnPending;
       learnPending = null;
       const mapping = { cc, channel: ch, target };
-      mappings = mappings.filter(m => !sameTarget(m.target, target) && !(m.cc === cc && (m.channel === ch || m.channel == null)));
+      mappings = mappings.filter(m => !sameTarget(m.target, target) && !(m.note == null && m.cc === cc && (m.channel === ch || m.channel == null)));
       mappings.push(mapping);
       persist();
       emitter.emit('learn', { target, cc, channel: ch });
@@ -501,7 +542,7 @@ export async function createMidi({
       else applyMapping(mapping, value);
       return;
     }
-    const hits = mappings.filter(m => m.cc === cc && (m.channel == null || m.channel === ch));
+    const hits = mappings.filter(m => m.note == null && m.cc === cc && (m.channel == null || m.channel === ch));
     if (hits.length) { for (const m of hits) applyMapping(m, value); return; }
     const targets = targetsFor(ch);
     if (!targets.length) return;
@@ -976,7 +1017,7 @@ export async function createMidi({
 
   function unmap(ccOrTarget) {
     const before = mappings.length;
-    if (typeof ccOrTarget === 'number') mappings = mappings.filter(m => m.cc !== ccOrTarget);
+    if (typeof ccOrTarget === 'number') mappings = mappings.filter(m => m.note != null || m.cc !== ccOrTarget);
     else {
       const t = sanitizeTarget(ccOrTarget);
       if (t) mappings = mappings.filter(m => !sameTarget(m.target, t));
@@ -1041,7 +1082,7 @@ export async function createMidi({
     setChannelMode(mode) { return setSetting('channelMode', mode); },
     getSettings() { return { ...settings, multiChannels: settings.multiChannels.slice(), outChannels: settings.outChannels.slice(), outputAuto: !outputManual }; },
     setSetting,
-    mappings() { return mappings.map(m => ({ cc: m.cc, channel: m.channel, target: { ...m.target } })); },
+    mappings() { return mappings.map(m => (m.note != null ? { note: m.note, channel: m.channel, target: { ...m.target } } : { cc: m.cc, channel: m.channel, target: { ...m.target } })); },
     learn,
     cancelLearn,
     learnPadBase,

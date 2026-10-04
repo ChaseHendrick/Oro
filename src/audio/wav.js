@@ -48,6 +48,46 @@ export function wavHeader({ sampleRate, channels = 2, bitsPerSample = 24, frames
   return new Uint8Array(buf);
 }
 
+export const WAV_EXT_HEADER_BYTES = 68;
+// KSDATAFORMAT_SUBTYPE_PCM / _IEEE_FLOAT: the format code, then the fixed tail
+const SUBFORMAT_TAIL = [0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71];
+
+/**
+ * 2.12: 68-byte WAVE_FORMAT_EXTENSIBLE header (format tag 0xFFFE) for
+ * multichannel files: the speaker mask says which speaker each channel is
+ * (in the standard order, e.g. 0x3F = L R C LFE Ls Rs), the sub-format says
+ * integer PCM (1) or float (3).
+ * @returns {Uint8Array}
+ */
+export function wavHeaderExtensible({ sampleRate, channels, bitsPerSample = 24, frames, format = 1, channelMask = 0 }) {
+  const sr = Math.round(sampleRate);
+  const nch = Math.max(1, Math.round(channels));
+  const blockAlign = nch * (bitsPerSample >> 3);
+  const dataBytes = Math.max(0, Math.round(frames)) * blockAlign;
+  const pad = dataBytes & 1;
+  const buf = new ArrayBuffer(WAV_EXT_HEADER_BYTES);
+  const v = new DataView(buf);
+  writeAscii(v, 0, 'RIFF');
+  v.setUint32(4, WAV_EXT_HEADER_BYTES - 8 + dataBytes + pad, true);
+  writeAscii(v, 8, 'WAVE');
+  writeAscii(v, 12, 'fmt ');
+  v.setUint32(16, 40, true);
+  v.setUint16(20, 0xFFFE, true);
+  v.setUint16(22, nch, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * blockAlign, true);
+  v.setUint16(32, blockAlign, true);
+  v.setUint16(34, bitsPerSample, true);
+  v.setUint16(36, 22, true);                 // cbSize
+  v.setUint16(38, bitsPerSample, true);      // valid bits per sample
+  v.setUint32(40, channelMask >>> 0, true);
+  v.setUint16(44, format === 3 ? 3 : 1, true);
+  for (let i = 0; i < SUBFORMAT_TAIL.length; i++) v.setUint8(46 + i, SUBFORMAT_TAIL[i]);
+  writeAscii(v, 60, 'data');
+  v.setUint32(64, dataBytes, true);
+  return new Uint8Array(buf);
+}
+
 /** Float sample -> signed 24-bit integer. NaN becomes 0, out-of-range clips. */
 export function floatToInt24(x) {
   if (!(x === x)) return 0;
@@ -244,6 +284,7 @@ export function wavInfo(buffer) {
   const sampleRate = view.getUint32(fmt.offset + 4, true);
   const blockAlign = view.getUint16(fmt.offset + 12, true);
   const bits = view.getUint16(fmt.offset + 14, true);
+  const channelMask = tag === 0xfffe && fmt.size >= 24 ? view.getUint32(fmt.offset + 20, true) : 0;
   if (tag === 0xfffe && fmt.size >= 26) tag = view.getUint16(fmt.offset + 24, true);
   const isFloat = tag === 3;
   if (!(tag === 1 || tag === 3)) throw new Error('Unsupported WAV encoding (compressed audio); save it as PCM or float WAV');
@@ -275,7 +316,7 @@ export function wavInfo(buffer) {
   };
 
   return {
-    sampleRate, channels: nch, frames, bitsPerSample: bits, float: isFloat, clm,
+    sampleRate, channels: nch, frames, bitsPerSample: bits, float: isFloat, clm, channelMask,
     /** One channel, frames [start, start + count). */
     readChannel(c, start, count, out) {
       const [a, n] = span(start, count);

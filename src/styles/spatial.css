@@ -1,0 +1,61 @@
+/* 2.12 Listening modes (top bar button and choices), the 3D sound card in
+   the Mix tab and the strip's 3D toggle. Nothing here animates. */
+
+/* ---- Listen button: a short label while a mode other than Normal is on */
+.listen-btn.is-on { width: auto; padding: 0 8px 0 6px; gap: 4px; grid-auto-flow: column; color: var(--warn); background: var(--warn-soft); }
+.listen-badge { display: none; font-size: var(--fs-2xs); font-weight: 750; letter-spacing: .02em; }
+.listen-btn.is-on .listen-badge { display: inline; }
+.listen-pop { display: flex; flex-direction: column; gap: 8px; width: min(320px, calc(100vw - 32px)); }
+.listen-choices { display: flex; flex-direction: column; gap: 2px; }
+.listen-choice { display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px; border-radius: var(--r-sm); cursor: pointer; }
+.listen-choice:hover { background: var(--panel-hover); }
+.listen-choice input { accent-color: var(--accent); margin-top: 3px; flex: none; }
+.listen-choice-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.listen-choice-label { font-size: var(--fs); font-weight: 650; color: var(--text); }
+.settings-pane .listen-choices { max-width: 560px; }
+/* Phones: the top row is full, so the button only shows while a mode is on
+   (Settings > Audio always has the choice). */
+@media (max-width: 479px) {
+  .utils .listen-btn:not(.is-on) { display: none; }
+  .utils .listen-btn.is-on { width: auto; }
+}
+
+/* ---- Mix strip: 3D toggle; Pan is dimmed while 3D is on */
+.toggle--space { flex: 0 0 28px !important; padding: 0; font-size: 10px !important; }
+.toggle--space.is-on { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.strip.is-space .strip-knobs > :first-child { opacity: .45; }
+@media (pointer: coarse) { .toggle--space { flex-basis: 44px !important; min-height: 44px; } }
+
+/* ---- 3D sound card */
+.mix-space {
+  grid-column: 1 / -1; display: flex; flex-direction: column; min-width: 0;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 8px 10px; box-shadow: var(--inset-hi);
+}
+.mix-space .section-head { margin-bottom: 4px; }
+.space-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 20px; }
+.space-pad { position: relative; flex: none; width: clamp(150px, 22vw, 220px); aspect-ratio: 1; touch-action: none; border-radius: 50%; cursor: crosshair; }
+.space-pad[aria-disabled="true"] { cursor: default; }
+.space-pad:focus-visible { outline: 2px solid var(--part); outline-offset: 3px; }
+.space-pad-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.space-edge { fill: color-mix(in srgb, var(--part) 10%, var(--panel-solid)); stroke: var(--border-strong); stroke-width: 1; }
+.space-ring { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
+.space-axis { stroke: var(--divider); stroke-width: 1; }
+.space-head circle, .space-head path { fill: var(--panel-3); stroke: var(--text-2); stroke-width: 1.5; }
+.space-ray { stroke: var(--part); stroke-width: 1.5; opacity: .6; }
+.space-src { fill: var(--part); stroke: var(--text); stroke-width: 2; }
+.space-label { fill: var(--text-3); font-size: 10px; font-family: var(--font-ui); }
+.mix-space.is-off .space-src, .mix-space.is-off .space-ray { opacity: .3; }
+.space-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 240px; }
+.space-field { display: flex; align-items: center; gap: 8px; }
+.space-field .select { width: 200px; max-width: 100%; }
+.space-knobs { display: flex; flex-wrap: wrap; gap: 2px 6px; }
+.space-knobs .is-dimmed { opacity: .45; }
+.mix-space.is-off .space-knobs, .mix-space.is-off .space-row { opacity: .55; }
+.space-row { display: flex; gap: 6px; }
+.space-readout { margin: 0; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); }
+.space-follow, .space-note { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; max-width: 72ch; }
+.space-note { margin-top: 8px; }
+
+/* ---- Export stems: the surround options */
+.stems-sur { padding: 8px 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel-2); }
+.stems-sur-note { margin: 0 0 8px; }

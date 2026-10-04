@@ -72,6 +72,8 @@ const P = {
   learn: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3"/>',
   link: '<path d="M14 4.8h5.2V10M19.2 4.8l-8.4 8.4"/><path d="M17.2 13.6v4.6a1.2 1.2 0 0 1-1.2 1.2H5.8a1.2 1.2 0 0 1-1.2-1.2V8a1.2 1.2 0 0 1 1.2-1.2h4.6"/>',
   speaker: '<path d="M4.6 9.6h3.2l4.4-3.8v12.4l-4.4-3.8H4.6z"/><path d="M15.6 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/>',
+  ear: '<path d="M7.4 9.6a4.9 4.9 0 0 1 9.8 0c0 2.8-2.5 3.8-3.1 5.9-.5 1.9-1.6 3.7-3.7 3.7a2.8 2.8 0 0 1-2.8-2.8"/><path d="M10.2 10a2.1 2.1 0 0 1 4.2 0c0 1.3-1.3 1.7-1.7 2.8"/>',
+  space: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="2.2"/><circle cx="17.4" cy="7.6" r="1.4" fill="currentColor" stroke="none"/>',
   panic: '<path d="M8.4 3.6h7.2l5 5v7l-5 5H8.4l-5-5v-7z"/><path d="M12 8v5"/><circle cx="12" cy="16.2" r=".9" fill="currentColor" stroke="none"/>',
   wave: '<path d="M3 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/>',
   mpc: '<rect x="3.4" y="4.4" width="17.2" height="15.2" rx="2.2"/><g fill="currentColor" stroke="none"><rect x="6" y="11" width="2.6" height="2.6" rx=".6"/><rect x="9.6" y="11" width="2.6" height="2.6" rx=".6"/><rect x="6" y="14.6" width="2.6" height="2.6" rx=".6"/><rect x="9.6" y="14.6" width="2.6" height="2.6" rx=".6"/></g><circle cx="16.4" cy="8.4" r="1.4"/><circle cx="16.4" cy="14" r="1.4"/><path d="M6 7.6h6.2"/>',
@@ -110,6 +112,12 @@ const P = {
   postcard: '<rect x="3.6" y="5.6" width="16.8" height="12.8" rx="1.8"/><path d="M13.2 9h4M13.2 12h4M13.2 15h2.6"/><path d="M6.4 15.2l2.2-3 1.8 2.2"/>',
   gamepad: '<path d="M7.4 7.6h9.2a4.2 4.2 0 0 1 4.1 3.4l.9 4.6a2.4 2.4 0 0 1-4.1 2.1l-2-2.1H8.5l-2 2.1a2.4 2.4 0 0 1-4.1-2.1l.9-4.6a4.2 4.2 0 0 1 4.1-3.4z"/><path d="M8 10.4v3.2M6.4 12h3.2"/><circle cx="15.6" cy="11" r=".9" fill="currentColor" stroke="none"/><circle cx="17.4" cy="12.8" r=".9" fill="currentColor" stroke="none"/>',
   ghost: '<path d="M6.2 19.6V10.4a5.8 5.8 0 0 1 11.6 0v9.2l-1.9-1.5-1.9 1.5-2-1.5-2 1.5-1.9-1.5z"/><circle cx="10" cy="10.6" r=".9" fill="currentColor" stroke="none"/><circle cx="14" cy="10.6" r=".9" fill="currentColor" stroke="none"/>',
+  // 2.12 live mode: four pads (one lit), a padlock open and shut, leave full screen, a setlist
+  live: '<rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6" fill="currentColor" stroke="none"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/>',
+  lock: '<rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2"/><path d="M8.4 10.6V7.8a3.6 3.6 0 0 1 7.2 0v2.8"/><path d="M12 14.2v2.4"/>',
+  unlock: '<rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2"/><path d="M8.4 10.6V7.8a3.6 3.6 0 0 1 6.9-1.5"/><path d="M12 14.2v2.4"/>',
+  'exit-full': '<path d="M9 4.6V9H4.6M15 4.6V9h4.4M9 19.4V15H4.6M15 19.4V15h4.4"/>',
+  setlist: '<path d="M9.4 7h10M9.4 12h10M9.4 17h10"/><g fill="currentColor" stroke="none"><circle cx="5.4" cy="7" r="1.1"/><circle cx="5.4" cy="12" r="1.1"/><circle cx="5.4" cy="17" r="1.1"/></g>',
 };
 
 export function icon(name, { size, cls = '' } = {}) {

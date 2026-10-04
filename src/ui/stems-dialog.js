@@ -40,6 +40,11 @@ export function openStemsDialog(ctx) {
   const dither = check('Dither', true, 'TPDF, for 16 and 24-bit');
   const returns = check('Send returns as their own files', false, 'Send A, Send B, delay and reverb. Only with dry stems: wet stems already hold their sends, so separate returns would count them twice.');
   const master = check('Master processing on stems', false, 'Off: stems are taken before the master chorus, warmth, volume and limiter, so they add up exactly to "Mix (no master processing)", which is saved too. On: every file goes through them like the mix.');
+  // 2.12 surround file
+  const surround = select('Surround file', [['off', 'None'], ['5.1', '5.1 (6 channels)'], ['7.1', '7.1 (8 channels)']], 'off');
+  const lfe = check('LFE (subwoofer) channel', false, 'A 120 Hz low-passed copy of the whole mix. Most music leaves it silent.');
+  const spread = check('Spread to the rear speakers', false, 'Sends a little of the stereo tracks and the effects to the rear pair. Off keeps them on front left and right.');
+  const surNote = h('p', { class: 'setting-hint stems-sur-note' }, 'Adds one multichannel WAV to the zip. Tracks in 3D sit on the speakers in their direction; the rest stay on front left and right. Taken before the master colour, volume and limiter. Renders the song twice more.');
   const pattern = h('input', { type: 'text', class: 'input stems-pattern', value: DEFAULT_PATTERN, 'aria-label': 'File name pattern', spellcheck: 'false' });
 
   const bar = h('div', { class: 'bounce-progress', hidden: true, role: 'progressbar', 'aria-label': 'Export progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, h('span', { class: 'bounce-fill' }));
@@ -59,8 +64,10 @@ export function openStemsDialog(ctx) {
       field('Bit depth', h('div', { class: 'select select--sm' }, bits)),
       field('Stems', h('div', { class: 'select select--sm' }, wet)),
       field('Fader', h('div', { class: 'select select--sm' }, fader)),
-      field('Normalise', h('div', { class: 'select select--sm' }, norm))),
+      field('Normalise', h('div', { class: 'select select--sm' }, norm)),
+      field('Surround', h('div', { class: 'select select--sm' }, surround))),
     dither.el, returns.el, master.el,
+    h('div', { class: 'stems-sur', hidden: true }, surNote, lfe.el, spread.el),
     field('File names', pattern, 'Use {index}, {track name}, {tempo} and {key}'),
     info, bar, status,
     h('div', { class: 'bounce-actions' }, cancel, go));
@@ -70,12 +77,15 @@ export function openStemsDialog(ctx) {
     sampleRate: Number(rate.value), bits: Number(bits.value), dither: dither.input.checked,
     normalise: norm.value, wet: wet.value === 'wet', returns: returns.input.checked, master: master.input.checked,
     tail: tail.value === 'auto' ? 'auto' : Number(tail.value), fader: fader.value, pattern: pattern.value,
+    surround: surround.value, lfe: lfe.input.checked, spread: spread.input.checked,
   });
 
   let size = null;
   const refresh = () => {
     dither.input.disabled = bits.value === '32' || busy;
     returns.input.disabled = wet.value === 'wet' || busy;
+    content.querySelector('.stems-sur').hidden = surround.value === 'off';
+    lfe.input.disabled = spread.input.disabled = busy;
     try {
       const st = store.serialize();
       size = exportSize(st, options());
@@ -91,7 +101,7 @@ export function openStemsDialog(ctx) {
       setText(status, err && err.message ? err.message : 'These settings do not work.');
     }
   };
-  for (const el of [length, rate, bits, tail, norm, wet, fader, dither.input, returns.input, master.input]) el.addEventListener('change', refresh);
+  for (const el of [length, rate, bits, tail, norm, wet, fader, dither.input, returns.input, master.input, surround, lfe.input, spread.input]) el.addEventListener('change', refresh);
   refresh();
 
   const setProgress = (f) => {
@@ -101,7 +111,7 @@ export function openStemsDialog(ctx) {
   };
   const setBusy = (on) => {
     busy = on;
-    for (const el of [length, rate, bits, tail, norm, wet, fader, pattern, master.input]) el.disabled = on;
+    for (const el of [length, rate, bits, tail, norm, wet, fader, pattern, master.input, surround]) el.disabled = on;
     cancel.hidden = !on;
     bar.hidden = !on && bar.hidden;
     refresh();

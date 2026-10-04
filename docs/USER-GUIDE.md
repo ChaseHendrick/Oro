@@ -1470,6 +1470,58 @@ about 90% less processing than the same track live.
 
 ---
 
+### Listening modes (2.12)
+
+The **ear button** in the top bar (and **Settings > Audio > Listen**) changes only
+what you hear. Recordings, the looper, bounces, stems and every export stay exactly as they
+are, so you can check a mix without changing it. While a mode other than Normal is on, the
+button shows its name in amber so you do not forget it. The choice is kept on this
+computer, not in the session.
+
+| Mode | What it does |
+|---|---|
+| **Normal** | What Oro plays, unchanged. |
+| **Headphones** | A gentle crossfeed: each ear also hears a little of the other side, low-passed and about 0.3 ms late, as it would from speakers in a room. Hard-panned sounds become less tiring on long sessions. A sound in the middle keeps its level. |
+| **Mono check** | Left and right added together at half level, on both sides. A sound in the middle keeps its level, so mono is never louder; anything that cancels in mono disappears, which is what you want to find out. |
+| **Small speaker** | A rough preview of a phone or laptop speaker: mono, no deep bass, less treble and a small bump in the upper middle. It is only a rough guide, not a model of any particular device. |
+| **Swap L/R** | Left and right exchanged, to check your headphones or your panning. |
+
+On a phone the button only appears in the top bar while a mode is on; choose one in
+**Settings > Audio**.
+
+### 3D sound (2.12)
+
+Each track can be placed around your head instead of using **Pan**. It is made for
+headphones. Press **3D** on a track's strip (or choose a mode in the **3D sound** card in
+the Mix tab, which always shows the selected track):
+
+* **Off** (the default): the track uses Pan as before. Sessions from earlier versions sound
+  exactly the same.
+* **Manual**: drag the dot on the round pad (you are in the middle, facing up) or use the
+  arrow keys: left and right turn it round you, up and down move it nearer or further.
+  **Direction** (0 is in front, 90 to the right, -90 to the left, 180 behind), **Height**
+  and **Distance** are knobs too.
+* **Follow dot**: where the track's dot sits on the map, seen from the middle of the map,
+  sets the direction. Up the map is in front of you. Move the dot, or let a dot behaviour
+  move it, and the sound travels round you.
+* **Follow dot and distance**: the same, and how far the dot is from the middle of the map
+  sets the distance (0.5 m in the middle to 8 m at the edge).
+* **Air** (on by default): far sounds lose a little treble, as they do through air.
+
+How it works: Oro uses a simple, generic model of a head. The far ear hears the sound up to
+about 0.66 ms later and a little quieter, and its treble is shaded by the head. Sounds
+behind you are a little duller, height moves a narrow dip in the treble, and distance
+lowers the level (1 m sounds as loud as Pan in the middle). Every change glides, so moving
+a source never clicks. Because every head is different and this model is generic, the
+effect is stronger for some people than for others. Left and right are clear for almost
+everyone; front and back can be hard to tell apart, and height is the weakest cue.
+
+3D is part of the mix: recordings, bounces and stems include it, a frozen track keeps it, and the track's
+sends hear it where it is. Listening modes do not change it. A track in 3D is mono at its
+position (its stereo width becomes one point), and Pan is not used while 3D is on. Loading
+a patch keeps a track's 3D settings, and saved patches do not store them, like the sends.
+Each track in 3D costs very little processing (well under 1% of one core here).
+
 ## 12. Recording and bouncing
 
 ### Record
@@ -1553,6 +1605,35 @@ tuning, format, length and each track's settings. The dialog shows the expected 
 above 1.5 GB and refuses past 3.5 GB. Files are rendered and encoded one at a time;
 **Cancel** stops within moments, even in the middle of a file, and nothing is saved. In the
 desktop app a save dialog asks where to put the zip; in a browser it downloads.
+
+### Surround file (2.12)
+
+**Export stems** can add one surround file to the zip: choose **Surround: 5.1** or **7.1**.
+It is a multichannel WAV (WAVE_FORMAT_EXTENSIBLE with the standard speaker mask), with the
+channels in the usual order: **L, R, C, LFE, Ls, Rs** for 5.1 and **L, R, C, LFE, Lrs, Rrs,
+Lss, Rss** (rear pair, then side pair) for 7.1.
+
+* Tracks in **3D** sit on the speakers in their direction: the two speakers either side of
+  the direction share the sound at constant power (straight ahead is the centre speaker,
+  30 degrees is front right, 110 degrees is right surround in 5.1). Distance sets the level.
+  Height is left out, as these layouts have no height speakers.
+* Other tracks stay on front left and right, as in stereo.
+* The effects (delay, reverb, Send A and Send B) are on front left and right.
+* **Spread to the rear speakers** (off by default) sends a little of the stereo tracks and
+  the effects to the rear pair, for a wider room.
+* **LFE (subwoofer) channel** (off by default): a 120 Hz low-passed copy of the whole mix.
+  Most music leaves it silent and lets the speakers handle the bass.
+
+Like stems with master processing off, the surround file is taken before the master chorus,
+warmth, volume and limiter. It takes two more renders of the song. The README in the zip
+describes the layout.
+
+**Surround speakers (playing live).** If your audio device reports 6 or more outputs,
+**Settings > Audio > Surround speakers** can play tracks in 3D from their speakers instead
+of through the headphone model. Otherwise the option is off and says how many outputs your
+device reports. While it is on, Record and the looper capture only front left and right, so
+use Export stems for a surround file. The pedal send uses the extra outputs too, so the two
+cannot run together. This has not been tested on real surround hardware yet.
 
 ### Looper (1.2)
 
@@ -1676,6 +1757,107 @@ every other terrain. Resampled terrains are saved with your session like importe
 **MIDI Learn.** Right-click (or long-press) the loop button, Stop, Undo, Clear, Mute or
 Resample and choose **MIDI Learn**, then press a button on your controller. A mapped button
 fires each time its value rises past the middle (use momentary buttons).
+
+---
+
+## Live mode (2.12)
+
+Live mode turns Oro into a stage instrument: one full-screen view with 16 big pads, a
+setlist, large faders and the transport, readable from a few steps away. Open it with the
+**four-squares button** in the top bar or **Shift+L**. It asks the browser for full screen;
+where full screen is not offered it fills the window instead. Leave with **Exit**, **Esc** or
+Shift+L. The 3D map stays behind the controls (dimmed by default; choose Map, Dimmed map or
+Off in **Setlist > Options**; Off stops drawing the map, which saves power). The colours are
+a dark, high-contrast set of their own unless you choose **Match the app theme**.
+
+While live mode is open Oro asks the screen to stay awake (Screen Wake Lock, where the
+browser offers it) and asks again when you come back to the window. Nothing on the live
+screen flashes or blinks.
+
+**Pads.** Each pad has a label, a colour and a job:
+
+* **Scene**: load one of your scenes (or a factory scene). This replaces the session, like
+  loading it from the patch browser; Undo brings the old one back.
+* **Section**: switch every track that has pattern N to pattern N together.
+* **Pattern on a track**, **Track mute** and **Track solo** (mute and solo switch on and off).
+* **Drum pad**: hit one pad of a drum kit track.
+* **Note or chord**: play up to eight notes on a track (or the selected track) for as long as
+  you hold the pad.
+* **Macro preset** and **Smart control preset**: set the four macros, or a track's smart
+  controls, to stored positions.
+
+Tracks and patterns are chosen by number (track 2, pattern 3), so a pad keeps working when
+the setlist loads another song.
+
+The first time you open live mode the pads are built from your session: row 1 holds your
+saved scenes, then sections when tracks have several patterns (otherwise solos of tracks 1
+to 4), row 2 mutes tracks 1 to 4, row 3 plays the first four drum pads of a kit track (or
+four chords in the key: I, IV, V and vi in major and minor keys), and row 4 switches the
+selected track between its first four patterns. Press **Edit pads**, then a pad, to change
+what it does, its label, its colour and its quantise setting. **Done** ends editing. The
+first edit saves all 16 pads with the session.
+
+**Quantise.** Each pad can wait for the next **Bar** or **Beat**, or act at once (**Off**).
+Scenes, sections and patterns wait for the bar by default; everything else acts at once.
+While the transport plays, a waiting pad shows a steady outline and a ring that fills until
+the line (with reduced motion, a still dashed ring instead), plus "Next bar" or "Next beat".
+Press it again before then to cancel. Changes to what the sequencer plays are applied just
+before the line, so the first step on the line already plays the new pattern or scene. A
+newer change of the same thing (another scene, another pattern on the same track) replaces
+the one waiting. When the transport is stopped every pad acts at once, and pressing Stop
+applies whatever was still waiting.
+
+States: a pad with a coloured top edge is ready; a pad filled with its colour is on (its
+scene loaded last, its pattern playing, its track muted, its notes held, its preset in
+place); a dashed, faded pad cannot act now (for example its track does not exist in this
+song), and an empty pad has a dashed outline.
+
+**Big controls.** Play and stop, the tempo with minus and plus buttons and **Tap** (tap four
+times in time), **Panic** (stops every note and anything waiting), and faders for the four
+macros, the selected track's eight smart controls (a fader shows Off until that smart
+control has a target) and the master volume. Drag a fader, or focus it and use the arrow
+keys (Shift for fine steps, Page Up and Page Down for big ones). While Oro follows an
+external MIDI clock the tempo shows that clock and cannot be changed here.
+
+**Setlist.** **Setlist** opens the song list: add your saved scenes or versions from
+version history (or save the current session as a scene and add it), put them in order,
+and give each one notes: a key, a tempo and cues (for example "intro twice"). The notes are
+for you; a song brings its own tempo and key. The top of the live screen shows **Now** (with
+its notes and cues) and **Next**, the bar and beat, and the time. **Next** and **Previous**
+(the arrow keys, or MIDI) move through the list. When the transport is stopped the song
+loads at once; while it plays, **Song changes while playing** decides: **At the next bar**
+(the default; press Next again to cancel), **Ask first, then at the next bar** (press Next
+again, or Go, to confirm; Esc cancels the question) or **At once**. Loading a song never
+changes your pads or the setlist itself.
+
+**Lock.** **Lock** makes every click and tap outside the pads do nothing, so a stray touch
+cannot stop the music or open a dialog. To unlock, press and hold the lock button for about a
+second. Keys and MIDI keep working while locked, and **Esc always leaves live mode**, locked
+or not.
+
+**Keys.** 1 to 0 and Q to Y play pads 1 to 16 (row by row), Space plays and stops, Left
+and Up go to the previous song, Right and Down to the next, and Esc or Shift+L leaves. The
+note keys and Oro's other single-key shortcuts are off while live mode is open, and typing in
+a text field is never taken over. Cmd/Ctrl+Z still undoes.
+
+**MIDI.** Right-click a pad (or open it in Edit pads) and choose **MIDI Learn** to map a
+controller button to it; mapped buttons fire on each press. **Setlist > MIDI Learn** maps
+Previous song, Next song and Play / stop. Right-click a fader for MIDI Learn too: macro,
+smart control and volume faders use the same mappings as their knobs elsewhere in Oro.
+Buttons (pads, setlist steps, looper buttons) learn either a CC or a note, so drum pads
+that send notes work too; a note learned this way triggers the button and no longer plays a
+sound. Faders learn a CC (a knob or fader that sends control changes). Mappings are saved on this computer with your
+other MIDI settings.
+
+**What is saved.** The pads, the setlist, the song change choice, the lock, the backdrop and
+the colours are saved with the session (and with versions in version history), but not
+inside scenes, so loading a scene keeps them. Edits to the pads and the setlist can be
+undone; the lock, backdrop and colours are not undo steps. Sessions that never used live mode
+are saved exactly as before.
+
+Not yet tested on real hardware: the Screen Wake Lock (and whether the desktop app grants
+it), full screen in the desktop app, and MIDI Learn on pads with a physical controller.
+Everything else was checked in Chromium at sizes from a phone (390 by 844) to 5120 by 2160.
 
 ---
 
@@ -1983,6 +2165,25 @@ The skin follows terrain A and B blended by the Morph knob's set position (modul
 
 **CPU.** This is the most expensive control in Oro: a ringing skin costs about as much as several voices, and it doubles for notes above roughly 220 to 350 Hz at Standard and High (the simulation then takes two smaller steps per sample). Measured on a slow test machine, one ringing skin took about 6 percent of a core at Eco, 12 to 25 percent at Standard and 14 to 30 percent at High. It costs nothing while Off, while the skin is at rest (it stops computing once it has died away) or while Mix is at 0. Use it on one or two tracks, or choose Eco on a slow computer.
 
+### GPU Resonator (2.12, experimental)
+
+The Resonator can also run on the graphics card, through WebGPU, on a much finer skin. It is new in 2.12 and so far has been checked only on a software WebGPU adapter, not on real graphics cards, so treat it as experimental. The CPU Resonator stays the default and sounds exactly as before.
+
+Where the browser offers WebGPU, the Resonator card shows more choices under the knobs:
+
+- **Engine**: **CPU** (the default, with no added delay) or **GPU (WebGPU)**. The choice is for the whole app, is not saved with the session, and lasts until you reload the page.
+- **GPU detail** (with the GPU engine): the size of the skin's grid on the graphics card: **Fine (128)**, **Finer (192)** or **Finest (256)** cells a side, against 24 to 36 on the CPU. A finer grid follows the land more closely and rings with many more overtones.
+- A short status line: starting, running (with the added delay), falling behind, or back on the CPU. Hover it for the reason after a fallback.
+
+The GPU runs the same physics as the CPU Resonator (stiffness from the height of the land, Decay, Tone, fixed edges, the same pitch tracking), so the controls above work the same way. What changes:
+
+- **Pitch ceiling.** On flat land every GPU detail plays notes at their own pitch up to about 1.4 kHz; on the built-in terrains the ceiling is about 800 Hz to 1 kHz, against roughly 300 to 650 Hz on the CPU. Above it notes still ring whole octaves lower. Higher notes take more steps per sample, so they cost the graphics card more, especially at Finest.
+- **Delay.** The audio thread cannot use the graphics card, so the skin is computed ahead in blocks and streamed back. By design its sound comes out a fixed 768 skin steps late: about 32 ms at 48 and 96 kHz, about 35 ms at 44.1 kHz (the dry sound is not delayed). That suits pads, drones and sympathetic ringing but is noticeable on fast percussive playing; keep the CPU engine for that.
+- **Browser support.** It needs WebGPU (`navigator.gpu` with a graphics adapter). Whether WebGPU is there depends on the browser and its version, the operating system and the graphics driver, so it may be missing even on a fast computer. Without `navigator.gpu` the Engine choice is not shown. If the browser has WebGPU but no usable graphics adapter, choosing GPU shows "GPU unavailable, using the CPU" and a notice with the reason, and the CPU Resonator keeps playing. Oro runs the GPU work in a background worker when the browser offers WebGPU there, else on the page itself.
+- **Speed.** Whether a graphics card keeps up in real time depends on the card, the GPU detail, the note's pitch and how many tracks use the Resonator. Start with Fine (128) and one track.
+- **Fallback.** If the GPU cannot start, the device is lost, or it falls behind real time (three gaps within two seconds, or one gap longer than a quarter second), the Engine goes back to CPU for every track, with a short crossfade, and you see a one-time notice. The audio thread never waits for the graphics card: a late block is bridged by letting the last value fade.
+- **Bounce and stems.** With the GPU engine on, a bounce or a stems export first runs the song once to record what each skin hears, renders the skins on the GPU as fast as the card allows, then renders the song with them, with the same delay as when you play live. This takes longer than with the CPU engine. If the GPU cannot render, the CPU Resonator is used. Freeze still renders a track with the CPU Resonator.
+
 ### Imprint (2.10)
 
 **Imprint** (next to Image library and Formula under each terrain slot) turns a sound into land, so the track plays that sound back at any note.
@@ -2279,6 +2480,7 @@ typing in a text field.
 | C / V | Keyboard velocity down / up |
 | R | Record on / off (saves a WAV) |
 | Shift + P | Preview the selected part with a short phrase (P alone plays a note) |
+| Shift + L | Live mode: full-screen pads, setlist and big controls |
 
 **Looper**
 
@@ -2299,6 +2501,15 @@ typing in a text field.
 | , | Settings |
 | ? | Help |
 | Esc | Close menus and dialogs, cancel MIDI Learn |
+
+**Live mode (2.12)**
+
+| Keys | Action |
+|---|---|
+| 1 ... 0, Q ... Y | Play pads 1 to 16 (the note keys are off in live mode) |
+| Space | Play / stop |
+| Left, Up / Right, Down | Previous / next song in the setlist |
+| Esc or Shift + L | Leave live mode (also when the lock is on) |
 
 **Knobs**
 

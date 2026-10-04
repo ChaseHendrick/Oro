@@ -76,6 +76,11 @@ few lines.
   shifting, EQ and multiband compression join the master effects and limiter with an
   adjustable ceiling. Record what you play to a 24-bit WAV, or **bounce** the sequencers
   offline, with optional stems per part.
+* **3D sound and listening modes (2.12).** Place any track around your head for
+  headphones (by hand, or let it follow the dot on the map), export a 5.1 or 7.1 surround
+  file with the stems, and check your mix with a headphone crossfeed, a mono check, a rough
+  small-speaker preview or swapped channels without changing what gets exported. The 3D
+  model is generic, so it works better for some listeners than others.
 * **Looper and resampling.** A tempo-locked looper with overdub, undo and WAV export, and
   **Resample**, which turns the loop (or a few bars of the output) into a new wavetable
   terrain you can play, loop and resample again.
@@ -95,6 +100,10 @@ few lines.
   when you quit (new in 2.11, not yet tested on every macOS version). Portable/archive
   copies offer release notices and manual downloads. Older copies need one manual
   upgrade to gain the updater.
+* **Live mode (2.12).** A full-screen stage view: 16 big pads that switch scenes and
+  patterns on the next bar or beat, mute and solo tracks, hit drums, play chords or recall
+  macro and smart control presets; a setlist with Now and Next, notes and cues; large
+  faders, tap tempo and Panic; a lock that ignores stray taps; keyboard and MIDI mapping.
 * **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
   camera views, keyboard shortcuts for the main actions, and a layout that
   works on a phone.

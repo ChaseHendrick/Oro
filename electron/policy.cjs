@@ -25,12 +25,15 @@ const ISSUES_URL = `${REPO_URL}/issues`;
 //               denying it would make such a button silently fail.
 //   pointerLock lets knob drags keep going past the screen edge.
 //   clipboard-sanitized-write  "copy" buttons (write only; reading stays denied).
+//   screen-wake-lock  2.12 live mode keeps the screen awake while it is open
+//               (navigator.wakeLock); refused, the screen may simply dim as usual.
 const ALLOWED_PERMISSIONS = new Set([
   'midi',
   'midiSysex',
   'fullscreen',
   'pointerLock',
   'clipboard-sanitized-write',
+  'screen-wake-lock',
 ]);
 
 // Answered only by the permission *check* handler (never by a request), so the page

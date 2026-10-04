@@ -10,6 +10,7 @@ import { FILTER2_TYPES, FILTER_ROUTES } from '../dsp/filter2.js';
 import { defaultFuncPoints } from '../dsp/function-gen.js';
 import { defaultDrum } from '../dsp/drum-kit.js';
 import { RESO_MODES } from '../dsp/resonator.js';
+import { SPACE_MODES } from '../dsp/spatial.js';
 
 // v2.2 unison: how detune positions are spread, and transposing stacks
 // (semitones cycled across the copies from the outside in; the centre copy
@@ -254,6 +255,14 @@ export const PART_PARAMS = [
   P('resoTone', 'Tone', 'reso', 'lin', 0, 1, 0.5, { hint: 'Dark (high modes die fast) to bright (they ring as long as the lowest)' }),
   P('resoSize', 'Size', 'reso', 'exp', 0.25, 4, 1, { unit: 'x', hint: 'Size of the skin against the note: 2x rings an octave lower, 0.5x an octave higher' }),
   P('resoListen', 'Listen', 'reso', 'lin', -1, 1, 0, { hint: 'Where the pickup sits: 0 is opposite the dot through the middle of the map; either way swings it round towards the dot' }),
+  // 2.12 3D sound (src/dsp/spatial.js): place the track around your head, for
+  // headphones. Off (the default) runs nothing and changes nothing; Pan is
+  // used instead. Like the sends, these belong to the mix, not the patch.
+  P('space', '3D', 'space', 'enum', 0, SPACE_MODES.length - 1, 0, { options: SPACE_MODES, hint: 'Place this track around your head instead of using Pan. Made for headphones' }),
+  P('spaceAz', 'Direction', 'space', 'lin', -180, 180, 0, { unit: '°', hint: '0 is in front, 90 to the right, -90 to the left, 180 behind' }),
+  P('spaceEl', 'Height', 'space', 'lin', -40, 80, 0, { unit: '°', hint: 'Above or below ear height. The weakest of the 3D cues' }),
+  P('spaceDist', 'Distance', 'space', 'exp', 0.5, 20, 1, { unit: 'm', hint: 'Further away is quieter and a little duller. 1 m sounds as loud as Pan in the middle' }),
+  P('spaceAir', 'Air', 'space', 'bool', 0, 1, 1, { hint: 'Far sounds lose a little treble, as they do through air' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
@@ -261,6 +270,8 @@ export const PART_PARAMS = [
 export const PEDAL_PARAM_IDS = Object.freeze(['pedalSend', 'pedalPre', 'pedalInsert']);
 // v2.8 Send A and Send B amounts belong to the mix as well: a patch load keeps them.
 export const SEND_PARAM_IDS = Object.freeze(['sendA', 'sendB']);
+// 2.12 the 3D position belongs to the mix too: a patch load keeps it.
+export const SPACE_PARAM_IDS = Object.freeze(['space', 'spaceAz', 'spaceEl', 'spaceDist', 'spaceAir']);
 
 export const GLOBAL_PARAMS = [
   P('masterVolume', 'Volume',   'master', 'lin', 0, 1, 0.8),

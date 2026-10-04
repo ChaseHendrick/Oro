@@ -65,6 +65,8 @@ export function installBounceReminder(ctx, { openBounce, storage = globalThis.lo
   const reminder = createBounceReminder({
     enabled: () => bounceReminderEnabled(storage),
     notify: (reason) => {
+      // Not on stage: live mode is about playing, not bouncing.
+      if (globalThis.document?.querySelector?.('.live-root')) return;
       const text = REMINDER_TEXT[reason];
       toast(text.message, { kind: 'info', timeout: 15000, detail: text.detail, actions: [{ label: 'Bounce now', onClick: openBounce }, { label: 'Not now' }] });
     },

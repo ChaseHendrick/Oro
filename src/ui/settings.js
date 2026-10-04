@@ -17,10 +17,12 @@ import { bounceReminderEnabled, setBounceReminderEnabled } from './bounce-remind
 import { createPalettePicker } from './palettes.js';
 import { createTuningSettings } from './tuning-settings.js';
 import { icon } from './icons.js';
+import { createListenChoices, LISTEN_NOTE } from './listen-ui.js';
 import { createOperatorSettings } from './operator.js';
 import { has as hasFun } from '../core/fun.js';
 import { skinOn, setSkin, onSkin } from './eggs.js';
 import { REAL_DATA_CREDITS } from '../audio/places.js';
+import { version as pkgVersion } from '../../package.json';
 
 export const SETTINGS_TABS = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -35,7 +37,8 @@ export const SETTINGS_TABS = [
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
-export const VERSION = '2.10.0';
+// Read from package.json at build time so it can never drift (it said 2.10.0 in 2.11).
+export const VERSION = pkgVersion;
 
 const row = (label, hint, control) => h('div', { class: 'setting-row' },
   h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, label), hint ? h('div', { class: 'setting-hint' }, hint) : null), control);
@@ -215,12 +218,35 @@ function audioTab(ctx, scope) {
   const tuning = createTuningSettings(ctx);
   scope.add(tuning.dispose);
 
+  // 2.12 listening modes (what you hear only) and live surround playback
+  const listenChoices = createListenChoices(ctx, { name: 'listen-mode-settings' });
+  scope.add(listenChoices.dispose);
+  const surSel = h('select', { class: 'select-native', 'aria-label': 'Surround speakers' },
+    [['off', 'Off (stereo)'], ['5.1', '5.1 speakers'], ['7.1', '7.1 speakers']].map(([v, t]) => h('option', { value: v }, t)));
+  const surHint = h('div', { class: 'setting-hint' });
+  const renderSur = () => {
+    const sup = has(engine, 'surroundSupport') ? engine.surroundSupport() : { ok: false, reason: 'Needs the audio engine.', layouts: [] };
+    const want = ctx.store.get('ui.liveSurround') || 'off';
+    surSel.value = want;
+    for (const o of surSel.options) o.disabled = o.value !== 'off' && !(sup.ok && sup.layouts.includes(o.value));
+    surSel.disabled = !sup.ok && want === 'off';
+    surHint.textContent = sup.ok
+      ? 'Tracks in 3D play from the speakers in their direction instead of the headphone model; the other tracks stay on front left and right. While it is on, Record and the looper capture only front left and right, so use Export stems for a surround file. Not tested on real surround hardware yet.'
+      : `${sup.reason} Export stems can still write a 5.1 or 7.1 file.`;
+  };
+  scope.on(surSel, 'change', () => ctx.store.set('ui.liveSurround', surSel.value, { source: 'ui' }));
+  scope.add(ctx.store.subscribe('ui.liveSurround', () => setTimeout(renderSur, 0)));
+  scope.add(listen(engine, 'state', renderSur));
+  renderSur();
+
   return h('div', { class: 'settings-pane' },
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Engine'), status, h('div', { class: 'btn-row' }, startBtn, testBtn, panicBtn)),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Quality'),
       h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Oscillator quality'), qText), qSeg.el)),
     h('section', { class: 'settings-group', 'aria-label': 'Tuning (saved with the session)' }, h('h3', { class: 'group-title' }, 'Tuning'), tuning.el),
-    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap)),
+    h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Output'), row('Output device', null, deviceWrap),
+      h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Listen'), h('div', { class: 'setting-hint' }, `${LISTEN_NOTE} Kept on this computer.`)), listenChoices.el),
+      h('div', { class: 'setting-row setting-row--stack' }, h('div', { class: 'setting-text' }, h('div', { class: 'setting-label' }, 'Surround speakers'), surHint), h('div', { class: 'select' }, surSel, h('span', { class: 'select-caret', html: icon('chevron-down') })))),
     h('section', { class: 'settings-group' }, h('h3', { class: 'group-title' }, 'Export'),
       row('Bounce to WAV', bounceSupported(ctx) ? 'Render bars of the sequencers offline, faster than real time' : 'Needs the audio and music engines', bounceBtn),
       row('Remind me to bounce', 'A small note, at most every 15 minutes, when the audio drops out while playing or after 20 minutes of playing with changes since your last bounce. The desktop app also asks when you close it. Kept on this computer.', remindToggle.el)));

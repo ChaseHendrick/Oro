@@ -1449,6 +1449,10 @@
 @media (pointer: coarse) { .seq-ghost-btn { min-height: 44px; min-width: 44px; } }
 /* 2.10 Resonator card and Imprint popover */
 .reso-note { margin: 0 0 6px; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+/* 2.12 GPU Resonator: Engine, GPU detail and status under the knobs */
+.reso-engine { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); align-items: flex-end; row-gap: 8px; }
+.reso-engine .reso-gpu-status { flex: 1 1 100%; white-space: normal; line-height: 1.35; }
+.reso-engine .reso-gpu-status:empty { display: none; }
 .imprint-pop { display: flex; flex-direction: column; gap: 8px; min-width: 260px; max-width: 320px; }
 .imprint-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .imprint-drop { border: 1px dashed var(--border-strong); border-radius: 8px; padding: 10px; text-align: center; color: var(--text-2); font-size: var(--fs-sm); }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createStore } from '../../src/core/store.js';
 import { defaultState } from '../../src/core/params.js';
 import { createMusic } from '../../src/music/music.js';
-import { createMidi, STORAGE_KEY, LEARNABLE_ACTIONS } from '../../src/midi/midi.js';
+import { createMidi, STORAGE_KEY, LEARNABLE_ACTIONS, mappingControl } from '../../src/midi/midi.js';
 import { createFakeClock, createFakeEngine, createMemoryStorage } from '../music/fakes.js';
 import { fakeInput, fakeOutput, fakeAccess, fakeNavigator } from './fake-midi.js';
 
@@ -51,5 +51,39 @@ describe('MIDI learn for looper buttons', () => {
   it('refuses unknown actions', async () => {
     const { midi } = await setup();
     await expect(midi.learn({ scope: 'action', id: 'format.disk' })).rejects.toThrow();
+  });
+});
+
+describe('MIDI note learn for buttons (2.12)', () => {
+  it('learns a note for an action, fires on every hit, swallows the note and persists', async () => {
+    const { midi, input, storage, store } = await setup();
+    const fired = [];
+    midi.on('action', (e) => fired.push(e.id));
+    const p = midi.learn({ scope: 'action', id: 'looper.main' });
+    input.fire([0x99, 36, 100]);                     // a drum pad on channel 10
+    expect(await p).toEqual({ note: 36, channel: 10, target: { scope: 'action', id: 'looper.main' } });
+    expect(fired).toEqual([]);                       // the teaching hit only teaches
+    input.fire([0x89, 36, 0]);
+    input.fire([0x99, 36, 90]);
+    input.fire([0x89, 36, 0]);
+    input.fire([0x99, 36, 90]);
+    expect(fired).toEqual(['looper.main', 'looper.main']);
+    expect(mappingControl(midi.mappings()[0])).toBe('note 36');
+    // Survives a reload; other notes and CCs are unaffected.
+    const again = await createMidi({ store, router: null, navigator: fakeNavigator(fakeAccess()), storage });
+    expect(again.mappings()).toEqual([{ note: 36, channel: 10, target: { scope: 'action', id: 'looper.main' } }]);
+    input.fire([0xb9, 36, 127]);
+    expect(fired).toHaveLength(2);
+  });
+
+  it('only buttons can be note mappings', async () => {
+    const storage = createMemoryStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify({ mappings: [
+      { note: 40, channel: null, target: { scope: 'global', id: 'tempo' } },
+      { note: 128, channel: null, target: { scope: 'action', id: 'looper.main' } },
+      { note: 41, channel: null, target: { scope: 'action', id: 'looper.stop' } },
+    ] }));
+    const { midi } = await setup(storage);
+    expect(midi.mappings()).toEqual([{ note: 41, channel: null, target: { scope: 'action', id: 'looper.stop' } }]);
   });
 });

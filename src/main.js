@@ -42,6 +42,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosave.flush(); });
   store.subscribe('global', persist);
   store.subscribe('parts', persist);
+  store.subscribe('live', persist);   // 2.12 live mode setup
   store.subscribe('', (path) => { if (path === '') persist(); });
 
   // Settings > Pedals > Sample rate (per computer): Auto, 44.1 kHz (the MPC XL),

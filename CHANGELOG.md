@@ -3,6 +3,58 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.12.0 (October 2026)
+
+**Fixed**
+* About, Updates and postcards showed version 2.10.0 in 2.11. The version now comes straight from the build.
+
+**New**
+* **Live mode.** A full-screen view for playing on stage (the four-squares button or
+  Shift+L), with the 3D map as a dimmed backdrop and large, high-contrast controls that never
+  flash.
+  * 16 pads that load a scene, switch a section or one track's pattern, mute or solo a
+    track, hit a drum pad, play a note or chord, or recall macro or smart control presets.
+    Each has a label, a colour and its own quantise (Off, Beat or Bar). While playing, a
+    waiting pad shows a steady ring until the line; press again to cancel. The first pads
+    are built from your session, and Edit pads changes any of them.
+  * A setlist of saved scenes or versions with notes (key, tempo, cues), a large Now and
+    Next, the bar and beat, and the time. Song changes while playing wait for the next bar,
+    ask first, or happen at once, as you choose.
+  * Play and stop, tempo with Tap, Panic, and big faders for the macros, the selected
+    track's smart controls and the volume.
+  * Lock: clicks and taps outside the pads are ignored until you hold the lock button. Esc
+    always leaves.
+  * Keys 1 to 0 and Q to Y play the pads, Space plays and stops, the arrows move through the
+    setlist; pads, Next, Previous and Play can be MIDI-learned.
+  * MIDI Learn for buttons (live pads, the setlist and the looper) now also learns a note,
+    so drum pads that send notes can trigger them. A learned note no longer plays a sound.
+  * The screen stays awake while live mode is open where the browser allows it. The live
+    setup saves with your session; sessions that never use it are unchanged.
+  * Not yet tested on real hardware: Screen Wake Lock, full screen in the desktop app and
+    MIDI Learn on pads with a physical controller.
+* **GPU Resonator (experimental).** Where the browser offers WebGPU, the Resonator card has an
+  Engine choice: the CPU (the default, unchanged) or the graphics card, which runs the drum skin
+  on a much finer grid (128, 192 or 256 cells a side instead of 24 to 36), with more overtones
+  and notes at their own pitch up to about 1.4 kHz on flat land (about 800 Hz to 1 kHz on the
+  built-in terrains). Its sound comes out about 32 ms late by design (35 ms at 44.1 kHz).
+  WebGPU availability varies by browser, operating system and graphics driver; when it is
+  missing, fails or falls behind, Oro goes back to the CPU Resonator with a short crossfade and
+  a notice. Bounces and stems render it on the graphics card too. So far checked only on a
+  software WebGPU adapter, not yet on real graphics cards.
+* **Listening modes.** An ear button in the top bar (and Settings > Audio) changes only
+  what you hear: **Headphones** (a gentle crossfeed), **Mono check** (never louder than
+  stereo), **Small speaker** (a rough phone or laptop preview) and **Swap L/R**. Recordings,
+  the looper, bounces and exports never include them. Kept per computer.
+* **3D sound.** Place a track around your head instead of panning it, for headphones:
+  direction, height and distance on a round pad in the new 3D sound card, or **Follow dot**,
+  where the dot's place on the map sets the direction (and optionally the distance). It uses
+  a simple, generic head model, so it is stronger for some people than others. Off by
+  default; bounces and stems include it.
+* **Surround file.** Export stems can add a 5.1 or 7.1 WAV: tracks in 3D sit on the speakers
+  in their direction, the rest on front left and right, with optional rear spread and LFE.
+* **Surround speakers (untested on hardware).** With an audio device that reports 6 or 8
+  outputs, tracks in 3D can play from real surround speakers.
+
 ## 2.11.0 (October 2026)
 
 **New**
