@@ -36,6 +36,8 @@ export const DEFAULT_UI = Object.freeze({
   settingsOpen: 0,
   helpOpen: 0,
   audioQuality: 'standard', // 'eco' | 'standard' | 'high' | 'pristine' | 'raw' (device setting)
+  listenMode: 'normal',   // 2.12 listening mode (device setting, never in a session or an export)
+  liveSurround: 'off',    // 2.12 live surround playback: 'off' | '5.1' | '7.1' (device setting)
   lockRecord: 0,          // sequencer dot-lock recording
   editWaypoints: 0,       // map clicks add Tour waypoints instead of moving the dot
   resoEngine: 'cpu',      // 2.12 Resonator engine: 'cpu' | 'gpu' (WebGPU); this session only, never saved

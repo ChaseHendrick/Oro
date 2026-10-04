@@ -582,6 +582,23 @@ em or en dashes in lesson and glossary text; badges listed in `BADGES`.
   is what runs), WebGPU inside the Electron app on each OS, and a long live session for
   glitches during the ARM crossfade and fallback. Freeze still uses the CPU Resonator.
 
+### 10.5 Listening modes, 3D and surround (2.12)
+
+- **Code**: branch `feat-spatial`. Listening modes in `src/audio/listen.js` (inserted between
+  the master analyser and `mainOut`, after the recorder, looper and offline taps; Normal is
+  two gain-1 nodes). 3D in `src/dsp/spatial.js` (per-track head model inside the DSP, so
+  bounces, freezes and stems include it), params `space`, `spaceAz`, `spaceEl`, `spaceDist`,
+  `spaceAir` appended to PART_PARAMS (not modulatable: the stage is per track, not per
+  voice), kept by patch loads like the sends. Surround: DSP `{t:'surround'}` mode, a fifth
+  worklet output (live) and an N-channel offline pass in `renderPass` (export), mixed down in
+  `src/audio/stems.js`; WAVE_FORMAT_EXTENSIBLE writer in `src/audio/wav.js`.
+- **Unverified**: live surround on a real 5.1 or 7.1 device (no hardware here; the device
+  channel setup, the fifth output and the master-volume follow are untested); how convincing
+  the 3D is on real headphones for different listeners; the surround file in a DAW (the
+  header reads back in our decoder; not yet opened in a DAW). While live surround is on,
+  Record and the looper capture only front left and right, and the master limiter does not
+  act on the extra channels.
+
 ### 10.6 Small follow-ups found while building 2.12
 
 - **Live mode keys**: the 16 pad keys are fixed (1 to 0 and Q to Y). Let people choose their
@@ -595,3 +612,7 @@ em or en dashes in lesson and glossary text; badges listed in `BADGES`.
 - **CPU timing test**: `tests/dsp/perf.test.js` (16 voices x unison 2 under 35% of a core)
   fails on a busy machine, on main as well; it passes on CI. Consider a looser bound or a retry
   when the load average is high.
+- **Bounces are not bit-repeatable with the master reverb or delay on**: two back-to-back
+  bounces of the same session differ in their bytes (found while testing 2.12; it happens on
+  2.11 too, in Normal listening mode). Likely the reverb impulse response or render timing.
+  Worth finding so bounces are reproducible.

@@ -1,7 +1,7 @@
 // Turning a patch (a partial parameter set) into a full part, shared by the
 // preset store and the factory scene builder.
 
-import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT, PART_PARAM_MAP, PEDAL_PARAM_IDS, SEND_PARAM_IDS } from '../core/params.js';
+import { defaultPart, defaultPartParams, defaultMods, defaultLinks, MOD_DEFAULT, PART_PARAM_MAP, PEDAL_PARAM_IDS, SEND_PARAM_IDS, SPACE_PARAM_IDS } from '../core/params.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { sanitizeLinks } from '../core/migrate.js';
@@ -68,6 +68,8 @@ export function partWithPatch(base, patch) {
   const smart = sanitizeSmart(patch && patch.smart);
   // v2.8 the Send A / Send B amounts are part of the mix, like the pedal routing
   for (const id of SEND_PARAM_IDS) params[id] = base.params && Number.isFinite(base.params[id]) ? base.params[id] : PART_PARAM_MAP[id].default;
+  // 2.12 and so is the 3D position
+  for (const id of SPACE_PARAM_IDS) params[id] = base.params && Number.isFinite(base.params[id]) ? base.params[id] : PART_PARAM_MAP[id].default;
   return {
     ...rest,
     ...(smart ? { smart } : {}),

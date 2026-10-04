@@ -38,6 +38,19 @@ explains every feature in detail.
   missing, fails or falls behind, Oro goes back to the CPU Resonator with a short crossfade and
   a notice. Bounces and stems render it on the graphics card too. So far checked only on a
   software WebGPU adapter, not yet on real graphics cards.
+* **Listening modes.** An ear button in the top bar (and Settings > Audio) changes only
+  what you hear: **Headphones** (a gentle crossfeed), **Mono check** (never louder than
+  stereo), **Small speaker** (a rough phone or laptop preview) and **Swap L/R**. Recordings,
+  the looper, bounces and exports never include them. Kept per computer.
+* **3D sound.** Place a track around your head instead of panning it, for headphones:
+  direction, height and distance on a round pad in the new 3D sound card, or **Follow dot**,
+  where the dot's place on the map sets the direction (and optionally the distance). It uses
+  a simple, generic head model, so it is stronger for some people than others. Off by
+  default; bounces and stems include it.
+* **Surround file.** Export stems can add a 5.1 or 7.1 WAV: tracks in 3D sit on the speakers
+  in their direction, the rest on front left and right, with optional rear spread and LFE.
+* **Surround speakers (untested on hardware).** With an audio device that reports 6 or 8
+  outputs, tracks in 3D can play from real surround speakers.
 
 ## 2.11.0 (October 2026)
 

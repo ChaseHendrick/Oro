@@ -104,6 +104,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
   // v2.9: the same bars as notes, one MIDI track per sequencer that is on
   const midiBtn = h('button', { type: 'button', class: 'btn btn--sm', 'aria-label': 'Save the sequencers as a MIDI file', dataset: { tip: 'Save these bars of every track whose sequencer is on as a .mid file' } }, 'Save MIDI');
   const stemsBtn = h('button', { type: 'button', class: 'btn btn--sm btn--ghost', 'aria-haspopup': 'dialog' }, 'Export stems...');
+  stemsBtn.dataset.tip = 'Stems, MIDI and a README in one zip. Can also add a 5.1 or 7.1 surround file';
   const bar = h('div', { class: 'bounce-progress', hidden: true, role: 'progressbar', 'aria-label': 'Render progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, h('span', { class: 'bounce-fill' }));
   const status = h('p', { class: 'popover-note bounce-status', role: 'status', 'aria-live': 'polite' });
   const length = h('p', { class: 'bounce-length mono' });

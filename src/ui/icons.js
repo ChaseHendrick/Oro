@@ -72,6 +72,8 @@ const P = {
   learn: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3"/>',
   link: '<path d="M14 4.8h5.2V10M19.2 4.8l-8.4 8.4"/><path d="M17.2 13.6v4.6a1.2 1.2 0 0 1-1.2 1.2H5.8a1.2 1.2 0 0 1-1.2-1.2V8a1.2 1.2 0 0 1 1.2-1.2h4.6"/>',
   speaker: '<path d="M4.6 9.6h3.2l4.4-3.8v12.4l-4.4-3.8H4.6z"/><path d="M15.6 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/>',
+  ear: '<path d="M7.4 9.6a4.9 4.9 0 0 1 9.8 0c0 2.8-2.5 3.8-3.1 5.9-.5 1.9-1.6 3.7-3.7 3.7a2.8 2.8 0 0 1-2.8-2.8"/><path d="M10.2 10a2.1 2.1 0 0 1 4.2 0c0 1.3-1.3 1.7-1.7 2.8"/>',
+  space: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="2.2"/><circle cx="17.4" cy="7.6" r="1.4" fill="currentColor" stroke="none"/>',
   panic: '<path d="M8.4 3.6h7.2l5 5v7l-5 5H8.4l-5-5v-7z"/><path d="M12 8v5"/><circle cx="12" cy="16.2" r=".9" fill="currentColor" stroke="none"/>',
   wave: '<path d="M3 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/>',
   mpc: '<rect x="3.4" y="4.4" width="17.2" height="15.2" rx="2.2"/><g fill="currentColor" stroke="none"><rect x="6" y="11" width="2.6" height="2.6" rx=".6"/><rect x="9.6" y="11" width="2.6" height="2.6" rx=".6"/><rect x="6" y="14.6" width="2.6" height="2.6" rx=".6"/><rect x="9.6" y="14.6" width="2.6" height="2.6" rx=".6"/></g><circle cx="16.4" cy="8.4" r="1.4"/><circle cx="16.4" cy="14" r="1.4"/><path d="M6 7.6h6.2"/>',

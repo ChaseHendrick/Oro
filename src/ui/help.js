@@ -37,6 +37,9 @@ const CARDS = [
   { icon: 'keyboard', title: 'Make music', text: 'Play the on-screen keys or your computer keyboard (A, W, S, E, D...), or press the headphones to hear a patch play a short phrase. Program the 16-step sequencer, lock the dot to steps, or turn on the arpeggiator. Space plays and stops, and Bounce saves your patterns as a WAV.' },
   { icon: 'live', title: 'Play live', text: 'Live mode (the four-squares button, or Shift+L) fills the screen with 16 big pads, a setlist and large faders. Pads can switch scenes and patterns on the next bar, mute tracks, hit drums or play chords. Keys 1 to 0 and Q to Y play the pads, the arrows step through songs, and Lock keeps stray taps off everything but the pads. Esc leaves.' },
   { icon: 'mpc', title: 'Connect an MPC', text: 'Settings > MIDI & MPC connects your controller, learns your Q-Links and walks through the Akai MPC XL setup step by step.' },
+  { icon: 'ear', title: 'Listen differently', text: 'The ear in the top bar changes only what you hear: a headphone crossfeed, a mono check, a rough small-speaker preview or swapped sides. Recordings and exports never include it.' },
+  { icon: 'space', title: 'Place sounds in 3D', text: 'Press 3D on a track in the Mix tab to put it around your head, by hand or following the dot on the map. Made for headphones, with a generic head model, so it works better for some people than others.' },
+  { icon: 'bounce', title: 'Surround', text: 'Export stems can add a 5.1 or 7.1 file: tracks in 3D sit on the speakers in their direction. With an audio device that has 6 or 8 outputs, Settings > Audio can play them live.' },
 ];
 
 export function openHelp(ctx, { onClose } = {}) {

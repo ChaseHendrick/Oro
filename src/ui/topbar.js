@@ -15,6 +15,7 @@ import { openPopover } from './layers.js';
 import { createTrackTabs } from './track-tabs.js';
 import { icon, brandGlyph } from './icons.js';
 import { tempoParser } from './eggs.js';
+import { createListenButton } from './listen-ui.js';
 
 const THEME_LABEL = { system: 'System', dark: 'Dark', light: 'Light' };
 const THEME_NEXT = { system: 'dark', dark: 'light', light: 'system' };
@@ -183,7 +184,10 @@ export function createTopbar(ctx, container) {
   // 2.12 live performance mode (loaded on demand)
   const liveBtn = h('button', { type: 'button', class: 'icon-btn live-btn-top', 'aria-label': 'Live mode', 'aria-haspopup': 'dialog', dataset: { tip: 'Live mode: full-screen pads, setlist and big controls for the stage (Shift+L)' }, html: icon('live') });
   scope.on(liveBtn, 'click', () => { if (typeof ctx.toggleLive === 'function') ctx.toggleLive(); });
-  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, liveBtn, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
+  // 2.12 listening modes (what you hear only)
+  const listenBtn = createListenButton(ctx);
+  scope.add(listenBtn.dispose);
+  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, liveBtn, macrosBtn, listenBtn.el, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   // On hendrickresearch.com (served under /music/oro/) a way back to the site's Music page.
   const siteBack = isOnSite()

@@ -69,6 +69,7 @@ import { SendReturns, SEND_GLOBAL_IDS } from './send-fx.js';
 import { MasterOperator, OPERATOR_ACTIONS } from './damage.js';
 import { Resonator } from './resonator.js';
 import { ResoGpuLink } from './reso-feed.js';
+import { Binaural, SURROUND_LAYOUTS, dotToSpace, radiusToDistance } from './spatial.js';
 
 export const OVERSAMPLE = 2;            // oversampling of the standard quality
 export const CTRL = 32;                 // control block, host-rate samples
@@ -784,6 +785,9 @@ class Part {
     // 2.10 Resonator (src/dsp/resonator.js): built the first time it is
     // switched on; while resoMode is 0 nothing about it runs
     this.reso = null; this.resoMode = 0; this.resoMorph = 0; this.resoAt = 0;
+    // 2.12 3D sound (src/dsp/spatial.js): built the first time 3D is switched
+    // on; while spaceMode is 0 and its fade has ended nothing about it runs
+    this.space = null; this.spaceMode = 0; this.spaceAz = 0;
     this.updateDerived();
   }
 
@@ -1051,6 +1055,10 @@ export class OroDSP {
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
     this.resoGpu = null;           // 2.12 GPU Resonator link (reso-feed.js), made on the first resoGpu message
     this.dryOut = 1;               // v2.11 stems export: 0 renders only the sends (a send-return stem)
+    // 2.12 surround: null (stereo, the default) or a layout from SURROUND_LAYOUTS.
+    // Tracks in 3D then go to the speakers (front left/right through the
+    // normal outputs, the rest into surOut) instead of the head model.
+    this.surLayout = null; this.surSpread = 0; this.surOut = null;
     this.partStreams = false;      // v2.11 stems export: per-part random streams (streamOf)
     this.segTime = 0;              // context time of the segment being rendered
     this.kFreeze = CTRL / (this.sr * FREEZE_FADE_TIME);
@@ -1219,6 +1227,13 @@ export class OroDSP {
       case 'guitar': this.guitar = clamp01(finiteOr(msg.v, 0)); break;
       case 'voiceLevel': this.voice = clamp01(finiteOr(msg.v, 0)); break;
       case 'quality': this.setQuality(msg.mode); break;
+      case 'surround': {
+        const L = msg.layout ? SURROUND_LAYOUTS[msg.layout] || null : null;
+        this.surLayout = L;
+        this.surSpread = L ? Math.max(0, Math.min(1, +msg.spread || 0)) : 0;
+        for (const P of this.parts) if (P.space !== null) P.space.sgFresh = true;
+        break;
+      }
       case 'stemTap': if (msg.dry !== undefined) this.dryOut = msg.dry === 0 ? 0 : 1; if (msg.streams !== undefined) this.partStreams = !!msg.streams; break;
       case 'resoGpu': (this.resoGpu || (this.resoGpu = new ResoGpuLink(this))).message(msg); break;
       case 'tracks': this.setTracks(msg); break;
@@ -1333,6 +1348,7 @@ export class OroDSP {
     P.updateDerived();
     this.prepareFeatures(P);
     this.resoParams(P);
+    this.spaceParams(P);
     if (P.mode !== oldMode) this.releasePart(P);
   }
 
@@ -1352,6 +1368,45 @@ export class OroDSP {
     P.resoMode = P.reso.mode;
     if (Math.abs(prm[PI.morph] - P.resoMorph) > 0.01) { P.resoMorph = prm[PI.morph]; P.reso.dirty = true; }
     if (this.resoGpu) this.resoGpu.ensure(P);   // 2.12 GPU Resonator
+  }
+
+  /**
+   * 2.12 3D sound on or off from the part's parameters. The head model is
+   * only built (message time, not in process()) once 3D is first switched on;
+   * switching it off fades back to the plain track and then stops running.
+   */
+  spaceParams(P) {
+    const mode = Math.round(P.params[PI.space]) || 0;
+    if (P.space === null) {
+      if (mode === 0) return;
+      P.space = new Binaural(this.sr);
+    }
+    const S = P.space;
+    if (mode !== 0 && P.spaceMode === 0 && S.w <= 0) {
+      // starting from the plain track: jump to the position, fade the 3D in
+      this.spaceTarget(P, P.activeCount() > 0);
+      S.reset();
+      S.sgFresh = true;
+    }
+    P.spaceMode = mode;
+    S.wT = mode !== 0 ? 1 : 0;
+  }
+
+  /** Where the part's 3D source is now (Follow dot reads the dot) and the head model's targets. */
+  spaceTarget(P, modded) {
+    const prm = P.params;
+    let az = prm[PI.spaceAz], dist = prm[PI.spaceDist];
+    if (P.spaceMode >= 2) {
+      const cx = modded ? P.partPlain[M_CX] : prm[PI.centerX];
+      const cy = modded ? P.partPlain[M_CY] : prm[PI.centerY];
+      const d = dotToSpace(cx, cy);
+      // right on the middle the direction is undefined: keep the last one
+      az = d.r > 0.02 ? d.az : P.spaceAz;
+      if (P.spaceMode === 3) dist = radiusToDistance(d.r);
+    }
+    P.spaceAz = az;
+    P.space.target(az, prm[PI.spaceEl], dist, prm[PI.spaceAir] >= 0.5, false);
+    if (this.surLayout !== null && P.spaceMode !== 0) P.space.surroundTarget(az, this.surLayout, CTRL);
   }
 
   /** Stiffness and lowest mode of the part's membrane from its terrains (about 1 ms at the standard grid). */
@@ -1823,6 +1878,7 @@ export class OroDSP {
     }
     P.updateDerived();
     this.resoParams(P);
+    this.spaceParams(P);
     if (P.mode !== oldMode) this.releasePart(P);
     if (force) this.ctrlRemain = 0;
   }
@@ -1843,7 +1899,7 @@ export class OroDSP {
       this.writeParam(P, idx, val);
       touched = true;
     }
-    if (touched) { P.updateDerived(); this.resoParams(P); }
+    if (touched) { P.updateDerived(); this.resoParams(P); this.spaceParams(P); }
   }
 
   allOff(part) {
@@ -2985,6 +3041,7 @@ export class OroDSP {
       P.spinPhase -= Math.floor(P.spinPhase);
       const active = P.activeCount();
       if (active > 0 || P.index === this.watch) this.partMods(P);
+      if (P.space !== null && (P.spaceMode !== 0 || P.space.w > 0)) this.spaceTarget(P, active > 0 || P.index === this.watch);
 
       // mixer targets: perceptual (squared) level, post-fader sends. A part
       // that left the track list fades to silence over TRACK_FADE_TIME (its
@@ -4439,7 +4496,7 @@ export class OroDSP {
       const live = fz === null || P.fzX < 1 || P.fzTarget < 1 || over;
       const oL = P.outL, oR = P.outR;
       if (live) {
-        if (active > 0 || ghostOn) P.tail = HB_N + P.ddN;
+        if (active > 0 || ghostOn) P.tail = HB_N + P.ddN + (P.space !== null ? P.space.tailN : 0);
         const rc = P.rc, os = rc.os;
         const n2 = os * seg, off2 = os * pos;
         for (const v of P.voices) {
@@ -4509,6 +4566,13 @@ export class OroDSP {
         }
         continue;
       }
+      // 2.12 3D: the head model (or, in surround, the mono source for the
+      // speakers) in place on the track's output, before the pedal send, the
+      // fader and the sends, so they all hear the track where it is
+      const S = P.space;
+      const spaceOn = S !== null && (P.spaceMode !== 0 || S.w > 0);
+      const surSrc = spaceOn && this.surLayout !== null && P.spaceMode !== 0;
+      if (spaceOn) { if (surSrc) S.processMono(oL, oR, pos, seg); else S.process(oL, oR, pos, seg); }
       // pedal send (skipped while it is and stays silent, the usual case),
       // taken before the dry delay: the pedals get the part on time
       if (P.ped !== 0 || P.dPed !== 0) {
@@ -4536,13 +4600,39 @@ export class OroDSP {
       const dm = this.dryOut;
       let vectorGain=P.vectorGain; const dv=P.dVector;
       const vg0 = vectorGain;
-      for (let n = pos; n < pos + seg; n++) {
-        gn += dgn; dl += ddl; rv += drv;
-        vectorGain+=dv;
-        const l = oL[n]*vectorGain, r = oR[n]*vectorGain;
-        outL[n] += l * gn * dm; outR[n] += r * gn * dm;
-        if (dlyL) { dlyL[n] += l * dl; dlyR[n] += r * dl; }
-        if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
+      if (this.surLayout === null) {
+        for (let n = pos; n < pos + seg; n++) {
+          gn += dgn; dl += ddl; rv += drv;
+          vectorGain+=dv;
+          const l = oL[n]*vectorGain, r = oR[n]*vectorGain;
+          outL[n] += l * gn * dm; outR[n] += r * gn * dm;
+          if (dlyL) { dlyL[n] += l * dl; dlyR[n] += r * dl; }
+          if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
+        }
+      } else {
+        // 2.12 surround: 3D tracks to their speakers, the others to front
+        // left and right (a little into the rear pair with Spread)
+        const SO = this.surOut, Lay = this.surLayout;
+        const sg = surSrc ? S.sg : null, dsg = surSrc ? S.dsg : null, nch = Lay.channels;
+        const sp = this.surSpread, fs = Math.sqrt(1 - sp), rs = Math.sqrt(sp);
+        const rL = SO && sp > 0 ? SO[Lay.rear[0]] : null, rR = SO && sp > 0 ? SO[Lay.rear[1]] : null;
+        for (let n = pos; n < pos + seg; n++) {
+          gn += dgn; dl += ddl; rv += drv;
+          vectorGain+=dv;
+          const l = oL[n]*vectorGain, r = oR[n]*vectorGain;
+          if (sg !== null) {
+            const m = l * gn * dm;
+            for (let c = 0; c < nch; c++) sg[c] += dsg[c];
+            outL[n] += m * sg[0]; outR[n] += m * sg[1];
+            if (SO) for (let c = 2; c < nch; c++) if (sg[c] !== 0) SO[c][n] += m * sg[c];
+          } else if (rL !== null) {
+            outL[n] += l * gn * dm * fs; outR[n] += r * gn * dm * fs;
+            rL[n] += l * gn * dm * rs; rR[n] += r * gn * dm * rs;
+          } else { outL[n] += l * gn * dm; outR[n] += r * gn * dm; }
+          if (dlyL) { dlyL[n] += l * dl; dlyR[n] += r * dl; }
+          if (revL) { revL[n] += l * rv; revR[n] += r * rv; }
+        }
+        if (sg !== null) for (let c = 0; c < nch; c++) if (Math.abs(sg[c] - S.sgT[c]) < 1e-9) { sg[c] = S.sgT[c]; }
       }
       P.gain = gn; P.dly = dl; P.rev = rv; P.vectorGain=vectorGain;
       // v2.8 Send A / Send B (skipped while both are and stay at 0, the default)
@@ -4643,9 +4733,12 @@ export class OroDSP {
    * (optional, v1.1): the pedal send bus, silent unless the host sent
    * {t:'pedal', active: true}.
    */
-  process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime, pedL = null, pedR = null) {
+  process(outL, outR, dlyL, dlyR, revL, revR, frames, currentTime, pedL = null, pedR = null, sur = null) {
     const sr = this.sr;
     const n = frames | 0;
+    // 2.12 surround outputs (channels 2 and up; 0 and 1 are outL / outR)
+    this.surOut = sur && this.surLayout !== null && sur.length >= this.surLayout.channels ? sur : null;
+    if (sur) for (let c = 2; c < sur.length; c++) sur[c].fill(0, 0, n);
     const now = Number.isFinite(currentTime) ? currentTime : this.lastTime + n / sr;
     this.lastTime = now;
     if (this.pendingQuality !== null && !this.parts.some(P => P.ghost !== null && P.ghost.left > 0)) this.setQuality(this.pendingQuality);
