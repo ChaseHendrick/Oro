@@ -251,7 +251,8 @@ export class Binaural {
   /** Binaural render of oL/oR[pos, pos + seg) in place. */
   process(oL, oR, pos, seg) {
     const D = this.dl, mask = this.mask, T = this.T, sr = this.sr, k = this.k;
-    const tDL = T.delayL * sr, tDR = T.delayR * sr;
+    const tDL = T.delayL * sr, tDR = T.delayR * sr, tSL = T.shadowL, tSR = T.shadowR;
+    const tLL = T.levelL, tLR = T.levelR, tDist = T.dist, tBack = T.back, tAir = T.air;
     const aS = this.aShadow, aB = this.aBack, aA = this.aAir;
     let wp = this.wp, cDL = this.cDL, cDR = this.cDR, cSL = this.cSL, cSR = this.cSR;
     let cDist = this.cDist, cBack = this.cBack, cAir = this.cAir, w = this.w, cLL = this.cLL, cLR = this.cLR;
@@ -259,12 +260,12 @@ export class Binaural {
     let n1 = this.n1, n2 = this.n2, m1 = this.m1, m2 = this.m2;
     const notch = this.notchOn, b0 = this.b0, b1 = this.b1, b2 = this.b2, a1 = this.a1, a2 = this.a2;
     const wT = this.wT;
+    const full = wT === 1 && w >= 0.999999;
     for (let n = pos; n < pos + seg; n++) {
       cDL += (tDL - cDL) * k; cDR += (tDR - cDR) * k;
-      cSL += (T.shadowL - cSL) * k; cSR += (T.shadowR - cSR) * k;
-      cLL += (T.levelL - cLL) * k; cLR += (T.levelR - cLR) * k;
-      cDist += (T.dist - cDist) * k; cBack += (T.back - cBack) * k; cAir += (T.air - cAir) * k;
-      w += (wT - w) * k;
+      cSL += (tSL - cSL) * k; cSR += (tSR - cSR) * k;
+      cLL += (tLL - cLL) * k; cLR += (tLR - cLR) * k;
+      cDist += (tDist - cDist) * k; cBack += (tBack - cBack) * k; cAir += (tAir - cAir) * k;
       const dryL = oL[n], dryR = oR[n];
       let x = 0.5 * (dryL + dryR) * cDist;
       // back and air: one-pole high shelves (low part kept, high part scaled)
@@ -272,24 +273,29 @@ export class Binaural {
       zA = x + (zA - x) * aA; x = zA + cAir * (x - zA);
       if (notch) { const y = b0 * x + b1 * n1 + b2 * n2 - a1 * m1 - a2 * m2; n2 = n1; n1 = x; m2 = m1; m1 = y; x = y; }
       D[wp] = x;
-      // fractional delay per ear (linear interpolation)
-      let p = wp - cDL, i0 = Math.floor(p), f = p - i0;
-      const eL = D[i0 & mask] + f * (D[(i0 + 1) & mask] - D[i0 & mask]);
-      p = wp - cDR; i0 = Math.floor(p); f = p - i0;
-      const eR = D[i0 & mask] + f * (D[(i0 + 1) & mask] - D[i0 & mask]);
+      // fractional delay per ear (linear interpolation); the delay is >= 0, so
+      // wp - delay + mask + 1 stays positive and truncation is floor
+      let p = wp - cDL + mask + 1, i0 = p | 0, f = p - i0;
+      let d0 = D[i0 & mask];
+      const eL = d0 + f * (D[(i0 + 1) & mask] - d0);
+      p = wp - cDR + mask + 1; i0 = p | 0; f = p - i0;
+      d0 = D[i0 & mask];
+      const eR = d0 + f * (D[(i0 + 1) & mask] - d0);
       wp = (wp + 1) & mask;
-      // head shadow: high shelf per ear
+      // head shadow: high shelf per ear, then the broadband level difference
       zL = eL + (zL - eL) * aS; const yL = (zL + cSL * (eL - zL)) * cLL;
       zR = eR + (zR - eR) * aS; const yR = (zR + cSR * (eR - zR)) * cLR;
-      if (w >= 0.999999 && wT === 1) { oL[n] = yL; oR[n] = yR; }
-      else { oL[n] = dryL + w * (yL - dryL); oR[n] = dryR + w * (yR - dryR); }
+      if (full) { oL[n] = yL; oR[n] = yR; }
+      else { w += (wT - w) * k; oL[n] = dryL + w * (yL - dryL); oR[n] = dryR + w * (yR - dryR); }
     }
     if (wT === 1 && w > 0.999999) w = 1;
     if (wT === 0 && w < 1e-6) w = 0;
     this.wp = wp; this.cDL = cDL; this.cDR = cDR; this.cSL = cSL; this.cSR = cSR;
     this.cDist = cDist; this.cBack = cBack; this.cAir = cAir; this.w = w; this.cLL = cLL; this.cLR = cLR;
-    this.zL = zL; this.zR = zR; this.zB = zB; this.zA = zA;
-    this.n1 = n1; this.n2 = n2; this.m1 = m1; this.m2 = m2;
+    // flush tiny filter states to zero (denormals are slow on some CPUs)
+    const tiny = (v) => (v < 1e-20 && v > -1e-20 ? 0 : v);
+    this.zL = tiny(zL); this.zR = tiny(zR); this.zB = tiny(zB); this.zA = tiny(zA);
+    this.n1 = tiny(n1); this.n2 = tiny(n2); this.m1 = tiny(m1); this.m2 = tiny(m2);
   }
 
   /**

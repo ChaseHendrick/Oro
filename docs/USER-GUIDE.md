@@ -1470,6 +1470,58 @@ about 90% less processing than the same track live.
 
 ---
 
+### Listening modes (2.12)
+
+The **ear button** in the top bar (and **Settings > Audio > Listen**) changes only
+what you hear. Recordings, the looper, bounces, stems and every export stay exactly as they
+are, so you can check a mix without changing it. While a mode other than Normal is on, the
+button shows its name in amber so you do not forget it. The choice is kept on this
+computer, not in the session.
+
+| Mode | What it does |
+|---|---|
+| **Normal** | What Oro plays, unchanged. |
+| **Headphones** | A gentle crossfeed: each ear also hears a little of the other side, low-passed and about 0.3 ms late, as it would from speakers in a room. Hard-panned sounds become less tiring on long sessions. A sound in the middle keeps its level. |
+| **Mono check** | Left and right added together at half level, on both sides. A sound in the middle keeps its level, so mono is never louder; anything that cancels in mono disappears, which is what you want to find out. |
+| **Small speaker** | A rough preview of a phone or laptop speaker: mono, no deep bass, less treble and a small bump in the upper middle. It is only a rough guide, not a model of any particular device. |
+| **Swap L/R** | Left and right exchanged, to check your headphones or your panning. |
+
+On a phone the button only appears in the top bar while a mode is on; choose one in
+**Settings > Audio**.
+
+### 3D sound (2.12)
+
+Each track can be placed around your head instead of using **Pan**. It is made for
+headphones. Press **3D** on a track's strip (or choose a mode in the **3D sound** card in
+the Mix tab, which always shows the selected track):
+
+* **Off** (the default): the track uses Pan as before. Sessions from earlier versions sound
+  exactly the same.
+* **Manual**: drag the dot on the round pad (you are in the middle, facing up) or use the
+  arrow keys: left and right turn it round you, up and down move it nearer or further.
+  **Direction** (0 is in front, 90 to the right, -90 to the left, 180 behind), **Height**
+  and **Distance** are knobs too.
+* **Follow dot**: where the track's dot sits on the map, seen from the middle of the map,
+  sets the direction. Up the map is in front of you. Move the dot, or let a dot behaviour
+  move it, and the sound travels round you.
+* **Follow dot and distance**: the same, and how far the dot is from the middle of the map
+  sets the distance (0.5 m in the middle to 8 m at the edge).
+* **Air** (on by default): far sounds lose a little treble, as they do through air.
+
+How it works: Oro uses a simple, generic model of a head. The far ear hears the sound up to
+about 0.66 ms later and a little quieter, and its treble is shaded by the head. Sounds
+behind you are a little duller, height moves a narrow dip in the treble, and distance
+lowers the level (1 m sounds as loud as Pan in the middle). Every change glides, so moving
+a source never clicks. Because every head is different and this model is generic, the
+effect is stronger for some people than for others. Left and right are clear for almost
+everyone; front and back can be hard to tell apart, and height is the weakest cue.
+
+3D is part of the mix: recordings, bounces and stems include it, a frozen track keeps it, and the track's
+sends hear it where it is. Listening modes do not change it. A track in 3D is mono at its
+position (its stereo width becomes one point), and Pan is not used while 3D is on. Loading
+a patch keeps a track's 3D settings, and saved patches do not store them, like the sends.
+Each track in 3D costs very little processing (well under 1% of one core here).
+
 ## 12. Recording and bouncing
 
 ### Record
@@ -1553,6 +1605,35 @@ tuning, format, length and each track's settings. The dialog shows the expected 
 above 1.5 GB and refuses past 3.5 GB. Files are rendered and encoded one at a time;
 **Cancel** stops within moments, even in the middle of a file, and nothing is saved. In the
 desktop app a save dialog asks where to put the zip; in a browser it downloads.
+
+### Surround file (2.12)
+
+**Export stems** can add one surround file to the zip: choose **Surround: 5.1** or **7.1**.
+It is a multichannel WAV (WAVE_FORMAT_EXTENSIBLE with the standard speaker mask), with the
+channels in the usual order: **L, R, C, LFE, Ls, Rs** for 5.1 and **L, R, C, LFE, Lrs, Rrs,
+Lss, Rss** (rear pair, then side pair) for 7.1.
+
+* Tracks in **3D** sit on the speakers in their direction: the two speakers either side of
+  the direction share the sound at constant power (straight ahead is the centre speaker,
+  30 degrees is front right, 110 degrees is right surround in 5.1). Distance sets the level.
+  Height is left out, as these layouts have no height speakers.
+* Other tracks stay on front left and right, as in stereo.
+* The effects (delay, reverb, Send A and Send B) are on front left and right.
+* **Spread to the rear speakers** (off by default) sends a little of the stereo tracks and
+  the effects to the rear pair, for a wider room.
+* **LFE (subwoofer) channel** (off by default): a 120 Hz low-passed copy of the whole mix.
+  Most music leaves it silent and lets the speakers handle the bass.
+
+Like stems with master processing off, the surround file is taken before the master chorus,
+warmth, volume and limiter. It takes two more renders of the song. The README in the zip
+describes the layout.
+
+**Surround speakers (playing live).** If your audio device reports 6 or more outputs,
+**Settings > Audio > Surround speakers** can play tracks in 3D from their speakers instead
+of through the headphone model. Otherwise the option is off and says how many outputs your
+device reports. While it is on, Record and the looper capture only front left and right, so
+use Export stems for a surround file. The pedal send uses the extra outputs too, so the two
+cannot run together. This has not been tested on real surround hardware yet.
 
 ### Looper (1.2)
 

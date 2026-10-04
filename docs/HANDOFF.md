@@ -398,3 +398,20 @@ untested).
   comparison in a browser with WebGPU (the headless run here was interrupted, so the GPU
   path itself has not been verified on a real GPU); check the controls at the 5K2K and
   MacBook sizes; then changelog and release.
+
+### 10.5 Listening modes, 3D and surround (2.12)
+
+- **Code**: branch `feat-spatial`. Listening modes in `src/audio/listen.js` (inserted between
+  the master analyser and `mainOut`, after the recorder, looper and offline taps; Normal is
+  two gain-1 nodes). 3D in `src/dsp/spatial.js` (per-track head model inside the DSP, so
+  bounces, freezes and stems include it), params `space`, `spaceAz`, `spaceEl`, `spaceDist`,
+  `spaceAir` appended to PART_PARAMS (not modulatable: the stage is per track, not per
+  voice), kept by patch loads like the sends. Surround: DSP `{t:'surround'}` mode, a fifth
+  worklet output (live) and an N-channel offline pass in `renderPass` (export), mixed down in
+  `src/audio/stems.js`; WAVE_FORMAT_EXTENSIBLE writer in `src/audio/wav.js`.
+- **Unverified**: live surround on a real 5.1 or 7.1 device (no hardware here; the device
+  channel setup, the fifth output and the master-volume follow are untested); how convincing
+  the 3D is on real headphones for different listeners; the surround file in a DAW (the
+  header reads back in our decoder; not yet opened in a DAW). While live surround is on,
+  Record and the looper capture only front left and right, and the master limiter does not
+  act on the extra channels.

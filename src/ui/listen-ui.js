@@ -41,7 +41,7 @@ export function createListenButton(ctx) {
   const badge = h('span', { class: 'listen-badge' });
   const btn = h('button', {
     type: 'button', class: 'icon-btn listen-btn', 'aria-haspopup': 'dialog',
-    html: icon('headphones'),
+    html: icon('ear'),
   });
   btn.appendChild(badge);
   let pop = null;
