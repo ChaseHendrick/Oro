@@ -162,7 +162,7 @@ export function bufferStats(buffer) {
  * Render with the DSP on this thread (no worklet in the offline context):
  * returns its dry / delay / reverb outputs as three stereo AudioBuffers.
  */
-export async function renderDspHere(octx, init, late, frames, onFrames = () => {}, isCancelled = null) {
+export async function renderDspHere(octx, init, late, frames, onFrames = () => {}, isCancelled = null, surN = 0) {
   const { OroDSP } = await import('../dsp/dsp-core.js');
   const sr = octx.sampleRate;
   const dsp = new OroDSP(sr);
@@ -170,6 +170,10 @@ export async function renderDspHere(octx, init, late, frames, onFrames = () => {
   for (const m of init) dsp.handleMessage(m);
   const bufs = [0, 1, 2].map(() => octx.createBuffer(2, frames, sr));
   const ch = bufs.flatMap(b => [b.getChannelData(0), b.getChannelData(1)]);
+  // 2.12 surround pass: a fourth buffer, one channel per speaker (0 and 1 stay silent: they are bufs[0])
+  const surBuf = surN ? octx.createBuffer(surN, frames, sr) : null;
+  if (surBuf) bufs.push(surBuf);
+  const surCh = surBuf ? Array.from({ length: surN }, (_, c) => surBuf.getChannelData(c)) : null;
   let li = 0;
   let t0 = nowMs();
   for (let f = 0; f < frames; f += QUANTUM) {
@@ -177,7 +181,7 @@ export async function renderDspHere(octx, init, late, frames, onFrames = () => {
     const t = f / sr;
     while (li < late.length && late[li].time <= t + 1e-9) dsp.handleMessage(late[li++].msg);
     dsp.process(ch[0].subarray(f, f + n), ch[1].subarray(f, f + n), ch[2].subarray(f, f + n), ch[3].subarray(f, f + n),
-      ch[4].subarray(f, f + n), ch[5].subarray(f, f + n), n, t);
+      ch[4].subarray(f, f + n), ch[5].subarray(f, f + n), n, t, null, null, surCh ? surCh.map(c => c.subarray(f, f + n)) : null);
     if (isCancelled && (f & (CANCEL_CHECK_FRAMES - 1)) === 0 && isCancelled()) throw cancelError();
     if (nowMs() - t0 > YIELD_MS) { onFrames(f + n); await yieldTask(); t0 = nowMs(); if (isCancelled && isCancelled()) throw cancelError(); }
   }
@@ -198,18 +202,26 @@ export async function renderDspHere(octx, init, late, frames, onFrames = () => {
  * @param {Function} [o.computeIR]
  * @param {(frames: number) => void} [o.onFrames] progress within the pass
  */
-export async function renderPass({ sampleRate, frames, init, late = [], global = {}, fx = true, workletCode, computeIR = null, onFrames = () => {}, forceMainThread = false, tap = null, isCancelled = null }) {
+export async function renderPass({ sampleRate, frames, init, late = [], global = {}, fx = true, workletCode, computeIR = null, onFrames = () => {}, forceMainThread = false, tap = null, isCancelled = null, surround = 0 }) {
   const OAC = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!OAC) throw new Error('This browser cannot render offline; use Record instead');
-  const octx = new OAC({ numberOfChannels: 2, length: frames, sampleRate });
+  // 2.12 surround (surround = channel count, 6 or 8): the DSP's dry speaker
+  // feeds straight to the file, no effects (the planner zeroes every send;
+  // the returns come from a separate stereo pass)
+  const surN = surround >= 6 ? surround : 0;
+  const octx = new OAC({ numberOfChannels: surN || 2, length: frames, sampleRate });
+  if (surN) { octx.destination.channelCount = surN; octx.destination.channelInterpretation = 'discrete'; }
   // v2.11 tap 'bus': record the sum before the master chorus, warmth, volume and limiter
-  const sink = tap === 'bus' ? octx.createGain() : null;
-  const graph = createFx(octx, { global, destination: sink || octx.destination, computeIR, effects: fx });
+  const sink = tap === 'bus' && !surN ? octx.createGain() : null;
+  const graph = surN ? { dispose() {}, whenReverbReady: () => Promise.resolve() } : createFx(octx, { global, destination: sink || octx.destination, computeIR, effects: fx });
   if (sink) graph.bus.connect(octx.destination);
   let cancelled = false, rejectCancel = null;
   const cancelled$ = new Promise((_, reject) => { rejectCancel = reject; });
   cancelled$.catch(() => {});
-  const sends = (connect) => { connect(graph.dryIn, 0); if (fx) { connect(graph.delayIn, 1); connect(graph.reverbIn, 2); } };
+  const sends = (connect) => {
+    if (surN) { connect(octx.destination, 0); connect(octx.destination, 4); return; }
+    connect(graph.dryIn, 0); if (fx) { connect(graph.delayIn, 1); connect(graph.reverbIn, 2); }
+  };
   // Suspend points: frame -> actions, merged so two never share a render quantum.
   const points = new Map();
   const at = (frame, fn) => {
@@ -223,7 +235,10 @@ export async function renderPass({ sampleRate, frames, init, late = [], global =
   let node = null;
   const loaded = !forceMainThread && workletCode ? await loadWorkletModule(octx, workletCode) : { ok: false };
   if (loaded.ok) {
-    node = new AudioWorkletNode(octx, 'orograph', {
+    node = new AudioWorkletNode(octx, 'orograph', surN ? {
+      numberOfInputs: 0, numberOfOutputs: 5, outputChannelCount: [2, 2, 2, 2, surN],
+      processorOptions: { sampleRate, init },
+    } : {
       numberOfInputs: 0, numberOfOutputs: 3, outputChannelCount: [2, 2, 2],
       processorOptions: { sampleRate, init },
     });
@@ -237,11 +252,11 @@ export async function renderPass({ sampleRate, frames, init, late = [], global =
   } else {
     via = 'main-thread';
     let bufs;
-    try { bufs = await renderDspHere(octx, init, late, frames, (f) => onFrames(0.5 * f), isCancelled); }
+    try { bufs = await renderDspHere(octx, init, late, frames, (f) => onFrames(0.5 * f), isCancelled, surN); }
     catch (err) { graph.dispose(); throw err; }
     sends((dst, out) => {
       const s = octx.createBufferSource();
-      s.buffer = bufs[out];
+      s.buffer = bufs[out === 4 ? 3 : out];
       s.connect(dst);
       s.start(0);
     });

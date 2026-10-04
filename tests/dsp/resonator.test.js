@@ -205,7 +205,10 @@ describe('Resonator in the engine', () => {
 describe('Resonator parameters', () => {
   it('are appended to the part parameters, defaulting to Off', () => {
     const ids = PART_PARAMS.map(p => p.id);
-    expect(ids.slice(-6)).toEqual(['resoOn', 'resoMix', 'resoDecay', 'resoTone', 'resoSize', 'resoListen']);
+    const at = ids.indexOf('resoOn');
+    expect(ids.slice(at, at + 6)).toEqual(['resoOn', 'resoMix', 'resoDecay', 'resoTone', 'resoSize', 'resoListen']);
+    // 2.12 the 3D parameters come after them (append-only)
+    expect(ids.slice(at + 6)).toEqual(['space', 'spaceAz', 'spaceEl', 'spaceDist', 'spaceAir']);
     expect(ids.indexOf('resoOn')).toBe(ids.indexOf('sendB') + 1);
     expect(PART_PARAM_MAP.resoOn.default).toBe(0);
     expect(PART_PARAM_MAP.resoOn.options).toEqual(['Off', 'Strike', 'Resonate']);

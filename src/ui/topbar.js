@@ -15,6 +15,7 @@ import { openPopover } from './layers.js';
 import { createTrackTabs } from './track-tabs.js';
 import { icon, brandGlyph } from './icons.js';
 import { tempoParser } from './eggs.js';
+import { createListenButton } from './listen-ui.js';
 
 const THEME_LABEL = { system: 'System', dark: 'Dark', light: 'Light' };
 const THEME_NEXT = { system: 'dark', dark: 'light', light: 'system' };
@@ -180,7 +181,10 @@ export function createTopbar(ctx, container) {
   // v2.11 version history (loaded on demand)
   const versionsBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Version history', 'aria-haspopup': 'dialog', dataset: { tip: 'Version history: earlier saves of this session' }, html: icon('versions') });
   scope.on(versionsBtn, 'click', () => { import('./version-panel.js').then(m => m.openVersionHistory(ctx)).catch(err => console.warn('[ui] version history failed', err)); });
-  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, macrosBtn, midiBtn, themeBtn, settingsBtn, helpBtn);
+  // 2.12 listening modes (what you hear only)
+  const listenBtn = createListenButton(ctx);
+  scope.add(listenBtn.dispose);
+  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, macrosBtn, listenBtn.el, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   // On hendrickresearch.com (served under /music/oro/) a way back to the site's Music page.
   const siteBack = isOnSite()

@@ -17,7 +17,9 @@ import terrainWorkerCode from 'virtual:worklet:src/audio/terrain-worker.js';
 import { MAX_PARTS } from '../core/params.js';
 import { partCount, watchTracks, permute } from '../core/tracks.js';
 import { createEmitter } from './emitter.js';
-import { createFx } from './fx.js';
+import { createFx, volumeGain } from './fx.js';
+import { createListen, LISTEN_VALUES } from './listen.js';
+import { SURROUND_LAYOUTS } from '../dsp/spatial.js';
 import { createStoreSync } from './sync.js';
 import { createTerrainGenerator } from './terrain-generator.js';
 import { createTerrainManager } from './terrain-manager.js';
@@ -125,6 +127,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   let voiceMsg = null;            // v1.4 Voice Level link source
   let weatherMsg = null;          // v2.10 live weather link sources
   let padMsg = null;              // v2.11 game controller right stick link sources
+  let surroundMsg = null;         // 2.12 live surround ({t:'surround', layout, spread}) while it is on
   let pedalCompMs = 0;
   const hostState = () => {
     const out = [{ t: 'quality', mode: quality }];
@@ -134,6 +137,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     if (voiceMsg && voiceMsg.v) out.push({ ...voiceMsg });
     if (weatherMsg) out.push({ ...weatherMsg, snap: true });
     if (padMsg) out.push({ ...padMsg, snap: true });
+    if (surroundMsg) out.push({ ...surroundMsg });
     controllers.forEach((c, part) => {
       if (c.bend) out.push({ t: 'bend', part, v: c.bend });
       if (c.wheel) out.push({ t: 'wheel', part, v: c.wheel });
@@ -168,10 +172,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
 
   function buildWorkletSource(init) {
     // Output 3 is the v1.1 pedal send bus (silent until the pedal loop runs).
+    // 2.12 live surround adds a fifth output, one channel per speaker
+    const surN = surroundMsg ? SURROUND_LAYOUTS[surroundMsg.layout].channels : 0;
     const n = new AudioWorkletNode(ctx, 'orograph', {
       numberOfInputs: 0,
-      numberOfOutputs: 4,
-      outputChannelCount: [2, 2, 2, 2],
+      numberOfOutputs: surN ? 5 : 4,
+      outputChannelCount: surN ? [2, 2, 2, 2, surN] : [2, 2, 2, 2],
       processorOptions: { sampleRate: ctx.sampleRate, init, measureLoad: true },
     });
     n.port.onmessage = (e) => {
@@ -184,6 +190,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     n.connect(fx.delayIn, 1);
     n.connect(fx.reverbIn, 2);
     n.connect(pedalSendBus, 3);
+    if (surN && surroundOut) n.connect(surroundOut, 4);
     node = n;
     send = (msgs, transfer) => {
       try { n.port.postMessage(msgs, transfer || []); } catch (err) { console.error('[audio] post to DSP failed', err); }
@@ -282,6 +289,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   // mainOut: the master output on its way to the device. The pedal host moves
   // it onto outputs 1/2 of a multichannel map when the pedal send is on.
   let mainOut = null, pedalSendBus = null, pedals = null;
+  // 2.12 listening modes (src/audio/listen.js): after every capture point, right before mainOut
+  let listen = null;
+  // 2.12 live surround: the DSP's fifth output -> master volume -> device channels 3 and up
+  let surroundOut = null;
   // v1.4 voice input; looperIn sums the master tap and the voice while its Monitor is off.
   let voice = null, looperIn = null;
   if (ctx) {
@@ -289,8 +300,9 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
     mainOut = stereoNode();
     mainOut.connect(ctx.destination);
     pedalSendBus = stereoNode();
+    listen = createListen(ctx, mainOut, LISTEN_VALUES.includes(store.get('ui.listenMode')) ? store.get('ui.listenMode') : 'normal');
     fx = createFx(ctx, {
-      destination: mainOut,
+      destination: listen.input,
       global: store.get('global') || {},
       // Reverb impulse responses are built by the same worker pool as terrains.
       computeIR: (opts) => genPromise.then(g => g.run({ kind: 'ir', ...opts })),
@@ -425,6 +437,54 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   }
   const offQuality = store.subscribe('ui.audioQuality', () => { applyQuality(store.get('ui.audioQuality')); });
 
+  // 2.12 listening mode: a per-computer preference in store.ui
+  const offListen = store.subscribe('ui.listenMode', () => { if (listen) listen.set(store.get('ui.listenMode')); });
+
+  // 2.12 live surround. Only with the AudioWorklet engine, an output device
+  // that reports 6 (5.1) or 8 (7.1) channels and the pedal send off (it uses
+  // the extra outputs itself). Untested on real surround hardware.
+  function surroundSupport() {
+    const max = ctx && ctx.destination ? ctx.destination.maxChannelCount || 2 : 0;
+    const pedalOn = !!(pedals && pedals.status().enabled);
+    const layouts = Object.values(SURROUND_LAYOUTS).filter(L => L.channels <= max).map(L => L.id);
+    let reason = null;
+    if (!ctx) reason = 'The audio engine is not running.';
+    else if (dspMode !== 'worklet') reason = 'Surround playback needs the AudioWorklet engine, which this browser is not using.';
+    else if (max < 6) reason = `Your audio device reports only ${max} output${max === 1 ? '' : 's'}. Surround playback needs 6 (5.1) or 8 (7.1).`;
+    else if (pedalOn) reason = 'The pedal send uses the extra outputs. Switch it off in Settings > Pedals to play surround.';
+    return { ok: !reason, reason, maxChannels: max, layouts, layout: surroundMsg ? surroundMsg.layout : null };
+  }
+  async function setSurround(layout, spread = 0) {
+    const want = layout && SURROUND_LAYOUTS[layout] && surroundSupport().layouts.includes(layout) && surroundSupport().ok ? layout : null;
+    const before = surroundMsg ? surroundMsg.layout : null;
+    if (want === before && (!want || surroundMsg.spread === spread)) return surroundSupport();
+    if (surroundOut) { try { surroundOut.disconnect(); } catch { /* ignore */ } surroundOut = null; }
+    if (want) {
+      const N = SURROUND_LAYOUTS[want].channels;
+      surroundMsg = { t: 'surround', layout: want, spread: Math.max(0, Math.min(1, +spread || 0)) };
+      try { ctx.destination.channelCount = N; ctx.destination.channelInterpretation = 'discrete'; } catch (err) { console.warn('[audio] surround outputs could not be set', err); }
+      surroundOut = ctx.createGain();
+      surroundOut.channelCount = N; surroundOut.channelCountMode = 'explicit'; surroundOut.channelInterpretation = 'discrete';
+      surroundOut.gain.value = volumeGain(Number(store.get('global.masterVolume') ?? 0.8));
+      surroundOut.connect(ctx.destination);
+    } else {
+      surroundMsg = null;
+      try { ctx.destination.channelCount = 2; ctx.destination.channelInterpretation = 'speakers'; } catch { /* ignore */ }
+    }
+    if (want !== before) await rebuildSource();
+    else post(surroundMsg || { t: 'surround', layout: null });
+    return surroundSupport();
+  }
+  const applyLiveSurround = () => {
+    const v = store.get('ui.liveSurround');
+    setSurround(v === '5.1' || v === '7.1' ? v : null).catch(err => console.warn('[audio] surround playback failed', err));
+  };
+  const offLiveSur = store.subscribe('ui.liveSurround', applyLiveSurround);
+  if (ctx && store.get('ui.liveSurround') && store.get('ui.liveSurround') !== 'off') applyLiveSurround();
+  const offSurVol = store.subscribe('global.masterVolume', () => {
+    if (surroundOut) surroundOut.gain.setTargetAtTime(volumeGain(Number(store.get('global.masterVolume') ?? 0.8)), ctx.currentTime, 0.02);
+  });
+
   // Marble updates arrive ~30 times a second per rolling part; one port
   // message per task carries all of them, and unchanged values are dropped.
   let marbleQueued = null;
@@ -443,7 +503,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
   // pedals are hardware and cannot take part in an offline render: it plays
   // every part dry (Insert ignored, no pedal send).
   function offlineSnapshot(sr) {
-    const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay').map(m => m.t === 'noiseRecording' ? { ...m, data: decodeNoiseRecording(store.get(`parts.${m.part}.noiseRecording`), sr) } : m);
+    const snapshot = sync.snapshot().filter(m => m.t !== 'transport' && m.t !== 'pedal' && m.t !== 'guitar' && m.t !== 'voiceLevel' && m.t !== 'dryDelay' && m.t !== 'surround').map(m => m.t === 'noiseRecording' ? { ...m, data: decodeNoiseRecording(store.get(`parts.${m.part}.noiseRecording`), sr) } : m);
     snapshot.push({ t: 'transport', playing: true, beatTime: 0, beat: 0, spb: 60 / clamp(Number(store.get('global.tempo')) || 112, 20, 400) });
     return snapshot;
   }
@@ -746,7 +806,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
           const { init, late } = passInit({ snapshot, terrains, events: pass.events || [], solo: pass.solo ?? null, extra: pass.extra || [] });
           const r = await renderPass({
             sampleRate: sr, frames: Math.max(QUANTUM_FRAMES, Math.round(typeof frames === 'function' ? frames(i) : frames)),
-            init, late, global, fx: true, workletCode, computeIR, tap: pass.tap || null, isCancelled,
+            init, late, global, fx: true, workletCode, computeIR, tap: pass.tap || null, surround: pass.surround || 0, isCancelled,
             forceMainThread: dspMode !== 'worklet',
             onFrames: (f) => onFrames(i, f),
           });
@@ -878,6 +938,14 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       return dspMode;
     },
 
+    /** 2.12 listening mode now playing ('normal', 'headphones', 'mono', 'small', 'swap'). */
+    get listenMode() { return listen ? listen.mode : 'normal'; },
+    setListenMode(m) { return listen ? listen.set(m) : 'normal'; },
+    /** 2.12 live surround: { ok, reason, maxChannels, layouts, layout }. */
+    surroundSupport,
+    /** 2.12 live surround on ('5.1' / '7.1') or off (null). Rebuilds the DSP node. */
+    setSurround,
+
     /** Diagnostics for tests and the settings panel. */
     stats() {
       return {
@@ -894,6 +962,8 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
         generator: generator.stats(),
         fx: fx ? fx.stats() : null,
         pedals: pedals ? pedals.status() : null,
+        listen: listen ? listen.mode : null,
+        surround: surroundMsg ? surroundMsg.layout : null,
         voice: voice ? voice.status() : null,
         pedalCompensation: { ms: pedalCompMs, samples: dryDelayMsg ? dryDelayMsg.samples : 0 },
         import: { ...importStats },
@@ -912,6 +982,9 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       }
       terrain.dispose();
       offQuality();
+      offListen();
+      offSurVol();
+      offLiveSur();
       offTracks();
       sync.dispose();
       generator.dispose();
@@ -920,6 +993,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       if (pedals) { try { pedals.dispose(); } catch { /* ignore */ } }
       if (voice) { try { voice.dispose(); } catch { /* ignore */ } }
       teardownSource();
+      if (listen) listen.dispose();
       if (fx) fx.dispose();
       events.clear();
       if (ctx) {

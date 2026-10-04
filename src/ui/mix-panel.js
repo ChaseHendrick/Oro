@@ -21,6 +21,7 @@ import { schedule, addLoop } from './frame.js';
 import { createKnob } from './knob.js';
 import { createToggle, createMiniSlider, createSelect } from './controls.js';
 import { partVars, applyVars } from './color.js';
+import { createSpacePanel, hasSpace } from './space-panel.js';
 
 export function dbFromPeak(peak) {
   return peak > 1e-6 ? 20 * Math.log10(peak) : -120;
@@ -95,7 +96,10 @@ export function createMixPanel(ctx) {
   const vector = createVectorMix(ctx), trackFx = createTrackFxPanel(ctx);
   scope.add(vector.dispose); scope.add(trackFx.dispose);
   const sends = createSendSection(ctx, scope, g);
-  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, vector.el, trackFx.el, master, sends);
+  // 2.12 3D sound for the selected track
+  const space = hasSpace() ? createSpacePanel(ctx) : null;
+  if (space) scope.add(space.dispose);
+  const el = h('div', { class: 'dock-pane dock-pane--mix' }, stripRow, vector.el, trackFx.el, master, space ? space.el : null, sends);
 
   // ---- meters (one loop for everything)
   const levels = new Float32Array(MAX_PARTS);
@@ -161,6 +165,18 @@ function createStrip(ctx, i) {
   });
   if (!fz) freezeBtn.disabled = true;
   parentScope.on(freezeBtn, 'click', () => toggleFreeze(ctx, i));
+  // 2.12 3D: on (Manual) / off, and selects the track so its 3D card shows
+  const spaceBtn = hasSpace() ? h('button', {
+    type: 'button', class: 'toggle toggle--space', 'aria-pressed': 'false', 'aria-label': `3D sound for track ${i + 1}`,
+    dataset: { tip: '3D: place this track around your head (headphones). Settings in the 3D sound card below' },
+  }, '3D') : null;
+  if (spaceBtn) parentScope.on(spaceBtn, 'click', () => {
+    const on = (store.get(`parts.${i}.params.space`) || 0) > 0;
+    store.batch(() => {
+      store.set(`parts.${i}.params.space`, on ? 0 : 1, { source: 'ui' });
+      store.set('ui.selectedPart', i, { source: 'ui' });
+    });
+  });
   // Pedal send (v1.1): only shown while the pedal send runs, so the mixer is unchanged otherwise.
   const hasPedal = !!PART_PARAM_MAP.pedalSend;
   const pedalKnob = hasPedal ? createKnob(ctx, P('pedalSend'), { size: 'sm', ariaLabel: () => `Track ${i + 1} pedal send` }) : null;
@@ -174,7 +190,7 @@ function createStrip(ctx, i) {
       h('div', { class: 'strip-fader' }, h('div', { class: 'fader-wrap' }, level.el, meter), levelVal),
       h('div', { class: 'strip-knobs' }, knobs.map(k => k.el), pedalKnob ? pedalKnob.el : null)),
     h('div', { class: 'strip-sends', role: 'group', 'aria-label': `Track ${i + 1} Send A and Send B, to the second reverb and delay` }, sendKnobs.map(k => k.el)),
-    h('footer', { class: 'strip-foot' }, mute.el, solo.el, freezeBtn, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
+    h('footer', { class: 'strip-foot' }, mute.el, solo.el, freezeBtn, spaceBtn, pedalPre ? pedalPre.el : null, pedalIns ? pedalIns.el : null));
 
   function render() {
     if (!store.get(`parts.${i}`)) return;  // the track was just removed; this strip is going too
@@ -195,6 +211,12 @@ function createStrip(ctx, i) {
     el.classList.toggle('is-selected', binder.selected() === i);
     el.classList.toggle('is-muted', !!store.get(`parts.${i}.params.mute`));
     setText(levelVal, Math.round((store.get(`parts.${i}.params.level`) ?? 0.75) * 100) + '%');
+    if (spaceBtn) {
+      const sp = (store.get(`parts.${i}.params.space`) || 0) > 0;
+      spaceBtn.classList.toggle('is-on', sp);
+      spaceBtn.setAttribute('aria-pressed', String(sp));
+      el.classList.toggle('is-space', sp);
+    }
     if (hasPedal) {
       const rig = ctx.pedals;
       const on = !!(rig && rig.prefs.enabled);
