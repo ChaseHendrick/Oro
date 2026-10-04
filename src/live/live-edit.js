@@ -8,6 +8,7 @@ import { readSmart, smartKnobLabel, SMART_KNOBS } from '../core/smart.js';
 import { MAX_PATTERNS, NOTE_NAMES, SCALE_NAMES, clamp } from '../core/params.js';
 import { KIT_PADS } from '../dsp/drum-kit.js';
 import { getVersions, startVersions } from '../core/versions.js';
+import { mappingControl } from '../midi/midi.js';
 import {
   PAD_TYPES, PAD_TYPE_LABEL, QUANTS, QUANT_LABEL, PAD_COLORS, PAD_KEY_LABELS, defaultQuant, sanitizePad, sanitizeEntry,
   parseNotes, formatNotes, scaleTriad, chordName, moveEntry, SETLIST_MAX,
@@ -221,7 +222,7 @@ export function openPadEditor(ctx, live, i, { appRoot = null } = {}) {
     const m = ok && ctx.findMapping ? ctx.findMapping(target) : null;
     learnBtn.disabled = !ok;
     unmapBtn.hidden = !m;
-    setText(learnInfo, !ok ? 'Connect MIDI in Settings to map a controller button.' : m ? `Mapped to CC ${m.cc}${m.channel ? ` on channel ${m.channel}` : ''}.` : 'Press MIDI Learn, then a button on your controller.');
+    setText(learnInfo, !ok ? 'Connect MIDI in Settings to map a controller button.' : m ? `Mapped to ${mappingControl(m)}${m.channel ? ` on channel ${m.channel}` : ''}.` : 'Press MIDI Learn, then a button or pad on your controller.');
   }
   learnBtn.addEventListener('click', () => ctx.learn.start(target, `pad ${i + 1}`, renderLearn));
   unmapBtn.addEventListener('click', () => { ctx.unmap(target); renderLearn(); });

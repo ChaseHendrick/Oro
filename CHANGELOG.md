@@ -23,6 +23,8 @@ explains every feature in detail.
     always leaves.
   * Keys 1 to 0 and Q to Y play the pads, Space plays and stops, the arrows move through the
     setlist; pads, Next, Previous and Play can be MIDI-learned.
+  * MIDI Learn for buttons (live pads, the setlist and the looper) now also learns a note,
+    so drum pads that send notes can trigger them. A learned note no longer plays a sound.
   * The screen stays awake while live mode is open where the browser allows it. The live
     setup saves with your session; sessions that never use it are unchanged.
   * Not yet tested on real hardware: Screen Wake Lock, full screen in the desktop app and

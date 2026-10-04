@@ -8,6 +8,7 @@ import { h, createScope, setText, listen, call } from './dom.js';
 import { createSegmented, createToggle, createSelect } from './controls.js';
 import { icon } from './icons.js';
 import { mpcGuide } from './mpc-guide.js';
+import { mappingControl } from '../midi/midi.js';
 
 const STATUS_TEXT = {
   idle: ['Not connected yet', 'Press Connect MIDI and allow access when your browser asks.'],
@@ -266,7 +267,7 @@ export function createMidiSettings(ctx) {
       st.got[myIndex] = m;
       status.className = 'wizard-status is-done';
       status.innerHTML = '';
-      status.append(h('span', { html: icon('check') }), `Got CC ${m && m.cc != null ? m.cc : '?'}${m && m.channel ? ` on channel ${m.channel}` : ''}`);
+      status.append(h('span', { html: icon('check') }), `Got ${mappingControl(m)}${m && m.channel ? ` on channel ${m.channel}` : ''}`);
       setTimeout(() => { if (wizardState === st && st.i === myIndex) { st.i += 1; step(); } }, 650);
     }).catch(() => { /* cancelled or skipped */ });
   }
@@ -306,10 +307,10 @@ export function createMidiSettings(ctx) {
     mapTable.appendChild(h('div', { class: 'map-row map-row--head', role: 'row' },
       h('span', { role: 'columnheader' }, 'CC'), h('span', { role: 'columnheader' }, 'Channel'), h('span', { role: 'columnheader' }, 'Controls'), h('span', { role: 'columnheader' }, h('span', { class: 'visually-hidden' }, 'Remove'))));
     for (const m of list) {
-      const rm = h('button', { type: 'button', class: 'icon-btn icon-btn--xs', 'aria-label': `Remove mapping for CC ${m.cc}`, html: icon('close') });
+      const rm = h('button', { type: 'button', class: 'icon-btn icon-btn--xs', 'aria-label': `Remove mapping for ${mappingControl(m)}`, html: icon('close') });
       rm.addEventListener('click', () => { call(midi, 'unmap', m.target || m.cc); ctx.bus.emit('mappings'); renderMappings(); });
       mapTable.appendChild(h('div', { class: 'map-row', role: 'row' },
-        h('span', { role: 'cell', class: 'mono' }, String(m.cc)), h('span', { role: 'cell' }, m.channel ? String(m.channel) : 'Any'),
+        h('span', { role: 'cell', class: 'mono' }, m.note != null ? `Note ${m.note}` : String(m.cc)), h('span', { role: 'cell' }, m.channel ? String(m.channel) : 'Any'),
         h('span', { role: 'cell' }, describeTarget(m.target, store)), h('span', { role: 'cell' }, rm)));
     }
   }

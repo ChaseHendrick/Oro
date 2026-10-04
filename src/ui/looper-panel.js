@@ -9,6 +9,7 @@ import { createSegmented, createMiniSlider, createToggle } from './controls.js';
 import { openMenu } from './menu.js';
 import { icon } from './icons.js';
 import { noteName } from '../audio/resample.js';
+import { mappingControl } from '../midi/midi.js';
 
 const RING_LEN = 100;
 
@@ -58,7 +59,7 @@ function learnItems(ctx, id, label) {
   if (!ctx.midiOk || !ctx.midiOk() || !ctx.learn) return [];
   const target = { scope: 'action', id };
   const mapping = ctx.findMapping(target);
-  const items = [{ label: 'MIDI Learn', icon: icon('learn'), hint: mapping ? `CC ${mapping.cc}` : '', onSelect: () => ctx.learn.start(target, label) }];
+  const items = [{ label: 'MIDI Learn', icon: icon('learn'), hint: mapping ? mappingControl(mapping) : '', onSelect: () => ctx.learn.start(target, label) }];
   if (mapping) items.push({ label: 'Remove MIDI mapping', icon: icon('close'), onSelect: () => ctx.unmap(target) });
   return items;
 }

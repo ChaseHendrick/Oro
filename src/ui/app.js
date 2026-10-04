@@ -48,6 +48,7 @@ import { createStrainSuggestion, watchEngineStrain } from './audio-strain.js';
 import { installBounceReminder } from './bounce-reminder.js';
 import { openBounce, suggestedBounceBars } from './bounce.js';
 import { initControllers } from './gamepad-boot.js';
+import { mappingControl } from '../midi/midi.js';
 
 function emitter() {
   const map = new Map();
@@ -383,7 +384,7 @@ export function createUI(root, modules = {}) {
       try { p = midi.learn(target); } catch (err) { p = Promise.reject(err); }
       Promise.resolve(p).then((m) => {
         if (state.done) return;
-        toast(`Mapped CC ${m && m.cc != null ? m.cc : ''} to ${label}`, { kind: 'success' });
+        toast(`Mapped ${mappingControl(m)} to ${label}`, { kind: 'success' });
         bus.emit('mappings');
         finish();
       }).catch(() => finish());

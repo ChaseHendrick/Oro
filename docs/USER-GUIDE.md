@@ -1763,8 +1763,9 @@ a text field is never taken over. Cmd/Ctrl+Z still undoes.
 controller button to it; mapped buttons fire on each press. **Setlist > MIDI Learn** maps
 Previous song, Next song and Play / stop. Right-click a fader for MIDI Learn too: macro,
 smart control and volume faders use the same mappings as their knobs elsewhere in Oro.
-MIDI Learn listens for a CC (a knob, fader or button that sends control changes); pads
-that send notes cannot be learned this way. Mappings are saved on this computer with your
+Buttons (pads, setlist steps, looper buttons) learn either a CC or a note, so drum pads
+that send notes work too; a note learned this way triggers the button and no longer plays a
+sound. Faders learn a CC (a knob or fader that sends control changes). Mappings are saved on this computer with your
 other MIDI settings.
 
 **What is saved.** The pads, the setlist, the song change choice, the lock, the backdrop and
