@@ -10,7 +10,11 @@
 // CPU Resonator with a short crossfade (UnderrunWatch).
 //
 // Transport: SharedArrayBuffer rings (FloatRing) when the host offers them
-// (crossOriginIsolated pages), else MessagePort chunks of one block.
+// (crossOriginIsolated pages), else MessagePort chunks of one block. In the
+// MessagePort transport the chunk buffers are transferred to the host and
+// handed back (POOL of them), so after the first few blocks this side makes
+// no new arrays; the browser's own message passing still allocates, which is
+// why the SharedArrayBuffer rings are preferred.
 //
 // Offline (bounce): 'capture' records every part's frames (the membrane's
 // input never depends on its own output, so one dry pass fixes it), the GPU
@@ -18,19 +22,23 @@
 // same latency as live playing.
 
 import { FloatRing } from './reso-ring.js';
-import { FRAME, BLOCK, LATENCY_BLOCKS } from './reso-gpu-plan.js';
+import { FRAME, BLOCK, LATENCY_BLOCKS } from './reso-gpu-frame.js';
 import { UnderrunWatch, ARM_TIMEOUT_SEC } from './reso-gpu-policy.js';
 
 const WAIT = 0, ARM = 1, GPU = 2, CPU = 3, CAPTURE = 4, PLAY = 5;
 const XFADE_SEC = 0.05;
 const HOLD_DECAY = 0.995;
 const STATUS_SEC = 1;
+const POOL = 8;
+const NO_TRANSFER = [];                                   // spare chunk buffers (MessagePort transport)
 
 function levelFor(chain, want) {
   if (!chain || !chain.length) return null;
   let best = chain[0];
   for (const L of chain) if (L.size >= want) best = L;
-  return { size: best.size, data: best.data.slice(0, best.size * best.size) };
+  const cells = best.size * best.size;
+  // the message copies the data anyway: only trim a longer buffer
+  return { size: best.size, data: best.data.length === cells ? best.data : best.data.slice(0, cells) };
 }
 
 /** Terrain levels for a GPU grid of n nodes a side, as the host's plan wants them. */
@@ -50,6 +58,8 @@ export class ResoFeed {
     this.frame = new Float32Array(FRAME);
     this.pend = new Float64Array(24); this.nPend = 0;   // queued strikes (x, y, amp)
     this.chunk = new Float32Array(BLOCK * FRAME); this.fill = 0;
+    this.pool = new Array(POOL).fill(null); this.nPool = 0;   // chunk buffers back from the host
+    this.msg = { t: 'frames', id, data: null }; this.xfer = [null];
     this.outRing = null;                          // frames to the host (SAB mode)
     this.inRing = null;                           // pickups from the host
     this.got = new Float32Array(2);
@@ -105,14 +115,32 @@ export class ResoFeed {
     if (this.state === CAPTURE || this.outRing === null) {
       this.chunk.set(f, this.fill * FRAME);
       if (++this.fill === BLOCK) {
+        // capture is offline (a bounce), so it may keep every block
         if (this.state === CAPTURE) { this.captured.push(this.chunk); this.chunk = new Float32Array(BLOCK * FRAME); }
-        else { const c = this.chunk; this.chunk = new Float32Array(BLOCK * FRAME); this.link.toHost({ t: 'frames', id: this.id, data: c }, [c.buffer]); }
+        else {
+          const c = this.chunk;
+          this.chunk = this.nPool > 0 ? this.takePooled() : new Float32Array(BLOCK * FRAME);
+          this.msg.data = c; this.xfer[0] = c.buffer;
+          this.link.toHost(this.msg, this.xfer);
+          this.msg.data = null; this.xfer[0] = null;
+        }
         this.fill = 0;
       }
     } else if (this.outRing.write(f, 0, 1) === 0) {
       // the host stopped reading: count it as falling behind
       this.miss(R);
     }
+  }
+
+  takePooled() {
+    const c = this.pool[--this.nPool];
+    this.pool[this.nPool] = null;
+    return c;
+  }
+
+  /** A chunk buffer the host has finished with (MessagePort transport). */
+  recycle(data) {
+    if (this.nPool < POOL && data && data.length === BLOCK * FRAME) this.pool[this.nPool++] = data;
   }
 
   /** Every recorded frame (capture), as one array. */
@@ -266,7 +294,7 @@ export class ResoGpuLink {
   }
 
   toHost(m, transfer) {
-    if (this.port) { try { this.port.postMessage(m, transfer || []); } catch { /* ignore */ } }
+    if (this.port) { try { this.port.postMessage(m, transfer || NO_TRANSFER); } catch { /* ignore */ } }
   }
 
   fromHost(m) {
@@ -276,6 +304,7 @@ export class ResoGpuLink {
     if (!f) return;
     if (m.t === 'ready') f.ready(m.rings || null);
     else if (m.t === 'out') f.receive(m.data);
+    else if (m.t === 'recycle') f.recycle(m.data);
     else if (m.t === 'fail') f.fallBack(f.P.reso, m.reason || 'The GPU stopped');
   }
 

@@ -14,6 +14,7 @@
 // for tests and as a reference.
 
 import { Resonator } from './resonator.js';
+import { FRAME, BLOCK, LATENCY_BLOCKS } from './reso-gpu-frame.js';
 import { KSTEPS, AMP_STRIDE, OUT_STRIDE, MAX_ENT, UNIFORM_STRIDE, jsStep, jsExcite, jsResub } from './reso-gpu-kernel.js';
 
 /**
@@ -27,11 +28,8 @@ export const GPU_DETAILS = Object.freeze({
   256: Object.freeze({ n: 256, sub: 32 }),
 });
 export const GPU_DETAIL_DEFAULT = 128;
-/** Floats per internal sample from the worklet: x, fTarget, dotX, dotY, strikeAmp, strikeX, strikeY, mode, decay, tone, listen. */
-export const FRAME = 11;
-export const BLOCK = 256;                // internal samples per GPU job
+export { FRAME, BLOCK, LATENCY_BLOCKS };
 export const CHUNK = 64;                 // samples per coefficient update (about 2.7 ms)
-export const LATENCY_BLOCKS = 3;         // the worklet reads the output this many blocks late
 export const MAX_STRIKES_PER_BLOCK = 32;
 export const MAX_CHUNKS = BLOCK / CHUNK + MAX_STRIKES_PER_BLOCK;
 export const MAX_SUB = 32;
@@ -85,6 +83,7 @@ export class ResoGpuPlan {
     this.cfg = [NaN, NaN, NaN, NaN];
     this.strikesInBlock = 0;
     this.started = false;
+    this.pick = new Uint32Array(8);
   }
 
   get g1() { return this.R.g1; }
@@ -187,7 +186,7 @@ export class ResoGpuPlan {
       // pickups: border cells read nothing (weight 0 on an interior cell)
       const ch = this.nChunks++;
       this.chStart[ch] = i; this.chLen[ch] = len;
-      const pick = [0, 0, 0, 0, 0, 0, 0, 0];
+      const pick = this.pick;
       for (let j = 0; j < 8; j++) {
         const k = R.kIdx[j], gx = k % W, gy = (k - gx) / W;
         const ok = gx >= 1 && gy >= 1 && gx <= n && gy <= n;

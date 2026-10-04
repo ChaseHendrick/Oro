@@ -149,6 +149,12 @@ export class ResoGpuHost {
   membrane(n) { return this.backend === 'js' ? new JsBackend(n) : new GpuMembrane(this.device, n); }
 
   attachPort(port) {
+    // a new DSP (the audio graph was rebuilt) numbers its feeds from 1 again
+    if (this.port) {
+      for (const id of [...this.entries.keys()]) this.drop(id);
+      this.port.onmessage = null;
+      try { this.port.close(); } catch { /* ignore */ }
+    }
     this.port = port;
     port.onmessage = (e) => this.message(e.data);
     if (!this.timer) this.timer = setInterval(() => this.pump(), PUMP_MS);
@@ -177,6 +183,8 @@ export class ResoGpuHost {
     } else if (m.t === 'frames') {
       const e = this.entries.get(m.id);
       if (e && !e.outRing) e.inbox.write(m.data, 0, m.data.length / FRAME);
+      // hand the buffer back so the audio thread can reuse it
+      if (m.data && m.data.buffer) this.post({ t: 'recycle', id: m.id, data: m.data }, [m.data.buffer]);
     } else if (m.t === 'close') {
       this.drop(m.id);
     }

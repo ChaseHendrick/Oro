@@ -75,7 +75,7 @@ export async function createResoGpu({ onStatus = () => {}, backend = 'webgpu', w
  * does not depend on its output), renders them on the GPU, and returns them
  * for the real pass, which must run the DSP the same way (renderDspHere).
  */
-export async function offlineResoInit(gpu, { init, late, frames, sampleRate, grid, onFrames = () => {} }) {
+export async function offlineResoInit(gpu, { init, late, frames, sampleRate, grid, onFrames = () => {}, isCancelled = null }) {
   const { OroDSP } = await import('../dsp/dsp-core.js');
   const dsp = new OroDSP(sampleRate);
   dsp.postMessage = () => {};
@@ -90,7 +90,10 @@ export async function offlineResoInit(gpu, { init, late, frames, sampleRate, gri
     const t = f / sampleRate;
     while (li < late.length && late[li].time <= t + 1e-9) dsp.handleMessage(late[li++].msg);
     dsp.process(sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], n, t);
-    if (performance.now() - t0 > 30) { onFrames(f); await new Promise(r => setTimeout(r, 0)); t0 = performance.now(); }
+    if (performance.now() - t0 > 30) {
+      onFrames(f); await new Promise(r => setTimeout(r, 0)); t0 = performance.now();
+      if (isCancelled && isCancelled()) throw new Error('cancelled');
+    }
   }
   const wet = [];
   for (const [part, fr] of dsp.resoGpu.takeCapture()) {

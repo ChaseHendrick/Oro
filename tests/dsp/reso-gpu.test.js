@@ -108,7 +108,7 @@ describe('GPU Resonator kernel mirror', () => {
     const grid = GPU_DETAILS[256];
     const plan0 = new ResoGpuPlan(SR, grid);
     plan0.terrain(hills(), null, 0);
-    const hz = 0.95 * plan0.ceiling(), count = 80;
+    const hz = 0.99 * plan0.ceiling(), count = 80;   // just under the ceiling: every sub-step in use
     const fr = frames(count, { hz, decay: 20, tone: 1 });
     const { out, plan, mem } = runGpuMirror(grid, hills(), fr, count);
     expect(plan.R.S).toBe(32);

@@ -1049,6 +1049,7 @@ export class OroDSP {
     // v2.9 Operator panel (damage, quirks, vintage, test tones) on the mix; null until a session turns one on
     this.op = null;
     this.capture = -1;             // part whose pre-fader output alone is rendered (offline freeze), -1 = off
+    this.resoGpu = null;           // 2.12 GPU Resonator link (reso-feed.js), made on the first resoGpu message
     this.dryOut = 1;               // v2.11 stems export: 0 renders only the sends (a send-return stem)
     this.partStreams = false;      // v2.11 stems export: per-part random streams (streamOf)
     this.segTime = 0;              // context time of the segment being rendered
