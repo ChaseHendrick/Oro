@@ -1,5 +1,6 @@
 /* 2.11 Export stems dialog and Version history panel (loaded with them). */
 .stems-modal, .version-modal { width: min(560px, calc(100vw - 24px)); }
+.stems-dialog, .version-panel { padding: 16px 22px 20px; }
 .stems-dialog .popover-note { max-width: none; margin: 0 0 12px; }
 .stems-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .stems-grid .select { width: 100%; }
