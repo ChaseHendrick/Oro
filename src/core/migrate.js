@@ -19,6 +19,7 @@ import { sanitizeChord } from '../music/chord-trigger.js';
 import { sanitizeGhost } from '../music/ghost-data.js';
 import { sanitizeTuning, tuningRecord } from '../dsp/tuning.js';
 import { sanitizeOperator } from '../dsp/damage.js';
+import { sanitizeLive } from '../live/setup.js';
 
 function num(v, fallback) {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -269,12 +270,15 @@ export function migrateState(src) {
   const tuning = sanitizeTuning(src.tuning);
   // v2.9 Operator panel (damage, quirks, vintage), absent while everything is at its default
   const operator = sanitizeOperator(src.operator);
+  // 2.12 live mode setup (pads, setlist, lock), absent until live mode is set up
+  const live = sanitizeLive(src.live);
   return {
     version: STATE_VERSION,
     global: sanitizeParams(GLOBAL_PARAMS, src.global),
     parts,
     ...(tuning ? { tuning } : {}),
     ...(operator ? { operator } : {}),
+    ...(live ? { live } : {}),
   };
 }
 

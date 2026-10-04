@@ -12,6 +12,7 @@ import { createEmitter } from '../music/emitter.js';
 import { createTimebase } from '../music/timing.js';
 import { isMpcPort, detectMpcPort } from './mpc.js';
 import { applySmartKnob, SMART_KNOBS } from '../core/smart.js';
+import { LIVE_ACTIONS } from '../live/setup.js';
 import { createClockFollower, clockBytes, parseSongPosition, CLOCK, START, CONTINUE, STOP, SONG_POSITION, CLOCK_ACTIVE_MS } from './clock.js';
 
 export const STORAGE_KEY = 'orograph.midi';
@@ -54,7 +55,8 @@ const LEARNABLE_MAX_CC = 119;
 // v1.2: buttons that can be MIDI-learned. A mapped CC fires the action when it
 // crosses 64 upwards (press on a momentary button); the UI listens for
 // midi.on('action', {id}) and does the rest.
-export const LEARNABLE_ACTIONS = Object.freeze(['looper.main', 'looper.stop', 'looper.undo', 'looper.clear', 'looper.mute', 'looper.resample']);
+// 2.12 live mode: the 16 pads, Next and Previous song, and Play / stop (appended).
+export const LEARNABLE_ACTIONS = Object.freeze(['looper.main', 'looper.stop', 'looper.undo', 'looper.clear', 'looper.mute', 'looper.resample', ...LIVE_ACTIONS]);
 const ACTION_REPEAT_MS = 250;     // a controller that only sends "press" (127) still retriggers after this
 
 const STATUS_TEXT = {

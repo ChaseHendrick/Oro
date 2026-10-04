@@ -60,6 +60,7 @@ export function describeEdit(path, meta = {}) {
   if (k[0] === 'parts') return 'Tracks';
   if (k[0] === 'tuning') return 'Tuning';
   if (k[0] === 'operator') return 'Operator panel';
+  if (k[0] === 'live') return 'Live setup';
   return 'Edit';
 }
 

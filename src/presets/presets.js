@@ -314,6 +314,13 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
 
   // ----------------------------------------------------------------- scenes
 
+  /** The session as a scene's state: without the live setup (2.12), which stays with the session. */
+  function sessionScene() {
+    const state = migrateState(store.serialize());
+    delete state.live;
+    return state;
+  }
+
   function allScenes() {
     return [...FACTORY_SCENE_LIST, ...user.scenes.map(s => ({ ...s, factory: false }))];
   }
@@ -338,6 +345,11 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const scene = findScene(idOrIndex);
     if (!scene) return false;
     const state = migrateState(scene);
+    // 2.12: the live setup (pads, setlist) belongs to the performer, not the
+    // scene, so loading a scene (from a live pad or the setlist too) keeps it
+    delete state.live;
+    const live = store.get('live');
+    if (live && typeof live === 'object') state.live = JSON.parse(JSON.stringify(live));
     // v2.9: a scene without a tuning record (saved before 2.9) keeps the current tuning
     if (!(scene.tuning && typeof scene.tuning === 'object')) {
       const cur = sanitizeTuning(store.get('tuning'));
@@ -369,7 +381,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
     const clean = String(name || 'My scene').trim().slice(0, 60) || 'My scene';
     const existing = user.scenes.find(s => s.name === clean);
     const scene = {
-      ...migrateState(store.serialize()),
+      ...sessionScene(),
       tuning: tuningRecord(store.get('tuning')),
       id: existing ? existing.id : newId(),
       name: existing ? clean : uniqueName(clean, FACTORY_SCENE_LIST),
@@ -430,7 +442,7 @@ export function createPresets({ store, storage = safeStorage(), random = Math.ra
       const s = id != null ? findScene(id) : null;
       data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: s ? [stripScene(s)] : user.scenes.map(stripScene) };
     } else if (kind === 'current') {
-      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...migrateState(store.serialize()), tuning: tuningRecord(store.get('tuning')), name: 'Current session', description: '' }] };
+      data = { format: FORMAT, version: PRESET_VERSION, patches: [], scenes: [{ ...sessionScene(), tuning: tuningRecord(store.get('tuning')), name: 'Current session', description: '' }] };
     } else {
       data = { format: FORMAT, version: PRESET_VERSION, patches: user.patches.map(stripPatch), scenes: user.scenes.map(stripScene) };
     }
