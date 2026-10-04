@@ -19,6 +19,7 @@ explains every feature in detail.
 * Mute, Deafen and Open mic switch off again when pressed. Join voice opens the microphone on the jam connection and plays other people through the page, not through the synth.
 * Match a sound can be closed without applying a patch, and its panel sits under the key bar instead of inside that row.
 * Opening Learn again while a lesson is open keeps that step. Closing still puts the session back. Leaving a jam stops notes that were waiting to play.
+* A gap in a saved chord no longer drops the notes after it. A step that is off draws nothing in the piano roll, because it does not play.
 
 ## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
 

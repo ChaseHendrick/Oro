@@ -153,7 +153,8 @@ export function sanitizePattern(src, n = 1) {
     if (Array.isArray(st.extras)) {
       const extras = [];
       for (const ex of st.extras) {
-        if (!ex || typeof ex !== 'object' || extras.length >= 8) break;
+        if (extras.length >= 8) break;
+        if (!ex || typeof ex !== 'object') continue;
         const item = {
           degree: Math.round(clamp(num(ex.degree, 0), -21, 28)),
           octave: Math.round(clamp(num(ex.octave, 0), -2, 2)),

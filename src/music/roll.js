@@ -59,10 +59,11 @@ function cleanNote(n) {
   return out;
 }
 
-/** Notes on a step: the grid note first (if it is on), then extras. */
+/** Notes on a step: the grid note first (if it is on), then extras. An off step is silent, so nothing is drawn. */
 export function notesOf(step) {
   const out = [];
-  if (step && step.on) out.push({ ...cleanNote(step), first: true });
+  if (!step || !step.on) return out;
+  out.push({ ...cleanNote(step), first: true });
   const extras = step && Array.isArray(step.extras) ? step.extras : [];
   for (const ex of extras) out.push({ ...cleanNote(ex), first: false });
   return out;

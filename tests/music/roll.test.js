@@ -44,6 +44,9 @@ describe('piano roll notes', () => {
     const kept = sanitizePattern({ length: 16, steps: [{ on: 1, degree: 1, q: 2, extras: [{ degree: 5, octave: 0, vel: 0.5, gate: 0.4, q: 1 }, { degree: 9 }] }], lane: { id: 'cutoff', curve } }, 1);
     expect(kept.steps[0].q).toBe(2);
     expect(kept.steps[0].extras).toHaveLength(2);
+    const skipped = sanitizePattern({ length: 16, steps: [{ on: 1, extras: [{ degree: 1 }, null, { degree: 4 }] }] }, 1);
+    expect(skipped.steps[0].extras.map((e) => e.degree)).toEqual([1, 4]);
+    expect(notesOf({ on: 0, degree: 0, extras: [{ degree: 3, octave: 0 }] })).toEqual([]);
     expect(kept.lane.id).toBe('cutoff');
     expect(kept.lane.curve).toHaveLength(64);
     expect(sanitizePattern({ lane: { id: 'nope', curve } }, 1).lane).toBeUndefined();
