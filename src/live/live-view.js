@@ -95,7 +95,7 @@ export function openLive(ctx) {
   const clockText = h('span', { class: 'live-clock-num' });
   const clockBox = h('div', { class: 'live-clock' }, h('span', { class: 'live-kicker' }, 'Time'), clockText);
 
-  const btn = (label, iconName, cls = '', tip = '') => h('button', { type: 'button', class: `live-btn ${cls}`, dataset: tip ? { tip } : null, html: `${iconName ? icon(iconName) : ''}<span>${label}</span>` });
+  const btn = (label, iconName, cls = '', tip = '') => h('button', { type: 'button', class: `live-btn ${cls}`, 'aria-label': label, dataset: tip ? { tip } : null, html: `${iconName ? icon(iconName) : ''}<span>${label}</span>` });
   const prevBtn = btn('Previous', 'arrow-left', 'live-prev', 'Previous song (Left arrow)');
   const nextBtn = btn('Next', 'arrow-right', 'live-nextbtn', 'Next song (Right arrow)');
   const lockBtn = h('button', { type: 'button', class: 'live-btn live-lock', dataset: { liveSafe: '' }, 'aria-pressed': 'false' },
@@ -116,11 +116,12 @@ export function openLive(ctx) {
     const r = ring('live-pad-ring');
     const el = h('button', { type: 'button', class: 'live-pad', dataset: { index: String(i), state: 'empty' } },
       h('span', { class: 'live-pad-key', 'aria-hidden': 'true' }, PAD_KEY_LABELS[i]),
+      h('span', { class: 'live-pad-q', 'aria-hidden': 'true' }),
       r.el,
       h('span', { class: 'live-pad-label' }),
       h('span', { class: 'live-pad-sub' }),
       h('span', { class: 'live-pad-wait' }));
-    padEls.push({ el, ring: r, label: el.querySelector('.live-pad-label'), sub: el.querySelector('.live-pad-sub'), wait: el.querySelector('.live-pad-wait') });
+    padEls.push({ el, ring: r, label: el.querySelector('.live-pad-label'), sub: el.querySelector('.live-pad-sub'), wait: el.querySelector('.live-pad-wait'), q: el.querySelector('.live-pad-q') });
     padsEl.appendChild(el);
   }
 
@@ -136,7 +137,8 @@ export function openLive(ctx) {
   const transportRow = h('div', { class: 'live-transport' }, playBtn, tempoBox, panicBtn);
   const faders = [];
   const faderRow = h('div', { class: 'live-faders' });
-  const controls = h('section', { class: 'live-controls', 'aria-label': 'Controls' }, transportRow, faderRow);
+  const faderCaption = h('p', { class: 'live-fader-caption' });
+  const controls = h('section', { class: 'live-controls', 'aria-label': 'Controls' }, transportRow, faderCaption, faderRow);
 
   // ------------------------------------------------------------ confirm
   const confirmText = h('span', { class: 'live-confirm-text' });
@@ -199,15 +201,16 @@ export function openLive(ctx) {
       setText(p.label, label);
       let sub = '';
       if (pad) {
-        if (pad.type === 'pattern') sub = `Track ${pad.track + 1}, pattern ${pad.pattern + 1}`;
-        else if (pad.type === 'mute' || pad.type === 'solo') sub = `${TYPE_SHORT[pad.type]} track ${pad.track + 1}`;
+        if (pad.type === 'pattern') sub = `Pattern ${pad.pattern + 1}, track ${pad.track + 1}`;
+        else if (pad.type === 'mute' || pad.type === 'solo') sub = `${TYPE_SHORT[pad.type]}, track ${pad.track + 1}`;
         else if (pad.type === 'drum') sub = `Drum, track ${pad.track + 1}`;
+        else if (pad.type === 'note' && pad.track !== 'sel') sub = `Notes, track ${pad.track + 1}`;
         else sub = TYPE_SHORT[pad.type];
-        if (pad.quant !== 'off') sub += `, ${pad.quant}`;
       } else if (editMode) sub = 'Tap to set up';
       if (st === 'missing') sub = 'Not available';
       setText(p.sub, sub);
       setText(p.wait, st === 'queued' ? (QUANT_TEXT[pad && pad.quant] || 'Waiting') : '');
+      setText(p.q, pad && pad.quant !== 'off' && st !== 'queued' ? (pad.quant === 'bar' ? 'Bar' : 'Beat') : '');
       const stateText = { empty: 'empty', missing: 'not available', queued: 'queued', active: 'on', armed: 'ready' }[st];
       p.el.setAttribute('aria-label', `Pad ${i + 1}, key ${PAD_KEY_LABELS[i]}: ${label || 'empty'}, ${stateText}`);
       p.el.setAttribute('aria-pressed', String(st === 'active'));
@@ -262,6 +265,7 @@ export function openLive(ctx) {
     lockBtn.setAttribute('aria-pressed', String(!!cfg.lock));
     lockBtn.querySelector('.live-lock-icon').innerHTML = icon(cfg.lock ? 'lock' : 'unlock');
     setText(lockBtn.querySelector('.live-lock-text'), cfg.lock ? 'Hold to unlock' : 'Lock');
+    lockBtn.setAttribute('aria-label', cfg.lock ? 'Locked. Hold to unlock' : 'Lock');
     lockBtn.dataset.tip = cfg.lock ? 'Locked: only the pads respond. Hold here to unlock (Esc still leaves)' : 'Lock: ignore clicks outside the pads';
     // Map off: hide it so it stops drawing (it is out of sight anyway).
     backdrop.hidden = cfg.backdrop === 'off';
@@ -291,7 +295,7 @@ export function openLive(ctx) {
       if (key === last) return;
       last = key;
       el.style.setProperty('--v', String(v));
-      setText(value, on ? pct(v) : 'Not set');
+      setText(value, on ? pct(v) : 'Off');
       setText(name, l);
       el.setAttribute('aria-label', l);
       el.setAttribute('aria-valuenow', String(Math.round(v * 100)));
@@ -362,13 +366,9 @@ export function openLive(ctx) {
     const b = ctx.binder.globalParam('masterVolume');
     createFader({ group: 'master', label: 'Volume', get: () => b.get(), set: (v) => b.set(v, { source: 'ui' }), target: () => b.learnTarget() });
   }
-  const smartHint = h('span', { class: 'live-fader-group-label' });
-  faderRow.prepend(h('span', { class: 'live-fader-group-label' }, 'Macros'));
-  faders[3].el.after(smartHint);
-  faders[11].el.after(h('span', { class: 'live-fader-group-label' }, 'Master'));
   const renderSmartHint = () => {
     const name = store.get(`parts.${sel()}.name`) || `Track ${sel() + 1}`;
-    setText(smartHint, `Smart, ${name}`);
+    setText(faderCaption, `Macros 1 to 4, then the smart controls of ${name}, then the master volume. Right-click a fader for MIDI Learn.`);
   };
 
   // ------------------------------------------------------------ actions
@@ -494,6 +494,7 @@ export function openLive(ctx) {
     root.dataset.edit = editMode ? '1' : '0';
     editBtn.setAttribute('aria-pressed', String(editMode));
     setText(editBtn.querySelector('span'), editMode ? 'Done' : 'Edit pads');
+    editBtn.setAttribute('aria-label', editMode ? 'Done editing pads' : 'Edit pads');
     say(editMode ? 'Tap a pad to choose what it does. Press Done when you are finished.' : '', 0);
     schedule(renderPads);
   });
@@ -508,6 +509,7 @@ export function openLive(ctx) {
 
   // ---------------------------------------------------------------- lock
   let holdTimer = 0;
+  let unlockedAt = 0;   // the click that ends an unlocking hold must not lock again
   const holdStart = () => {
     if (!live.setup().lock || holdTimer) return;
     lockBtn.classList.add('is-holding');
@@ -516,6 +518,7 @@ export function openLive(ctx) {
       holdTimer = 0;
       lockBtn.classList.remove('is-holding');
       live.writeLive({ lock: 0 }, { source: 'prefs' });
+      unlockedAt = Date.now();
       say('Unlocked.', 2000);
     }, UNLOCK_HOLD_MS);
   };
@@ -533,6 +536,7 @@ export function openLive(ctx) {
   lockBtn.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') holdEnd(); });
   lockBtn.addEventListener('click', (e) => {
     if (live.setup().lock) { e.preventDefault(); if (e.detail !== 0 && !holdTimer) say('Hold the lock button to unlock. Esc still leaves live mode.'); return; }
+    if (Date.now() - unlockedAt < 1500) { unlockedAt = 0; return; }
     live.writeLive({ lock: 1 }, { source: 'prefs' });
     if (editMode) editBtn.click();
     say('Locked: only the pads respond to clicks and taps. Hold the lock button to unlock.', 5000);

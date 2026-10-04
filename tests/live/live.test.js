@@ -127,7 +127,8 @@ describe('default pads', () => {
     const s = defaultState();
     const pads = defaultPads({ ...s, ui: { selectedPart: 0 } });
     expect(pads).toHaveLength(16);
-    expect(pads.slice(0, 4)).toEqual([null, null, null, null]);   // no scenes, one pattern each
+    // no scenes and one pattern per track: solos
+    expect(pads.slice(0, 4).map(p => [p.type, p.track])).toEqual([['solo', 0], ['solo', 1], ['solo', 2], ['solo', 3]]);
     expect(pads.slice(4, 8).map(p => p.type)).toEqual(['mute', 'mute', 'mute', 'mute']);
     expect(pads[5].track).toBe(1);
     expect(pads[4].color).toBe(s.parts[0].color.toLowerCase());
@@ -536,5 +537,64 @@ describe('keys, lock and MIDI', () => {
     expect(JSON.parse(storage.getItem(STORAGE_KEY)).mappings.map(m => m.target.id)).toEqual(['live.pad3', 'live.next']);
     const again = await createMidi({ store, router: null, navigator: fakeNavigator(fakeAccess()), storage });
     expect(again.mappings()).toEqual([{ cc: 20, channel: 1, target: { scope: 'action', id: 'live.pad3' } }, { cc: 21, channel: 1, target: { scope: 'action', id: 'live.next' } }]);
+  });
+});
+
+describe('screen wake lock and full screen', () => {
+  function fakeDoc() {
+    const handlers = new Set();
+    return {
+      visibilityState: 'visible', fullscreenElement: null,
+      addEventListener: (t, fn) => { if (t === 'visibilitychange') handlers.add(fn); },
+      removeEventListener: (t, fn) => handlers.delete(fn),
+      fire() { for (const fn of [...handlers]) fn(); },
+      handlers,
+    };
+  }
+  function fakeNav() {
+    const calls = { requested: 0, released: 0 };
+    const nav = { wakeLock: { request: async () => {
+      calls.requested++;
+      const listeners = [];
+      const s = { released: false, addEventListener: (t, fn) => listeners.push(fn), release: async () => { s.released = true; calls.released++; listeners.forEach(fn => fn()); } };
+      nav.last = s;
+      return s;
+    } } };
+    return { nav, calls };
+  }
+
+  it('asks on enter, asks again when the page is visible again, lets go on exit', async () => {
+    const { createWakeLock } = await import('../../src/live/wake.js');
+    const doc = fakeDoc();
+    const { nav, calls } = fakeNav();
+    const w = createWakeLock({ nav, doc });
+    expect(await w.acquire()).toBe(true);
+    expect(w.held()).toBe(true);
+    // the browser drops the lock when the page is hidden
+    await nav.last.release();
+    expect(w.held()).toBe(false);
+    doc.visibilityState = 'visible';
+    doc.fire();
+    await Promise.resolve(); await Promise.resolve();
+    expect(calls.requested).toBe(2);
+    expect(w.held()).toBe(true);
+    w.release();
+    expect(w.held()).toBe(false);
+    expect(doc.handlers.size).toBe(0);
+  });
+
+  it('fails quietly where there is no wake lock or full screen', async () => {
+    const { createWakeLock, enterFullscreen } = await import('../../src/live/wake.js');
+    const w = createWakeLock({ nav: {}, doc: fakeDoc() });
+    expect(w.supported).toBe(false);
+    expect(await w.acquire()).toBe(false);
+    w.release();
+    const refused = createWakeLock({ nav: { wakeLock: { request: async () => { throw new Error('NotAllowedError'); } } }, doc: fakeDoc() });
+    expect(await refused.acquire()).toBe(false);
+    expect(await enterFullscreen({}, fakeDoc())).toBe(false);
+    expect(await enterFullscreen({ requestFullscreen: async () => { throw new Error('no'); } }, fakeDoc())).toBe(false);
+    const doc = fakeDoc();
+    const el = { requestFullscreen: async () => { doc.fullscreenElement = el; } };
+    expect(await enterFullscreen(el, doc)).toBe(true);
   });
 });

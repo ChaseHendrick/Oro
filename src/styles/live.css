@@ -25,6 +25,10 @@ html.is-live, html.is-live body { overflow: hidden; }
   -webkit-app-region: no-drag; app-region: no-drag;
 }
 .live-root *, .live-root .layer-host > * { -webkit-app-region: no-drag; app-region: no-drag; }
+/* Dialogs, menus and toasts keep the app's normal type size inside live mode;
+   toasts sit in the bottom right corner, off the pads. */
+.live-root > .layer-host { font-size: var(--fs); }
+.live-root .toasts { left: auto; right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); transform: none; }
 
 /* Stage dark (the default): the dark theme's tokens, whatever the app uses. */
 .live-root:not([data-look="app"]) {
@@ -234,6 +238,13 @@ html.is-live, html.is-live body { overflow: hidden; }
   font-size: var(--lv-fs-lg); font-weight: 750; line-height: 1.1;
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere;
 }
+.live-pad-q {
+  position: absolute; top: calc(var(--lv-gap) * .7); right: calc(var(--lv-gap) * .8);
+  font-size: var(--lv-fs-sm); font-weight: 700; padding: .05em .45em; border-radius: .35em;
+  color: var(--text-2); border: 1px solid currentColor; opacity: .85;
+}
+.live-pad-q:empty { display: none; }
+.live-pad[data-state="active"] .live-pad-q { color: var(--pad-ink); }
 .live-pad-sub { max-width: 100%; font-size: var(--lv-fs-sm); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-pad-sub:empty { display: none; }
 .live-pad-wait { font-size: var(--lv-fs-sm); font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
@@ -265,7 +276,7 @@ html.is-live, html.is-live body { overflow: hidden; }
 :root[data-motion="reduce"] .live-ring .ring-prog { stroke-dasharray: 7 6 !important; stroke-dashoffset: 0 !important; }
 
 /* ---------------------------------------------------------------- controls */
-.live-controls { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--lv-gap); min-width: 0; min-height: 0; }
+.live-controls { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--lv-gap); min-width: 0; min-height: 0; }
 .live-transport { display: flex; flex-wrap: wrap; gap: var(--lv-gap); align-items: stretch; min-width: 0; }
 .live-big {
   display: inline-flex; align-items: center; justify-content: center; gap: .4em;
@@ -295,7 +306,7 @@ html.is-live, html.is-live body { overflow: hidden; }
 
 .live-faders {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--lv-fader-w), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--lv-fader-w), 1fr));
   grid-auto-rows: minmax(0, 1fr);
   gap: calc(var(--lv-gap) * .8);
   min-height: 0; min-width: 0;
@@ -328,9 +339,11 @@ html.is-live, html.is-live body { overflow: hidden; }
   border-radius: 4px; background: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
 }
 .live-fader-label {
-  max-width: 100%; font-size: var(--lv-fs-sm); font-weight: 650; color: var(--text-2); text-align: center;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%; font-size: clamp(10px, 1.15vmin, 22px); font-weight: 650; line-height: 1.15; color: var(--text-2); text-align: center;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  min-height: 2.3em;
 }
+.live-fader-caption { margin: 0; font-size: var(--lv-fs-sm); color: var(--text-3); }
 
 /* ------------------------------------------------------------ confirm, status */
 .live-confirm {
@@ -345,9 +358,10 @@ html.is-live, html.is-live body { overflow: hidden; }
 .live-status { margin: 0; min-height: 1.3em; font-size: var(--lv-fs); color: var(--text-2); }
 
 /* ------------------------------------------------------------- medium widths */
-@media (max-width: 1300px) {
+@media (max-width: 2200px) {
   .live-head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "songs readouts" "actions actions"; }
   .live-actions { justify-content: flex-start; }
+  .live-counter-nums, .live-clock-num { font-size: var(--lv-fs-lg); }
 }
 
 /* ---------------------------- phones and portrait: pads above, controls scroll */
@@ -360,14 +374,24 @@ html.is-live, html.is-live body { overflow: hidden; }
   .live-actions .live-btn { flex: 1 1 auto; }
   .live-body { grid-template-columns: minmax(0, 1fr); container-type: inline-size; }
   .live-pads { width: 100%; height: auto; aspect-ratio: 1 / 1; max-width: 100cqw; }
-  .live-controls { grid-template-rows: auto auto; }
+  .live-controls { grid-template-rows: auto auto auto; }
   .live-faders { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); grid-auto-rows: clamp(170px, 30vh, 280px); }
 }
-@media (max-width: 420px) {
+@media (max-width: 520px) {
   .live-root { --lv-gap: 7px; --lv-hit: 44px; }
-  .live-btn { padding: 0 9px; }
-  .live-actions .live-btn span { font-size: var(--lv-fs-sm); }
+  /* Compact header: Now and Next side by side, one row of icon buttons. */
+  .live-songs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .live-now-name { font-size: var(--lv-fs-lg); }
+  .live-next-name { font-size: var(--lv-fs); }
+  .live-now, .live-next, .live-counter, .live-clock { padding: 6px 8px; }
+  .live-counter, .live-clock { flex-direction: row; align-items: baseline; justify-content: center; gap: .5em; }
+  .live-counter-nums, .live-clock-num { font-size: var(--lv-fs); }
+  .live-actions { flex-wrap: nowrap; }
+  .live-actions .live-btn { flex: 1 1 0; min-width: 0; padding: 0; }
+  .live-actions .live-btn > span:not(.live-lock-fill):not(.live-lock-icon) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .live-actions .live-btn .icon { width: 22px; height: 22px; }
   .live-pad-label { font-size: 15px; }
+  .live-pad-sub { display: none; }
   .live-tempo-read { min-width: 3.6em; }
 }
 /* Short landscape screens (phones on their side). */

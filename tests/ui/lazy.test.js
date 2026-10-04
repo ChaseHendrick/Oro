@@ -56,6 +56,7 @@ describe('lazy chunks (2.11)', () => {
     const want = {
       settings: 'openSettings', help: 'openHelp', golf: 'startGolf', terrainLibrary: 'openTerrainLibrary',
       realPlaces: 'openRealPlaces', dataPanel: 'openDataPanel', formula: 'openFormulaTerrain', imprint: 'openImprint', soundMap: 'openSoundMap',
+      live: 'toggleLive',   // 2.12 live mode
     };
     expect(Object.keys(chunks).sort()).toEqual(Object.keys(want).sort());
     for (const [k, fn] of Object.entries(want)) {

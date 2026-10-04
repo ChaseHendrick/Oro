@@ -204,6 +204,7 @@ export function chordName(notes) {
 /**
  * Sixteen pads built from what the session has:
  *   row 1  your saved scenes, then sections (pattern N on every track) the session has;
+ *          with neither, solos of tracks 1 to 4;
  *   row 2  mutes of tracks 1 to 4;
  *   row 3  the first four pads of the first drum kit track, otherwise four chords in the key;
  *   row 4  the selected track's patterns 1 to 4.
@@ -226,6 +227,12 @@ export function defaultPads(state, scenes = []) {
   const maxPatterns = parts.reduce((m, p) => Math.max(m, Array.isArray(p && p.patterns) ? p.patterns.length : 0), 0);
   for (let k = 0; row1.length < 4 && k < maxPatterns && maxPatterns > 1; k++) {
     row1.push({ type: 'section', pattern: k, label: `Section ${k + 1}`, color: color(row1.length + 2), quant: 'bar' });
+  }
+  // Nothing to switch between: solos of tracks 1 to 4 fill the row instead.
+  for (let t = 0; row1.length < 4 && t < Math.min(4, parts.length); t++) {
+    if (row1.length === 0 || row1.every(p => p.type === 'solo')) {
+      row1.push({ type: 'solo', track: t, label: `Solo ${str(parts[t].name, 16) || `Track ${t + 1}`}`, color: trackColor(t), quant: 'off' });
+    }
   }
   row1.forEach((p, i) => { pads[i] = p; });
 
