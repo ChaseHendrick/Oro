@@ -17,6 +17,7 @@ explains every feature in detail.
 * The piano roll shows a step that uses the octave row. The note sits on the pitch it plays, so it is not missing and a click there does not add a second copy.
 * Jam chat is delivered to everyone else once. The line uses the name from the list.
 * Mute, Deafen and Open mic switch off again when pressed. Join voice opens the microphone on the jam connection and plays other people through the page, not through the synth.
+* Match a sound can be closed without applying a patch, and its panel sits under the key bar instead of inside that row.
 
 ## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
 

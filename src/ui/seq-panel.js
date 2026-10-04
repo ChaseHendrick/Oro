@@ -329,10 +329,12 @@ export function createSeqPanel(ctx) {
     import('./sound-match.js').then((m) => {
       if (!soundMatch) {
         soundMatch = m.createSoundMatch(ctx);
-        soundBtn.after(soundMatch.panel);
+        globalBar.after(soundMatch.panel);
+        soundMatch.onToggle((on) => soundBtn.setAttribute('aria-expanded', on ? 'true' : 'false'));
         scope.add(soundMatch.dispose);
       }
-      soundMatch.open();
+      if (soundMatch.isOpen()) soundMatch.close();
+      else soundMatch.open();
     }).catch(() => ctx.toast?.('Match a sound could not load', { kind: 'error' }));
   });
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },

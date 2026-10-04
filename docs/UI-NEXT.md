@@ -28,6 +28,29 @@ dock is not a duplicate of the map. It is five different jobs forced into one sh
 On a laptop the strip is 236 px, and Sound, Seq, and Mix all scroll. The land, which is
 the reason to open Oro, is whatever space is left.
 
+## How much of the window is the land
+
+Counted from the CSS variables, not from a screenshot. Gutters are 8 px. The keyboard
+is 84 px, or 72 px when the window is shorter than 860 px. The dock is 262 px, or
+236 px on that short window. The map column is 328 px, or 268 px below 1360 px wide.
+
+| Window | Land size | Share of the window |
+|---|---|---|
+| 1280 x 800 | about 988 x 406 | 39% |
+| 1440 x 900 | about 1088 x 506 | 42% |
+| 1920 x 1080 | about 1568 x 644 | 49% |
+
+The other half is chrome. On a laptop the map column is about a quarter of the width,
+and it is open even when the player only wanted to drag the dot. Hiding that column
+is already possible. Hiding the dock and the keyboard is not, except the keyboard,
+which collapses to a 32 px bar. A Play view would give the land most of the 60% it
+does not have today.
+
+Match a sound was also evidence of the squeeze. Its panel was inserted into the key
+bar, a single row that does not wrap, so the file controls fought Key, Scale, and
+Swing for one line. It now sits under that bar, and it can close without applying
+a patch. That is a repair of the current layout, not the new one.
+
 ## What other people learned (and what not to take)
 
 Wave-terrain work that is public, not a product to imitate:

@@ -2415,7 +2415,7 @@ Help includes **Open Learn**. Eleven lessons cover the land, paths, aliasing, fi
 
 ### Match a sound (2.15)
 
-**Match a sound**, next to Match a song, takes an audio file and compares it with one cycle of each land and path. That cycle is the height of the land under the path, the same reading the voice uses, before the filter and the effects. It is experimental. Treat the result as a starting point, not a copy of the file.
+**Match a sound**, next to Match a song, takes an audio file and compares it with one cycle of each land and path. That cycle is the height of the land under the path, the same reading the voice uses, before the filter and the effects. It is experimental. Treat the result as a starting point, not a copy of the file. Press the button again, or Close, to put the panel away without changing the sound. The panel sits under the key bar, not inside it.
 
 ### Link and a plugin host (2.15)
 
