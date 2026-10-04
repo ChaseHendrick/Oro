@@ -9,6 +9,7 @@
 //     lock:       1                   absent: unlocked
 //     songChange: 'confirm' | 'now'   absent: 'bar' (song changes wait for the next bar)
 //     backdrop:   'map' | 'off'       absent: 'dim' (the 3D map, dimmed)
+//     look:       'app'               absent: 'dark' (live mode's own dark, high-contrast colours)
 //   }
 //
 //   pad   = { type, label, color, quant: 'off' | 'beat' | 'bar', ...fields of the type }
@@ -130,6 +131,7 @@ export function sanitizeLive(src) {
   if (src.lock === 1 || src.lock === true) out.lock = 1;
   if (src.songChange === 'confirm' || src.songChange === 'now') out.songChange = src.songChange;
   if (src.backdrop === 'map' || src.backdrop === 'off') out.backdrop = src.backdrop;
+  if (src.look === 'app') out.look = 'app';
   return Object.keys(out).length ? out : null;
 }
 
@@ -142,6 +144,7 @@ export function readLive(raw) {
     lock: s.lock ? 1 : 0,
     songChange: s.songChange || 'bar',
     backdrop: s.backdrop || 'dim',
+    look: s.look || 'dark',
   };
 }
 

@@ -10,6 +10,7 @@ export const SHORTCUTS = [
     { keys: ['C', 'V'], text: 'Keyboard velocity down / up' },
     { keys: ['R'], text: 'Record on / off (saves a WAV)' },
     { keys: ['Shift', 'P'], text: 'Preview the selected part with a short phrase (P alone plays a note)', join: '+' },
+    { keys: ['Shift', 'L'], text: 'Live mode: full-screen pads, setlist and big controls', join: '+' },
   ] },
   { group: 'Looper', items: [
     { keys: ['Q'], text: 'Loop: record, then play, then overdub' },
@@ -25,6 +26,12 @@ export const SHORTCUTS = [
     { keys: [','], text: 'Settings' },
     { keys: ['?'], text: 'Help' },
     { keys: ['Esc'], text: 'Close menus and dialogs, cancel MIDI learn' },
+  ] },
+  { group: 'Live mode', items: [
+    { keys: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'Q', 'W', 'E', 'R', 'T', 'Y'], text: 'Play pads 1 to 16 (in live mode the note keys are off)', compact: '1 ... 0, Q ... Y' },
+    { keys: ['Space'], text: 'Play / stop' },
+    { keys: ['Left', 'Right'], text: 'Previous / next song in the setlist (Up and Down too)' },
+    { keys: ['Esc'], text: 'Leave live mode (also when the lock is on)' },
   ] },
   { group: 'Knobs', items: [
     { keys: ['Drag'], text: 'Up / down (or left / right) to change' },
@@ -61,7 +68,7 @@ function activatesOnSpace(el) {
 
 /**
  * actions: { togglePlay, selectPart(i), help, settings, record, prevPatch, nextPatch, preview,
- *   loopMain, loopStop, loopUndo, loopClear, loopMute }
+ *   loopMain, loopStop, loopUndo, loopClear, loopMute, live }
  */
 export function installShortcuts({ layers, actions }) {
   function onKey(e) {
@@ -92,7 +99,9 @@ export function installShortcuts({ layers, actions }) {
     if (e.code === 'KeyQ' && actions.loopMain) { e.preventDefault(); if (e.shiftKey) actions.loopStop(); else actions.loopMain(); return; }
     if (e.code === 'KeyB' && actions.loopUndo) { e.preventDefault(); if (e.shiftKey) actions.loopClear(); else actions.loopUndo(); return; }
     if (e.code === 'KeyM' && !e.shiftKey && actions.loopMute) { e.preventDefault(); actions.loopMute(); return; }
-    if (e.code === 'KeyP' && e.shiftKey && actions.preview) { e.preventDefault(); actions.preview(); }
+    if (e.code === 'KeyP' && e.shiftKey && actions.preview) { e.preventDefault(); actions.preview(); return; }
+    // 2.12 live mode (L alone is a note key)
+    if (e.code === 'KeyL' && e.shiftKey && actions.live) { e.preventDefault(); actions.live(); }
   }
   document.addEventListener('keydown', onKey);
   return () => document.removeEventListener('keydown', onKey);

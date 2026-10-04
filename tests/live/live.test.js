@@ -54,7 +54,7 @@ describe('live setup: saved data and migration', () => {
     expect(JSON.stringify(migrateState(d))).toBe(JSON.stringify(migrateState(migrateState(d))));
     expect(sanitizeLive(null)).toBe(null);
     expect(sanitizeLive({})).toBe(null);
-    expect(sanitizeLive({ lock: 0, songChange: 'bar', backdrop: 'dim', setlist: [] })).toBe(null);
+    expect(sanitizeLive({ lock: 0, songChange: 'bar', backdrop: 'dim', look: 'dark', setlist: [] })).toBe(null);
     expect('live' in migrateState({ ...d, live: { lock: 0 } })).toBe(false);
   });
 
@@ -91,7 +91,8 @@ describe('live setup: saved data and migration', () => {
     const a = patchLive(undefined, { lock: 1 });
     expect(a).toEqual({ lock: 1 });
     expect(patchLive(a, { lock: 0 })).toBe(null);
-    expect(readLive(a)).toEqual({ pads: null, setlist: [], lock: 1, songChange: 'bar', backdrop: 'dim' });
+    expect(readLive(a)).toEqual({ pads: null, setlist: [], lock: 1, songChange: 'bar', backdrop: 'dim', look: 'dark' });
+    expect(patchLive(a, { lock: 0, look: 'app' })).toEqual({ look: 'app' });
   });
 
   it('loading a scene keeps the live setup, and saved scenes leave it out', () => {

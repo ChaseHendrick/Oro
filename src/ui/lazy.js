@@ -84,4 +84,5 @@ export const chunks = {
   formula: lazy(() => import('./formula-terrain.js')),
   imprint: lazy(() => import('./imprint-panel.js')),
   soundMap: lazy(() => import('./sound-map-view.js')),
+  live: lazy(() => import('../live/live-view.js')),   // 2.12 live performance mode
 };

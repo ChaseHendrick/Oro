@@ -435,6 +435,8 @@ export function createUI(root, modules = {}) {
       return null;
     }
   };
+  // 2.12 live performance mode (src/live/), loaded on first use: the top bar's Live button and Shift+L
+  ctx.toggleLive = () => chunks.live.run((m) => m.toggleLive(ctx), 'Live mode');
   const topbar = safely('top bar', () => createTopbar(ctx, topbarEl));
   if (topbar) scope.add(topbar.dispose);
   ctx.togglePlay = () => { if (topbar) topbar.togglePlay(); };   // v2.11 game controller Start button
@@ -532,6 +534,7 @@ export function createUI(root, modules = {}) {
       loopClear: () => { if (ctx.looper) ctx.looper.clear(); },
       loopMute: () => { if (ctx.looper) ctx.looper.toggleMute(); },
       nextPatch: () => { if (topbar) topbar.patch.step(1); },
+      live: () => ctx.toggleLive(),
       preview: async () => {
         if (!music || !has(music, 'preview')) { toast('Preview needs the music engine, which is not available here', { kind: 'info' }); return; }
         // A second Shift+P while the phrase plays stops it, like the Preview button.

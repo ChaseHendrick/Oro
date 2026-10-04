@@ -110,6 +110,12 @@ const P = {
   postcard: '<rect x="3.6" y="5.6" width="16.8" height="12.8" rx="1.8"/><path d="M13.2 9h4M13.2 12h4M13.2 15h2.6"/><path d="M6.4 15.2l2.2-3 1.8 2.2"/>',
   gamepad: '<path d="M7.4 7.6h9.2a4.2 4.2 0 0 1 4.1 3.4l.9 4.6a2.4 2.4 0 0 1-4.1 2.1l-2-2.1H8.5l-2 2.1a2.4 2.4 0 0 1-4.1-2.1l.9-4.6a4.2 4.2 0 0 1 4.1-3.4z"/><path d="M8 10.4v3.2M6.4 12h3.2"/><circle cx="15.6" cy="11" r=".9" fill="currentColor" stroke="none"/><circle cx="17.4" cy="12.8" r=".9" fill="currentColor" stroke="none"/>',
   ghost: '<path d="M6.2 19.6V10.4a5.8 5.8 0 0 1 11.6 0v9.2l-1.9-1.5-1.9 1.5-2-1.5-2 1.5-1.9-1.5z"/><circle cx="10" cy="10.6" r=".9" fill="currentColor" stroke="none"/><circle cx="14" cy="10.6" r=".9" fill="currentColor" stroke="none"/>',
+  // 2.12 live mode: four pads (one lit), a padlock open and shut, leave full screen, a setlist
+  live: '<rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6" fill="currentColor" stroke="none"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/>',
+  lock: '<rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2"/><path d="M8.4 10.6V7.8a3.6 3.6 0 0 1 7.2 0v2.8"/><path d="M12 14.2v2.4"/>',
+  unlock: '<rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2"/><path d="M8.4 10.6V7.8a3.6 3.6 0 0 1 6.9-1.5"/><path d="M12 14.2v2.4"/>',
+  'exit-full': '<path d="M9 4.6V9H4.6M15 4.6V9h4.4M9 19.4V15H4.6M15 19.4V15h4.4"/>',
+  setlist: '<path d="M9.4 7h10M9.4 12h10M9.4 17h10"/><g fill="currentColor" stroke="none"><circle cx="5.4" cy="7" r="1.1"/><circle cx="5.4" cy="12" r="1.1"/><circle cx="5.4" cy="17" r="1.1"/></g>',
 };
 
 export function icon(name, { size, cls = '' } = {}) {
