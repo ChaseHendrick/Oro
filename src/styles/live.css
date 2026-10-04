@@ -26,9 +26,9 @@ html.is-live, html.is-live body { overflow: hidden; }
 }
 .live-root *, .live-root .layer-host > * { -webkit-app-region: no-drag; app-region: no-drag; }
 /* Dialogs, menus and toasts keep the app's normal type size inside live mode;
-   toasts sit in the bottom right corner, off the pads. */
+   toasts sit at the top centre, over the Next box, off the pads and faders. */
 .live-root > .layer-host { font-size: var(--fs); }
-.live-root .toasts { left: auto; right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); transform: none; }
+.live-root .toasts { top: max(12px, env(safe-area-inset-top, 0px)); bottom: auto; left: 50%; right: auto; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); }
 
 /* Stage dark (the default): the dark theme's tokens, whatever the app uses. */
 .live-root:not([data-look="app"]) {
