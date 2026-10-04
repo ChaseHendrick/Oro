@@ -43,4 +43,22 @@ describe('piano roll panel', () => {
     expect(roll.isOpen()).toBe(false);
     roll.dispose();
   });
+
+  it('keeps a lane that is longer than the pattern when a point is drawn', () => {
+    const store = createStore(defaultState());
+    store.set('parts.0.patterns.0.length', 8);
+    store.set('parts.0.patterns.0.lane', { id: 'cutoff', curve: Array.from({ length: 64 }, () => 0.8) });
+    const roll = createPianoRoll({ store });
+    roll.open();
+    dom.flush();
+    const curve = roll.el.querySelector('.roll-curve');
+    curve.dispatchEvent({ type: 'pointerdown', clientX: 0, clientY: 10, buttons: 1 });
+    const lane = store.get('parts.0.patterns.0.lane');
+    expect(lane.id).toBe('cutoff');
+    expect(lane.curve).toHaveLength(32);
+    expect(lane.curve[0]).toBe(0);
+    expect(lane.curve[1]).toBe(0.8);
+    expect(lane.curve[31]).toBe(0.8);
+    roll.dispose();
+  });
 });

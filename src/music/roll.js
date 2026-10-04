@@ -65,7 +65,10 @@ export function notesOf(step) {
   if (!step || !step.on) return out;
   out.push({ ...cleanNote(step), first: true });
   const extras = step && Array.isArray(step.extras) ? step.extras : [];
-  for (const ex of extras) out.push({ ...cleanNote(ex), first: false });
+  for (const ex of extras) {
+    if (!ex || typeof ex !== 'object') continue;
+    out.push({ ...cleanNote(ex), first: false });
+  }
   return out;
 }
 
@@ -140,4 +143,25 @@ export function lanePointCount(length) {
 
 export function isLaneId(id) {
   return PLOCK_IDS.includes(id);
+}
+
+/**
+ * Move a lane with a pattern shift. Only the steps inside `length` rotate.
+ * Points past that length stay put, same as the steps past the length.
+ * Returns null when there is no lane to move.
+ */
+export function shiftLane(lane, length, dir = 1) {
+  if (!lane || typeof lane !== 'object' || !Array.isArray(lane.curve) || !isLaneId(lane.id)) return null;
+  const len = clamp(Math.round(length) || 16, 1, 16);
+  const d = dir < 0 ? -1 : 1;
+  const curve = lane.curve.map((v) => clamp(typeof v === 'number' && Number.isFinite(v) ? v : 0, 0, 1));
+  const head = curve.slice(0, len * 4);
+  while (head.length < len * 4) head.push(head.length ? head[head.length - 1] : 0);
+  const rotated = head.map((_, i) => {
+    const step = Math.floor(i / 4);
+    const q = i % 4;
+    const src = ((step - d) % len + len) % len;
+    return head[src * 4 + q];
+  });
+  return { id: lane.id, curve: [...rotated, ...curve.slice(len * 4)] };
 }

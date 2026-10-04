@@ -295,29 +295,39 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
           Math.min(0.01, (tiNext - ti) / 2), slice);
       }
     }
-    playExtras(p, step, seq, t, tNext, rate, lead);
+    playExtras(p, step, seq, t, tNext, rate, lead, note);
   }
 
-  /** Extra notes on a step. They do not use slide, ratchet or the tie. */
-  function playExtras(p, step, seq, t, tNext, rate, lead) {
+  /**
+   * Extra notes on a step. They do not use slide, ratchet or the tie.
+   * They use the step's slice when it has one. A pitch the first note
+   * already plays is skipped, so a later release cannot cut that note.
+   */
+  function playExtras(p, step, seq, t, tNext, rate, lead, skipNote) {
     if (!Array.isArray(step.extras)) return;
     const span = tNext - t;
+    const slice = stepSlice(step);
+    const seen = new Set();
+    if (skipNote != null) seen.add(skipNote);
     for (const ex of step.extras) {
       if (!ex) continue;
       const q = clamp(Math.round(ex.q) || 0, 0, 3);
-      const tE = t + span * q / 4;
       const midi = clamp(stepToMidi(ex, seq.baseOctave ?? 3, store.get('global.scaleRoot') || 0, store.get('global.scaleType') || 0), 0, 127);
+      if (seen.has(midi)) continue;
+      seen.add(midi);
+      const tE = t + span * q / 4;
       const vel = clamp(Number.isFinite(ex.vel) ? ex.vel : 0.8, 0.01, 1);
       const gateSec = clamp(ex.gate ?? 0.5, 0.05, 1) * rate * spb;
       const gateEnd = Math.max(tE + 0.01, Math.min(tE + gateSec, tNext - MIN_GAP));
-      router._engineOn(p, midi, vel, tE, 'seq', lead, null);
+      router._engineOn(p, midi, vel, tE, 'seq', lead, slice);
       router._engineOff(p, midi, gateEnd, 'seq', lead);
     }
   }
 
   /**
    * One automation lane for the pattern. A step lock on the same parameter
-   * wins for that whole step. The knob value returns when the lane stops.
+   * wins for that whole step. The knob value returns when the lane stops,
+   * when the lane moves to a different control, or when a step has no curve.
    */
   function applyLane(p, seq, step, idx, t, tNext, lead) {
     const st = ps[p];
@@ -325,23 +335,35 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     const id = lane && lane.id;
     const locked = stepPlocks(step);
     const blocked = !!(id && locked && Object.prototype.hasOwnProperty.call(locked, id));
-    if (!id || !Array.isArray(lane.curve) || blocked || !PART_PARAM_MAP[id]) {
-      if (st.laneId && !blocked) {
-        router._engineParams(p, { [st.laneId]: ownValue(p, st.laneId) }, t, lead);
-      }
-      if (!id || blocked) st.laneId = null;
+    const valid = !!(id && !blocked && Array.isArray(lane.curve) && PART_PARAM_MAP[id]);
+    if (!valid) {
+      // A lock on this same control owns the value. Do not also write the knob back.
+      if (!(blocked && st.laneId === id)) releaseLane(p, st, t, lead);
+      else st.laneId = null;
       return;
     }
+    if (st.laneId && st.laneId !== id) releaseLane(p, st, t, lead);
     const def = PART_PARAM_MAP[id];
     const span = Math.max(0, tNext - t);
     const base = idx * 4;
+    let wrote = false;
     for (let q = 0; q < 4; q++) {
       const u = lane.curve[base + q];
       if (typeof u !== 'number' || !Number.isFinite(u)) continue;
+      wrote = true;
       router._engineParams(p, { [id]: fromNorm(def, clamp(u, 0, 1)) }, t + span * q / 4, lead);
+    }
+    if (!wrote) {
+      releaseLane(p, st, t, lead);
+      return;
     }
     st.laneId = id;
     st.plockLast = Math.max(st.plockLast || 0, t);
+  }
+  function releaseLane(p, st, t, lead) {
+    if (!st.laneId) return;
+    router._engineParams(p, { [st.laneId]: ownValue(p, st.laneId) }, t, lead);
+    st.laneId = null;
   }
   function ownValue(p, id) {
     const v = store.get(`parts.${p}.params.${id}`);

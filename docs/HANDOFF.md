@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-04 for Oro 2.15.0 (section 0 is the current state; see 10.10). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-04 for Oro 2.15.1 (section 0 is the current state; see 10.11). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -8,42 +8,18 @@ separate future features; they are outside the 2.0 expansion.
 
 ---
 
-## 0. Read first: where things stand (2026-10-04, Oro 2.15.0)
+## 0. Read first: where things stand (2026-10-04, Oro 2.15.1)
 
-* **Code:** Oro **2.15.0** is this branch, not yet the website. The live site and the
-  GitHub Release are still **2.14.0** until this lands on `main`. A push to `main`
-  runs `.github/workflows/desktop.yml` and publishes the desktop release. Do not
-  merge until "Test and build the web app" is green on the commit that will land.
-* **In 2.15.0:** piano roll (quarter-step extras, one lane, step locks win, numbers
-  line up with the grid, tap a note to erase it), Jam (up to five invite codes,
-  chat both ways, key notes held to a shared clock, push-to-talk voice that never
-  enters the engine), Learn (11 lessons, two badges), Match a sound (one real
-  cycle of the land under the path, not the filter chain), Link controls that
-  report "Not in this build" because the GPL library is not vendored, and a plugin
-  host contract behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
-* **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout
-  (a Play view that gives the land the window, Shape / Move / Time around it).
-  It is not built. Do not start that layout unless the owner asks.
-* **Still not done:** a compiled plugin, a real Link session (the library is GPL
-  and is not in this MIT repo), a TURN relay, a jam tried on two real computers,
-  a Playwright two-browser run, live multi-out, and the hardware checks in 10.6.
-* **Checks:** full Vitest suite on this machine, 1917 passed and 1 failed (the
-  lazy chunk list). That list was updated and `tests/ui/lazy.test.js` then passed.
-  Not re-run as a second full pass after that one-line test fix.
-* **Branches:** do not reuse `claude/oro-2.13` (its PR was squash-merged). This
-  release belongs on a new branch. Do not force-push.
-* **Website:** `vercel.json` ignoreCommand builds production and `main` only.
-  Do not change that. The site stays on 2.14.0 until a later update of the music
-  page `softwareVersion` and the copied `dist`.
-* **App version:** bump only `package.json`. Do not edit the v2.13.0 tag fixture
-  in `tests/packaging/mac-update.test.js`.
-* **CPU timing test:** `tests/dsp/perf.test.js` measures about 36 to 38% on the Claude
-  container (limit 35%) for both main and new code, but passes on GitHub CI. It re-measures
-  once when a case is over. Compare with `node dev/dsp/bench.mjs 1` on main and the branch
-  back to back before blaming new code.
-* **Agents:** never run broad `pkill` (it killed other agents' tests once); kill only your
-  own PIDs. Chromium checks here need `--disable-3d-apis --disable-webgl` (software WebGL runs
-  at about 1 frame per second at 5120x2160).
+* **Code:** Oro **2.15.1** is this branch. GitHub Release **2.15.0** is what `main` published. A push to `main` runs `.github/workflows/desktop.yml` and publishes the desktop release. Do not merge until "Test and build the web app" is green on the commit that will land.
+* **In 2.15.1:** bug fixes on the 2.15.0 piano roll, jam, lessons and tempo lock. The lane moves with Shift and is removed by Clear. A failed invite does not burn a slot. Leave sends note-offs and goodbye. See 10.11. The 2.15.0 features are still: piano roll (quarter-step extras, one lane, step locks win), Jam (up to five invite codes, chat both ways, key notes on a shared clock, push-to-talk voice that never enters the engine), Learn (11 lessons, two badges), Match a sound (one real cycle of the land under the path), Link controls that report "Not in this build" because the GPL library is not vendored, and a plugin host contract behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
+* **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout (a Play view that gives the land the window, Shape / Move / Time around it). It is not built. Do not start that layout unless the owner asks.
+* **Still not done:** a compiled plugin, a real Link session (the library is GPL and is not in this MIT repo), a TURN relay, a jam tried on two real computers, a Playwright two-browser run, live multi-out, and the hardware checks in 10.6.
+* **Checks:** run the Vitest suite on the commit that will land. The CPU timing test can fail on a busy machine and still pass on GitHub CI.
+* **Branches:** do not reuse `claude/oro-2.15` (its PR was squash-merged). This patch belongs on a new branch. Do not force-push.
+* **Website:** `vercel.json` ignoreCommand builds production and `main` only. Do not change that. Update the music page `softwareVersion` and the copied `dist` after this release is live. The live site was still the previous copy when this note was written.
+* **App version:** bump only `package.json`. Do not edit the v2.13.0 tag fixture in `tests/packaging/mac-update.test.js`.
+* **CPU timing test:** `tests/dsp/perf.test.js` measures about 36 to 38% on the Claude container (limit 35%) for both main and new code, but passes on GitHub CI. It re-measures once when a case is over. Compare with `node dev/dsp/bench.mjs 1` on main and the branch back to back before blaming new code.
+* **Agents:** never run broad `pkill` (it killed other agents' tests once); kill only your own PIDs. Chromium checks here need `--disable-3d-apis --disable-webgl` (software WebGL runs at about 1 frame per second at 5120x2160).
 
 ---
 
@@ -743,7 +719,7 @@ Shipped in 2.14.0 (`package.json` is 2.14.0) on `claude/oro-2.13`.
 
 ### 10.10 Oro 2.15.0: piano roll, jam, learn, sound match, Link, plugin contract
 
-On a new branch, not merged. `package.json` is 2.15.0.
+Shipped on `main` as release v2.15.0. `package.json` for that release was 2.15.0. The patch on top is 10.11.
 
 * **Piano roll** (`src/music/roll.js`, `src/ui/piano-roll.js`). Optional `step.q` (1 to 3),
   `step.extras` (at most 8), and `pattern.lane` (one id from `PLOCK_IDS`, curve length
@@ -777,4 +753,15 @@ On a new branch, not merged. `package.json` is 2.15.0.
 * **Desktop CSP** allows `stun:stun.l.google.com:19302` on connect-src. No http origin
   was added.
 * **Checked:** Vitest, see section 0. Unity looper playback was not re-bench tested.
+
+### 10.11 Oro 2.15.1: lane, jam notes, glossary, tempo lock
+
+Patch on 2.15.0. `package.json` is 2.15.1.
+
+* **Lane.** `shiftLane` in `src/music/roll.js` rotates the curve with Shift (the tail past the pattern length stays). Clear sets `lane` to null. `sanitizePattern` keeps a curve whose length is not `pattern.length * 4`, instead of dropping it. `applyLane` writes the knob back when the lane id changes, when the lane stops, or when a step has no samples. A step lock on that same id still wins the whole step. Drawing a point on a curve that is longer than the current length keeps the existing points.
+* **Piano roll notes.** Extras use `stepSlice`. A MIDI pitch the first note already plays is not played again.
+* **Jam.** A failed offer calls `host.drop` and closes the peer connection. Apply reply uses `readReply` and the slot map, not only the latest `pending`. Leave calls `releaseSent` (note-offs, then bye) before it closes. A guest bye emits `bye` and frees the slot. `sys` leave silences that person's notes. `playRemote` passes `onAt` into `scheduleNote`, and holds a note-off that arrives before its note-on. The ping interval is set again from `pingInterval(clock.count)` after each pong. Start or Join closes an existing connection first.
+* **Learn.** Glossary markup allows a capital id and looks it up in lowercase, so Nyquist, Filter and LFO become buttons.
+* **Tempo.** `setReadOnly` blocks drag, wheel, arrows and commit. Live mode disables its tempo buttons while Link is on, a plugin host is set, or external MIDI clock is active.
+* **Not claimed:** a compiled plugin, vendored Link, TURN, a jam on two real computers, Playwright jam, live multi-out. Voice still does not enter the engine. Host Mute mic still only sets a moderation flag. It does not stop that person's audio.
 

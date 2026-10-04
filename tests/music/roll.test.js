@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { defaultStep, stepToMidi, defaultPattern } from '../../src/core/params.js';
 import { sanitizePattern } from '../../src/core/migrate.js';
-import { paintNote, eraseNote, midiToDegree, notesOf, quarterTime, laneAt } from '../../src/music/roll.js';
+import { paintNote, eraseNote, midiToDegree, notesOf, quarterTime, laneAt, shiftLane } from '../../src/music/roll.js';
 
 describe('piano roll notes', () => {
   it('paints the first note onto the step and omits a zero quarter', () => {
@@ -47,8 +47,11 @@ describe('piano roll notes', () => {
     const skipped = sanitizePattern({ length: 16, steps: [{ on: 1, extras: [{ degree: 1 }, null, { degree: 4 }] }] }, 1);
     expect(skipped.steps[0].extras.map((e) => e.degree)).toEqual([1, 4]);
     expect(notesOf({ on: 0, degree: 0, extras: [{ degree: 3, octave: 0 }] })).toEqual([]);
+    expect(notesOf({ on: 1, degree: 1, extras: [{ degree: 2 }, null, { degree: 4 }] }).map((n) => n.degree)).toEqual([1, 2, 4]);
     expect(kept.lane.id).toBe('cutoff');
     expect(kept.lane.curve).toHaveLength(64);
+    expect(sanitizePattern({ length: 8, lane: { id: 'cutoff', curve } }, 1).lane.curve).toHaveLength(64);
+    expect(sanitizePattern({ length: 16, lane: { id: 'resonance', curve: [0.2, 0.4] } }, 1).lane.curve).toEqual([0.2, 0.4]);
     expect(sanitizePattern({ lane: { id: 'nope', curve } }, 1).lane).toBeUndefined();
   });
 
@@ -56,5 +59,14 @@ describe('piano roll notes', () => {
     expect(quarterTime(1, 1.5, 0)).toBe(1);
     expect(quarterTime(1, 1.5, 2)).toBeCloseTo(1.25);
     expect(laneAt({ curve: [0, 0.5, 1, 0.2] }, 0, 1, 16)).toBe(0.5);
+  });
+
+  it('shifts the lane with the steps and leaves the tail', () => {
+    const lane = { id: 'cutoff', curve: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.7] };
+    const right = shiftLane(lane, 4, 1);
+    expect(right.curve.slice(0, 4)).toEqual([0, 0, 0, 1]);
+    expect(right.curve.slice(4, 8)).toEqual([1, 0, 0, 0]);
+    expect(right.curve[16]).toBe(0.7);
+    expect(shiftLane(null, 4, 1)).toBeNull();
   });
 });

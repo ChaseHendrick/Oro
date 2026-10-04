@@ -83,7 +83,7 @@ export function createHostRoom({ name = 'Host', jam = 'jamroom1', now = () => Da
       emit('chat', down);
       return;
     }
-    if (msg.t === 'bye') remove(id);
+    if (msg.t === 'bye') { emit('bye', { id }); remove(id); return; }
   }
 
   function remove(id) {
@@ -113,10 +113,11 @@ export function createHostRoom({ name = 'Host', jam = 'jamroom1', now = () => Da
       if (!msg) return;
       broadcast({ t: 'note', from: HOST_ID, track: msg.track, n: msg.n, v: msg.v, at: msg.at });
     },
+    postBye() { broadcast({ t: 'bye' }); },
   };
 }
 
-export function createGuestRoom({ link, name = 'Guest', onNote, onChat, onPong, onRoster } = {}) {
+export function createGuestRoom({ link, name = 'Guest', onNote, onChat, onPong, onRoster, onBye, onSys } = {}) {
   const chat = createChat();
   const seen = [];
   link.onmessage((raw) => {
@@ -130,6 +131,8 @@ export function createGuestRoom({ link, name = 'Guest', onNote, onChat, onPong, 
     if (msg.t === 'note' && typeof onNote === 'function') onNote(msg);
     if (msg.t === 'pong' && typeof onPong === 'function') onPong(msg);
     if (msg.t === 'roster' && typeof onRoster === 'function') onRoster(msg);
+    if (msg.t === 'bye' && typeof onBye === 'function') onBye(msg);
+    if (msg.t === 'sys' && typeof onSys === 'function') onSys(msg);
   });
   link.send(encodeMessage({ t: 'hello', v: PROTOCOL_VERSION, name }));
   return {

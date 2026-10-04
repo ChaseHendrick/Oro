@@ -244,10 +244,11 @@ export function openLive(ctx) {
     playBtn.classList.toggle('is-on', on);
     const clock = midi && midi.externalClock;
     const ext = !!(clock && clock.active);
+    const locked = ext || !!(ctx.link && ctx.link.on) || !!ctx.plugin;
     const bpm = ext && clock.bpm ? clock.bpm : Number(store.get('global.tempo')) || 0;
     setText(tempoNum, String(Math.round(bpm)));
     setText(tempoUnit, ext ? 'BPM, external clock' : 'BPM');
-    tempoDown.disabled = tempoUp.disabled = tapBtn.disabled = ext;
+    tempoDown.disabled = tempoUp.disabled = tapBtn.disabled = locked;
   }
 
   function renderSetup() {

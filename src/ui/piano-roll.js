@@ -228,6 +228,23 @@ export function createPianoRoll(ctx) {
   scope.on(curve, 'pointerdown', (e) => setCurve(e));
   scope.on(curve, 'pointermove', (e) => { if (e.buttons & 1) setCurve(e); });
 
+  function takenCurve(pat, length) {
+    const n = lanePointCount(length);
+    const def = PART_PARAM_MAP[laneId];
+    const raw = store.get(`parts.${sel()}.params.${laneId}`);
+    const base = toNorm(def, typeof raw === 'number' ? raw : def.default);
+    const same = pat.lane && pat.lane.id === laneId && Array.isArray(pat.lane.curve);
+    if (!same) return Array.from({ length: n }, () => base);
+    let last = base;
+    const prev = [];
+    for (let i = 0; i < n; i++) {
+      const u = pat.lane.curve[i];
+      if (typeof u === 'number' && Number.isFinite(u)) last = clamp(u, 0, 1);
+      prev.push(typeof u === 'number' && Number.isFinite(u) ? clamp(u, 0, 1) : last);
+    }
+    return prev;
+  }
+
   function setCurve(e) {
     const rect = curve.getBoundingClientRect();
     const pat = pattern();
@@ -236,12 +253,7 @@ export function createPianoRoll(ctx) {
     if (!rect.width || !rect.height) return;
     const i = clamp(Math.floor(((e.clientX - rect.left) / rect.width) * n), 0, n - 1);
     const u = clamp(1 - (e.clientY - rect.top) / rect.height, 0, 1);
-    const def = PART_PARAM_MAP[laneId];
-    const raw = store.get(`parts.${sel()}.params.${laneId}`);
-    const base = toNorm(def, typeof raw === 'number' ? raw : def.default);
-    const prev = pat.lane && pat.lane.id === laneId && Array.isArray(pat.lane.curve) && pat.lane.curve.length === n
-      ? pat.lane.curve.slice()
-      : Array.from({ length: n }, () => base);
+    const prev = takenCurve(pat, length);
     prev[i] = u;
     store.set(`${path()}.lane`, { id: laneId, curve: prev }, { source: 'ui' });
   }
