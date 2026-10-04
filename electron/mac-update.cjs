@@ -15,7 +15,7 @@
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/ChaseHendrick/synth/releases/download/';
+const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/ChaseHendrick/Oro/releases/download/';
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_ZIP_BYTES = 1024 * 1024 * 1024;
 const MAX_REDIRECTS = 5;

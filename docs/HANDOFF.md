@@ -36,7 +36,7 @@ It ships as:
 
 * a web app: https://hendrickresearch.com/music/oro/ (served by the owner's website);
 * desktop apps for Mac, Windows and Linux, plus a single offline HTML file, attached to
-  GitHub Releases: https://github.com/ChaseHendrick/synth/releases/latest
+  GitHub Releases: https://github.com/ChaseHendrick/Oro/releases/latest
 
 Tech: plain JavaScript ES modules (no framework, no TypeScript), Vite 8, three.js for the
 3D view, Rapier (physics, lazy loaded) for the rolling-marble mode, Web Audio
@@ -47,7 +47,7 @@ tests, Playwright (Chromium) for browser checks. Node 22.
 
 | Repo | What | Default branch | Deploys |
 |---|---|---|---|
-| `ChaseHendrick/synth` | the synth (this repo) | `main` | every push to `main` builds the desktop apps and publishes a GitHub Release for the version in `package.json` (`.github/workflows/desktop.yml`) |
+| `ChaseHendrick/Oro` | Oro | `main` | every push to `main` builds the desktop apps and publishes a GitHub Release for the version in `package.json` (`.github/workflows/desktop.yml`) |
 | `ChaseHendrick/hendrickresearch.com` | the owner's website (Vite + TypeScript) | `main` | Vercel deploys `main` to hendrickresearch.com. Pull request previews are skipped (storage); see the website bullet in section 0 |
 | `ChaseHendrick/music-field-manual` | the owner's notes, **PolyForm licensed** | | use facts from it only, never copy code |
 

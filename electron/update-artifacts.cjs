@@ -24,7 +24,7 @@ function verifyUpdateArtifacts(root, platform) {
   const first = fs.readFileSync(configs[0], 'utf8');
   for (const file of configs) {
     const config = yaml.load(fs.readFileSync(file, 'utf8'));
-    if (config.provider !== 'github' || config.owner !== 'ChaseHendrick' || config.repo !== 'synth' || config.private === true || config.token) throw new Error('Unexpected update provider.');
+    if (config.provider !== 'github' || config.owner !== 'ChaseHendrick' || config.repo !== 'Oro' || config.private === true || config.token) throw new Error('Unexpected update provider.');
   }
   // Runtime configs already live inside every app. Publish a platform-labelled
   // copy as well so release metadata can be audited without opening a bundle.

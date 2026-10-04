@@ -36,7 +36,7 @@ describe('desktop Updates settings', () => {
     const panel = createUpdatesTab({}, { version: '2.0.0', api: null });
     expect(panel.el.textContent).toContain('downloaded app');
     expect(button(panel, 'Check now').getAttribute('hidden')).toBe('');
-    expect(panel.el.querySelector('a').getAttribute('href')).toBe('https://github.com/ChaseHendrick/synth/releases/latest'); panel.dispose();
+    expect(panel.el.querySelector('a').getAttribute('href')).toBe('https://github.com/ChaseHendrick/Oro/releases/latest'); panel.dispose();
   });
   it('uses a manual-release notice for ad hoc Mac and portable/archive builds', async () => {
     const { api } = bridge({ status: 'available', availableVersion: '2.0.1', capability: { kind: 'manual', supportsCheck: true, supportsInstall: false, reason: 'This Mac build is ad hoc signed.' } });

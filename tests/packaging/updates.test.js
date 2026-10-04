@@ -159,14 +159,14 @@ describe('updater IPC, persistence and metadata', () => {
     const root = directory(), resource = path.join(root, 'win-unpacked', 'resources'); fs.mkdirSync(resource, { recursive: true });
     const bytes = Buffer.from('real installer fixture'), filename = 'Oro-windows-setup.exe'; fs.writeFileSync(path.join(root, filename), bytes);
     const metadata = { version: '2.0.0', files: [{ url: filename, sha512: crypto.createHash('sha512').update(bytes).digest('base64'), size: bytes.length }] };
-    fs.writeFileSync(path.join(root, 'latest.yml'), yaml.dump(metadata)); fs.writeFileSync(path.join(resource, 'app-update.yml'), yaml.dump({ provider: 'github', owner: 'ChaseHendrick', repo: 'synth' }));
+    fs.writeFileSync(path.join(root, 'latest.yml'), yaml.dump(metadata)); fs.writeFileSync(path.join(resource, 'app-update.yml'), yaml.dump({ provider: 'github', owner: 'ChaseHendrick', repo: 'Oro' }));
     expect(verifyUpdateArtifacts(root, 'windows')).toEqual(metadata); expect(fs.existsSync(path.join(root, 'Oro-app-update-windows.yml'))).toBe(true);
     fs.writeFileSync(path.join(root, filename), 'tampered'); expect(() => verifyUpdateArtifacts(root, 'windows')).toThrow('integrity'); fs.writeFileSync(path.join(root, filename), bytes);
-    fs.writeFileSync(path.join(resource, 'app-update.yml'), yaml.dump({ provider: 'github', owner: 'someone', repo: 'synth' })); expect(() => verifyUpdateArtifacts(root, 'windows')).toThrow('provider');
+    fs.writeFileSync(path.join(resource, 'app-update.yml'), yaml.dump({ provider: 'github', owner: 'someone', repo: 'Oro' })); expect(() => verifyUpdateArtifacts(root, 'windows')).toThrow('provider');
   });
   it('keeps public metadata and all existing binary filenames in the release workflow without disabling signature checks', () => {
     const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
-    expect(pkg.dependencies['electron-updater']).toBe('6.8.9'); expect(pkg.build.publish).toMatchObject({ provider: 'github', owner: 'ChaseHendrick', repo: 'synth', private: false }); expect(pkg.build.win.verifyUpdateCodeSignature).not.toBe(false);
+    expect(pkg.dependencies['electron-updater']).toBe('6.8.9'); expect(pkg.build.publish).toMatchObject({ provider: 'github', owner: 'ChaseHendrick', repo: 'Oro', private: false }); expect(pkg.build.win.verifyUpdateCodeSignature).not.toBe(false);
     const workflow = yaml.load(fs.readFileSync(new URL('../../.github/workflows/desktop.yml', import.meta.url), 'utf8'));
     const upload = workflow.jobs.desktop.steps.find(step => step.name === 'Upload packages').with.path;
     for (const pattern of ['release/Oro-*.dmg','release/Oro-*.zip','release/Oro-*.exe','release/Oro-*.AppImage','release/Oro-*.tar.gz','release/latest*.yml','release/Oro-*.blockmap']) expect(upload).toContain(pattern);

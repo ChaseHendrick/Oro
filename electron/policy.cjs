@@ -8,7 +8,7 @@ const APP_HOST = 'orograph';
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const START_URL = `${APP_ORIGIN}/index.html`;
 
-const REPO_URL = 'https://github.com/ChaseHendrick/synth';
+const REPO_URL = 'https://github.com/ChaseHendrick/Oro';
 const RELEASES_URL = `${REPO_URL}/releases/latest`;
 const ISSUES_URL = `${REPO_URL}/issues`;
 

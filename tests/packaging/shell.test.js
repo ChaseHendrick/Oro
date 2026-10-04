@@ -75,7 +75,7 @@ describe('policy', () => {
 
   it('sends web links to the browser and blocks dangerous schemes', () => {
     expect(policy.navigationAction('app://orograph/index.html')).toBe('allow');
-    expect(policy.navigationAction('https://github.com/ChaseHendrick/synth')).toBe('external');
+    expect(policy.navigationAction('https://github.com/ChaseHendrick/Oro')).toBe('external');
     expect(policy.navigationAction('http://example.com/x')).toBe('external');
     expect(policy.navigationAction('mailto:someone@example.com')).toBe('external');
     for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,hi', 'smb://host/share', 'app://evil/', 'mailto:', 'http://', 'garbage']) {
@@ -111,8 +111,8 @@ describe('menu', () => {
   it('links Help to the GitHub repository', () => {
     const help = build({ isMac: false, isPackaged: true }).find((m) => m.role === 'help');
     for (const item of help.submenu) if (item.click) item.click();
-    expect(opened).toContain('https://github.com/ChaseHendrick/synth');
-    expect(opened).toContain('https://github.com/ChaseHendrick/synth/releases/latest');
+    expect(opened).toContain('https://github.com/ChaseHendrick/Oro');
+    expect(opened).toContain('https://github.com/ChaseHendrick/Oro/releases/latest');
     expect(opened.every((u) => policy.isExternalUrl(u))).toBe(true);
   });
 });

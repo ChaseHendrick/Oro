@@ -17,7 +17,7 @@ const temporary = [];
 afterEach(() => { for (const root of temporary.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
 function directory(prefix = 'oro-mac-') { const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix)); temporary.push(root); return root; }
 const sha = bytes => crypto.createHash('sha512').update(bytes).digest('base64');
-const BASE = 'https://github.com/ChaseHendrick/synth/releases/download/v2.12.0/';
+const BASE = 'https://github.com/ChaseHendrick/Oro/releases/download/v2.12.0/';
 const plist = version => `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>\n<key>CFBundleName</key>\n<string>Oro</string>\n<key>CFBundleShortVersionString</key>\n<string>${version}</string>\n</dict></plist>`;
 
 /** A fake node:https serving `routes` (url -> { status, body, location }). */

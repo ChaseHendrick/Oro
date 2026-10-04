@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { trustedSender } = require('./updates.cjs');
-const RELEASE_API = 'https://api.github.com/repos/ChaseHendrick/synth/releases/latest';
+const RELEASE_API = 'https://api.github.com/repos/ChaseHendrick/Oro/releases/latest';
 
 function createUpdatePreferencesFile(file) {
   return {

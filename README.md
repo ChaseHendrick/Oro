@@ -126,17 +126,17 @@ few lines.
 ## Download
 
 Get the newest version from the
-**[Releases page](https://github.com/ChaseHendrick/synth/releases/latest)**,
+**[Releases page](https://github.com/ChaseHendrick/Oro/releases/latest)**,
 or use these direct links:
 
 | Your computer | Download |
 |---|---|
-| Mac with Apple silicon (M1 or newer) | [Oro-mac-arm64.dmg](https://github.com/ChaseHendrick/synth/releases/latest/download/Oro-mac-arm64.dmg) |
-| Mac with an Intel processor | [Oro-mac-x64.dmg](https://github.com/ChaseHendrick/synth/releases/latest/download/Oro-mac-x64.dmg) |
-| Windows 10 or 11, installer | [Oro-windows-setup.exe](https://github.com/ChaseHendrick/synth/releases/latest/download/Oro-windows-setup.exe) |
-| Windows, no installation needed | [Oro-windows-portable.exe](https://github.com/ChaseHendrick/synth/releases/latest/download/Oro-windows-portable.exe) |
-| Linux (64-bit PC) | [Oro-linux-x86_64.AppImage](https://github.com/ChaseHendrick/synth/releases/latest/download/Oro-linux-x86_64.AppImage) |
-| Any computer, in Chrome or Edge | [Oro.html](https://github.com/ChaseHendrick/synth/releases/latest/download/Oro.html) (see [Play in the browser](#play-in-the-browser)) |
+| Mac with Apple silicon (M1 or newer) | [Oro-mac-arm64.dmg](https://github.com/ChaseHendrick/Oro/releases/latest/download/Oro-mac-arm64.dmg) |
+| Mac with an Intel processor | [Oro-mac-x64.dmg](https://github.com/ChaseHendrick/Oro/releases/latest/download/Oro-mac-x64.dmg) |
+| Windows 10 or 11, installer | [Oro-windows-setup.exe](https://github.com/ChaseHendrick/Oro/releases/latest/download/Oro-windows-setup.exe) |
+| Windows, no installation needed | [Oro-windows-portable.exe](https://github.com/ChaseHendrick/Oro/releases/latest/download/Oro-windows-portable.exe) |
+| Linux (64-bit PC) | [Oro-linux-x86_64.AppImage](https://github.com/ChaseHendrick/Oro/releases/latest/download/Oro-linux-x86_64.AppImage) |
+| Any computer, in Chrome or Edge | [Oro.html](https://github.com/ChaseHendrick/Oro/releases/latest/download/Oro.html) (see [Play in the browser](#play-in-the-browser)) |
 
 Releases are built and published automatically by GitHub Actions from the `main`
 branch. Open the Releases page for the current assets and build status. You can also
@@ -217,7 +217,7 @@ No installation at all:
 * **Online:** <https://www.hendrickresearch.com/music/oro/> (this page goes live
   when the matching update to the Hendrick Research website is merged).
 * **Offline:** download **Oro.html** from the
-  [Releases page](https://github.com/ChaseHendrick/synth/releases/latest) and
+  [Releases page](https://github.com/ChaseHendrick/Oro/releases/latest) and
   double-click it. The whole synthesizer is inside that one file, so it works on a
   plane, in a practice room, or anywhere without internet.
 * **On your own website:** each release also has **Oro-web.zip**, the normal web
@@ -303,7 +303,7 @@ these commands in a terminal inside the project folder:
 
 Every change pushed to the `main` branch is built automatically for Mac, Windows and
 Linux by GitHub Actions and published on the
-[Releases page](https://github.com/ChaseHendrick/synth/releases/latest).
+[Releases page](https://github.com/ChaseHendrick/Oro/releases/latest).
 
 ## Project layout
 

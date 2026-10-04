@@ -8,10 +8,10 @@
   "type": "module",
   "main": "electron/main.cjs",
   "desktopName": "orograph.desktop",
-  "homepage": "https://github.com/ChaseHendrick/synth",
+  "homepage": "https://github.com/ChaseHendrick/Oro",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ChaseHendrick/synth.git"
+    "url": "https://github.com/ChaseHendrick/Oro.git"
   },
   "scripts": {
     "dev": "vite",
@@ -59,7 +59,7 @@
     "publish": {
       "provider": "github",
       "owner": "ChaseHendrick",
-      "repo": "synth",
+      "repo": "Oro",
       "private": false,
       "releaseType": "release"
     },

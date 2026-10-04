@@ -26,7 +26,7 @@ Drums are synthesized, not sampled: kick, snare, hat, clap, tom (pitched), ride,
 
 1. If Oro is open in the browser, call it there. `oro.play(scoreText)` plays now. `oro.play()` plays the score on the desk. `oro.compose({ style, bpm, key, mode, bars })` writes a score onto the desk. `oro.stop()`, `oro.schema()`, `oro.getScore()`. You can also `postMessage({ source: "oro-agent", type: "play", score: scoreText }, "*")`.
 2. If you have the site's origin, use HTTP. Do not invent a hostname. Ask, or use the origin of the Oro page the user already has. The contract is `GET /api/oro`. Composing is `POST /api/oro/compose`. Validating a score is `POST /api/oro`. Audio is `POST /api/oro/beat` (WAV) or `GET /api/oro/beat` for the default paced orchestra. CORS is open. No key.
-3. The downloadable Oro (Mac, Windows, Linux, and a single offline `Oro.html`) is the same instrument as a desktop app: [latest release](https://github.com/ChaseHendrick/synth/releases/latest). The score API is the website, not the desktop file.
+3. The downloadable Oro (Mac, Windows, Linux, and a single offline `Oro.html`) is the same instrument as a desktop app: [latest release](https://github.com/ChaseHendrick/Oro/releases/latest). The score API is the website, not the desktop file.
 
 ## How to make a piece
 

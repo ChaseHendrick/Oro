@@ -97,7 +97,7 @@ async function boot(page, url) {
     const updates = page.getByRole('tabpanel', { name: 'Updates', exact: true });
     assert.match(await updates.innerText(), /Desktop updates are available in the downloaded app/);
     const releases = updates.getByRole('link', { name: 'Download latest release', exact: true });
-    assert.equal(await releases.getAttribute('href'), 'https://github.com/ChaseHendrick/synth/releases/latest');
+    assert.equal(await releases.getAttribute('href'), 'https://github.com/ChaseHendrick/Oro/releases/latest');
     assert.equal(await updates.getByRole('button', { name: 'Check now', exact: true }).count(), 0);
     assert.equal(await updates.getByRole('button', { name: 'Restart and install', exact: true }).count(), 0);
     await page.keyboard.press('Escape');

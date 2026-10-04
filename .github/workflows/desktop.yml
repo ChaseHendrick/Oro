@@ -2,7 +2,7 @@ name: Desktop apps
 
 # Builds the Mac, Windows and Linux apps on every push and pull request.
 # Pushes to main (and v* tags) also publish everything to a GitHub Release, so
-# https://github.com/ChaseHendrick/synth/releases/latest always has the newest build.
+# https://github.com/ChaseHendrick/Oro/releases/latest always has the newest build.
 
 on:
   push:

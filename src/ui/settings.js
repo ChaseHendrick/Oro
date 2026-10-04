@@ -272,7 +272,7 @@ function aboutTab() {
       h('dt', null, 'License'), h('dd', null, 'MIT'),
       h('dt', null, 'Built with'), h('dd', null, 'three.js (MIT), Rapier physics (Apache-2.0), Web Audio and Web MIDI'),
       h('dt', null, 'Real data'), h('dd', null, REAL_DATA_CREDITS),
-      h('dt', null, 'Source'), h('dd', null, h('a', { href: 'https://github.com/ChaseHendrick/synth', target: '_blank', rel: 'noopener noreferrer' }, 'github.com/ChaseHendrick/synth', h('span', { html: icon('link') })))));
+      h('dt', null, 'Source'), h('dd', null, h('a', { href: 'https://github.com/ChaseHendrick/Oro', target: '_blank', rel: 'noopener noreferrer' }, 'github.com/ChaseHendrick/Oro', h('span', { html: icon('link') })))));
 }
 
 export function openSettings(ctx, initialTab = 'general', { onClose } = {}) {

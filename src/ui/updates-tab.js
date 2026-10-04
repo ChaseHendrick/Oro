@@ -2,7 +2,7 @@ import { h, createScope, setText } from './dom.js';
 import { SESSION_KEY } from '../core/session.js';
 import { writeDurable } from '../core/durable-storage.js';
 
-const RELEASES_URL = 'https://github.com/ChaseHendrick/synth/releases/latest';
+const RELEASES_URL = 'https://github.com/ChaseHendrick/Oro/releases/latest';
 
 /** Desktop updates use a narrow preload bridge. Browser/offline builds retain
  * the same fixed release link without requesting desktop permissions. */

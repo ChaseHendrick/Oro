@@ -1,10 +1,10 @@
 {
   "main": "electron/main.cjs",
   "desktopName": "orograph.desktop",
-  "homepage": "https://github.com/ChaseHendrick/synth",
+  "homepage": "https://github.com/ChaseHendrick/Oro",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ChaseHendrick/synth.git"
+    "url": "https://github.com/ChaseHendrick/Oro.git"
   },
   "scripts": {
     "electron": "npm run build && electron .",
