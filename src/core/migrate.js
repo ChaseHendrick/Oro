@@ -10,6 +10,7 @@ import {
 import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
 import { sanitizeDrum, sanitizeLanes } from '../dsp/drum-kit.js';
+import { sanitizeSampler } from '../dsp/sampler.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
 import { sanitizeNoiseRecording } from '../dsp/noise-recording.js';
 import { uniqueIds } from './tracks.js';
@@ -239,7 +240,14 @@ export function sanitizePart(src, i) {
     ...(p.chord && typeof p.chord === 'object' ? { chord: sanitizeChord(p.chord) } : {}),
     // v2.9 ghost replay, absent until one is recorded
     ...ghostField(p.ghost),
+    // 2.13 sampler, absent until the track has been put in Sampler mode
+    ...samplerField(p.sampler),
   };
+}
+
+function samplerField(src) {
+  const s = sanitizeSampler(src);
+  return s ? { sampler: s } : {};
 }
 
 function ghostField(src) {

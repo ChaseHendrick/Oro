@@ -263,6 +263,12 @@ export const PART_PARAMS = [
   P('spaceEl', 'Height', 'space', 'lin', -40, 80, 0, { unit: '°', hint: 'Above or below ear height. The weakest of the 3D cues' }),
   P('spaceDist', 'Distance', 'space', 'exp', 0.5, 20, 1, { unit: 'm', hint: 'Further away is quieter and a little duller. 1 m sounds as loud as Pan in the middle' }),
   P('spaceAir', 'Air', 'space', 'bool', 0, 1, 1, { hint: 'Far sounds lose a little treble, as they do through air' }),
+  // 2.13 Sampler (src/dsp/sampler.js): only read while the track is in Sampler
+  // mode (part.sampler.on). Modulatable so Links, macros and LFOs can move them.
+  P('smpSpeed', 'Sample speed', 'sampler', 'exp', 0.25, 4, 1, { mod: true, unit: 'x', detent: 1, hint: 'Playback speed on top of the key: 0.5x is an octave down, 2x an octave up. Double-click for 1x' }),
+  P('smpStart', 'Sample start', 'sampler', 'lin', 0, 1, 0, { mod: true, hint: 'Where the region starts in the sample' }),
+  P('smpEnd', 'Sample end', 'sampler', 'lin', 0, 1, 1, { mod: true, hint: 'Where the region ends in the sample' }),
+  P('smpPos', 'Grain position', 'sampler', 'lin', 0, 1, 0.5, { mod: true, hint: 'Granular mode: where in the region the grains are read' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's

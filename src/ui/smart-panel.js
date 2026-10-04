@@ -17,7 +17,7 @@ import { createKnob } from './knob.js';
 import { createMiniSlider } from './controls.js';
 import { icon } from './icons.js';
 
-const GROUPS = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', filter2: 'Filter 2', mix: 'Mix' };
+const GROUPS = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', filter2: 'Filter 2', mix: 'Mix', sampler: 'Sampler' };
 const LEARN_SOURCES = new Set(['ui', 'midi', 'visual']);
 const PCT = (v) => `${Math.round(v * 100)}%`;
 

@@ -281,7 +281,9 @@ export function createKnob(ctx, binding, opts = {}) {
       ctx.tooltips?.hide();
     }
     drag.n = clamp(drag.n + dragToNorm(dx, dy, e.shiftKey), 0, 1);
-    const next = fromNorm(def, drag.n);
+    // 2.13 a detent (def.detent, e.g. Speed at 1x) holds the knob over a small stretch of travel
+    const dn = def.detent != null ? toNorm(def, def.detent) : -1;
+    const next = dn >= 0 && Math.abs(drag.n - dn) < 0.025 ? def.detent : fromNorm(def, drag.n);
     if (next !== value()) setValue(next, { source: 'ui', gesture: true });
   }
 

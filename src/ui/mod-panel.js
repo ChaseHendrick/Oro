@@ -12,7 +12,7 @@ import { openMenu } from './menu.js';
 import { icon } from './icons.js';
 import { RATE_DEF, DEPTH_DEF, ENV_DEF, DIV_DEF, SYNC_DEF, RETRIG_DEF, formatDepth } from './mod-popover.js';
 
-const GROUP_LABEL = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', mix: 'Mix' };
+const GROUP_LABEL = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', mix: 'Mix', sampler: 'Sampler' };
 
 /** Default modulation settings with their own copy of the step values. */
 export function freshMod() {

@@ -32,7 +32,7 @@ export function midiName(m) {
 const ROWS = ['on', 'degree', 'octave', 'vel', 'gate', 'prob', 'ratchet', 'accent', 'slide', 'lock', 'plock'];
 const LABELS = ['Step', 'Note', 'Oct', 'Vel', 'Gate', 'Prob', 'Ratch', 'Accent', 'Slide', 'Dot', 'Lock'];
 const LABEL_TIPS = { Prob: 'Probability', Ratch: 'Ratchet', Lock: 'Parameter lock' };
-const GROUP_NAMES = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', filter2: 'Filter 2', mix: 'Mix' };
+const GROUP_NAMES = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', filter2: 'Filter 2', mix: 'Mix', sampler: 'Sampler' };
 /** Parameter locks are kept tidy: five significant digits. */
 const tidyValue = (v) => Number(v.toPrecision(5));
 

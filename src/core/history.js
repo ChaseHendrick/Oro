@@ -2,7 +2,8 @@
 // taken after each edit settles, so a knob drag or a burst of key presses is
 // one step. Imported terrains and recordings are large and are always
 // replaced, never edited in place, so snapshots share them by reference, and
-// drum pad samples (base64 strings) are shared the same way.
+// drum pad samples (base64 strings) are shared the same way, and so is the
+// sampler's audio (2.13).
 //
 // Edits from people (the UI, MIDI, scene and patch loads, imports) are
 // recorded; the moving dot, the engine and preference writes are not, and a
@@ -20,6 +21,14 @@ function cloneDrum(d) {
   return { ...deepClone({ ...d, pads: [] }), pads: d.pads.map((p) => (p && typeof p === 'object' ? { ...p, sample: p.sample && typeof p.sample === 'object' ? { ...p.sample } : p.sample ?? null } : p)) };
 }
 
+/** 2.13: a sampler with its audio string shared. */
+function cloneSampler(s) {
+  if (!s || typeof s !== 'object') return deepClone(s);
+  const out = deepClone({ ...s, sample: null });
+  out.sample = s.sample && typeof s.sample === 'object' ? { ...s.sample } : s.sample ?? null;
+  return out;
+}
+
 export function snapshotState(store) {
   const root = store.get('') || {};
   const out = {};
@@ -29,10 +38,11 @@ export function snapshotState(store) {
       out.parts = root.parts.map((p) => {
         if (!p || typeof p !== 'object') return deepClone(p);
         const rest = {};
-        for (const key of Object.keys(p)) if (!SHARED.includes(key) && key !== 'drum') rest[key] = p[key];
+        for (const key of Object.keys(p)) if (!SHARED.includes(key) && key !== 'drum' && key !== 'sampler') rest[key] = p[key];
         const copy = deepClone(rest);
         for (const key of SHARED) if (key in p) copy[key] = p[key];
         if ('drum' in p) copy.drum = cloneDrum(p.drum);
+        if ('sampler' in p) copy.sampler = cloneSampler(p.sampler);
         return copy;
       });
     } else out[k] = deepClone(root[k]);
@@ -54,7 +64,11 @@ export function describeEdit(path, meta = {}) {
     const track = `track ${Number(k[1]) + 1}`;
     if (k.length === 2) return `Track ${Number(k[1]) + 1}`;
     if (k[2] === 'params' && k[3]) return `${PART_PARAM_MAP[k[3]]?.label || k[3]}, ${track}`;
-    const names = { mods: 'Modulation', links: 'Links', patterns: 'Sequencer', drum: 'Drum kit', dot: 'Dot', trackFx: 'Track effects', funcPoints: 'Function', chain: 'Song mode', userTerrain: 'Terrain', arp: 'Arpeggiator', name: 'Rename', color: 'Colour', smart: 'Smart controls' };
+    if (k[2] === 'sampler' && k[3]) {
+      const f = { sample: 'Sampler audio', mode: 'Sampler mode', root: 'Sampler root', fine: 'Sampler fine tune', loop: 'Sampler loop', dir: 'Sampler direction', attack: 'Sampler attack', decay: 'Sampler decay', sustain: 'Sampler sustain', level: 'Sampler level', grain: 'Grain settings', slices: 'Sampler slices', on: 'Sampler mode', name: 'Sampler' };
+      return `${f[k[3]] || 'Sampler'}, ${track}`;
+    }
+    const names = { mods: 'Modulation', links: 'Links', patterns: 'Sequencer', drum: 'Drum kit', sampler: 'Sampler', dot: 'Dot', trackFx: 'Track effects', funcPoints: 'Function', chain: 'Song mode', userTerrain: 'Terrain', arp: 'Arpeggiator', name: 'Rename', color: 'Colour', smart: 'Smart controls' };
     return `${names[k[2]] || 'Edit'}, ${track}`;
   }
   if (k[0] === 'parts') return 'Tracks';
