@@ -3,7 +3,6 @@
   "displayName": "Oro",
   "version": "1.0.0",
   "description": "Write and play music on Oro, a wave-terrain synthesizer. Compose a score for orchestra, piano, guitar, synth, and drums, then play it in the browser or render a WAV.",
-  "short_description": "Compose and play music on the Oro wave-terrain synthesizer.",
   "author": {
     "name": "Chase Hendrick",
     "url": "https://hendrickresearch.com"
@@ -11,5 +10,10 @@
   "homepage": "https://www.hendrickresearch.com/music/",
   "repository": "https://github.com/ChaseHendrick/Oro",
   "license": "MIT",
-  "keywords": ["music", "synthesizer", "composition", "oro"]
+  "keywords": [
+    "music",
+    "synthesizer",
+    "composition",
+    "oro"
+  ]
 }
