@@ -42,6 +42,8 @@ export const BADGES = Object.freeze([
   // 2.11 game controllers and Match a song
   { id: 'gamepad', name: 'Player two', hint: 'Pick up a controller.' },
   { id: 'auto-key', name: 'Good ear', hint: 'Let a song choose the key.' },
+  { id: 'lesson-complete', name: 'Lesson done', hint: 'Finish a lesson in Learn.' },
+  { id: 'all-lessons', name: 'All lessons', hint: 'Finish every lesson in Learn.' },
   // Operator
   { id: 'first-drop', name: 'First drop', hint: 'Accidents happen. Some on purpose.' },
   { id: 'soaked', name: 'Soaked', hint: 'Stay damp for a long time.' },

@@ -42,6 +42,8 @@ const CARDS = [
   { icon: 'bounce', title: 'Surround', text: 'Export stems can add a 5.1 or 7.1 file: tracks in 3D sit on the speakers in their direction. With an audio device that has 6 or 8 outputs, Settings > Audio can play them live.' },
   { icon: 'sound', title: 'Sample a track', text: 'The Sampler card on the Sound tab takes a mono microphone recording, or a stereo file, loop or output, then plays it from the keyboard. In Slices, drag the marks on the wave and pick a slice on each step of the sequencer. Granular mode sprays short grains. Turning it on turns the drum kit off, and the other way around. Tune on the card only listens.' },
   { icon: 'loop', title: 'Tape and tune', text: 'On the Loop tab, Speed sits at normal in the middle, faster to the right, and slower, then backward, to the left. Pitch follows the speed. Dragging the waveform scrubs. Settings > Voice has a tuner that only listens and follows the reference pitch.' },
+  { icon: 'learn', title: 'Learn', text: 'Open Learn for short lessons on the land, the path, filters, rhythm and tuning. Your session is put back when you leave a lesson. Jam (top bar) is a direct connection for chat and notes with one friend. The invite contains a network address. Hold N to talk once you have joined voice.' },
+  { icon: 'sound', title: 'Piano roll and match', text: 'Piano roll, on the Pattern line, draws extra notes between the steps. The 16-step grid stays. Step locks still win on their step. Match a sound, next to Match a song, suggests a terrain and a path. It does not copy the recording.' },
 ];
 
 export function openHelp(ctx, { onClose } = {}) {
@@ -53,6 +55,8 @@ export function openHelp(ctx, { onClose } = {}) {
       h('span', { class: 'help-icon', html: icon(c.icon) }),
       h('h3', null, c.title),
       h('p', null, c.text)))),
+    h('div', { class: 'help-actions' },
+      h('button', { type: 'button', class: 'btn btn--sm', onClick: () => { if (typeof ctx.openLearn === 'function') ctx.openLearn(); } }, 'Open Learn')),
     h('details', { class: 'help-shortcuts' }, h('summary', null, 'Keyboard shortcuts'), shortcutsList()));
   const modal = openModal(ctx.layers, ctx.root, {
     title: 'How Oro works', content, wide: true, className: 'modal--help',

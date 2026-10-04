@@ -43,7 +43,7 @@
 // that parameter sends the track's own value back, also timed; so does Stop.
 
 import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
-import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepSlice, stepChance, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepSlice, stepChance, stepPlocks, activeSeq, activeChain, clamp, fromNorm } from '../core/params.js';
 
 // v2.6 humanize: up to this late (s) at Humanize time 1, and this share of velocity either way at Humanize velocity 1
 export const HUMAN_TIME_MAX = 0.02;
@@ -244,6 +244,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     if (lock) locks.schedule(p, idx, lock, t, clamp(finite(seq.lockGlide, 0.5), 0, 1) * Math.max(0, tNext - t));
     // Parameter locks, like the dot lock, apply whether or not the step has a note.
     if (st.plocked || (step && step.plocks)) plockStep(p, seq, step, t, lead);
+    applyLane(p, seq, step, idx, t, tNext, lead);
     // v2.7 a drum kit track plays its lanes instead of its melodic steps (humanize applies to them too)
     const drum = store.get(`parts.${p}.drum`);
     if (drum && drum.on) {
@@ -282,18 +283,66 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     const gateSec = clamp(step.gate ?? 0.5, 0.05, 1) * rate * spb;
     const hits = stepRatchet(step);
     const slice = stepSlice(step);
-    if (hits === 1) { playHit(p, note, vel, gateSec, step.slide, t, tNext, lead, 0.01, slice); return; }
+    const qOff = clamp(Math.round(step.q) || 0, 0, 3);
+    const origin = qOff ? t + (tNext - t) * qOff / 4 : t;
+    if (hits === 1) playHit(p, note, vel, gateSec, step.slide, origin, tNext, lead, 0.01, slice);
+    else {
+      const span = tNext - origin;
+      for (let i = 0; i < hits; i++) {
+        const ti = origin + span * i / hits;
+        const tiNext = i + 1 === hits ? tNext : origin + span * (i + 1) / hits;
+        playHit(p, note, clamp(vel * RATCHET_DECAY ** i, 0.01, 1), gateSec / hits, i + 1 === hits && step.slide, ti, tiNext, lead,
+          Math.min(0.01, (tiNext - ti) / 2), slice);
+      }
+    }
+    playExtras(p, step, seq, t, tNext, rate, lead);
+  }
+
+  /** Extra notes on a step. They do not use slide, ratchet or the tie. */
+  function playExtras(p, step, seq, t, tNext, rate, lead) {
+    if (!Array.isArray(step.extras)) return;
     const span = tNext - t;
-    for (let i = 0; i < hits; i++) {
-      const ti = t + span * i / hits;
-      const tiNext = i + 1 === hits ? tNext : t + span * (i + 1) / hits;
-      // The minimum note length shrinks with very short hits so a hit never outlasts its slot.
-      playHit(p, note, clamp(vel * RATCHET_DECAY ** i, 0.01, 1), gateSec / hits, i + 1 === hits && step.slide, ti, tiNext, lead,
-        Math.min(0.01, (tiNext - ti) / 2), slice);
+    for (const ex of step.extras) {
+      if (!ex) continue;
+      const q = clamp(Math.round(ex.q) || 0, 0, 3);
+      const tE = t + span * q / 4;
+      const midi = clamp(stepToMidi(ex, seq.baseOctave ?? 3, store.get('global.scaleRoot') || 0, store.get('global.scaleType') || 0), 0, 127);
+      const vel = clamp(Number.isFinite(ex.vel) ? ex.vel : 0.8, 0.01, 1);
+      const gateSec = clamp(ex.gate ?? 0.5, 0.05, 1) * rate * spb;
+      const gateEnd = Math.max(tE + 0.01, Math.min(tE + gateSec, tNext - MIN_GAP));
+      router._engineOn(p, midi, vel, tE, 'seq', lead, null);
+      router._engineOff(p, midi, gateEnd, 'seq', lead);
     }
   }
 
-  /** The track's own (knob) value of part parameter `id`. */
+  /**
+   * One automation lane for the pattern. A step lock on the same parameter
+   * wins for that whole step. The knob value returns when the lane stops.
+   */
+  function applyLane(p, seq, step, idx, t, tNext, lead) {
+    const st = ps[p];
+    const lane = seq && seq.enabled && seq.lane;
+    const id = lane && lane.id;
+    const locked = stepPlocks(step);
+    const blocked = !!(id && locked && Object.prototype.hasOwnProperty.call(locked, id));
+    if (!id || !Array.isArray(lane.curve) || blocked || !PART_PARAM_MAP[id]) {
+      if (st.laneId && !blocked) {
+        router._engineParams(p, { [st.laneId]: ownValue(p, st.laneId) }, t, lead);
+      }
+      if (!id || blocked) st.laneId = null;
+      return;
+    }
+    const def = PART_PARAM_MAP[id];
+    const span = Math.max(0, tNext - t);
+    const base = idx * 4;
+    for (let q = 0; q < 4; q++) {
+      const u = lane.curve[base + q];
+      if (typeof u !== 'number' || !Number.isFinite(u)) continue;
+      router._engineParams(p, { [id]: fromNorm(def, clamp(u, 0, 1)) }, t + span * q / 4, lead);
+    }
+    st.laneId = id;
+    st.plockLast = Math.max(st.plockLast || 0, t);
+  }
   function ownValue(p, id) {
     const v = store.get(`parts.${p}.params.${id}`);
     return typeof v === 'number' && Number.isFinite(v) ? v : PART_PARAM_MAP[id].default;
@@ -325,13 +374,18 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   function restorePlocks(now) {
     for (let p = 0; p < count(); p++) {
       const st = ps[p];
-      if (!st.plocked) continue;
+      if (!st.plocked && !st.laneId) continue;
       const out = {};
-      const t = Math.max(now, st.plockLast);
+      const t = Math.max(now, st.plockLast || 0);
       if (!st.restore) st.restore = new Map();
-      for (const id of st.plocked) { out[id] = ownValue(p, id); st.restore.set(id, [t, 0]); }
+      if (st.plocked) for (const id of st.plocked) { out[id] = ownValue(p, id); st.restore.set(id, [t, 0]); }
+      if (st.laneId && !(st.plocked && st.plocked.includes(st.laneId))) {
+        out[st.laneId] = ownValue(p, st.laneId);
+        st.restore.set(st.laneId, [t, 0]);
+      }
       st.plocked = null;
-      router._engineParams(p, out, t, 0);
+      st.laneId = null;
+      if (Object.keys(out).length) router._engineParams(p, out, t, 0);
     }
   }
 
@@ -673,6 +727,30 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     return swing ? timeAt(swingBeat(beat, store.get('global.swing'))) : timeAt(beat);
   }
 
+  /**
+   * Start or re-anchor on someone else's timeline (a jam host). `time` is the
+   * audio time of musical `beat`. Does not follow MIDI clock.
+   */
+  function align({ beat = 0, time } = {}) {
+    const now = timebase.now();
+    const at = Number.isFinite(time) ? time : now + START_DELAY;
+    if (!playing) {
+      playing = true;
+      external = false;
+      setUiPlaying(1);
+      emitState();
+      ensureTimer();
+    }
+    anchored = true;
+    anchorBeat = Number.isFinite(beat) ? beat : 0;
+    anchorTime = at;
+    frontier = at;
+    resetParts(anchorBeat);
+    notifyEngine();
+    tick();
+    return true;
+  }
+
   return {
     play, stop, toggle, position,
     isPlaying: () => playing,
@@ -694,6 +772,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     /** Audio time of musical position `beat` (unswung), or null while not running on a grid. */
     timeAtBeat: (beat) => (playing && anchored && Number.isFinite(beat) ? timeAt(beat) : null),
     nextGridTime,
+    align,
     /** Seconds per beat right now (the external clock's while following). */
     spb: () => (anchored ? spb : 60 / tempoNow()),
     dispose() { stopTimer(); locks.dispose(); for (const u of unsubs) u(); },

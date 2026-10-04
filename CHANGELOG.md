@@ -3,6 +3,24 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.15.0 (October 2026): Piano roll, jam, lessons, and the open list
+
+**New**
+* **Piano roll.** On the Pattern line, next to Capture. Extra notes can start between the 16 steps. The grid stays. Probability, ratchet, accent, slide, the dot and step locks stay on the grid. One automation lane. A step lock on that same control wins for the whole step.
+* **Jam.** The top bar opens a side panel. Start makes an invite (a direct connection offer). Invite another makes the next one, up to five friends. A friend pastes a code, sends the reply back, and the host applies it. Chat and notes you play (not the sequencer) cross that connection and the notes wait on a shared clock so a little network wobble does not smear the rhythm. Each computer still makes its own sound. Voice is optional, push to talk on N, and it never enters the synth, a bounce, or the looper. The invite contains a network address. A public STUN server is off unless you ask. Oro does not provide a relay, so some networks cannot connect.
+* **Learn.** Help has Open Learn. Eleven short lessons. Leaving a lesson puts your session back. Two badges: finish one lesson, finish them all.
+* **Match a sound.** Next to Match a song. Experimental. It plays one cycle of each land and path and keeps the closest spectrum. Filters and effects are not searched, so it is a starting point, not a copy of the recording.
+* **Ableton Link controls, desktop only.** Settings, MIDI, under Clock. The Link library is GPL and is not in this MIT app, so the status is "Not in this build" and nothing is contacted. While the switch is on, the tempo is read-only and the top bar shows LINK instead of EXT.
+* **Plugin host contract.** Open the app with `?plugin=1`. The tempo is read-only and the top bar shows EXT. `orograph.host` lists outputs (output 1 is the mix) and the first automated parameters. This is not a VST, AU or CLAP file.
+
+**Fixes**
+* The piano roll shows a step that uses the octave row. The note sits on the pitch it plays, so it is not missing and a click there does not add a second copy.
+* Jam chat is delivered to everyone else once. The line uses the name from the list.
+* Mute, Deafen and Open mic switch off again when pressed. Join voice opens the microphone on the jam connection and plays other people through the page, not through the synth.
+* Match a sound can be closed without applying a patch, and its panel sits under the key bar instead of inside that row.
+* Opening Learn again while a lesson is open keeps that step. Closing still puts the session back. Leaving a jam stops notes that were waiting to play.
+* A gap in a saved chord no longer drops the notes after it. A step that is off draws nothing in the piano roll, because it does not play.
+
 ## 2.14.0 (October 2026): Slices, tape speed, stereo takes, vocoder
 
 **New**

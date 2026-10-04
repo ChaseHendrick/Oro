@@ -22,6 +22,8 @@ import { createUI } from './ui/app.js';
 import { savedContextSampleRate } from './pedals/rig-settings.js';
 import { seedNewInstallDefaults } from './core/first-run.js';
 import { installConsoleEgg } from './ui/eggs.js';
+import { restoreRescue, clearRescue } from './learn/rescue.js';
+import { pluginRequested, hostOutputs, hostParamList, applyHostParam } from './plugin/host.js';
 
 // Start-up timing marks (2.11): 'oro:boot' once the main chunk has run,
 // 'oro:ui' once the interface is built. Read with performance.getEntriesByType('mark').
@@ -44,6 +46,14 @@ async function boot() {
   store.subscribe('parts', persist);
   store.subscribe('live', persist);   // 2.12 live mode setup
   store.subscribe('', (path) => { if (path === '') persist(); });
+  try {
+    const rescued = restoreRescue(localStorage);
+    if (rescued && Array.isArray(rescued.parts)) {
+      store.load(rescued, { source: 'learn' });
+      clearRescue(localStorage);
+      autosave.flush();
+    }
+  } catch { /* no storage */ }
 
   // Settings > Pedals > Sample rate (per computer): Auto, 44.1 kHz (the MPC XL),
   // 48 kHz or 96 kHz (the new-install default; a device that refuses it runs at its own rate). The context cannot change rate while running, so the choice
@@ -82,7 +92,7 @@ async function boot() {
     console.warn('[orograph] MIDI unavailable', err);
   }
 
-  createUI(root, { store, engine, visuals, music, presets, midi, prepareUpdate: async () => {
+  createUI(root, { store, engine, visuals, music, presets, midi, autosave, prepareUpdate: async () => {
     autosave.schedule(); autosave.flush();
     const saved = await Promise.all([autosave.settled(), presets.settled()]);
     return saved.every(Boolean);
@@ -94,6 +104,13 @@ async function boot() {
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };
+  if (pluginRequested()) {
+    window.orograph.host = {
+      outputs: () => hostOutputs((store.get('parts') || []).length),
+      params: hostParamList(),
+      set: (param, value) => applyHostParam(store, param, value),
+    };
+  }
   // v2.9 a hello for people who open the console (src/ui/eggs.js)
   installConsoleEgg();
 }

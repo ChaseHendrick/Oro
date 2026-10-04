@@ -5,7 +5,7 @@ import {
   MAX_PARTS, MIN_PARTS, DEFAULT_PARTS, MAX_PATTERNS, PART_PARAMS, GLOBAL_PARAMS, MOD_PARAM_IDS, MOD_DEFAULT, SEQ_STEPS,
   ARP_RHYTHMS, ENV_MODES, MOD_FIELDS, LFO_SHAPES, LFO_STEP_COUNT, DEFAULT_LFO_STEPS, LINK_SOURCES, LINK_CURVES, MAX_LINKS, PART_PARAM_MAP,
   DOT_MODES, TOUR_MODES, MAX_WAYPOINTS, STATE_VERSION, RATCHET_MAX, CHAIN_MAX, CHAIN_REPEATS_MAX,
-  defaultState, stepPlocks, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp,
+  defaultState, stepPlocks, defaultPart, defaultPattern, defaultStep, defaultLinks, clamp, PLOCK_IDS,
 } from './params.js';
 import { sanitizeUserTerrain } from '../dsp/user-terrain.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
@@ -148,7 +148,32 @@ export function sanitizePattern(src, n = 1) {
     // v2.9 parameter locks, absent unless the step has one
     const plocks = stepPlocks(st);
     if (plocks) step.plocks = plocks;
+    const q = Math.round(num(st.q, 0));
+    if (q >= 1 && q <= 3) step.q = q;
+    if (Array.isArray(st.extras)) {
+      const extras = [];
+      for (const ex of st.extras) {
+        if (extras.length >= 8) break;
+        if (!ex || typeof ex !== 'object') continue;
+        const item = {
+          degree: Math.round(clamp(num(ex.degree, 0), -21, 28)),
+          octave: Math.round(clamp(num(ex.octave, 0), -2, 2)),
+          vel: clamp(num(ex.vel, 0.8), 0, 1),
+          gate: clamp(num(ex.gate, 0.5), 0.05, 1),
+        };
+        const eq = Math.round(num(ex.q, 0));
+        if (eq >= 1 && eq <= 3) item.q = eq;
+        extras.push(item);
+      }
+      if (extras.length) step.extras = extras;
+    }
     out.steps.push(step);
+  }
+  if (s.lane && typeof s.lane === 'object' && PLOCK_IDS.includes(s.lane.id) && Array.isArray(s.lane.curve)) {
+    const n = out.length * 4;
+    if (s.lane.curve.length === n) {
+      out.lane = { id: s.lane.id, curve: s.lane.curve.map((v) => clamp(num(v, 0), 0, 1)) };
+    }
   }
   return out;
 }

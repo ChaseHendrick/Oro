@@ -24,6 +24,7 @@ import { createToggle, createSelect, createStepper, createMiniSlider, createSegm
 import { icon } from './icons.js';
 import { createDrumPanel } from './drum-panel.js';
 import { createMidiFileTools } from './midi-file-tools.js';
+import { createPianoRoll } from './piano-roll.js';
 import { CHORD_PRESET_NAMES, CHORD_LEARNED, sanitizeChord, chordNotes, learnChord } from '../music/chord-trigger.js';
 
 export function midiName(m) {
@@ -193,6 +194,8 @@ export function createSeqPanel(ctx) {
     dataset: { tip: 'Turn the notes you just played on this track (keys or MIDI) into this pattern' }, html: icon('resample') + '<span class="toggle-text">Capture</span>',
   });
   const captureStatus = h('p', { class: 'seq-capture-status', role: 'status' });
+  const roll = createPianoRoll(ctx);
+  scope.add(roll.dispose);
   scope.on(captureBtn, 'click', () => {
     const res = has(music, 'capture') ? call(music, 'capture', sel()) : { ok: false, message: 'Capture needs the music engine, which is not available here.' };
     setText(captureStatus, (res && res.message) || '');
@@ -297,7 +300,7 @@ export function createSeqPanel(ctx) {
       h('header', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'Pattern')),
       h('div', { class: 'seq-line seq-patterns' }, patPick, patAdd, patDel),
       chainBox,
-      h('div', { class: 'seq-line seq-capture' }, captureBtn),
+      h('div', { class: 'seq-line seq-capture' }, captureBtn, roll.button),
       captureStatus,
       ghostBar.el,
       h('div', { class: 'seq-line' }, seqOn.el, seqRate.el),
@@ -314,14 +317,28 @@ export function createSeqPanel(ctx) {
 
   // v2.11 Match a song: its code loads the first time the button is used
   const matchBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm seq-match', dataset: { action: 'match-song' } }, 'Match a song');
+  const soundBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm seq-sound', dataset: { action: 'match-sound' } }, 'Match a sound');
   let matchPop = null;
+  let soundMatch = null;
   scope.on(matchBtn, 'click', () => {
     if (matchPop && matchPop.isOpen?.()) { matchPop.close(); return; }
     import('./match-song.js').then((m) => { matchPop = m.openMatchSong(ctx, matchBtn); })
       .catch(() => ctx.toast?.('Match a song could not load', { kind: 'error' }));
   });
+  scope.on(soundBtn, 'click', () => {
+    import('./sound-match.js').then((m) => {
+      if (!soundMatch) {
+        soundMatch = m.createSoundMatch(ctx);
+        globalBar.after(soundMatch.panel);
+        soundMatch.onToggle((on) => soundBtn.setAttribute('aria-expanded', on ? 'true' : 'false'));
+        scope.add(soundMatch.dispose);
+      }
+      if (soundMatch.isOpen()) soundMatch.close();
+      else soundMatch.open();
+    }).catch(() => ctx.toast?.('Match a sound could not load', { kind: 'error' }));
+  });
   const globalBar = h('div', { class: 'seq-global', role: 'group', 'aria-label': 'Key and feel (all tracks)' },
-    field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el), matchBtn,
+    field('Key', key.el), field('Scale', scale.el), field('Swing', swing.el, 'field-row--swing'), field('Keys play', keyMode.el), matchBtn, soundBtn,
     h('span', { class: 'seq-global-note' }, 'All tracks'));
   const arpBar = h('div', { class: 'seq-arp', role: 'group', 'aria-label': 'Arpeggiator for this track' },
     h('span', { class: 'section-title' }, 'Arp'), arpMode.el, arpRate.el, arpRhythm.el, field('Octaves', arpOct.el), field('Gate', arpGate.el, 'field-row--gate'), arpHold.el);
@@ -387,7 +404,8 @@ export function createSeqPanel(ctx) {
   scope.add(store.subscribe('parts', (p) => { if (!/^parts\.\d+\.(params|mods|dot)\./.test(p)) syncDrum(); }));
   scope.add(store.subscribe('ui.selectedPart', syncDrum));
   syncDrum();
-  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, plockBar, arpBar, chordBar, playNote);
+  const rollEl = roll.el;
+  const main = h('div', { class: 'seq-main' }, globalBar, drums.el, grid, rollEl, plockBar, arpBar, chordBar, playNote);
   const el = h('div', { class: 'dock-pane dock-pane--seq' }, side, main);
   if (!hasMusic) {
     playNote.textContent = 'Playback is unavailable here (the music engine did not start). You can still edit patterns.';

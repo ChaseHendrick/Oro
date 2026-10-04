@@ -1,0 +1,150 @@
+// Eleven short lessons. Facts follow the user guide, RESEARCH.md and the code.
+// No long dashes. Glossary links look like [[id|label]].
+
+const step = (id, title, text, extra = {}) => ({ id, title, text: Array.isArray(text) ? text : [text], setup: [], ...extra });
+
+export const LESSONS = [
+  {
+    id: 'harmonics', title: 'Sound and harmonics', level: 'Beginner', minutes: 6,
+    summary: 'A note is a stack of harmonics. On Spectra you can hear the classic shapes.',
+    setup: [{ type: 'terrain', id: 'spectra' }, { type: 'path', id: 'scan' }, { type: 'param', id: 'pathOrder', value: 1 }, { type: 'param', id: 'pathParam', value: 0.5 }, { type: 'param', id: 'size', value: 0.5 }],
+    sources: [],
+    steps: [
+      step('h1', 'One cycle', 'The path goes around once per cycle. That speed is the pitch. The land under it is the tone.'),
+      step('h2', 'Sine', 'On Spectra, Dot Y at 0 is a sine: one [[harmonic|harmonic]], the fundamental.', { highlight: 'knob:size' }),
+      step('h3', 'Triangle, saw, square', 'Move Dot Y up. About 0.167 is a triangle, 0.25 a saw, 0.333 a square and 0.5 a pulse. The same shapes come back as you go further, because the rows mirror.'),
+      step('h4', 'Harmonics view', 'The harmonics view draws 16 harmonics on a 48 dB scale, with the sub bar first. A square shows strong odd harmonics. Do not expect the even ones to sit at one exact level: the rows blend.', { highlight: 'scope' }),
+      step('h5', 'Your turn', 'Move Dot Y and watch the harmonics change.', { hint: 'Drag the dot up or down on the map.', check: { op: 'moved', path: 'parts.0.params.centerY' } }),
+    ],
+  },
+  {
+    id: 'terrain', title: 'Wave terrain synthesis', level: 'Beginner', minutes: 6,
+    summary: 'Pitch is how fast the path runs. Timbre is the cross section of the land.',
+    setup: [{ type: 'param', id: 'size', value: 0.22 }],
+    sources: ['Bischoff, Gold and Horton, Computer Music Journal 2(3), 1978', 'Mitsuhashi, Journal of the Audio Engineering Society 30(10), 1982'],
+    steps: [
+      step('t1', 'The map', 'The map is a [[terrain|terrain]]. It is a torus: the edges wrap. They do not bounce.'),
+      step('t2', 'Size zero', 'Size 0 makes the orbit a point. A point has no change in height, so the voice is silent.', { highlight: 'knob:size' }),
+      step('t3', 'Two lands', 'Terrain A and Terrain B blend with Morph. Warp bends the coordinates. Fold turns peaks back down and adds brightness.'),
+      step('t4', 'Where it was written', 'This way of reading a surface is the idea in the 1978 Computer Music Journal article by Bischoff, Gold and Horton, and in Mitsuhashi\'s 1982 paper.'),
+      step('t5', 'Open the map', 'The land is behind the knobs. The viewport is the map.', { highlight: 'viewport' }),
+    ],
+  },
+  {
+    id: 'paths', title: 'Paths in depth', level: 'Intermediate', minutes: 7,
+    summary: 'The path shape decides which slice of the land you hear.',
+    setup: [{ type: 'path', id: 'ellipse' }],
+    sources: ['Roads, Computer Music Tutorial, pp. 163 to 167'],
+    steps: [
+      step('p1', 'Order', 'Order changes with the path: petals, sides, or a frequency ratio. Order 1 on an ellipse is a plain circle.', { highlight: 'path' }),
+      step('p2', 'Shape', 'Shape is the path\'s continuous control. On an ellipse it skews the circle toward a line.'),
+      step('p3', 'Laps and pace', 'Laps is how many times the path runs per note. Pace and Travel move the orbit across the land instead of leaving it in one place.'),
+      step('p4', 'Ping pong', 'Ping pong sends that travel back and forth. Key to Size makes louder playing draw a larger orbit.'),
+      step('p5', 'Pick a path', 'Open the path picker and try Lissajous or Rose. Roads describes related orbital curves in the Computer Music Tutorial.', { highlight: 'path' }),
+    ],
+  },
+  {
+    id: 'alias', title: 'Aliasing, Nyquist and quality', level: 'Intermediate', minutes: 6,
+    summary: 'A digital oscillator can only represent frequencies up to half the sample rate.',
+    setup: [],
+    sources: [],
+    steps: [
+      step('a1', 'Half the rate', '[[Nyquist|Nyquist]] is half the sample rate. At 48 kHz that is 24 kHz.'),
+      step('a2', 'Folding', 'A harmonic above that limit does not vanish. It [[aliasing|aliases]] to a lower frequency that is usually not in tune with the note.'),
+      step('a3', 'About, not exact', 'Oro\'s bandwidth rule is about one limit, not a promise that every partial stops on a single bin. Quality modes spend more work to push that limit up.'),
+      step('a4', 'The modes', 'Eco, Standard, High, Pristine and Raw are the quality choices. Pristine builds band limited cycles. Raw turns the mip maps off.', { highlight: 'quality' }),
+      step('a5', 'When it matters', 'High notes, bright lands and unison are where aliasing shows first. Drop an octave or pick a calmer quality if you hear a metallic extra tone.'),
+    ],
+  },
+  {
+    id: 'filters', title: 'Filters and envelopes', level: 'Beginner', minutes: 6,
+    summary: 'A filter chooses which part of the tone you keep. An envelope shapes the note in time.',
+    setup: [],
+    sources: [],
+    steps: [
+      step('f1', 'Cutoff', '[[Filter|Cutoff]] is the corner. Low pass keeps what is below it. High pass keeps what is above.', { highlight: 'filter' }),
+      step('f2', 'Resonance', 'Resonance boosts the sound at the cutoff. High values whistle.', { highlight: 'knob:resonance' }),
+      step('f3', 'Envelope', 'The [[envelope|envelope]] is attack (how fast the note starts), decay, sustain (the held level) and release (how it ends).'),
+      step('f4', 'Env amount', 'Env Amt sends envelope 2 to the cutoff, up or down. A positive amount opens the filter as the note blooms.'),
+      step('f5', 'One shot', 'Envelope mode One shot runs the envelope once even if you hold the key. Gate follows your finger.'),
+    ],
+  },
+  {
+    id: 'modulation', title: 'Modulation', level: 'Intermediate', minutes: 8,
+    summary: 'LFOs, links, macros and the function generator move knobs for you.',
+    setup: [{ type: 'tab', id: 'mod' }],
+    sources: [],
+    steps: [
+      step('m1', 'LFO', 'An [[LFO|LFO]] is a slow shape: sine, triangle and the rest. Point it at cutoff or size.', { highlight: 'links' }),
+      step('m2', 'Links', 'A link connects a source to a knob with an amount and a curve. Several links can move the same knob.'),
+      step('m3', 'Macros', 'Four macros sit on the top bar. Link anything to a macro, then ride one knob on stage.'),
+      step('m4', 'Function and science', 'The function generator is a curve you draw. Science sources are slow measurements (time, and similar) you can link like an LFO.'),
+      step('m5', 'Smart controls', 'Smart controls are eight knobs for the selected track, the ones live mode shows large.'),
+    ],
+  },
+  {
+    id: 'physics', title: 'The dot\'s physics', level: 'Intermediate', minutes: 6,
+    summary: 'The dot can sit still or move under a small set of rules.',
+    setup: [],
+    sources: [],
+    steps: [
+      step('d1', 'Pin', 'Pin leaves the dot where you put it.', { highlight: 'dotmode' }),
+      step('d2', 'Roll and drift', 'Roll is a marble on the land. Drift wanders smoothly. Explore plays a note when the marble passes a peak or a valley.'),
+      step('d3', 'Tour and pendulum', 'Tour walks a list of waypoints. Pendulum swings across the map.'),
+      step('d4', 'Golf', 'Golf is a separate game on the map, not a dot mode. You putt toward a hole. It does not change the saved session when you leave it.'),
+      step('d5', 'Try roll', 'Switch the dot to Roll and tilt the land with the dot.', { highlight: 'dotmode' }),
+    ],
+  },
+  {
+    id: 'rhythm', title: 'Rhythm', level: 'Intermediate', minutes: 8,
+    summary: 'The step grid, probability, ratchets, locks, song mode, the drum kit and slices.',
+    setup: [{ type: 'tab', id: 'seq' }],
+    sources: [],
+    steps: [
+      step('r1', 'Sixteen steps', 'Each track has patterns of up to 16 steps. Length can be shorter. The rate is the step size, from slow bars down to fine divisions.', { highlight: 'seq' }),
+      step('r2', 'Probability and ratchet', 'Prob is the chance a step plays this pass. Ratchet repeats the step up to four times inside its slot.'),
+      step('r3', 'Locks', 'A parameter lock holds a knob for one step. The Lock row edits one parameter at a time. The dot lock moves the dot.'),
+      step('r4', 'Song, kit, slices', 'Chain is the song: patterns in order. A drum kit replaces the note grid with pad lanes. Sampler slices play chosen pieces of a recording from the same grid.', { highlight: 'chain' }),
+      step('r5', 'Piano roll', 'The piano roll draws the same pattern. It does not replace the grid. A second note on a step stays in the roll. The Note cell keeps the first.'),
+    ],
+  },
+  {
+    id: 'tuning', title: 'Tuning', level: 'Deep dive', minutes: 7,
+    summary: 'Equal temperament is one choice. Ratios and cents describe the others.',
+    setup: [],
+    sources: [],
+    steps: [
+      step('u1', 'Cents', 'A [[cent|cent]] is 1/100 of an equal tempered semitone. An octave is 1200 cents, a frequency ratio of 2.'),
+      step('u2', 'Equal temperament', '12 equal notes split the octave into 12 identical ratios, each 100 cents. That is the default.'),
+      step('u3', 'Just ratios', 'A just major third is 5/4. It is a little flatter than the equal tempered third. Scala files can load other scales.'),
+      step('u4', 'Bohlen Pierce', 'Bohlen-Pierce is 13 equal steps of 3/1, not of 2/1. The repeat is a tritave, a ratio of 3.', { highlight: 'tuning' }),
+      step('u5', 'Open tuning', 'Settings holds the tuning preset, including Bohlen-Pierce.', { highlight: 'tuning' }),
+    ],
+  },
+  {
+    id: 'resonator', title: 'The resonator', level: 'Deep dive', minutes: 8,
+    summary: 'A square membrane, stepped in time, with inharmonic overtones.',
+    setup: [],
+    sources: ['Kac, Can One Hear the Shape of a Drum?, American Mathematical Monthly, 1966'],
+    steps: [
+      step('n1', 'The plate', 'The resonator is a square membrane. The CPU grid is 24, 32 or 36 nodes on a side, stepped at about 24 kHz.', { highlight: 'resonator' }),
+      step('n2', 'The step', 'It uses leapfrog finite differences. A uniform square membrane has modes proportional to the square root of m squared plus n squared, so the overtones are [[inharmonic|inharmonic]].'),
+      step('n3', 'Stability', 'The stability bound used here is lam2 + 2 mu under 0.5. Without damping the 2D CFL limit is c dt/dx at most 1 over the square root of 2. LAM2_MAX of 0.45 sets how high the membrane can be tuned.'),
+      step('n4', 'Kac', 'Mark Kac asked in 1966 whether the sound of a drum determines its shape. The question is famous. This lesson does not answer it.'),
+      step('n5', 'CPU and GPU', 'CPU is the zero latency default. The GPU resonator, when the machine has it, uses a finer grid and adds a fixed block of latency. Freeze still uses the CPU membrane.'),
+    ],
+  },
+  {
+    id: 'imprint', title: 'Imprint and real places', level: 'Intermediate', minutes: 6,
+    summary: 'A picture, a recording or a place on Earth can become the land.',
+    setup: [],
+    sources: [],
+    steps: [
+      step('i1', 'Imprint', 'Imprint turns an image into a height map. Bright and dark become high and low.'),
+      step('i2', 'Audio terrain', 'A recording can become a terrain too. That is separate from the sampler, which plays the recording as a sample.'),
+      step('i3', 'Real places', 'Real places load elevation for a spot on Earth, the Moon or Mars. The land is data, not a painting of the product.'),
+      step('i4', 'Imported', 'The Imported terrain is yours. Loading a scene keeps it with the track.'),
+      step('i5', 'Leave the practice', 'Closing Learn puts your previous session back. The practice land does not replace what you were making.'),
+    ],
+  },
+];

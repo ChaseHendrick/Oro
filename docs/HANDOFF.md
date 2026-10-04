@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-04 for Oro 2.14.0 (section 0 is the current state; see 10.9). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-04 for Oro 2.15.0 (section 0 is the current state; see 10.10). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -8,42 +8,35 @@ separate future features; they are outside the 2.0 expansion.
 
 ---
 
-## 0. Read first: where things stand (2026-10-04, Oro 2.14.0)
+## 0. Read first: where things stand (2026-10-04, Oro 2.15.0)
 
-* **Released:** Oro **2.14.0** is the current app. The website serves it at
-  https://www.hendrickresearch.com/music/oro/ (the music page `softwareVersion`
-  is 2.14.0). A push to `main` runs `.github/workflows/desktop.yml` and publishes
-  the GitHub Release, which is what the music page desktop links use. Until that
-  release exists, those links still point at the previous tag.
-* **In this release:** 2.13.0 (Sampler, looper tape, granular mode, tuner) and
-  2.14.0 (editable slice marks, sequencer slice picks, one looper Speed slider,
-  stereo sampler takes, vocoder as effect type 31, appended). Exact +1.00× looper
-  playback still uses the integer playhead. See 10.8 and 10.9. Plugin, Ableton
-  Link and a piano roll were researched as interface only and are not started.
-  Do not start them unless the owner asks again.
-* **Checks:** With the sampler off, three rendered scenes matched the 2.12.0
-  engine sample for sample (max difference 0) at 2.13. The full Vitest suite
-  passed locally for 2.14 (1890). Not tested with a real microphone, real pedals,
-  or surround hardware. `node dev/dsp/bench.mjs 1` against main was not run.
-  Desktop downloads follow the GitHub release that `main` publishes.
-* **Other unfinished branches:** `claude/jam-wip` (Jam together building blocks, 10.2) and
-  the GPU Resonator branch, which shipped in 2.12 (10.4).
-* **Future features list:** section 10.7. The vocoder shipped in 2.14. Still open: a plugin
-  version, Ableton Link, a piano roll and automation, and making a patch from a sound.
-  Jam together (10.2) and Learn (10.3) are also still to do. Small follow-ups: 10.6.
-* **Branches and pushing:** the session's designated branch was `claude/magical-tesla-q993l8`.
-  After its PR was squash-merged, resetting it needs a force push, which the safety checks
-  block. With the owner's OK each release went to a new branch instead (`claude/oro-2.12`,
-  then `claude/oro-2.13` for 2.13 and 2.14). Do the same for the next release and ask the owner first.
-* **Website hosting (Vercel, team `chaos-3e50`, free plan):** deployment storage hit the
-  10 GB limit because every branch push made a ~126 MB preview. Since PR #29 `vercel.json`
-  has an ignore step that skips pull request previews and builds `main` (and production).
-  An earlier step skipped `main` as well, which left the live site on 2.12.0 until that
-  was corrected. The owner deleted old previews by hand. The
-  Vercel connector in Claude reaches the owner's account but not the `chaos-3e50` team (403),
-  so Claude cannot manage deployments unless that is re-authorised with the team selected.
-* **App version:** `src/ui/settings.js` reads `VERSION` from `package.json` (fixed in 2.12;
-  2.11 showed 2.10.0). Bump only `package.json`.
+* **Code:** Oro **2.15.0** is this branch, not yet the website. The live site and the
+  GitHub Release are still **2.14.0** until this lands on `main`. A push to `main`
+  runs `.github/workflows/desktop.yml` and publishes the desktop release. Do not
+  merge until "Test and build the web app" is green on the commit that will land.
+* **In 2.15.0:** piano roll (quarter-step extras, one lane, step locks win, numbers
+  line up with the grid, tap a note to erase it), Jam (up to five invite codes,
+  chat both ways, key notes held to a shared clock, push-to-talk voice that never
+  enters the engine), Learn (11 lessons, two badges), Match a sound (one real
+  cycle of the land under the path, not the filter chain), Link controls that
+  report "Not in this build" because the GPL library is not vendored, and a plugin
+  host contract behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
+* **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout
+  (a Play view that gives the land the window, Shape / Move / Time around it).
+  It is not built. Do not start that layout unless the owner asks.
+* **Still not done:** a compiled plugin, a real Link session (the library is GPL
+  and is not in this MIT repo), a TURN relay, a jam tried on two real computers,
+  a Playwright two-browser run, live multi-out, and the hardware checks in 10.6.
+* **Checks:** full Vitest suite on this machine, 1917 passed and 1 failed (the
+  lazy chunk list). That list was updated and `tests/ui/lazy.test.js` then passed.
+  Not re-run as a second full pass after that one-line test fix.
+* **Branches:** do not reuse `claude/oro-2.13` (its PR was squash-merged). This
+  release belongs on a new branch. Do not force-push.
+* **Website:** `vercel.json` ignoreCommand builds production and `main` only.
+  Do not change that. The site stays on 2.14.0 until a later update of the music
+  page `softwareVersion` and the copied `dist`.
+* **App version:** bump only `package.json`. Do not edit the v2.13.0 tag fixture
+  in `tests/packaging/mac-update.test.js`.
 * **CPU timing test:** `tests/dsp/perf.test.js` measures about 36 to 38% on the Claude
   container (limit 35%) for both main and new code, but passes on GitHub CI. It re-measures
   once when a case is over. Compare with `node dev/dsp/bench.mjs 1` on main and the branch
@@ -745,4 +738,43 @@ Shipped in 2.14.0 (`package.json` is 2.14.0) on `claude/oro-2.13`.
 * Vocoder is track-effect type 31 (appended, so older type numbers are unchanged). The
   modulator is another track's previous block, or microphone audio posted into the engine
   while Voice is on. `mod` is stored only on a vocoder slot.
-* Not started: plugin, Ableton Link, piano roll. Do not name the hardware sampler.
+* Shipped. Plugin, Link and the piano roll are 2.15 (10.10), with the limits written there.
+  Do not name the hardware sampler.
+
+### 10.10 Oro 2.15.0: piano roll, jam, learn, sound match, Link, plugin contract
+
+On a new branch, not merged. `package.json` is 2.15.0.
+
+* **Piano roll** (`src/music/roll.js`, `src/ui/piano-roll.js`). Optional `step.q` (1 to 3),
+  `step.extras` (at most 8), and `pattern.lane` (one id from `PLOCK_IDS`, curve length
+  `pattern.length * 4`). Old sessions omit them. Unity playback with no `q` and no lane
+  is the same path as before. The grid is still there.
+* **Jam** (`src/jam/`, `src/ui/jam-panel.js`). The six modules from commit 946f266 plus
+  chat, moderation, speaking, voice, sync, rtc, relay and the panel. Start calls
+  `RTCPeerConnection` when the browser has it. Invite another makes the next
+  code, up to five (`p1` to `p5`). Apply reply sets the remote description on
+  the invite that is still waiting. Chat arrives on both sides. Notes use the
+  `note` message, stamped on the host clock. Guests ping so they can convert.
+  Playback goes through the jitter buffer and `engine.noteOn` with source
+  `jam`, not the router. Sequencer, preview and ghost are not sent. Voice
+  constraints are echo cancellation, noise suppression and AGC. The sink throws
+  if handed `{ oroEngine: true }`. Autosave while joined writes the pre-join
+  session object. History ignores `jam`.
+  Not done: TURN, two real computers, Playwright e2e.
+* **Learn** (`src/learn/`). Eleven lessons, five steps each. Highlights are selectors
+  whose snippets the test greps in real files. No em dash or en dash in lesson text.
+  Badges `lesson-complete` and `all-lessons`. Rescue key `oro.learn.rescue` is restored
+  once on boot if a lesson was left open, then cleared.
+* **Match a sound** (`src/music/sound-match.js`). The search renders one cycle of
+  each candidate: path sample, centre 0.5, size 0.28, bilinear height. That is
+  the voice's reading of the land, not the filters, effects or envelopes.
+* **Link** (`src/link/link.js`). Status is empty when off, "Not in this build" when on
+  and the library is missing. Rows are hidden unless the user agent contains `Electron/`.
+  Do not vendor the GPL library into this MIT repo.
+* **Plugin** (`src/plugin/host.js`). Output 1 is Mix. Parameters are master volume and,
+  for tracks 1 to 4, level, mute, morph, cutoff, resonance, attack, release. Writes use
+  source `plugin`, which history ignores. Not a binary, and not extra live outputs.
+* **Desktop CSP** allows `stun:stun.l.google.com:19302` on connect-src. No http origin
+  was added.
+* **Checked:** Vitest, see section 0. Unity looper playback was not re-bench tested.
+

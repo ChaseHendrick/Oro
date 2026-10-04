@@ -61,17 +61,30 @@ export function createTopbar(ctx, container) {
   const tempo = createDragNumber(ctx, binder.globalParam('tempo'), { label: 'Tempo in BPM', suffix: 'BPM', step: 1, pxPerStep: 3, className: 'tempo', parse: tempoParser(() => ctx.eggs?.tempoNotFound()) });
   scope.add(tempo.dispose);
   const ext = h('span', { class: 'ext-badge', hidden: true, dataset: { tip: 'Following external MIDI clock' } }, 'EXT');
+  const linkBadge = h('span', { class: 'link-badge', hidden: true, dataset: { tip: 'Ableton Link' } }, 'LINK');
   const renderExt = () => {
     const clock = midi && midi.externalClock;
-    const follow = !!(clock && clock.active);
-    ext.hidden = !follow;
-    tempo.setReadOnly(follow);
-    if (follow && clock.bpm) tempo.input.value = Math.round(clock.bpm);
+    const midiFollow = !!(clock && clock.active);
+    const linkOn = !!(ctx.link && ctx.link.on);
+    const plugin = !!ctx.plugin;
+    ext.hidden = true;
+    linkBadge.hidden = true;
+    if (linkOn) {
+      linkBadge.hidden = false;
+      const st = ctx.link.status();
+      linkBadge.dataset.tip = st || 'Ableton Link';
+    } else if (midiFollow || plugin) {
+      ext.hidden = false;
+      ext.dataset.tip = plugin && !midiFollow ? 'A plugin host sets the tempo' : 'Following external MIDI clock';
+    }
+    tempo.setReadOnly(linkOn || midiFollow || plugin);
+    if (midiFollow && !linkOn && clock.bpm) tempo.input.value = Math.round(clock.bpm);
   };
   if (midi) {
     scope.add(listen(midi, 'clock', () => schedule(renderExt)));
     scope.add(listen(midi, 'change', () => schedule(renderExt)));
   }
+  if (ctx.link && typeof ctx.link.onChange === 'function') scope.add(ctx.link.onChange(() => schedule(renderExt)));
   if (canPlay) scope.add(listen(music.transport, 'state', () => schedule(renderExt)));
   renderExt();
 
@@ -108,7 +121,7 @@ export function createTopbar(ctx, container) {
   // v1.2 looper: Record / Play / Overdub with the loop position ring.
   const loopBtn = createLooperButton(ctx);
   scope.add(loopBtn.dispose);
-  const transport = h('div', { class: 'transport', role: 'group', 'aria-label': 'Transport' }, play, h('div', { class: 'tempo-wrap' }, tempo.el, ext), rec, loopBtn.el, bounceBtn);
+  const transport = h('div', { class: 'transport', role: 'group', 'aria-label': 'Transport' }, play, h('div', { class: 'tempo-wrap' }, tempo.el, ext, linkBadge), rec, loopBtn.el, bounceBtn);
 
   // ---------------------------------------------------------------- utilities
   const midiLed = h('span', { class: 'led midi-led', 'aria-hidden': 'true' });
@@ -182,12 +195,14 @@ export function createTopbar(ctx, container) {
   const versionsBtn = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Version history', 'aria-haspopup': 'dialog', dataset: { tip: 'Version history: earlier saves of this session' }, html: icon('versions') });
   scope.on(versionsBtn, 'click', () => { import('./version-panel.js').then(m => m.openVersionHistory(ctx)).catch(err => console.warn('[ui] version history failed', err)); });
   // 2.12 live performance mode (loaded on demand)
+  const jamBtn = h('button', { type: 'button', class: 'icon-btn jam-btn', 'aria-label': 'Jam together', dataset: { tip: 'Jam together: one direct connection. The invite contains a network address.' } }, 'Jam');
+  scope.on(jamBtn, 'click', () => { if (typeof ctx.openJam === 'function') ctx.openJam(); });
   const liveBtn = h('button', { type: 'button', class: 'icon-btn live-btn-top', 'aria-label': 'Live mode', 'aria-haspopup': 'dialog', dataset: { tip: 'Live mode: full-screen pads, setlist and big controls for the stage (Shift+L)' }, html: icon('live') });
   scope.on(liveBtn, 'click', () => { if (typeof ctx.toggleLive === 'function') ctx.toggleLive(); });
   // 2.12 listening modes (what you hear only)
   const listenBtn = createListenButton(ctx);
   scope.add(listenBtn.dispose);
-  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, liveBtn, macrosBtn, listenBtn.el, midiBtn, themeBtn, settingsBtn, helpBtn);
+  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, jamBtn, liveBtn, macrosBtn, listenBtn.el, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   // On hendrickresearch.com (served under /music/oro/) a way back to the site's Music page.
   const siteBack = isOnSite()
