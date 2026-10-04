@@ -8,34 +8,38 @@ separate future features; they are outside the 2.0 expansion.
 
 ---
 
-## 0. Read first: where things stand (2026-10-04, after 2.12.0)
+## 0. Read first: where things stand (2026-10-04, Oro 2.14.0)
 
-* **Released:** Oro **2.12.0** (live mode, GPU Resonator, listening modes, 3D sound,
-  surround export). GitHub Release v2.12.0 has all downloads; the website serves 2.12.0.
-* **In progress, not committed:** Oro **2.14.0** on branch `claude/oro-2.13` (working tree
-  on top of 2.13.0). Editable slice marks, sequencer slice picks, a bipolar looper Speed
-  slider (exact +1.00× still uses the integer playhead), stereo sampler takes, and a
-  vocoder track effect (type index 31, appended). Plugin, Ableton Link and a piano roll
-  were researched as interface only and are not started.
-* **Shipped in the branch, not yet on main:** Oro **2.13.0** (Sampler, looper tape, granular mode, tuner).
-  Branch **`claude/oro-2.13`**, based on `main`. With the sampler off, three rendered scenes
-  matched the 2.12.0 engine sample for sample (max difference 0). The full Vitest suite
-  passed locally (1879). Not tested with a real microphone, real pedals, or surround hardware.
-  The website copy is updated in `hendrickresearch.com` so https://www.hendrickresearch.com/music/oro/
-  serves this build. Desktop downloads follow the GitHub release that `main` publishes.
+* **Released:** Oro **2.14.0** is the current app. The website serves it at
+  https://www.hendrickresearch.com/music/oro/ (the music page `softwareVersion`
+  is 2.14.0). A push to `main` runs `.github/workflows/desktop.yml` and publishes
+  the GitHub Release, which is what the music page desktop links use. Until that
+  release exists, those links still point at the previous tag.
+* **In this release:** 2.13.0 (Sampler, looper tape, granular mode, tuner) and
+  2.14.0 (editable slice marks, sequencer slice picks, one looper Speed slider,
+  stereo sampler takes, vocoder as effect type 31, appended). Exact +1.00× looper
+  playback still uses the integer playhead. See 10.8 and 10.9. Plugin, Ableton
+  Link and a piano roll were researched as interface only and are not started.
+  Do not start them unless the owner asks again.
+* **Checks:** With the sampler off, three rendered scenes matched the 2.12.0
+  engine sample for sample (max difference 0) at 2.13. The full Vitest suite
+  passed locally for 2.14 (1890). Not tested with a real microphone, real pedals,
+  or surround hardware. `node dev/dsp/bench.mjs 1` against main was not run.
+  Desktop downloads follow the GitHub release that `main` publishes.
 * **Other unfinished branches:** `claude/jam-wip` (Jam together building blocks, 10.2) and
   the GPU Resonator branch, which shipped in 2.12 (10.4).
-* **Future features list:** section 10.7 (plugin version, Ableton Link, vocoder, piano roll
-  and automation, make a patch from a sound). Jam together (10.2) and Learn (10.3) are also
-  still to do. Small follow-ups: 10.6.
+* **Future features list:** section 10.7. The vocoder shipped in 2.14. Still open: a plugin
+  version, Ableton Link, a piano roll and automation, and making a patch from a sound.
+  Jam together (10.2) and Learn (10.3) are also still to do. Small follow-ups: 10.6.
 * **Branches and pushing:** the session's designated branch was `claude/magical-tesla-q993l8`.
   After its PR was squash-merged, resetting it needs a force push, which the safety checks
-  block. With the owner's OK each release went to a new branch instead (`claude/oro-2.12`).
-  Do the same for 2.13 (for example `claude/oro-2.13`) and ask the owner first.
+  block. With the owner's OK each release went to a new branch instead (`claude/oro-2.12`,
+  then `claude/oro-2.13` for 2.13 and 2.14). Do the same for the next release and ask the owner first.
 * **Website hosting (Vercel, team `chaos-3e50`, free plan):** deployment storage hit the
   10 GB limit because every branch push made a ~126 MB preview. Since PR #29 `vercel.json`
-  has `"ignoreCommand": "[ \"$VERCEL_ENV\" != \"production\" ]"`, so only `main` builds and
-  PRs show "Ignored" instead of a preview link. The owner deleted old previews by hand. The
+  has an ignore step that skips pull request previews and builds `main` (and production).
+  An earlier step skipped `main` as well, which left the live site on 2.12.0 until that
+  was corrected. The owner deleted old previews by hand. The
   Vercel connector in Claude reaches the owner's account but not the `chaos-3e50` team (403),
   so Claude cannot manage deployments unless that is re-authorised with the team selected.
 * **App version:** `src/ui/settings.js` reads `VERSION` from `package.json` (fixed in 2.12;
@@ -75,7 +79,7 @@ tests, Playwright (Chromium) for browser checks. Node 22.
 | Repo | What | Default branch | Deploys |
 |---|---|---|---|
 | `ChaseHendrick/synth` | the synth (this repo) | `main` | every push to `main` builds the desktop apps and publishes a GitHub Release for the version in `package.json` (`.github/workflows/desktop.yml`) |
-| `ChaseHendrick/hendrickresearch.com` | the owner's website (Vite + TypeScript) | `main` | Vercel deploys `main` to hendrickresearch.com; every PR gets a Vercel preview |
+| `ChaseHendrick/hendrickresearch.com` | the owner's website (Vite + TypeScript) | `main` | Vercel deploys `main` to hendrickresearch.com. Pull request previews are skipped (storage); see the website bullet in section 0 |
 | `ChaseHendrick/music-field-manual` | the owner's notes, **PolyForm licensed** | | use facts from it only, never copy code |
 
 Work happens on a branch and goes in through a pull request. The owner wants PRs merged
@@ -673,9 +677,7 @@ swing, ratchets, Euclidean rhythms and sidechain, so those are not listed.
 - **Ableton Link** (tempo and phase sync with other apps and devices on the local network).
   Browsers cannot open the UDP sockets Link needs, so this is desktop app only, through a
   native module in Electron. Oro already follows and sends MIDI clock.
-- **Vocoder**: a track effect or mode using the mic (or any track) as the modulator and the
-  track as the carrier; band count, formant shift, sibilance pass-through. Oro already has
-  mic input and a sidechain path to build on.
+- **Vocoder**: shipped in 2.14 as track effect type 31 (see 10.9). Microphone or another track shapes the carrier. Do not add a second one.
 - **Piano roll and automation lanes**: free note editing and long knob-movement curves over
   a whole song. Oro has step sequencing, parameter locks, song mode and Capture, but no
   free-form editing. Needs a timeline data model that works with song mode and undo.
@@ -683,7 +685,7 @@ swing, ratchets, Euclidean rhythms and sidechain, so those are not listed.
   filters and envelopes for a patch that imitates the sample's spectrum and envelope.
   Experimental; offline search with a spectral distance score is the likely approach.
 
-Planned for 2.13 and partly built (see 10.8): granular mode for the Sampler (DSP done, no UI yet) and a tuner for audio input (not started).
+2.13 shipped granular mode (with UI) and the tuner (see 10.8). 2.14 is section 10.9.
 
 ### 10.8 Oro 2.13.0: Sampler, looper tape controls, granular mode, tuner
 
@@ -693,11 +695,9 @@ layout). Everything is clean-room: no code, samples, text or panel design from i
 product is not named in Oro. MIT would allow porting code with its notice, but the owner's
 rule is clean-room; ask before changing that.
 
-**Code:** branch `claude/sampler-wip`. The DSP commits are `30cad6d` and `887cbdb`, based on
-2.12.0 (`42c1943`). The UI, tape controls, tuner and doc updates after that are uncommitted
-working-tree changes. `main` is `11ad758` (the handoff PR) and does not contain the sampler.
+**Code:** shipped on `claude/oro-2.13`. The sampler DSP commits were `30cad6d` and `887cbdb` on `claude/sampler-wip`, cherry-picked as `ab0f7ce` and `8fc9d03`, based on 2.12.0 (`42c1943`). The UI, tape controls, tuner and docs are `cd7cac1`. When that work started, `main` was `11ad758` and did not contain the sampler. 2.13 and 2.14 land on `main` together.
 
-**Done since the pause:**
+**Done since the pause:** 2.14 later replaced Half / Normal / Double and Reverse with one Speed slider, and added the slice editor (10.9). The list below is the 2.13 commit.
 - The 4 sampler expectation bugs and the 2 "appended" parameter tests are fixed.
   `tests/dsp/sampler.test.js`, `tests/audio/surround.test.js` and `tests/dsp/resonator.test.js`
   pass. Expectations now include the default level 0.8, a looser attack window, a freeze
@@ -725,16 +725,15 @@ Three scenes with the sampler off matched the 2.12.0 engine sample for sample. `
 Not done: `node dev/dsp/bench.mjs 1` back to back with main, Playwright screenshots, a real microphone.
 
 **Known risks:** `kitSent` in `sync.js` is not permuted on track reorder (pre-existing, not fixed).
-Slice points can be created but not edited. Freeze still renders the Resonator on the CPU.
+Slice editing, missing here, shipped in 2.14 (10.9). Freeze still renders the Resonator on the CPU.
 Scrub during an open overdub waits until the undo snapshot finishes.
 
-**Next:** merge `claude/oro-2.13` when CI is green so the desktop release publishes, and merge the
-website PR so https://www.hendrickresearch.com/music/oro/ serves this build. Desktop download
-links stay on the previous release until that workflow finishes.
+**After this note:** the website at https://www.hendrickresearch.com/music/oro/ serves 2.14.0.
+Desktop downloads update when `main` publishes the GitHub Release.
 
 ### 10.9 Oro 2.14.0: slices, tape speed, stereo takes, vocoder
 
-Working tree on `claude/oro-2.13`, not committed. `package.json` is 2.14.0.
+Shipped in 2.14.0 (`package.json` is 2.14.0) on `claude/oro-2.13`.
 
 * Sampler slices are edited on the wave (drag, add, delete, snap to a zero crossing). The
   sequencer Note row becomes Slice and writes `step.slice` only when a step is touched.
