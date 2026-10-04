@@ -61,6 +61,7 @@ import { WeatherBank } from './weather-sources.js';
 import { PadBank } from './pad-sources.js';
 import { Filter2 } from './filter2.js';
 import { KitPlayer } from './drum-kit.js';
+import { SamplerPlayer } from './sampler.js';
 import { renderLibraryDrum } from './drum-library.js';
 import { funcValue, sanitizeFuncPoints, FUNC_MAX_POINTS } from './function-gen.js';
 import { UNISON_STACKS } from '../core/params.js';
@@ -117,6 +118,7 @@ const MOD_SLOT = Object.fromEntries(MOD_PARAM_IDS.map((id, i) => [id, i]));
 const MOD_WRAPS = new Uint8Array(MOD_PARAM_IDS.map(id => (id === 'rotate' || id === 'centerX' || id === 'centerY') ? 1 : 0));
 const M_MORPH = MOD_SLOT.morph, M_WARP = MOD_SLOT.warp, M_LIFT = MOD_SLOT.lift, M_FOLD = MOD_SLOT.fold;
 const M_PARAM = MOD_SLOT.pathParam, M_SIZE = MOD_SLOT.size, M_STRETCH = MOD_SLOT.stretch;
+const M_SMP_SPEED = MOD_SLOT.smpSpeed, M_SMP_START = MOD_SLOT.smpStart, M_SMP_END = MOD_SLOT.smpEnd, M_SMP_POS = MOD_SLOT.smpPos;
 const M_ROTATE = MOD_SLOT.rotate, M_CX = MOD_SLOT.centerX, M_CY = MOD_SLOT.centerY, M_FINE = MOD_SLOT.fine;
 const M_CUTOFF = MOD_SLOT.cutoff, M_RES = MOD_SLOT.resonance, M_DRIVE = MOD_SLOT.drive, M_PAN = MOD_SLOT.pan;
 const M_LAPS = MOD_SLOT.laps, M_PACE = MOD_SLOT.pace, M_FORMANT = MOD_SLOT.formant;
@@ -732,6 +734,7 @@ class Part {
     this.uni = 1;
     this.uniMode = 0; this.uniStack = 0; this.f2Type = 0; this.f2Route = 0; this.warpMode = 0;
     this.kit = null; this.kitOn = false;   // v2.7 drum kit: notes play pads instead of synth voices
+    this.smp = null; this.smpOn = false;   // 2.13 sampler: notes play a sample instead of synth voices
     this.stackRatio = new Float64Array(MAX_UNISON).fill(1);
     this.uPos = new Float64Array(MAX_UNISON); this.uW = new Float64Array(MAX_UNISON).fill(1);
     this.uMapX = new Float64Array(MAX_UNISON); this.uMapY = new Float64Array(MAX_UNISON);
@@ -1205,6 +1208,7 @@ export class OroDSP {
       case 'links': this.setLinks(msg.part, msg.links); break;
       case 'kit': this.setKit(msg.part, msg); break;
       case 'kitPreview': this.previewKit(msg.part, msg); break;
+      case 'sampler': this.setSampler(msg.part, msg); break;
       case 'func': { const P = this.partAt(msg.part); if (P) { P.setFunc(sanitizeFuncPoints(msg.points)); } break; }
       case 'pedal': this.pedalOn = !!msg.active; break;
       case 'tuning': this.setTuning(msg.hz); break;
@@ -1914,6 +1918,7 @@ export class OroDSP {
   }
 
   releasePart(P) {
+    if (P.smp !== null) P.smp.allOff();
     for (const v of P.voices) {
       if (v.pending) v.pending = false;
       if (v.active) this.releaseVoice(v, true);
@@ -1931,6 +1936,7 @@ export class OroDSP {
       P.tail = 0; P.effects.reset(); P.rawPeak=P.previousRawPeak=0;
       P.oldA = P.oldB = null; P.fadeA = P.fadeB = P.fadeACur = P.fadeBCur = 0;
       if (P.ghost) P.ghost.left = 0;
+      if (P.smp !== null) P.smp.allOff(true);
     }
   }
 
@@ -2124,6 +2130,27 @@ export class OroDSP {
   }
 
   /**
+   * 2.13 {t:'sampler', part, on, cfg, pcm?, rate?, keep?}: switch a track's
+   * sampler on or off, set its playback settings and (unless `keep`) its
+   * audio (Float32Array mono at `rate`).
+   */
+  setSampler(part, msg) {
+    const P = this.partAt(part);
+    if (!P) return;
+    P.smpOn = !!msg.on;
+    if (!P.smpOn) { if (P.smp) P.smp.allOff(); return; }
+    if (!P.smp) P.smp = new SamplerPlayer(this.sr);
+    if (!msg.keep) P.smp.setData(msg.pcm instanceof Float32Array ? msg.pcm : null, finiteOr(msg.rate, this.sr));
+    P.smp.configure(msg.cfg);
+  }
+
+  /** The key against the sampler's Root in semitones, in the session's tuning. */
+  samplerSemis(P, note) {
+    const root = P.smp.cfg.root;
+    return this.tuneSemis === null ? note - root : this.tunedPitch(note) - this.tunedPitch(root);
+  }
+
+  /**
    * Drum library sound i (v2.8; 0..7 are the 2.7 synth drums), synthesized
    * once per engine and shared, never on every knob move. Past 64 sounds the
    * oldest leaves the cache (pads holding it keep playing).
@@ -2155,6 +2182,14 @@ export class OroDSP {
     if (P.frozen !== null && P.fzTarget >= 1 && (tag === 'seq' || tag === 'arp')) return;
     if (vel > 1) vel /= 127;
     if (P.kitOn && P.kit) { if (vel > 0) { P.kit.trigger(note, vel); this.science.noteOn(); } return; }
+    if (P.smpOn && P.smp !== null) {
+      if (!(vel > 0)) { P.smp.noteOff(note); return; }
+      this.science.noteOn();
+      if (P.smp.heldCount() === 0) this.retrigLfos(P); else this.partMods(P);
+      const pp = P.partPlain;
+      P.smp.noteOn(note, this.samplerSemis(P, note), vel * this.velGain(P, vel), pp[M_SMP_START], pp[M_SMP_END]);
+      return;
+    }
     if (!(vel > 0)) { this.noteOff(P, note); return; }
     this.science.noteOn();
     if (this.heldCount(P) === 0) this.retrigLfos(P);
@@ -2222,6 +2257,7 @@ export class OroDSP {
   }
 
   noteOff(P, note) {
+    if (P.smpOn && P.smp !== null && !P.kitOn) { P.smp.noteOff(note); return; }
     if (P.mode === 0) {
       for (const v of P.voices) {
         if (v.pending && sameNote(v.pendNote, note)) v.pending = false;
@@ -3040,7 +3076,7 @@ export class OroDSP {
       P.spinPhase += P.params[PI.spin] * dt;
       P.spinPhase -= Math.floor(P.spinPhase);
       const active = P.activeCount();
-      if (active > 0 || P.index === this.watch) this.partMods(P);
+      if (active > 0 || P.index === this.watch || (P.smp !== null && P.smp.active > 0)) this.partMods(P);
       if (P.space !== null && (P.spaceMode !== 0 || P.space.w > 0)) this.spaceTarget(P, active > 0 || P.index === this.watch);
 
       // mixer targets: perceptual (squared) level, post-fader sends. A part
@@ -4483,8 +4519,9 @@ export class OroDSP {
       const ghostOn = g !== null && g.left > 0;
       const active = P.activeCount();
       const kitBusy = P.kitOn && P.kit !== null && P.kit.busy;
+      const smpBusy = P.smp !== null && P.smp.active > 0;
       const fz = P.frozen;
-      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy && fz === null && (P.resoMode === 0 || !P.reso.busy)) {
+      if (active === 0 && P.tail <= 0 && !ghostOn && !P.effects.active && !kitBusy && !smpBusy && fz === null && (P.resoMode === 0 || !P.reso.busy)) {
         P.gain += P.dGain * seg; P.dly += P.dDly * seg; P.rev += P.dRev * seg; P.ped += P.dPed * seg; P.vectorGain+=P.dVector*seg;
         P.sA += P.dSA * seg; P.sB += P.dSB * seg;
         continue;
@@ -4492,11 +4529,11 @@ export class OroDSP {
       // v2.8 a frozen part plays its loop instead of its voices (both while they crossfade)
       // v2.9 notes played live over a fully frozen part: its voices run (through
       // its rack) and the loop is added on top
-      const over = fz !== null && P.fzX >= 1 && P.fzTarget >= 1 && (active > 0 || kitBusy || P.tail > 0);
+      const over = fz !== null && P.fzX >= 1 && P.fzTarget >= 1 && (active > 0 || kitBusy || smpBusy || P.tail > 0);
       const live = fz === null || P.fzX < 1 || P.fzTarget < 1 || over;
       const oL = P.outL, oR = P.outR;
       if (live) {
-        if (active > 0 || ghostOn) P.tail = HB_N + P.ddN + (P.space !== null ? P.space.tailN : 0);
+        if (active > 0 || ghostOn || smpBusy) P.tail = HB_N + P.ddN + (P.space !== null ? P.space.tailN : 0);
         const rc = P.rc, os = rc.os;
         const n2 = os * seg, off2 = os * pos;
         for (const v of P.voices) {
@@ -4515,6 +4552,11 @@ export class OroDSP {
         }
         this.decimateTo(os, P.busL, P.busR, P.midL, P.midR, oL, oR, pos, seg);
         if (kitBusy) P.kit.render(oL, oR, pos, seg);
+        if (smpBusy) {
+          const pp = P.partPlain, prm = P.params;
+          const bend = P.bend !== 0 ? Math.pow(2, P.bend * prm[PI.bendRange] / 12) : 1;
+          P.smp.render(oL, oR, pos, seg, pp[M_SMP_SPEED], pp[M_SMP_START], pp[M_SMP_END], pp[M_SMP_POS], bend);
+        }
         if (ghostOn) {
           // the outgoing quality: frozen voices into their own buses, then a
           // raised-cosine crossfade (the new path's decimator has just started
@@ -4718,6 +4760,7 @@ export class OroDSP {
       // fully frozen: the voices, the kit and the rack stop here (the loop has them)
       for (const v of P.voices) { v.active = false; v.gate = false; v.pending = false; v.resetState(); }
       if (P.kit) for (const kv of P.kit.voices) kv.on = false;
+      if (P.smp !== null) P.smp.allOff(true);
       if (P.ghost) P.ghost.left = 0;
       P.stackLen = 0;
       P.effects.reset();
