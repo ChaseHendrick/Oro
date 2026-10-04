@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-04 after Oro 2.12.0 (section 0 is the current state; 2.13 is paused, see 10.8). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-04 for Oro 2.14.0 (section 0 is the current state; see 10.9). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -8,26 +8,38 @@ separate future features; they are outside the 2.0 expansion.
 
 ---
 
-## 0. Read first: where things stand (2026-10-04, after 2.12.0)
+## 0. Read first: where things stand (2026-10-04, Oro 2.14.0)
 
-* **Released:** Oro **2.12.0** (live mode, GPU Resonator, listening modes, 3D sound,
-  surround export). GitHub Release v2.12.0 has all downloads; the website serves 2.12.0.
-* **In progress, paused:** Oro **2.13** (Sampler track, looper tape controls, granular mode,
-  tuner). Unfinished code is on branch **`claude/sampler-wip`**. See section 10.8 for the
-  exact state and next steps.
+* **Released:** Oro **2.14.0** is the current app. The website serves it at
+  https://www.hendrickresearch.com/music/oro/ (the music page `softwareVersion`
+  is 2.14.0). A push to `main` runs `.github/workflows/desktop.yml` and publishes
+  the GitHub Release, which is what the music page desktop links use. Until that
+  release exists, those links still point at the previous tag.
+* **In this release:** 2.13.0 (Sampler, looper tape, granular mode, tuner) and
+  2.14.0 (editable slice marks, sequencer slice picks, one looper Speed slider,
+  stereo sampler takes, vocoder as effect type 31, appended). Exact +1.00× looper
+  playback still uses the integer playhead. See 10.8 and 10.9. Plugin, Ableton
+  Link and a piano roll were researched as interface only and are not started.
+  Do not start them unless the owner asks again.
+* **Checks:** With the sampler off, three rendered scenes matched the 2.12.0
+  engine sample for sample (max difference 0) at 2.13. The full Vitest suite
+  passed locally for 2.14 (1890). Not tested with a real microphone, real pedals,
+  or surround hardware. `node dev/dsp/bench.mjs 1` against main was not run.
+  Desktop downloads follow the GitHub release that `main` publishes.
 * **Other unfinished branches:** `claude/jam-wip` (Jam together building blocks, 10.2) and
   the GPU Resonator branch, which shipped in 2.12 (10.4).
-* **Future features list:** section 10.7 (plugin version, Ableton Link, vocoder, piano roll
-  and automation, make a patch from a sound). Jam together (10.2) and Learn (10.3) are also
-  still to do. Small follow-ups: 10.6.
+* **Future features list:** section 10.7. The vocoder shipped in 2.14. Still open: a plugin
+  version, Ableton Link, a piano roll and automation, and making a patch from a sound.
+  Jam together (10.2) and Learn (10.3) are also still to do. Small follow-ups: 10.6.
 * **Branches and pushing:** the session's designated branch was `claude/magical-tesla-q993l8`.
   After its PR was squash-merged, resetting it needs a force push, which the safety checks
-  block. With the owner's OK each release went to a new branch instead (`claude/oro-2.12`).
-  Do the same for 2.13 (for example `claude/oro-2.13`) and ask the owner first.
+  block. With the owner's OK each release went to a new branch instead (`claude/oro-2.12`,
+  then `claude/oro-2.13` for 2.13 and 2.14). Do the same for the next release and ask the owner first.
 * **Website hosting (Vercel, team `chaos-3e50`, free plan):** deployment storage hit the
   10 GB limit because every branch push made a ~126 MB preview. Since PR #29 `vercel.json`
-  has `"ignoreCommand": "[ \"$VERCEL_ENV\" != \"production\" ]"`, so only `main` builds and
-  PRs show "Ignored" instead of a preview link. The owner deleted old previews by hand. The
+  has an ignore step that skips pull request previews and builds `main` (and production).
+  An earlier step skipped `main` as well, which left the live site on 2.12.0 until that
+  was corrected. The owner deleted old previews by hand. The
   Vercel connector in Claude reaches the owner's account but not the `chaos-3e50` team (403),
   so Claude cannot manage deployments unless that is re-authorised with the team selected.
 * **App version:** `src/ui/settings.js` reads `VERSION` from `package.json` (fixed in 2.12;
@@ -67,7 +79,7 @@ tests, Playwright (Chromium) for browser checks. Node 22.
 | Repo | What | Default branch | Deploys |
 |---|---|---|---|
 | `ChaseHendrick/synth` | the synth (this repo) | `main` | every push to `main` builds the desktop apps and publishes a GitHub Release for the version in `package.json` (`.github/workflows/desktop.yml`) |
-| `ChaseHendrick/hendrickresearch.com` | the owner's website (Vite + TypeScript) | `main` | Vercel deploys `main` to hendrickresearch.com; every PR gets a Vercel preview |
+| `ChaseHendrick/hendrickresearch.com` | the owner's website (Vite + TypeScript) | `main` | Vercel deploys `main` to hendrickresearch.com. Pull request previews are skipped (storage); see the website bullet in section 0 |
 | `ChaseHendrick/music-field-manual` | the owner's notes, **PolyForm licensed** | | use facts from it only, never copy code |
 
 Work happens on a branch and goes in through a pull request. The owner wants PRs merged
@@ -665,9 +677,7 @@ swing, ratchets, Euclidean rhythms and sidechain, so those are not listed.
 - **Ableton Link** (tempo and phase sync with other apps and devices on the local network).
   Browsers cannot open the UDP sockets Link needs, so this is desktop app only, through a
   native module in Electron. Oro already follows and sends MIDI clock.
-- **Vocoder**: a track effect or mode using the mic (or any track) as the modulator and the
-  track as the carrier; band count, formant shift, sibilance pass-through. Oro already has
-  mic input and a sidechain path to build on.
+- **Vocoder**: shipped in 2.14 as track effect type 31 (see 10.9). Microphone or another track shapes the carrier. Do not add a second one.
 - **Piano roll and automation lanes**: free note editing and long knob-movement curves over
   a whole song. Oro has step sequencing, parameter locks, song mode and Capture, but no
   free-form editing. Needs a timeline data model that works with song mode and undo.
@@ -675,9 +685,9 @@ swing, ratchets, Euclidean rhythms and sidechain, so those are not listed.
   filters and envelopes for a patch that imitates the sample's spectrum and envelope.
   Experimental; offline search with a spectral distance score is the likely approach.
 
-Planned for 2.13 and partly built (see 10.8): granular mode for the Sampler (DSP done, no UI yet) and a tuner for audio input (not started).
+2.13 shipped granular mode (with UI) and the tuner (see 10.8). 2.14 is section 10.9.
 
-### 10.8 Oro 2.13 in progress: Sampler, looper tape controls, granular mode, tuner (paused)
+### 10.8 Oro 2.13.0: Sampler, looper tape controls, granular mode, tuner
 
 **Why:** the owner asked for the ideas of a hardware sampler whose firmware went open source
 (MIT licence) in September 2026, in Oro's own layout (the owner dislikes that product's
@@ -685,78 +695,54 @@ layout). Everything is clean-room: no code, samples, text or panel design from i
 product is not named in Oro. MIT would allow porting code with its notice, but the owner's
 rule is clean-room; ask before changing that.
 
-**Code:** branch `claude/sampler-wip`, commits `30cad6d` (DSP, saved field, sync, params) and
-`887cbdb` (tests, 4 failing). Based on 2.12.0 (`42c1943`).
+**Code:** shipped on `claude/oro-2.13`. The sampler DSP commits were `30cad6d` and `887cbdb` on `claude/sampler-wip`, cherry-picked as `ab0f7ce` and `8fc9d03`, based on 2.12.0 (`42c1943`). The UI, tape controls, tuner and docs are `cd7cac1`. When that work started, `main` was `11ad758` and did not contain the sampler. 2.13 and 2.14 land on `main` together.
 
-**Status when paused (verified by the agent):** `npx vite build` passes. `npx vitest run`:
-1848 passed, 7 failed of 1855 (161 files):
-- 4 in the new `tests/dsp/sampler.test.js`, believed to be wrong expectations, not engine bugs:
-  start/end and ping-pong expected values ignore the default 0.8 level; the attack threshold
-  (0.05) is too tight; the Freeze signature test expects 4 refs but the default part has 12.
-- 2 older tests (`tests/audio/surround.test.js` "3D parameters are appended" and
-  `tests/dsp/resonator.test.js` "are appended to the part parameters") probably assert their
-  params are last in `PART_PARAMS`; the 4 new params now come after them. Fix: check relative
-  order instead (a guess, check first).
-- `tests/dsp/perf.test.js`: not yet compared with main (see section 0).
+**Done since the pause:** 2.14 later replaced Half / Normal / Double and Reverse with one Speed slider, and added the slice editor (10.9). The list below is the 2.13 commit.
+- The 4 sampler expectation bugs and the 2 "appended" parameter tests are fixed.
+  `tests/dsp/sampler.test.js`, `tests/audio/surround.test.js` and `tests/dsp/resonator.test.js`
+  pass. Expectations now include the default level 0.8, a looser attack window, a freeze
+  signature sized to the default drum pads, and relative order (3D, then the four sampler params).
+- **Sampler UI:** `src/ui/sampler-panel.js` plus `src/ui/sampler-model.js`, lazy chunk
+  `chunks.sampler`, mounted first on the Sound pane. Record 2/4/8/16 s, Import, Grab loop,
+  waveform handles for Start and End, modes, direction, grain knobs only in Granular, Slice
+  on transients (no slice editor). Turning Sampler on clears the drum kit's `on` flag and
+  the reverse. Tests: `tests/ui/sampler-panel.test.js`.
+- **Looper tape:** Reverse, Half / Normal / Double (pitch follows speed). Unity forward
+  playback still uses the integer playhead. Scrub is a drag on the waveform strip (one-pole
+  follow, level falls as the finger moves). Overdub writes each index once. Undo copies
+  backward while reversed. Peaks scan in chunks. Tests: `tests/audio/looper-tape.test.js`
+  (44 looper tests passed with the older looper files).
+- **Tuner:** `src/audio/tuner.js` (cumulative mean normalized difference, clean-room) and
+  `src/ui/tuner-panel.js`, lazy-imported at the bottom of Settings > Voice. It taps the
+  existing voice input and does not enter the audible graph. Tests: sines at 82.41, 110,
+  440 and 1000 Hz within 5 cents, saws stay on the fundamental, silence gives no note.
+  Not tested with a real microphone.
+- **Docs:** user guide sections, two help cards, README bullets, a 2.13.0 changelog section,
+  and this file. `package.json` is 2.13.0.
 
-**Done (DSP and data):**
-- `src/dsp/sampler.js`: `SamplerPlayer`, `sanitizeSampler`, `defaultSampler`,
-  `samplerConfig`. Modes 0..4: Chromatic, One-shot, Held, Slices, Granular. Forward, reverse,
-  ping-pong; loop with a 10 ms equal-power crossfade; 2 ms edge fades; 4-point Hermite
-  reading; source rate vs host rate handled; 8 voices plus 4 spare slots so stolen voices fade
-  over 4 ms. Granular: 24 preallocated grains per voice, xorshift seeded from note and
-  velocity so bounces repeat live takes.
-- `src/dsp/dsp-core.js`: `P.smp`, `P.smpOn`, message `{t:'sampler', part, on, cfg, pcm?,
-  rate?, keep?}` (`setSampler`); notes route to the sampler (the drum kit wins if both are
-  on); tuning via `samplerSemis`, velocity via `velGain`; rendered in `renderSegment` right
-  after the kit into `oL/oR`, before the track rack, so effects, sends, mixer, 3D, Freeze,
-  stems and bounce take it like any track (engine path tested, not each feature);
-  `partMods` runs while sampler voices sound; allOff, panic and frozen-blend clear stop it.
-- `src/core/params.js`: appended modulatable params `smpSpeed` (exp 0.25 to 4, detent at 1),
-  `smpStart`, `smpEnd`, `smpPos`, group `sampler` (labels added in the links, mod, smart and
-  seq panels). Part-wide modulation only, not per-voice sources.
-- `src/ui/knob.js`: generic `def.detent` (holds at a value over a short drag distance).
-- `src/core/migrate.js`: optional `sampler` field, omitted when absent. `src/core/history.js`:
-  `cloneSampler` shares the audio string; "Sampler ..." edit labels.
-- `src/audio/sync.js`: `samplerMsg` keyed by part, permuted on track reorder; audio sent once,
-  `keep:1` on knob moves. `src/audio/freeze.js` adds the sampler to the signature only when
-  present; `src/audio/stems.js` describes it.
-- Data: `part.sampler = { on, name, sample: {rate, data (base64 16-bit mono)} | null,
-  mode 0..4, root, fine (cents), loop, dir 0/1/2, attack, decay, sustain, level,
-  slices?: [frame offsets], grain: {size, density, spread, jitter, rev} }`. Audio capped at
-  16 s at 48 kHz (`SAMPLER_MAX_B64`).
-- 26 sampler tests pass (pitch at 44.1/48/96 kHz, Hermite error below -50 dB, reverse, loop
-  crossfade, modes, slices, stealing, grain density, Hann window sum, full grain pool without
-  allocation, seeded determinism, migration round trip, undo sharing, sync keep/off, engine
-  renders twice identically).
+**Checked:** full Vitest suite, 1879 passed, including `tests/dsp/perf.test.js` on this machine.
+Three scenes with the sampler off matched the 2.12.0 engine sample for sample. `npx vite build` succeeded.
+Not done: `node dev/dsp/bench.mjs 1` back to back with main, Playwright screenshots, a real microphone.
 
-**Not started:**
-1. **Sampler UI**: a Sampler card at the top of the Sound pane, body in a lazy chunk
-   `src/ui/sampler-panel.js` registered in `src/ui/lazy.js`: Record (2/4/8/16 s, reuse
-   `recordMic` from `src/ui/drum-panel.js`), Import, Grab from the looper (`getLoop`); a
-   waveform canvas (use `pixelRatioOf`) with draggable start and end handles; mode and
-   direction segmented controls; knobs incl. grain knobs; Sampler and Drum kit mutually
-   exclusive. Oro's own layout, not a hardware-style panel.
-2. **Looper tape controls** (`src/audio/looper-core.js`, `looper-worklet.js`, `looper.js`,
-   `src/ui/looper-panel.js`): Reverse, half/normal/double speed, Varispeed (pitch follows
-   speed), Scrub by dragging on a new waveform strip. Planned design: a fractional playhead
-   used only off unity so default playback stays bit-identical; smoothed rate for the tape
-   glide; scrub follows the pointer through a one-pole filter and fades level with scrub rate;
-   overdub writes once per loop index the head crosses; the undo snapshot copies backward when
-   reversed; peak overview scanned in chunks.
-3. **Tuner** for audio input: lazy loaded, YIN or autocorrelation (clean-room), note, octave
-   and cents with a smoothed steady needle, respects the reference pitch; never touches
-   audio. Tests on sines (82.41, 110, 440, 1000 Hz within a few cents), a saw without octave
-   jumps, silence gives no note.
-4. **Docs**: USER-GUIDE sections, help cards, README bullets, CHANGELOG "2.13.0", this file.
-5. **Checks**: full suite, build, Playwright smoke with the fake mic, screenshots at
-   5120x2160@1, 1512x982@2, 390x844@3; CPU cost per sampler voice; a bit-identical render
-   check that existing sessions sound the same with the 4 new params.
+**Known risks:** `kitSent` in `sync.js` is not permuted on track reorder (pre-existing, not fixed).
+Slice editing, missing here, shipped in 2.14 (10.9). Freeze still renders the Resonator on the CPU.
+Scrub during an open overdub waits until the undo snapshot finishes.
 
-**Known risks:** 4 more params in every session's params (as 2.12 did for 3D); render
-equality for old sessions not yet checked. `kitSent` in `sync.js` is not permuted on track
-reorder (pre-existing bug, not fixed).
+**After this note:** the website at https://www.hendrickresearch.com/music/oro/ serves 2.14.0.
+Desktop downloads update when `main` publishes the GitHub Release.
 
-**Next steps, in order:** fix the 4 sampler test expectations and the 2 "appended" tests;
-compare perf with main; Sampler UI; looper tape controls; tuner; docs; full checks; then
-release 2.13.0 on a new branch with the owner's OK, sync the website, merge when green.
+### 10.9 Oro 2.14.0: slices, tape speed, stereo takes, vocoder
+
+Shipped in 2.14.0 (`package.json` is 2.14.0) on `claude/oro-2.13`.
+
+* Sampler slices are edited on the wave (drag, add, delete, snap to a zero crossing). The
+  sequencer Note row becomes Slice and writes `step.slice` only when a step is touched.
+  Old patterns keep the key mapping.
+* Looper Speed is one bipolar slider. Bend 0 is exactly +1.00× and stays on the integer
+  playhead. Left of centre plays backward. Saved sessions that had Half/Normal/Double and
+  Reverse are converted once.
+* Import, Grab loop and Record output keep stereo. The microphone stays mono.
+* Vocoder is track-effect type 31 (appended, so older type numbers are unchanged). The
+  modulator is another track's previous block, or microphone audio posted into the engine
+  while Voice is on. `mod` is stored only on a vocoder slot.
+* Not started: plugin, Ableton Link, piano roll. Do not name the hardware sampler.

@@ -194,7 +194,10 @@ describe('5.1 export with the real DSP', { timeout: 120000 }, () => {
 describe('saved data', () => {
   it('3D parameters are appended, default Off, clamped on load; old sessions load unchanged', () => {
     const ids = PART_PARAMS.map(p => p.id);
-    expect(ids.slice(-5)).toEqual(['space', 'spaceAz', 'spaceEl', 'spaceDist', 'spaceAir']);
+    const at = ids.indexOf('space');
+    expect(ids.slice(at, at + 5)).toEqual(['space', 'spaceAz', 'spaceEl', 'spaceDist', 'spaceAir']);
+    // 2.13 sampler params are appended after 3D (append-only; they are not last forever)
+    expect(ids.slice(at + 5, at + 9)).toEqual(['smpSpeed', 'smpStart', 'smpEnd', 'smpPos']);
     const def = defaultPart(0).params;
     expect(def).toMatchObject({ space: 0, spaceAz: 0, spaceEl: 0, spaceDist: 1, spaceAir: 1 });
     const p = sanitizePart({ params: { space: 9, spaceAz: 400, spaceEl: -90, spaceDist: 0.01, spaceAir: 0.7 } }, 0);

@@ -77,6 +77,12 @@ export class EffectSlot {
     this.hilbert = new Float64Array(HILBERT_STRIDE * 2); this.voicePhase = new Float64Array(HYPER_BASE.length);
     this.hI = 0; this.hQ = 0; this.direction = 0; this.pattern = 0;
     this.tempo = 120; this.stepRate = 120 / 15 / sr; this.seqPos = 0;
+    // vocoder: up to 32 bands, carrier and modulator coefficients, and one
+    // biquad history each for carrier L, carrier R and the modulator
+    this.modIndex = -3; this.vocBands = 16; this.vocKey = -1; this.vocHpPole = 0; this.vocHpZ = 0;
+    this.vocC = new Float64Array(32 * 10);
+    this.vocZL = new Float64Array(32 * 2); this.vocZR = new Float64Array(32 * 2); this.vocZM = new Float64Array(32 * 2);
+    this.vocEnv = new Float64Array(32);
     this.L = 0; this.R = 0; this.tailL = 0; this.tailR = 0;
     this.reset();
   }
@@ -92,6 +98,10 @@ export class EffectSlot {
     for (let i = 0; i < 4; i++) this.target[i] = clamp(Number.isFinite(value?.['p' + (i + 1)]) ? value['p' + (i + 1)] : def.defaults[i], 0, 1);
     this.mixTarget = next ? clamp(Number.isFinite(value?.mix) ? value.mix : .5, 0, 1) : 0;
     this.control = 0;
+    let mi = -3;
+    if (value && Number.isInteger(value.modIndex)) mi = value.modIndex;
+    else if (value && typeof value.mod === 'string' && value.mod !== 'mic') mi = -4;
+    this.modIndex = mi < -4 || mi > 63 ? -4 : mi;
   }
   reset() {
     this.bufL.fill(0); this.bufR.fill(0); for (let i = 0; i < 8; i++) this.fdn[i].fill(0);
@@ -104,6 +114,8 @@ export class EffectSlot {
     this.seed = (0x6d2b79f5 + this.index * 9871) | 0; this.control = 0;
     this.tailL = 0; this.tailR = 0; this.deltaL = 0; this.deltaR = 0; this.reduction = 1;
     this.hilbert.fill(0); this.hI = 0; this.hQ = 0; this.seqPos = 0;
+    this.vocZL.fill(0); this.vocZR.fill(0); this.vocZM.fill(0); this.vocEnv.fill(0);
+    this.vocHpZ = 0; this.vocKey = -1;
     for (let i = 0; i < this.voicePhase.length; i++) this.voicePhase[i] = i / this.voicePhase.length;
   }
   /** One Hilbert step: hI and hQ receive the in-phase and quadrature parts. */
@@ -178,6 +190,26 @@ export class EffectSlot {
     else if (type === 30) {
       this.pattern = Math.round(this.target[0] * (FILTER_SEQ_PATTERNS.length - 1)) * 8;
       this.attack = timePole(.001 + p[1] * 15 / this.tempo, sr); this.fb = 2 - 1.85 * p[2];
+    } else if (type === 31) {
+      const bands = Math.round(8 + this.target[0] * 24);
+      const shift = p[1] * 24 - 12;
+      this.vocBands = bands;
+      this.depth = p[2];
+      this.attack = timePole(.006, sr);
+      this.release = timePole(.04, sr);
+      this.vocHpPole = pole(5500, sr);
+      const key = bands * 1000 + Math.round(shift * 4);
+      if (key !== this.vocKey) {
+        this.vocKey = key;
+        const q = Math.max(.8, bands * .12);
+        const hi = Math.min(8000, sr * .42);
+        for (let i = 0; i < bands; i++) {
+          const t = bands <= 1 ? .5 : i / (bands - 1);
+          const hz = Math.exp(Math.log(120) + (Math.log(hi) - Math.log(120)) * t);
+          coefficients(this.vocC, i * 10, 'band', hz, q, 0, sr);
+          coefficients(this.vocC, i * 10 + 5, 'band', hz * Math.pow(2, shift / 12), q, 0, sr);
+        }
+      }
     }
     if (this.type === 12) {
       coefficients(this.c, 0, 'shelfLow', 100, .707, 24 * p[0] - 12, sr);
@@ -231,7 +263,14 @@ export class EffectSlot {
     if (++this.fdnPos === this.fdnSize) this.fdnPos = 0;
     this.wetL = wetL; this.wetR = wetR;
   }
-  process(L, R, sidechain) {
+  /** One biquad step using coefficients and history that do not belong to the shared EQ. */
+  biquadExt(x, c, at, z, zi) {
+    const y = c[at] * x + z[zi];
+    z[zi] = c[at + 1] * x - c[at + 3] * y + z[zi + 1];
+    z[zi + 1] = c[at + 2] * x - c[at + 4] * y;
+    return y;
+  }
+  process(L, R, sidechain, modL = 0, modR = 0) {
     const type = this.type;
     if (!type && Math.abs(this.tailL) + Math.abs(this.tailR) < 1e-12) { this.L = L; this.R = R; this.reduction = 1; return; }
     this.mix += this.smooth * (this.mixTarget - this.mix);
@@ -379,6 +418,27 @@ export class EffectSlot {
       zl[0] = 2 * v1 - zl[0]; zl[1] = 2 * v2 - zl[1]; l = v2;
       v3 = R - zr[1]; v1 = a1 * zr[0] + a2 * v3; v2 = zr[1] + a2 * zr[0] + a3 * v3;
       zr[0] = 2 * v1 - zr[0]; zr[1] = 2 * v2 - zr[1]; r = v2;
+    } else if (type === 31) {
+      const bands = this.vocBands;
+      const mod = (finite(modL) + finite(modR)) * .5;
+      this.vocHpZ += this.vocHpPole * (mod - this.vocHpZ);
+      const sib = (mod - this.vocHpZ) * this.depth;
+      const c = this.vocC, zL = this.vocZL, zR = this.vocZR, zM = this.vocZM, env = this.vocEnv;
+      const att = this.attack, rel = this.release;
+      let sumL = 0, sumR = 0;
+      for (let i = 0; i < bands; i++) {
+        const at = i * 10, zi = i * 2;
+        const cL = this.biquadExt(L, c, at, zL, zi);
+        const cR = this.biquadExt(R, c, at, zR, zi);
+        const m = this.biquadExt(mod, c, at + 5, zM, zi);
+        const e = m < 0 ? -m : m;
+        env[i] += (e > env[i] ? att : rel) * (e - env[i]);
+        sumL += cL * env[i];
+        sumR += cR * env[i];
+      }
+      const g = 3 / Math.sqrt(Math.max(1, bands));
+      l = sumL * g + sib;
+      r = sumR * g + sib;
     }
     this.tailL *= 1 - this.transitionPole; this.tailR *= 1 - this.transitionPole;
     this.L = safe(L + (safe(l) - L) * this.mix + this.tailL); this.R = safe(R + (safe(r) - R) * this.mix + this.tailR);
@@ -388,14 +448,16 @@ export class EffectSlot {
 }
 
 /** Four preallocated stereo processors. Sidechain is a linear peak/RMS level
- * supplied by the host. processSample and meter return owned, reused objects. */
+ * supplied by the host. An optional `mods` array of eight numbers is this
+ * sample's vocoder modulator (left, right for each slot). processSample and
+ * meter return owned, reused objects. */
 export class TrackEffects {
   constructor(sampleRate = 48000) {
     this.sampleRate = clamp(Number.isFinite(sampleRate) ? sampleRate : 48000, 8000, 192000);
     this.slots = Array.from({ length: 4 }, (_, i) => new EffectSlot(this.sampleRate, i));
     this.out = { L: 0, R: 0 };
     this.meters = { peak: 0, rms: 0, sidechain: 0, reduction: 1 };
-    this.routing = 0; this.active = false; this.allDry = true; this.splitL = 0; this.splitR = 0; this.energy = 0;
+    this.routing = 0; this.active = false; this.allDry = true; this.wantsMod = false; this.splitL = 0; this.splitR = 0; this.energy = 0;
     this.routeFade = 0; this.routeTailL = 0; this.routeTailR = 0; this.inputL = 0; this.inputR = 0;
     this.splitPole = pole(800, this.sampleRate); this.meterPole = timePole(.1, this.sampleRate);
     this.configure(defaultTrackFx());
@@ -403,8 +465,8 @@ export class TrackEffects {
   configure(fx) {
     const next = clamp(Number.isFinite(fx?.routing) ? Math.round(fx.routing) : 0, 0, FX_ROUTINGS.length - 1);
     if (next !== this.routing) { this.splitL = 0; this.splitR = 0; this.routeFade = 1; this.routeTailL = this.out.L - this.inputL; this.routeTailR = this.out.R - this.inputR; }
-    this.routing = next; this.active = false; this.allDry = true;
-    for (let i = 0; i < 4; i++) { this.slots[i].configure(fx?.slots?.[i]); this.active ||= this.slots[i].type !== 0 || Math.abs(this.slots[i].tailL) + Math.abs(this.slots[i].tailR) > 1e-12; this.allDry &&= this.slots[i].mixTarget === 0; }
+    this.routing = next; this.active = false; this.allDry = true; this.wantsMod = false;
+    for (let i = 0; i < 4; i++) { this.slots[i].configure(fx?.slots?.[i]); this.active ||= this.slots[i].type !== 0 || Math.abs(this.slots[i].tailL) + Math.abs(this.slots[i].tailR) > 1e-12; this.allDry &&= this.slots[i].mixTarget === 0; this.wantsMod ||= this.slots[i].type === 31; }
   }
   reset() {
     for (let i = 0; i < 4; i++) this.slots[i].reset();
@@ -425,41 +487,42 @@ export class TrackEffects {
       if (Number.isFinite(beat)) { const sixteenths = beat * 4; slot.seqPos = sixteenths - Math.floor(sixteenths / 8) * 8; }
     }
   }
-  processSample(left, right, sidechain = 0) {
+  processSample(left, right, sidechain = 0, mods = null) {
     const L = finite(left), R = finite(right), sc = Math.max(0, finite(sidechain)), s = this.slots;
+    const play = (i, inL, inR) => s[i].process(inL, inR, sc, mods ? finite(mods[i * 2]) : 0, mods ? finite(mods[i * 2 + 1]) : 0);
     let l = L, r = R, aL, aR, bL, bR;
     const dry = this.allDry && s[0].mix < 1e-12 && s[1].mix < 1e-12 && s[2].mix < 1e-12 && s[3].mix < 1e-12 && Math.abs(s[0].tailL) + Math.abs(s[0].tailR) + Math.abs(s[1].tailL) + Math.abs(s[1].tailR) + Math.abs(s[2].tailL) + Math.abs(s[2].tailR) + Math.abs(s[3].tailL) + Math.abs(s[3].tailR) < 1e-12;
     if (this.active && !dry) {
       switch (this.routing) {
         case 1:
-          l = 0; r = 0; for (let i = 0; i < 4; i++) { s[i].process(L, R, sc); l += s[i].L * .25; r += s[i].R * .25; } break;
+          l = 0; r = 0; for (let i = 0; i < 4; i++) { play(i, L, R); l += s[i].L * .25; r += s[i].R * .25; } break;
         case 2:
-          s[0].process(L, R, sc); s[1].process(s[0].L, s[0].R, sc); aL = s[1].L; aR = s[1].R;
-          s[2].process(L, R, sc); s[3].process(s[2].L, s[2].R, sc); l = (aL + s[3].L) * .5; r = (aR + s[3].R) * .5; break;
+          play(0, L, R); play(1, s[0].L, s[0].R); aL = s[1].L; aR = s[1].R;
+          play(2, L, R); play(3, s[2].L, s[2].R); l = (aL + s[3].L) * .5; r = (aR + s[3].R) * .5; break;
         case 3:
-          s[0].process(L, R, sc); aL = s[0].L; aR = s[0].R; s[1].process(aL, aR, sc); s[2].process(aL, aR, sc);
-          s[3].process((s[1].L + s[2].L) * .5, (s[1].R + s[2].R) * .5, sc); l = s[3].L; r = s[3].R; break;
+          play(0, L, R); aL = s[0].L; aR = s[0].R; play(1, aL, aR); play(2, aL, aR);
+          play(3, (s[1].L + s[2].L) * .5, (s[1].R + s[2].R) * .5); l = s[3].L; r = s[3].R; break;
         case 4:
-          s[0].process(L, R, sc); s[1].process(L, R, sc); s[2].process((s[0].L + s[1].L) * .5, (s[0].R + s[1].R) * .5, sc);
-          s[3].process(s[2].L, s[2].R, sc); l = s[3].L; r = s[3].R; break;
+          play(0, L, R); play(1, L, R); play(2, (s[0].L + s[1].L) * .5, (s[0].R + s[1].R) * .5);
+          play(3, s[2].L, s[2].R); l = s[3].L; r = s[3].R; break;
         case 5:
-          s[0].process(L, R, sc); aL = s[0].L; aR = s[0].R; l = 0; r = 0;
-          for (let i = 1; i < 4; i++) { s[i].process(aL, aR, sc); l += s[i].L / 3; r += s[i].R / 3; } break;
+          play(0, L, R); aL = s[0].L; aR = s[0].R; l = 0; r = 0;
+          for (let i = 1; i < 4; i++) { play(i, aL, aR); l += s[i].L / 3; r += s[i].R / 3; } break;
         case 6:
-          aL = 0; aR = 0; for (let i = 0; i < 3; i++) { s[i].process(L, R, sc); aL += s[i].L / 3; aR += s[i].R / 3; }
-          s[3].process(aL, aR, sc); l = s[3].L; r = s[3].R; break;
+          aL = 0; aR = 0; for (let i = 0; i < 3; i++) { play(i, L, R); aL += s[i].L / 3; aR += s[i].R / 3; }
+          play(3, aL, aR); l = s[3].L; r = s[3].R; break;
         case 7:
-          aL = (L + R) * .5; bL = (L - R) * .5; s[0].process(aL, aL, sc); s[1].process(s[0].L, s[0].R, sc);
-          s[2].process(bL, bL, sc); s[3].process(s[2].L, s[2].R, sc); aL = (s[1].L + s[1].R) * .5; bL = (s[3].L + s[3].R) * .5; l = aL + bL; r = aL - bL; break;
+          aL = (L + R) * .5; bL = (L - R) * .5; play(0, aL, aL); play(1, s[0].L, s[0].R);
+          play(2, bL, bL); play(3, s[2].L, s[2].R); aL = (s[1].L + s[1].R) * .5; bL = (s[3].L + s[3].R) * .5; l = aL + bL; r = aL - bL; break;
         case 8:
           this.splitL += this.splitPole * (L - this.splitL); this.splitR += this.splitPole * (R - this.splitR);
-          s[0].process(this.splitL, this.splitR, sc); s[1].process(s[0].L, s[0].R, sc); aL = s[1].L; aR = s[1].R;
-          s[2].process(L - this.splitL, R - this.splitR, sc); s[3].process(s[2].L, s[2].R, sc); l = aL + s[3].L; r = aR + s[3].R; break;
+          play(0, this.splitL, this.splitR); play(1, s[0].L, s[0].R); aL = s[1].L; aR = s[1].R;
+          play(2, L - this.splitL, R - this.splitR); play(3, s[2].L, s[2].R); l = aL + s[3].L; r = aR + s[3].R; break;
         case 9:
-          s[0].process(L, L, sc); s[1].process(s[0].L, s[0].R, sc); aL = (s[1].L + s[1].R) * .5;
-          s[2].process(R, R, sc); s[3].process(s[2].L, s[2].R, sc); l = aL; r = (s[3].L + s[3].R) * .5; break;
+          play(0, L, L); play(1, s[0].L, s[0].R); aL = (s[1].L + s[1].R) * .5;
+          play(2, R, R); play(3, s[2].L, s[2].R); l = aL; r = (s[3].L + s[3].R) * .5; break;
         default:
-          for (let i = 0; i < 4; i++) { s[i].process(l, r, sc); l = s[i].L; r = s[i].R; }
+          for (let i = 0; i < 4; i++) { play(i, l, r); l = s[i].L; r = s[i].R; }
       }
       l = safe(l); r = safe(r);
     }

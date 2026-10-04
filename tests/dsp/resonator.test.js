@@ -207,8 +207,9 @@ describe('Resonator parameters', () => {
     const ids = PART_PARAMS.map(p => p.id);
     const at = ids.indexOf('resoOn');
     expect(ids.slice(at, at + 6)).toEqual(['resoOn', 'resoMix', 'resoDecay', 'resoTone', 'resoSize', 'resoListen']);
-    // 2.12 the 3D parameters come after them (append-only)
-    expect(ids.slice(at + 6)).toEqual(['space', 'spaceAz', 'spaceEl', 'spaceDist', 'spaceAir']);
+    // 2.12 the 3D parameters come straight after them; 2.13 sampler params after those (append-only)
+    expect(ids.slice(at + 6, at + 11)).toEqual(['space', 'spaceAz', 'spaceEl', 'spaceDist', 'spaceAir']);
+    expect(ids.slice(at + 11, at + 15)).toEqual(['smpSpeed', 'smpStart', 'smpEnd', 'smpPos']);
     expect(ids.indexOf('resoOn')).toBe(ids.indexOf('sendB') + 1);
     expect(PART_PARAM_MAP.resoOn.default).toBe(0);
     expect(PART_PARAM_MAP.resoOn.options).toEqual(['Off', 'Strike', 'Resonate']);

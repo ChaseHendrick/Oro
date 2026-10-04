@@ -87,6 +87,16 @@ few lines.
 * **Guitar chords (1.5, experimental).** Single-note tracking with bends or
   several notes at once from a clean guitar input. Chords respond more slowly and
   can miss octave-doubled strings. Tested with generated signals, not real hardware.
+* **Sampler (2.14).** One sample per track. The microphone is mono. A file, the loop
+  or the output can be stereo. Play it from the keyboard (chromatic, one-shot, held,
+  slices or granular). Slice marks can be dragged, and the sequencer can pick a slice
+  per step. The drum kit and the sampler turn each other off.
+* **Looper tape (2.14).** One Speed slider: normal in the middle, faster to the right,
+  backward to the left, with pitch following the speed. Drag the waveform to scrub.
+  Normal forward playback is unchanged.
+* **Vocoder (2.14).** A track effect. The microphone or another track shapes this one.
+* **Tuner (2.13).** Settings > Voice, and Tune on the Sampler card, show the note and cents from the
+  microphone. It only listens, and it follows the reference pitch.
 * **Voice input (1.4).** Sing into any microphone, a laptop's own included:
   hear it with the synth, loop and resample vocals, play a part by singing or humming,
   capture a sung note as a terrain, and let your voice move the terrain through Links.

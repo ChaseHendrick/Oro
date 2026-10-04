@@ -41,6 +41,22 @@
 // `loopSpb` is the beat length the loop's audio was recorded or stretched at
 // (0 for a free-length loop).
 //
+// Tape (v2.13): speed is 0.5, 1 or 2, and Reverse flips the sign. Varispeed
+// only: the read position advances by `rate` samples per output sample, so
+// pitch follows speed. The stored loop is never resampled. At rate +1 forward
+// (not scrubbing) the playhead stays an integer and the read is the original
+// one, sample for sample. Anywhere else the head is fractional and the read
+// is linear. Rate glides through a one-pole so a speed change does not click.
+// Scrub is temporary: while the pointer is down the head follows it through
+// its own one-pole, and the level falls as the finger moves faster (a stopped
+// finger is nearly silent). Releasing the strip resumes the previous play
+// state at the new position.
+// Overdub writes each loop index once per time the head enters it, so half
+// speed does not stack the input and double speed does not skip. The undo
+// snapshot keeps copying ahead of the head, backward when the head is
+// moving backward. A peak overview for the strip is scanned a chunk at a
+// time, never the whole loop in one block.
+//
 // The core never hears itself: its input is the master bus before the point
 // where its output is mixed back in (see engine.js), so the loop only reaches
 // the loop again through overdub, and then at most at unity.
@@ -60,10 +76,45 @@ export const SOFT_CEILING = 2;
 const SNAPSHOT_CHUNK = 16384;
 const POS_RATE_HZ = 30;
 const SMOOTH_SECONDS = 0.01;
+const TAPE_SECONDS = 0.03;
+const SCRUB_SECONDS = 0.02;
+const PEAK_BINS = 192;
+const PEAK_SCAN = 2048;
 const HALF_PI = Math.PI / 2;
 
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 const finite = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** Tape speed magnitude, 0 to 2. Exactly 0.5, 1 and 2 stay exact. Near 1 snaps to 1 so the integer playhead still applies. 0 is a stop. */
+export function sanitizeTapeSpeed(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 1;
+  const a = Math.abs(n);
+  if (a === 0.5 || a === 1 || a === 2) return a;
+  if (a < 1e-4) return 0;
+  if (Math.abs(a - 1) < 1e-4) return 1;
+  if (a > 2) return 2;
+  return a;
+}
+
+function wrapIndex(i, len) {
+  const m = i % len;
+  return m < 0 ? m + len : m;
+}
+
+/**
+ * Linear interpolation of `buf` at `pos` (wraps). An integer position returns
+ * that sample and does not read its neighbour, so rate +/-1 can stay exact.
+ */
+export function loopSampleAt(buf, pos, len) {
+  let p = pos % len;
+  if (p < 0) p += len;
+  const i0 = Math.floor(p);
+  const frac = p - i0;
+  if (frac === 0) return buf[i0];
+  const i1 = i0 + 1 >= len ? 0 : i0 + 1;
+  return buf[i0] * (1 - frac) + buf[i1] * frac;
+}
 
 /** Frames in `bars` 4/4 bars at `spb` seconds per beat (exact loop length, rounded once). */
 export function loopFrames(bars, spb, sampleRate) {
@@ -139,6 +190,8 @@ export class LooperCore {
 
     // Smoothed controls.
     this.smoothA = 1 - Math.exp(-1 / (SMOOTH_SECONDS * sampleRate));
+    this.tapeA = 1 - Math.exp(-1 / (TAPE_SECONDS * sampleRate));
+    this.scrubA = 1 - Math.exp(-1 / (SCRUB_SECONDS * sampleRate));
     this.volume = 1; this.muted = false; this.gain = 1;
     this.decayTarget = 1; this.decay = 1;
     this.pg = 0; this.pgTarget = 0;    // play fade 0..1 (linear over fadeLen)
@@ -148,12 +201,28 @@ export class LooperCore {
     this.edit = 0;                     // changes of the loop's audio (v2.8)
     this.loopSpb = 0;                  // beat length the loop was recorded at (0 = free length)
 
+    // Tape. `rate` is the smoothed signed speed. `frac` is set only while the
+    // integer +1 path is not in use, so a normal forward loop never reads it.
+    this.speed = 1;                    // 0..2. Exactly 1, forward, is the integer read.
+    this.reverse = false;
+    this.rate = 1;
+    this.frac = false;
+    this.fpos = 0;
+    this.scrubbing = false;
+    this.scrubTarget = 0;
+    this.dubAt = -1;                   // last loop index written by this overdub visit
+
     this.layers = [];                  // undo: [{ L, R, done, start, copied, peak }]
     this.peak = 0;                     // largest |sample| stored in the loop
     this.capture = null;               // raw capture for Resample
     this.posCountdown = 0;
     this.posEvery = Math.max(128, Math.round(sampleRate / POS_RATE_HZ));
     this.frameNow = 0;
+    this.peakAcc = new Float32Array(PEAK_BINS);
+    this.peakScanAt = 0;
+    this.peakScanEdit = -1;
+    this.peakScanLen = 0;
+    this.peakSentAt = -1e15;
   }
 
   // ------------------------------------------------------------------ queries
@@ -181,6 +250,11 @@ export class LooperCore {
       sampleRate: this.sr,
       edit: this.edit,
       loopSpb: this.loopSpb,
+      speed: this.speed,
+      reverse: this.reverse,
+      rate: this.rate,
+      scrub: this.scrubbing,
+      fpos: this.scrubbing || this.frac ? this.fpos : this.pos,
     };
   }
 
@@ -193,7 +267,7 @@ export class LooperCore {
   /**
    * Handle a control message at absolute frame `frame` (the start of the next block).
    * main | stop | undo | clear | bars n | volume v | mute v | feedback v | transport {...}
-   * | get {id} | capture {id, bars, frames}
+   * | get {id} | capture {id, bars, frames} | tape {rate, reverse, scrub}
    */
   handle(msg, frame = this.frameNow) {
     if (!msg || typeof msg.t !== 'string') return;
@@ -211,9 +285,66 @@ export class LooperCore {
       case 'get': this.sendLoop(msg.id); break;
       case 'capture': this.startCapture(msg, frame); break;
       case 'replace': this.replace(msg); break;
+      case 'tape': this.setTape(msg); break;
       case 'cancelCapture': if (this.capture) { const id = this.capture.id; this.capture = null; this.emit({ t: 'captured', id, cancelled: true }); this.notify(); } break;
       default: break;
     }
+  }
+
+  /**
+   * Tape controls. `rate` is a speed from 0 to 2 (the sign comes from
+   * `reverse`). Exactly 1 forward stays on the integer playhead. 0 is a stop.
+   * `scrub` is a 0..1 position while the pointer is down, or null to let go.
+   * Omitted fields are left alone, so a scrub move does not reset the speed.
+   */
+  setTape(msg) {
+    let changed = false;
+    if (msg.rate != null) {
+      const speed = sanitizeTapeSpeed(msg.rate);
+      if (speed !== this.speed) { this.speed = speed; changed = true; }
+    }
+    if (msg.reverse != null) {
+      const reverse = !!msg.reverse;
+      if (reverse !== this.reverse) { this.reverse = reverse; changed = true; }
+    }
+    if (Object.prototype.hasOwnProperty.call(msg, 'scrub')) {
+      const was = this.scrubbing;
+      if (msg.scrub == null) this.endScrub();
+      else this.moveScrub(msg.scrub);
+      if (was !== this.scrubbing) changed = true;
+    }
+    if (changed) this.notify();
+  }
+
+  /** Pointer down or moved. `u` is 0..1 across the loop. */
+  moveScrub(u) {
+    if (!this.len || this.state === 'empty' || this.state === 'armed' || this.state === 'record') return;
+    if (!this.scrubbing) {
+      this.scrubbing = true;
+      if (!this.frac) this.fpos = this.pos;
+      this.dubAt = -1;
+      // A scrub can land anywhere. Finish the open snapshot before more
+      // overdub writes, a chunk at a time, so undo still has the old audio.
+      const s = this.layers[this.layers.length - 1];
+      if (s && !s.done) s.hold = true;
+    }
+    const x = clamp(finite(u, 0), 0, 1);
+    // The far end of the strip is the last sample, not a wrap back to 0.
+    this.scrubTarget = x >= 1 ? this.len - 1e-4 : x * this.len;
+  }
+
+  /** Pointer up: keep the new position and go back to the play state we had. */
+  endScrub() {
+    if (!this.scrubbing) return;
+    this.scrubbing = false;
+    this.dubAt = -1;
+    if (!this.len) return;
+    let p = this.fpos % this.len;
+    if (p < 0) p += this.len;
+    this.fpos = p;
+    this.pos = p <= 0 ? 0 : Math.min(this.len - 1, Math.floor(p));
+    // Back on the integer path only when the tape is exactly normal forward.
+    this.frac = !(this.rate === 1 && !this.reverse && this.speed === 1);
   }
 
   /** The one-button cycle: Empty -> Record -> Play -> Overdub -> Play ... */
@@ -280,6 +411,7 @@ export class LooperCore {
   fadeTo(after) {
     this.odTarget = 0;
     this.cueFrame = -1;
+    this.scrubbing = false;
     if (this.state === 'overdub') this.state = 'play';
     if (this.pg <= 0 || !this.audible) { this.finishFade(after); return; }
     this.pgTarget = 0;
@@ -305,6 +437,13 @@ export class LooperCore {
     this.layers = [];
     this.peak = 0;
     this.userPaused = false;
+    this.scrubbing = false;
+    this.frac = false;
+    this.fpos = 0;
+    this.dubAt = -1;
+    this.peakScanEdit = -1;
+    this.peakScanLen = 0;
+    this.peakScanAt = 0;
   }
 
   clear() {
@@ -343,6 +482,9 @@ export class LooperCore {
     }
     this.len = 0; this.pos = 0; this.layers = []; this.peak = 0;
     this.loopBars = mode === 'bar' ? this.bars : 0;
+    this.scrubbing = false;
+    this.frac = false;
+    this.fpos = 0;
     let start = frame;
     if (mode === 'bar') {
       const prev = barFrame(tr, frame, sr, 'prev');
@@ -404,6 +546,8 @@ export class LooperCore {
     this.edit++;
     this.rec = null;
     this.pos = 0;
+    this.fpos = 0;
+    this.frac = false;
     this.cueFrame = -1;
     this.pg = 0;
     if (pause) { this.state = 'paused'; this.pgTarget = 0; this.userPaused = true; }
@@ -425,20 +569,22 @@ export class LooperCore {
     if ((bytes <= this.undoBudget) && this.maxLayers > 0) {
       try {
         if (!L) { L = new Float32Array(this.len); R = new Float32Array(this.len); }
-        this.layers.push({ L, R, done: false, start: this.pos, copied: 0, peak: this.peak, len: this.len, spb: this.loopSpb, bars: this.loopBars });
+        this.layers.push({ L, R, done: false, start: this.pos, copied: 0, copiedBack: 0, peak: this.peak, len: this.len, spb: this.loopSpb, bars: this.loopBars });
       } catch {
         this.emit({ t: 'error', reason: 'memory' });
       }
     }
     this.state = 'overdub';
     this.odTarget = 1;
+    this.dubAt = -1;
     this.edit++;
   }
 
   /** Copy `count` frames of the snapshot `s` (from its start, wrapping). */
   copySnapshot(s, count) {
     const len = this.len;
-    let n = Math.min(count, len - s.copied);
+    const back = s.copiedBack || 0;
+    let n = Math.min(count, len - s.copied - back);
     while (n > 0) {
       const at = (s.start + s.copied) % len;
       const run = Math.min(n, len - at);
@@ -447,7 +593,7 @@ export class LooperCore {
       s.copied += run;
       n -= run;
     }
-    if (s.copied >= len) s.done = true;
+    if (s.copied + (s.copiedBack || 0) >= len) s.done = true;
   }
 
   finishSnapshots() {
@@ -458,8 +604,45 @@ export class LooperCore {
   advanceSnapshot(n) {
     const s = this.layers[this.layers.length - 1];
     if (!s || s.done) return;
-    const ahead = ((this.pos - s.start) % this.len + this.len) % this.len + n;
-    this.copySnapshot(s, Math.max(SNAPSHOT_CHUNK, ahead - s.copied));
+    if (s.hold) {
+      this.copySnapshot(s, SNAPSHOT_CHUNK);
+      if (!s.done) this.copyBackward(s, SNAPSHOT_CHUNK);
+      if (s.done) s.hold = false;
+      return;
+    }
+    // Forward (the original walk) whenever the head is not moving backward.
+    // Reverse copies the other way so the saved audio stays ahead of the head.
+    // One chunk per block either way: the head only moves a few hundred frames.
+    if (!(this.rate < 0)) {
+      const ahead = ((this.pos - s.start) % this.len + this.len) % this.len + n;
+      this.copySnapshot(s, Math.max(SNAPSHOT_CHUNK, ahead - s.copied));
+      return;
+    }
+    if (!s.copied) this.copySnapshot(s, 1);
+    this.copyBackward(s, SNAPSHOT_CHUNK);
+  }
+
+  /** True while a scrub has asked the open snapshot to finish before more writes. */
+  snapHeld() {
+    const s = this.layers[this.layers.length - 1];
+    return !!(s && s.hold && !s.done);
+  }
+
+  /** Copy `count` frames backward from the sample before `s.start`. */
+  copyBackward(s, count) {
+    const len = this.len;
+    if (!s.copiedBack) s.copiedBack = 0;
+    let n = Math.min(count, len - s.copied - s.copiedBack);
+    while (n > 0) {
+      const at = ((s.start - 1 - s.copiedBack) % len + len) % len;
+      const run = Math.min(n, at + 1);
+      const from = at - run + 1;
+      s.L.set(this.L.subarray(from, at + 1), from);
+      s.R.set(this.R.subarray(from, at + 1), from);
+      s.copiedBack += run;
+      n -= run;
+    }
+    if (s.copied + s.copiedBack >= len) s.done = true;
   }
 
   undo() {
@@ -468,8 +651,11 @@ export class LooperCore {
     this.finishSnapshots();
     if (this.state === 'overdub') this.state = 'play';
     this.od = 0; this.odTarget = 0;
+    this.dubAt = -1;
     const prev = this.layers.pop();
-    if (this.audible && this.pg > 0 && this.cueFrame < 0) this.xf = { L: this.L, R: this.R, k: 0, p: this.pos, len: this.len };
+    if (this.audible && this.pg > 0 && this.cueFrame < 0) {
+      this.xf = { L: this.L, R: this.R, k: 0, p: this.pos, phase: this.pos, len: this.len };
+    }
     // v2.9 a layer from before a stretch has its own length and tempo
     if (prev.len > 0 && prev.len !== this.len) {
       this.pos = Math.min(prev.len - 1, Math.floor((this.pos * prev.len) / this.len));
@@ -508,7 +694,7 @@ export class LooperCore {
     this.od = 0; this.odTarget = 0;
     this.L = L; this.R = R; this.len = len;
     this.pos = Math.min(len - 1, Math.floor((oldPos * len) / oldLen));
-    this.xf = this.audible && this.pg > 0 && this.cueFrame < 0 ? { L: oldL, R: oldR, k: 0, p: oldPos, len: oldLen } : null;
+    this.xf = this.audible && this.pg > 0 && this.cueFrame < 0 ? { L: oldL, R: oldR, k: 0, p: oldPos, phase: oldPos, len: oldLen } : null;
     const bars = Math.round(finite(msg.bars, 0));
     if (bars > 0) this.loopBars = bars;
     const spb = finite(msg.spb, 0);
@@ -634,41 +820,66 @@ export class LooperCore {
       // ---- playback (and overdub writes) before recording, so a loop closed
       //      on this frame starts playing on the next one.
       let ol = 0, or = 0;
-      if (this.len > 0 && (this.state === 'play' || this.state === 'overdub')) {
+      if (this.scrubbing && this.len > 0 && (this.state === 'play' || this.state === 'overdub' || this.state === 'paused')) {
+        const heard = this.scrubSample();
+        ol = heard[0]; or = heard[1];
+      } else if (this.len > 0 && (this.state === 'play' || this.state === 'overdub')) {
+        const rateTarget = this.reverse ? -this.speed : this.speed;
+        if (this.rate !== rateTarget) {
+          this.rate += (rateTarget - this.rate) * this.tapeA;
+          const rd = this.rate - rateTarget;
+          if (rd < 1e-4 && rd > -1e-4) this.rate = rateTarget;
+        }
         if (this.cueFrame >= 0 && f >= this.cueFrame) {
           this.cueFrame = -1; this.pos = 0; this.pg = 0; this.pgTarget = 1; this.od = 0; this.xf = null;
           if (this.state === 'overdub') this.state = 'play';
           this.odTarget = 0;
           changed = true;
+          this.fpos = 0;
+          this.frac = false;
         }
         if (!(this.cueFrame >= 0 && this.pg <= 0)) {
-          const p = this.pos;
-          let sl = this.L[p], sr = this.R[p];
-          const x = this.xf;
-          if (x) {
-            const t = (x.k + 0.5) / F * HALF_PI;
-            const fi = Math.sin(t), fo = Math.cos(t);
-            const xp = x.p;
-            sl = sl * fi + x.L[xp] * fo;
-            sr = sr * fi + x.R[xp] * fo;
-            x.p = xp + 1 >= x.len ? 0 : xp + 1;
-            if (++x.k >= F) this.xf = null;
+          // Integer +1 forward is the original read. Anything else (half, double,
+          // reverse, or a glide that has not settled) uses the tape head.
+          const unity = this.rate === 1 && rateTarget === 1;
+          if (unity) {
+            if (this.frac) {
+              let fp = this.fpos % this.len;
+              if (fp < 0) fp += this.len;
+              this.pos = fp <= 0 ? 0 : Math.min(this.len - 1, Math.floor(fp));
+              this.frac = false;
+            }
+            const p = this.pos;
+            let sl = this.L[p], sr = this.R[p];
+            const x = this.xf;
+            if (x) {
+              const t = (x.k + 0.5) / F * HALF_PI;
+              const fi = Math.sin(t), fo = Math.cos(t);
+              const xp = x.p;
+              sl = sl * fi + x.L[xp] * fo;
+              sr = sr * fi + x.R[xp] * fo;
+              x.p = xp + 1 >= x.len ? 0 : xp + 1;
+              if (++x.k >= F) this.xf = null;
+            }
+            // Overdub ramp and decay glide.
+            if (this.od !== this.odTarget) this.od = this.od < this.odTarget ? Math.min(this.odTarget, this.od + odStep) : Math.max(this.odTarget, this.od - odStep);
+            this.decay += (this.decayTarget - this.decay) * a;
+            if (this.od > 0 && !this.snapHeld()) {
+              const w = Math.sin(this.od * HALF_PI);
+              const d = 1 - this.od * (1 - this.decay);
+              const nl = softLimit(this.L[p] * d + xl * w);
+              const nr = softLimit(this.R[p] * d + xr * w);
+              this.L[p] = nl; this.R[p] = nr;
+              const m = Math.max(nl < 0 ? -nl : nl, nr < 0 ? -nr : nr);
+              if (m > this.peak) this.peak = m;
+            }
+            const g = this.pg * this.gain;
+            ol = sl * g; or = sr * g;
+            this.pos = p + 1 >= this.len ? 0 : p + 1;
+          } else {
+            const heard = this.varispeedSample(xl, xr, F, a, odStep);
+            ol = heard[0]; or = heard[1];
           }
-          // Overdub ramp and decay glide.
-          if (this.od !== this.odTarget) this.od = this.od < this.odTarget ? Math.min(this.odTarget, this.od + odStep) : Math.max(this.odTarget, this.od - odStep);
-          this.decay += (this.decayTarget - this.decay) * a;
-          if (this.od > 0) {
-            const w = Math.sin(this.od * HALF_PI);
-            const d = 1 - this.od * (1 - this.decay);
-            const nl = softLimit(this.L[p] * d + xl * w);
-            const nr = softLimit(this.R[p] * d + xr * w);
-            this.L[p] = nl; this.R[p] = nr;
-            const m = Math.max(nl < 0 ? -nl : nl, nr < 0 ? -nr : nr);
-            if (m > this.peak) this.peak = m;
-          }
-          const g = this.pg * this.gain;
-          ol = sl * g; or = sr * g;
-          this.pos = p + 1 >= this.len ? 0 : p + 1;
         }
         if (this.pg !== this.pgTarget) {
           this.pg = this.pg < this.pgTarget ? Math.min(this.pgTarget, this.pg + pgStep) : Math.max(this.pgTarget, this.pg - pgStep);
@@ -697,8 +908,197 @@ export class LooperCore {
     if (this.posCountdown <= 0) {
       this.posCountdown = this.posEvery;
       if (this.state !== 'empty' || this.capture) {
-        this.emit({ t: 'pos', state: this.state, pos: this.pos, len: this.len, recPos: this.rec ? this.rec.pos : 0, recTarget: this.rec ? this.rec.target : 0, cue: this.cueFrame >= 0, capture: this.capture ? this.capture.pos / this.capture.frames : -1, peak: this.peak });
+        this.emit({
+          t: 'pos', state: this.state, pos: this.pos, len: this.len,
+          fpos: this.scrubbing || this.frac ? this.fpos : this.pos,
+          rate: this.scrubbing ? 0 : this.rate, speed: this.speed, reverse: this.reverse, scrub: this.scrubbing,
+          recPos: this.rec ? this.rec.pos : 0, recTarget: this.rec ? this.rec.target : 0,
+          cue: this.cueFrame >= 0, capture: this.capture ? this.capture.pos / this.capture.frames : -1, peak: this.peak,
+        });
       }
+    }
+    this.scanPeaks();
+  }
+
+  /** One scrub sample: the head glides toward the finger, and fast moves get quieter. */
+  scrubSample() {
+    const len = this.len;
+    const prev = this.fpos;
+    let next = prev + (this.scrubTarget - prev) * this.scrubA;
+    if (next < 0) next = 0;
+    const last = len - 1e-4;
+    if (next > last) next = last;
+    const vel = next > prev ? next - prev : prev - next;
+    this.fpos = next;
+    this.pos = next <= 0 ? 0 : Math.min(len - 1, Math.floor(next));
+    const sl = loopSampleAt(this.L, next, len);
+    const sr = loopSampleAt(this.R, next, len);
+    // Stopped is silent. Around 1 sample per output sample is full level.
+    // Faster than that falls off, so a flick across the strip stays quiet.
+    let sg = 0;
+    if (vel > 0) sg = vel <= 1 ? vel : 1 / vel;
+    const rateTarget = this.reverse ? -this.speed : this.speed;
+    if (this.rate !== rateTarget) {
+      this.rate += (rateTarget - this.rate) * this.tapeA;
+      const rd = this.rate - rateTarget;
+      if (rd < 1e-4 && rd > -1e-4) this.rate = rateTarget;
+    }
+    const g = sg * this.gain;
+    return [sl * g, sr * g];
+  }
+
+  /**
+   * Playback off unity forward. Rate -1 steps backward by one integer sample.
+   * Any other rate moves a fractional head and reads with linear interpolation.
+   * Overdub writes each index once per entry.
+   */
+  varispeedSample(xl, xr, F, a, odStep) {
+    const len = this.len;
+    if (this.od !== this.odTarget) this.od = this.od < this.odTarget ? Math.min(this.odTarget, this.od + odStep) : Math.max(this.odTarget, this.od - odStep);
+    this.decay += (this.decayTarget - this.decay) * a;
+    if (this.od <= 0) this.dubAt = -1;
+
+    if (this.rate === -1) {
+      if (this.frac) {
+        let fp = this.fpos % len;
+        if (fp < 0) fp += len;
+        this.pos = fp <= 0 ? 0 : Math.min(len - 1, Math.floor(fp));
+        this.fpos = this.pos;
+        this.frac = false;
+        this.dubAt = -1;
+      }
+      const p = this.pos;
+      let sl = this.L[p], sr = this.R[p];
+      const mixed = this.mixXf(sl, sr, F, -1);
+      sl = mixed[0]; sr = mixed[1];
+      if (this.od > 0 && !this.snapHeld()) this.writeDub(p, xl, xr);
+      const g = this.pg * this.gain;
+      this.pos = p - 1 < 0 ? len - 1 : p - 1;
+      this.fpos = this.pos;
+      return [sl * g, sr * g];
+    }
+
+    if (this.rate === 0) {
+      if (!this.frac) {
+        this.fpos = this.pos;
+        this.frac = true;
+        this.dubAt = -1;
+      }
+      return [0, 0];
+    }
+
+    if (!this.frac) {
+      this.fpos = this.pos;
+      this.frac = true;
+      this.dubAt = -1;
+    }
+    const from = this.fpos;
+    const to = from + this.rate;
+    let sl = loopSampleAt(this.L, from, len);
+    let sr = loopSampleAt(this.R, from, len);
+    const mixed = this.mixXf(sl, sr, F, this.rate);
+    sl = mixed[0]; sr = mixed[1];
+    if (this.od > 0 && !this.snapHeld()) this.dubBins(from, to, xl, xr);
+    let wrapped = to % len;
+    if (wrapped < 0) wrapped += len;
+    this.fpos = wrapped;
+    this.pos = wrapped <= 0 ? 0 : Math.min(len - 1, Math.floor(wrapped));
+    const g = this.pg * this.gain;
+    return [sl * g, sr * g];
+  }
+
+  /** Equal-power crossfade from the buffer undo or replace saved. `step` follows the head. */
+  mixXf(sl, sr, F, step) {
+    const x = this.xf;
+    if (!x) return [sl, sr];
+    const t = (x.k + 0.5) / F * HALF_PI;
+    const fi = Math.sin(t), fo = Math.cos(t);
+    let ph = x.phase == null ? x.p : x.phase;
+    const ol = loopSampleAt(x.L, ph, x.len);
+    const orr = loopSampleAt(x.R, ph, x.len);
+    ph += step;
+    ph %= x.len;
+    if (ph < 0) ph += x.len;
+    x.phase = ph;
+    x.p = ph <= 0 ? 0 : Math.min(x.len - 1, Math.floor(ph));
+    if (++x.k >= F) this.xf = null;
+    return [sl * fi + ol * fo, sr * fi + orr * fo];
+  }
+
+  /** Overdub one loop index (the same curve the integer path uses). */
+  writeDub(idx, xl, xr) {
+    const w = Math.sin(this.od * HALF_PI);
+    const d = 1 - this.od * (1 - this.decay);
+    const nl = softLimit(this.L[idx] * d + xl * w);
+    const nr = softLimit(this.R[idx] * d + xr * w);
+    this.L[idx] = nl; this.R[idx] = nr;
+    const m = Math.max(nl < 0 ? -nl : nl, nr < 0 ? -nr : nr);
+    if (m > this.peak) this.peak = m;
+  }
+
+  /**
+   * Write each integer bin the head enters while moving from `from` to `to`
+   * (unwrapped), and skip a bin it is already inside. Half speed therefore
+   * writes an index once; double speed writes both indices it crosses.
+   */
+  dubBins(from, to, xl, xr) {
+    const len = this.len;
+    const a = Math.floor(from);
+    const b = Math.floor(to);
+    const span = b >= a ? b - a : a - b;
+    const step = b >= a ? 1 : -1;
+    const last = b + step;
+    let i = a;
+    const guard = span + 1;
+    for (let n = 0; n < guard; n++) {
+      const idx = wrapIndex(i, len);
+      if (idx !== this.dubAt) {
+        this.writeDub(idx, xl, xr);
+        this.dubAt = idx;
+      }
+      i += step;
+      if (i === last) break;
+    }
+  }
+
+  /**
+   * Peak overview for the strip. One chunk per block, and never the whole
+   * loop in that block, so a long loop cannot stall the audio thread.
+   * A finished pass is posted at a modest rate.
+   */
+  scanPeaks() {
+    const len = this.len;
+    if (!len || !this.L) { this.peakScanLen = 0; return; }
+    if (this.peakScanEdit !== this.edit || this.peakScanLen !== len) {
+      this.peakAcc.fill(0);
+      this.peakScanAt = 0;
+      this.peakScanEdit = this.edit;
+      this.peakScanLen = len;
+    }
+    const bins = this.peakAcc.length;
+    const room = len - this.peakScanAt;
+    // Leave at least one frame for a later block when the loop is longer than one frame.
+    const cap = this.peakScanAt === 0 && len > 1 ? Math.min(PEAK_SCAN, len - 1) : Math.min(PEAK_SCAN, room);
+    const n = cap;
+    const at0 = this.peakScanAt;
+    const L = this.L, R = this.R, acc = this.peakAcc;
+    for (let i = 0; i < n; i++) {
+      const at = at0 + i;
+      const m = Math.max(Math.abs(L[at]), Math.abs(R[at]));
+      let b = (at * bins / len) | 0;
+      if (b >= bins) b = bins - 1;
+      if (m > acc[b]) acc[b] = m;
+    }
+    this.peakScanAt = at0 + n;
+    if (this.peakScanAt >= len) {
+      this.peakScanAt = 0;
+      const now = this.frameNow;
+      if (now - this.peakSentAt >= (this.sr >> 3)) {
+        const peaks = this.peakAcc.slice();
+        this.peakSentAt = now;
+        this.emit({ t: 'peaks', peaks, len, edit: this.edit, bins }, [peaks.buffer]);
+      }
+      this.peakAcc.fill(0);
     }
   }
 }

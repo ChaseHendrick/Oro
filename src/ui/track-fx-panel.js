@@ -28,12 +28,19 @@ export function createTrackFxPanel(ctx) {
     const letter = String.fromCharCode(65 + slotIndex);
     const select = h('select', { class: 'select-native', 'aria-label': `Slot ${letter} effect` }, FX_TYPES.map(type => option(type.id, type.name)));
     const hint = h('p', { class: 'tfx-hint' });
+    const mod = h('select', { class: 'select-native', 'aria-label': `Slot ${letter} modulator` });
+    const modField = h('label', { class: 'tfx-field tfx-mod', hidden: true }, h('span', { class: 'mini-label' }, 'Modulator'), selectBox(mod));
+    const voiceHint = h('p', { class: 'tfx-hint' }, 'Turn Voice on to use the microphone');
+    const voiceBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Voice');
+    const voiceRow = h('div', { class: 'tfx-voice', hidden: true }, voiceHint, voiceBtn);
     const knobs = h('div', { class: 'knob-row tfx-knobs' });
-    const card = { select, hint, knobs, controls: [], type: '', key: '', slotIndex, letter };
+    const card = { select, hint, knobs, controls: [], type: '', key: '', slotIndex, letter, mod, modField, voiceRow, modKey: '' };
     cards.push(card);
     scope.on(select, 'change', () => change(fx => { fx.slots[slotIndex] = defaultFxSlot(select.value); }));
+    scope.on(mod, 'change', () => change(fx => { if (fx.slots[slotIndex].type === 'vocoder') fx.slots[slotIndex].mod = mod.value; }));
+    scope.on(voiceBtn, 'click', () => { if (typeof ctx.openSettings === 'function') ctx.openSettings('voice'); });
     row.appendChild(h('section', { class: 'fx-card tfx-card', 'aria-label': `Effect slot ${letter}` },
-      h('div', { class: 'fx-title' }, h('span', null, `Slot ${letter}`), selectBox(select)), hint, knobs));
+      h('div', { class: 'fx-title' }, h('span', null, `Slot ${letter}`), selectBox(select)), hint, modField, voiceRow, knobs));
   }
 
   function affected(changed) {
@@ -54,6 +61,7 @@ export function createTrackFxPanel(ctx) {
     const fields = ['mix', 'p1', 'p2', 'p3', 'p4'];
     for (let i = 0; i < fields.length; i++) {
       const label = i ? type.params[i - 1] : 'Mix';
+      if (i && !label) continue;
       const scale = i ? fxParamScale(type.id, i - 1) : { min: 0, max: 1, curve: 'lin' };
       const def = { id: `fx${card.slotIndex}${fields[i]}`, ...scale, label };
       def.default = fromNorm(def, i ? type.defaults[i - 1] : type.id === 'bypass' ? 0 : .5);
@@ -81,15 +89,32 @@ export function createTrackFxPanel(ctx) {
     sidechain.value = fx.sidechain;
     if (!Array.from(sidechain.options).some(option => option.value === fx.sidechain)) sidechain.value = 'self';
     for (const card of cards) {
-      const type = FX_TYPE_MAP[fx.slots[card.slotIndex].type];
+      const slot = fx.slots[card.slotIndex];
+      const type = FX_TYPE_MAP[slot.type];
       card.select.value = type.id; setText(card.hint, type.hint);
       const key = `${index}:${type.id}`;
       if (key !== card.key) { card.key = key; card.type = type.id; buildKnobs(card, type); }
+      const isVoc = type.id === 'vocoder';
+      card.modField.hidden = !isVoc;
+      if (isVoc) {
+        const modKey = tracks.map((track, i) => i === index || !track.id ? '' : `${track.id}:${track.name}`).join('|');
+        if (modKey !== card.modKey) {
+          card.modKey = modKey;
+          card.mod.replaceChildren(option('mic', 'Microphone'),
+            ...tracks.flatMap((track, i) => i === index || !track.id ? [] : [option(track.id, track.name || `Track ${i + 1}`)]));
+        }
+        const saved = slot.mod || 'mic';
+        card.mod.value = Array.from(card.mod.options).some(o => o.value === saved) ? saved : 'mic';
+        const voiceOn = !!(ctx.voice && ctx.voice.prefs && ctx.voice.prefs.enabled);
+        const needVoice = (card.mod.value || 'mic') === 'mic' && !voiceOn;
+        card.voiceRow.hidden = !needVoice;
+      } else card.voiceRow.hidden = true;
     }
   }
   scope.add(store.subscribe('', changed => {
     if (affected(changed) || /^parts\.\d+\.(name|id)$/.test(changed)) render();
   }));
+  if (ctx.voice && typeof ctx.voice.on === 'function') scope.add(ctx.voice.on('change', render));
   scope.add(() => { for (const card of cards) for (const control of card.controls) control.dispose(); });
   const el = h('section', { class: 'track-fx-panel', 'aria-label': 'Selected track effects' },
     h('header', { class: 'section-head tfx-head' }, title,

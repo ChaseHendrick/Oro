@@ -205,7 +205,14 @@ describe('migration: probability and ratchets', () => {
     for (const k of [3, 4]) {
       expect('prob' in pat.steps[k]).toBe(false);
       expect('ratchet' in pat.steps[k]).toBe(false);
+      expect('slice' in pat.steps[k]).toBe(false);
     }
+    const named = sanitizePattern({ steps: [{ on: 1, slice: 3 }, { on: 1, slice: -1 }, { on: 1, slice: 40 }, { on: 1 }] });
+    expect(named.steps[0].slice).toBe(3);
+    expect('slice' in named.steps[1]).toBe(false);
+    expect('slice' in named.steps[2]).toBe(false);
+    expect('slice' in named.steps[3]).toBe(false);
+    expect(named.steps[0].degree).toBe(0);
   });
 
   it('round-trips a session with probability and ratchets', () => {

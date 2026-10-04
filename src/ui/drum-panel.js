@@ -18,7 +18,7 @@ const SLICE_RATE = 48000;
 const CYCLE = [0.8, 1, 0.45, 0];
 
 /** Decode an audio file to mono Float32 at SLICE_RATE. */
-async function decodeMono(buf) {
+export async function decodeMono(buf) {
   const Ctx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
   if (!Ctx) throw new Error('This browser cannot decode audio files');
   const ab = await new Ctx(1, 1, SLICE_RATE).decodeAudioData(buf);
@@ -28,7 +28,7 @@ async function decodeMono(buf) {
 }
 
 /** Record the microphone for `secs` seconds and decode it. */
-async function recordMic(secs, onTick) {
+export async function recordMic(secs, onTick) {
   if (!navigator.mediaDevices || !globalThis.MediaRecorder) throw new Error('Recording is not available in this browser');
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   try {
@@ -53,7 +53,16 @@ export function createDrumPanel(ctx) {
   let padSel = 0;
 
   const toggle = h('button', { type: 'button', class: 'toggle toggle--sm', 'aria-pressed': 'false' }, 'Drum kit');
-  scope.on(toggle, 'click', () => { const d = drum(); d.on = d.on ? 0 : 1; putDrum(d); });
+  scope.on(toggle, 'click', () => {
+    const d = drum();
+    d.on = d.on ? 0 : 1;
+    putDrum(d);
+    // The kit wins if both are on, so turning it on parks the sampler. The sample stays.
+    if (d.on) {
+      const s = store.get(`parts.${sel()}.sampler`);
+      if (s && typeof s === 'object' && s.on) store.set(`parts.${sel()}.sampler`, { ...s, on: 0 }, { source: 'ui' });
+    }
+  });
   const status = h('span', { class: 'popover-note', 'aria-live': 'polite' });
   const fileIn = h('input', { type: 'file', accept: 'audio/*', class: 'visually-hidden', tabindex: '-1', 'aria-hidden': 'true' });
   const importBtn = h('button', { type: 'button', class: 'btn btn--ghost btn--sm' }, 'Import & slice');

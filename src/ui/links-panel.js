@@ -17,7 +17,7 @@ const { PART_PARAM_MAP, GLOBAL_PARAM_MAP, MOD_PARAM_IDS, clamp } = params;
 export const LINK_SOURCES = params.LINK_SOURCES || ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4', 'Marble Speed', 'Marble Height', 'Env 1', 'Env 2', 'Random', 'Terrain Height'];
 export const LINK_CURVES = params.LINK_CURVES || ['Linear', 'Soft', 'Hard'];
 export const MAX_LINKS = params.MAX_LINKS || 8;
-const GROUP_LABEL = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', mix: 'Mix' };
+const GROUP_LABEL = { terrain: 'Terrain', path: 'Path', voice: 'Voice', filter: 'Filter', mix: 'Mix', sampler: 'Sampler' };
 const AMOUNT_DEF = { id: 'amt', label: 'Amount', curve: 'lin', min: -1, max: 1, default: 0 };
 
 export function sanitizeLink(l) {

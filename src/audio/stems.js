@@ -391,7 +391,7 @@ function trackLine(state, p) {
       : `pan ${Math.abs(pan) < 0.005 ? 'centre' : `${pct(Math.abs(pan))} ${pan < 0 ? 'left' : 'right'}`}`,
     `delay send ${pct(pr.delaySend)}`, `reverb send ${pct(pr.reverbSend)}`, `Send A ${pct(pr.sendA)}`, `Send B ${pct(pr.sendB)}`,
     pr.mute ? 'muted in the mix' : null, pr.solo ? 'soloed in the mix' : null,
-    part.drum && part.drum.on ? 'drum kit' : null,
+    part.drum && part.drum.on ? 'drum kit' : part.sampler && part.sampler.on ? `sampler${part.sampler.name ? ` ("${part.sampler.name}")` : ''}` : null,
     pat ? `pattern "${pat.name || 'Pattern'}"` : null,
     activeChain(part) ? 'song mode chain' : null,
     `track effects: ${fx.length ? fx.join(', ') : 'none'}`,

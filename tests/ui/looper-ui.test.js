@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { installFakeDom } from './fake-dom.js';
 import {
   createLooperControl, sanitizeLooperPrefs, looperView, looperProgress, loopFileName, LOOPER_PREFS_KEY, LOOPER_PREF_DEFAULTS,
+  tapeBendToRate, tapeRateToBend, tapeSpeedText,
 } from '../../src/ui/looper-control.js';
 import { createStore } from '../../src/core/store.js';
 import { defaultState } from '../../src/core/params.js';
@@ -56,6 +57,21 @@ describe('looper settings', () => {
       .toEqual({ ...LOOPER_PREF_DEFAULTS, feedback: 0.5, slice: 'root', root: 60 });
     expect(LOOPER_PREF_DEFAULTS.bars).toBe(2);
     expect(LOOPER_PREF_DEFAULTS.feedback).toBe(1);
+    expect(sanitizeLooperPrefs({ speed: 2, reverse: 1 }).speed).toBe(-2);
+    expect(sanitizeLooperPrefs({ speed: 0.5, reverse: 0 }).speed).toBe(0.5);
+    expect(sanitizeLooperPrefs({ speed: 1, reverse: 1 }).speed).toBe(-1);
+    expect(sanitizeLooperPrefs({ speed: 1.5 }).speed).toBe(1.5);
+    expect(sanitizeLooperPrefs({ speed: 2 }).speed).toBe(2);
+    expect('reverse' in sanitizeLooperPrefs({ speed: 2, reverse: 1 })).toBe(false);
+    expect(tapeBendToRate(0)).toBe(1);
+    expect(tapeBendToRate(1)).toBe(2);
+    expect(tapeBendToRate(-1)).toBe(-2);
+    expect(tapeBendToRate(-1 / 3)).toBe(0);
+    expect(tapeRateToBend(1)).toBe(0);
+    expect(tapeRateToBend(-2)).toBe(-1);
+    expect(tapeSpeedText(1)).toBe('1.00×');
+    expect(tapeSpeedText(-2)).toBe('2.00× back');
+    expect(tapeSpeedText(0)).toBe('0.00×');
   });
 
   it('sends the saved settings to the looper at start and saves changes', () => {

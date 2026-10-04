@@ -43,7 +43,7 @@
 // that parameter sends the track's own value back, also timed; so does Stop.
 
 import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
-import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepChance, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepSlice, stepChance, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
 
 // v2.6 humanize: up to this late (s) at Humanize time 1, and this share of velocity either way at Humanize velocity 1
 export const HUMAN_TIME_MAX = 0.02;
@@ -281,14 +281,15 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
     if (hV > 0) vel = clamp(vel * (1 + hV * HUMAN_VEL_MAX * (2 * stepChance(((probSeed | 0) + runs) ^ 0x2a7c, p, abs) - 1)), 0.01, 1);
     const gateSec = clamp(step.gate ?? 0.5, 0.05, 1) * rate * spb;
     const hits = stepRatchet(step);
-    if (hits === 1) { playHit(p, note, vel, gateSec, step.slide, t, tNext, lead, 0.01); return; }
+    const slice = stepSlice(step);
+    if (hits === 1) { playHit(p, note, vel, gateSec, step.slide, t, tNext, lead, 0.01, slice); return; }
     const span = tNext - t;
     for (let i = 0; i < hits; i++) {
       const ti = t + span * i / hits;
       const tiNext = i + 1 === hits ? tNext : t + span * (i + 1) / hits;
       // The minimum note length shrinks with very short hits so a hit never outlasts its slot.
       playHit(p, note, clamp(vel * RATCHET_DECAY ** i, 0.01, 1), gateSec / hits, i + 1 === hits && step.slide, ti, tiNext, lead,
-        Math.min(0.01, (tiNext - ti) / 2));
+        Math.min(0.01, (tiNext - ti) / 2), slice);
     }
   }
 
@@ -373,7 +374,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
   }
 
   /** One note of a step (a ratcheted step plays several), with ties and slides. */
-  function playHit(p, note, vel, gateSec, slide, t, tNext, lead, minLen) {
+  function playHit(p, note, vel, gateSec, slide, t, tNext, lead, minLen, slice = null) {
     const st = ps[p];
     const gateEnd = Math.max(t + minLen, Math.min(t + gateSec, tNext - MIN_GAP));
     if (st.tie && st.tie.note === note) {
@@ -381,7 +382,7 @@ export function createTransport({ store, engine, timebase, router, timers, lockP
       if (!slide) { router._engineOff(p, note, gateEnd, 'seq', st.tie.lead); st.tie = null; }
       return;
     }
-    router._engineOn(p, note, vel, t, 'seq', lead);
+    router._engineOn(p, note, vel, t, 'seq', lead, slice);
     if (st.tie) {
       router._engineOff(p, st.tie.note, t + SLIDE_OVERLAP, 'seq', st.tie.lead);
       st.tie = null;

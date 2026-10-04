@@ -274,6 +274,23 @@
 .voice-clip.is-on { background: var(--error-soft); border-color: var(--error); color: var(--error); }
 .voice-monitor { margin-top: 4px; }
 .voice-monitor.is-bad { color: var(--warn); }
+/* Tuner (listen only). Flat is left, sharp is right, centre is in tune. */
+.tuner-readout { display: flex; align-items: baseline; gap: 10px; min-height: 52px; margin: 4px 0 8px; }
+.tuner-name { font-size: 44px; font-weight: 650; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; min-width: 1.2ch; }
+.tuner-oct { font-size: var(--fs-lg); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.tuner-cents, .tuner-word { font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.tuner-word { font-weight: 650; color: var(--text); }
+.tuner-gauge { display: flex; align-items: center; gap: 8px; max-width: 360px; margin: 2px 0 6px; }
+.tuner-scale { flex: none; width: 36px; font-size: var(--fs-2xs); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.tuner-scale:last-child { text-align: right; }
+.tuner-track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--knob-track, var(--panel-3)); border: 1px solid var(--border); }
+.tuner-center { position: absolute; left: 50%; top: -3px; width: 2px; height: 14px; margin-left: -1px; background: var(--text-3); }
+.tuner-needle { position: absolute; top: -5px; width: 2px; height: 18px; margin-left: -1px; left: 50%; background: var(--text); }
+.tuner-panel.is-in-tune .tuner-name,
+.tuner-panel.is-in-tune .tuner-word,
+.tuner-panel.is-in-tune .tuner-needle { color: var(--success); }
+.tuner-panel.is-in-tune .tuner-needle { background: var(--success); }
+.tuner-live { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 899px) {
   .pedal-slider, .pedal-meter { width: 100%; }
   .pedal-cards { grid-template-columns: minmax(0, 1fr); }

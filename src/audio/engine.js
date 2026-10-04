@@ -615,11 +615,12 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       return ctx.state;
     },
 
-    noteOn(part, note, vel = 0.8, time = 0, tag) {
+    noteOn(part, note, vel = 0.8, time = 0, tag, slice) {
       if (!validPart(part) || part >= partCount(store) || !Number.isFinite(note)) return;
       const msg = { t: 'noteOn', part, note, vel: Number.isFinite(vel) ? vel : 0.8, time: Number.isFinite(time) ? time : 0 };
       notesPlayed++;
       if (typeof tag === 'string') msg.tag = tag;
+      if (Number.isInteger(slice) && slice >= 0 && slice < 32) msg.slice = slice;
       post(msg);
     },
     noteOff(part, note, time = 0, tag) {

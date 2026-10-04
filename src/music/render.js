@@ -62,7 +62,7 @@ export function renderSessionEvents(store, bars = 4, { parts, held = null, rando
   let order = 0;
   const engine = {
     context: { get currentTime() { return clock.t; }, state: 'running' },
-    noteOn(part, note, vel, time) { raw.push({ kind: 'on', part, note, vel, time, order: order++ }); },
+    noteOn(part, note, vel, time, _tag, slice) { raw.push({ kind: 'on', part, note, vel, time, order: order++, slice: Number.isInteger(slice) ? slice : null }); },
     noteOff(part, note, time) { raw.push({ kind: 'off', part, note, time, order: order++ }); },
     scheduleParams(part, p, time) { plocks.push({ part, p: { ...p }, time }); },
     allNotesOff() {}, panic() {}, bend() {}, wheel() {},
@@ -108,7 +108,9 @@ export function renderSessionEvents(store, bars = 4, { parts, held = null, rando
     if (e.kind === 'on') {
       if (e.time >= end - EPS) continue;
       sounding.set(key, (sounding.get(key) || 0) + 1);
-      push(t, { t: 'noteOn', part: e.part, note: e.note, vel: e.vel });
+      const on = { t: 'noteOn', part: e.part, note: e.note, vel: e.vel };
+      if (e.slice != null) on.slice = e.slice;
+      push(t, on);
     } else {
       const n = sounding.get(key) || 0;
       if (!n) continue;

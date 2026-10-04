@@ -1,5 +1,5 @@
-// SOUND tab: smart controls (v2.8), voice, the Resonator (2.10), filter, amp
-// envelope and Envelope 2 for the selected part.
+// SOUND tab: Sampler (2.13), smart controls (v2.8), voice, the Resonator (2.10),
+// filter, amp envelope and Envelope 2 for the selected part.
 
 import { INHARMONIC_PROFILES } from '../core/params.js';
 import { h, createScope } from './dom.js';
@@ -12,6 +12,7 @@ import { createSmartPanel } from './smart-panel.js';
 import { decodeNoiseRecording, encodeNoiseRecording, MAX_NOISE_SECONDS } from '../dsp/noise-recording.js';
 import { timeStretch } from '../dsp/time-stretch.js';
 import { createResoEngineRow } from './reso-engine-row.js';
+import { chunks } from './lazy.js';
 
 function card(title, aside, ...children) {
   const id = 'sec-' + title.toLowerCase().replace(/\W+/g, '-');
@@ -99,7 +100,36 @@ export function createSoundPanel(ctx) {
   const smart = createSmartPanel(ctx);
   scope.add(smart.dispose);
 
+  // The sampler body is its own chunk. This one line stands in until it arrives.
+  let samplerPanel = null;
+  let samplerDead = false;
+  const samplerSlot = h('section', { class: 'dock-card dock-card--sampler', 'aria-label': 'Sampler' },
+    h('p', { class: 'sampler-loading' }, 'Loading sampler...'));
+  const pending = chunks.sampler.run((m) => {
+    if (samplerDead || !m || typeof m.createSamplerPanel !== 'function') return null;
+    try { samplerPanel = m.createSamplerPanel(ctx); }
+    catch (err) {
+      console.warn('[ui] Sampler could not open', err);
+      samplerSlot.textContent = 'The sampler could not open.';
+      return null;
+    }
+    if (samplerSlot.parentNode) samplerSlot.parentNode.replaceChild(samplerPanel.el, samplerSlot);
+    return samplerPanel;
+  }, 'Sampler');
+  if (pending && typeof pending.then === 'function') {
+    pending.then((result) => {
+      if (!result && !samplerDead) samplerSlot.textContent = 'The sampler could not open.';
+    });
+  }
+  scope.add(() => {
+    samplerDead = true;
+    if (samplerPanel) samplerPanel.dispose();
+    samplerPanel = null;
+  });
+  const samplerEl = samplerPanel ? samplerPanel.el : samplerSlot;
+
   const el = h('div', { class: 'dock-pane dock-pane--sound' },
+    samplerEl,
     smart.el,
     card('Voice', mode.el,
       h('div', { class: 'knob-grid knob-grid--6' },

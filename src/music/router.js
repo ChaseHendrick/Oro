@@ -150,12 +150,12 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
     return Math.max(time - lead, timebase.now());
   }
 
-  function engineOn(part, note, vel, time, source, lead = 0) {
+  function engineOn(part, note, vel, time, source, lead = 0, slice = null) {
     if (note < 0 || note > 127) return;
     // v2.9 Free Play off (src/ui/coin-slot.js): no credit, no sound
     if (gate !== null && !gate(part, note, source)) return;
     const et = engineTime(time, lead);
-    try { if (engine) engine.noteOn(part, note, vel, et, time > 0 ? source : undefined); } catch (err) { console.warn('[orograph] noteOn failed', err); }
+    try { if (engine) engine.noteOn(part, note, vel, et, time > 0 ? source : undefined, slice); } catch (err) { console.warn('[orograph] noteOn failed', err); }
     emitter.emit('sched', { part, note, vel, on: true, time, source });
     announce({ part, note, vel, on: true, source }, time);
   }
@@ -178,7 +178,9 @@ export function createRouter({ store, engine, timebase, timers, random = Math.ra
   // v2.8 sequencer notes with the chord trigger: each note-on queues the
   // chord it started and the matching note-off (they always come in order)
   // stops that chord.
-  function seqOn(part, note, vel, time, source, lead = 0) {
+  function seqOn(part, note, vel, time, source, lead = 0, slice = null) {
+    // A step that names a slice plays that one note. A chord would play several slices.
+    if (slice != null) { engineOn(part, note, vel, time, source, lead, slice); return; }
     const notes = source === 'seq' && validPart(part) ? chordFor(part, note) : null;
     if (!notes) { engineOn(part, note, vel, time, source, lead); return; }
     const q = parts[part].seqChords;

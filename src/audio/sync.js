@@ -18,6 +18,7 @@ import {
 import { sanitizeLinks } from '../core/migrate.js';
 import { sanitizeFuncPoints } from '../dsp/function-gen.js';
 import { sanitizeDrum, base64ToPcm, SYNTH_DRUMS } from '../dsp/drum-kit.js';
+import { sanitizeSampler, samplerConfig } from '../dsp/sampler.js';
 import { libraryPcm, LIBRARY_PCM_RATE } from '../dsp/drum-library.js';
 import { partCount, trackIds, trackChange, inversePerm } from '../core/tracks.js';
 import { sanitizeTrackFx } from '../dsp/track-fx-config.js';
@@ -72,6 +73,8 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
   const kits = new Set();    // v2.7 drum kits
   const pcmCache = new Map(); // base64 sample -> Float32Array (decoded once)
   const kitSent = new Map();  // part -> the sound each pad last sent, so knob edits don't resend samples
+  const samplers = new Set(); // 2.13 sampler tracks
+  let smpSent = new Map();    // part -> the audio string the DSP has ('' = on without audio); absent = off
   const trackFx = new Set();
   const noise = new Set();
   let globalAll = false;
@@ -147,6 +150,36 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     return { t: 'kit', part: i, on: 1, pads };
   }
 
+  // 2.13 a sampler sends its audio only when it changed (or `full`); knob
+  // moves send the settings with keep: 1. A track without the field sends
+  // nothing unless the DSP still has a sampler on for it.
+  // `record` false (a snapshot for another DSP, e.g. a bounce) leaves the
+  // memory of what the live DSP has alone.
+  function samplerMsg(i, full = false, record = true) {
+    const s = sanitizeSampler(store.get(`parts.${i}.sampler`));
+    if (!s || !s.on) {
+      if (!smpSent.has(i)) return null;
+      if (record) smpSent.delete(i);
+      return { t: 'sampler', part: i, on: 0 };
+    }
+    const right = s.sample && typeof s.sample.right === 'string' ? s.sample.right : '';
+    const key = s.sample ? s.sample.data + (right ? '\n' + right : '') : '';
+    const msg = { t: 'sampler', part: i, on: 1, cfg: samplerConfig(s) };
+    if (!full && smpSent.get(i) === key) msg.keep = 1;
+    else if (s.sample) {
+      let pcm = pcmCache.get(s.sample.data);
+      if (!pcm) { pcm = base64ToPcm(s.sample.data); if (pcmCache.size > 64) pcmCache.clear(); pcmCache.set(s.sample.data, pcm); }
+      msg.pcm = pcm; msg.rate = s.sample.rate;
+      if (right) {
+        let pcmR = pcmCache.get(right);
+        if (!pcmR) { pcmR = base64ToPcm(right); pcmCache.set(right, pcmR); }
+        if (pcmR.length === pcm.length) msg.pcmR = pcmR;
+      }
+    } else msg.pcm = null;
+    if (record) smpSent.set(i, key);
+    return msg;
+  }
+
   function funcMsg(i) {
     return { t: 'func', part: i, points: sanitizeFuncPoints(store.get(`parts.${i}.funcPoints`)) };
   }
@@ -155,7 +188,16 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const fx = sanitizeTrackFx(store.get(`parts.${i}.trackFx`));
     const tracks = trackIds(store.get('parts'));
     const source = fx.sidechain === 'mix' ? -2 : fx.sidechain === 'self' ? -1 : tracks.indexOf(fx.sidechain);
-    return { t: 'trackFx', part: i, fx, sidechainIndex: source === i ? -1 : source };
+    const slots = fx.slots.map((slot) => {
+      if (slot.type !== 'vocoder') return slot;
+      let modIndex = -3;
+      if (slot.mod && slot.mod !== 'mic') {
+        const j = tracks.indexOf(slot.mod);
+        modIndex = j >= 0 && j !== i ? j : -4;
+      }
+      return { ...slot, modIndex };
+    });
+    return { t: 'trackFx', part: i, fx: { ...fx, slots }, sidechainIndex: source === i ? -1 : source };
   }
 
   function noiseMsg(i) {
@@ -200,7 +242,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
    * the host's own state from `extra`, unless withExtra is false: a store
    * load changes the patch, not the quality setting or the controllers).
    */
-  function snapshot(withExtra = true) {
+  function snapshot(withExtra = true, record = false) {
     const out = [tracksMsg()];
     const g = globalMsg(ALL_GLOBAL_IDS);
     if (g) out.push(g);
@@ -219,6 +261,8 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
       const l = linksMsg(i);
       if (l) out.push(l);
       out.push(funcMsg(i), kitMsg(i, true), fxMsg(i), noiseMsg(i));
+      const sm = samplerMsg(i, true, record);
+      if (sm) out.push(sm);
     }
     out.push(watchMsg());
     if (withExtra) {
@@ -229,7 +273,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
 
   function reset() {
     full = false; fullExtra = false; globalAll = false; watchDirty = false; playingDirty = false; tuningDirty = false; opDirty = false;
-    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); funcs.clear(); kits.clear(); trackFx.clear(); noise.clear();
+    partAll.clear(); paramsAll.clear(); modsAll.clear(); globals.clear(); links.clear(); funcs.clear(); kits.clear(); samplers.clear(); trackFx.clear(); noise.clear();
     for (const s of params) s.clear();
     for (const s of mods) s.clear();
   }
@@ -240,7 +284,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const out = [];
     let globalChanged = null;
     if (full) {
-      out.push(...snapshot(fullExtra));
+      out.push(...snapshot(fullExtra, true));
       const tu = tuningState();
       // a loaded session without a tuning resets one the DSP still has
       if (!tu.t && tuningKey !== 'default') out.push(tuningMsg(tu));
@@ -285,6 +329,7 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         if (partAll.has(i) || kits.has(i)) out.push(kitMsg(i, partAll.has(i)));
         if (partAll.has(i) || trackFx.has(i)) out.push(fxMsg(i));
         if (partAll.has(i) || noise.has(i)) out.push(noiseMsg(i));
+        if (partAll.has(i) || samplers.has(i)) { const sm = samplerMsg(i, partAll.has(i)); if (sm) out.push(sm); }
       }
       if (watchDirty) out.push(watchMsg());
     }
@@ -322,7 +367,11 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
     const move = (set) => new Set([...set].map(i => inv[i]).filter(i => i >= 0 && i < change.count));
     params = change.perm.map(j => params[j]);
     mods = change.perm.map(j => mods[j]);
-    for (const set of [partAll, paramsAll, modsAll, links, trackFx, noise]) {
+    // the DSP moves each part's sampler with it
+    const sent = new Map();
+    change.perm.forEach((j, i) => { if (j >= 0 && smpSent.has(j)) sent.set(i, smpSent.get(j)); });
+    smpSent = sent;
+    for (const set of [partAll, paramsAll, modsAll, links, trackFx, noise, samplers]) {
       const moved = move(set);
       set.clear();
       for (const i of moved) set.add(i);
@@ -361,6 +410,9 @@ export function createStoreSync({ store, post, onGlobal = () => {}, defer = queu
         mark();
       } else if (k[2] === 'drum') {
         kits.add(i);
+        mark();
+      } else if (k[2] === 'sampler') {
+        samplers.add(i);
         mark();
       } else if (k[2] === 'trackFx') {
         trackFx.add(i);

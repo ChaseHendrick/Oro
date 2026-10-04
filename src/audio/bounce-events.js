@@ -14,7 +14,7 @@
 // arpeggiators need held keys and are not rendered here.
 
 import { KIT_PADS, KIT_BASE_NOTE } from '../dsp/drum-kit.js';
-import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
+import { MAX_PARTS, SEQ_RATES, RATCHET_DECAY, PART_PARAM_MAP, stepToMidi, stepPlays, stepRatchet, stepSlice, stepPlocks, activeSeq, activeChain, clamp } from '../core/params.js';
 
 const MIN_GAP = 0.003;        // between a note-off and the next note-on (as the router)
 const SLIDE_OVERLAP = 0.004;  // a slid note overlaps the next one (legato)
@@ -101,7 +101,10 @@ export function sequencerEvents(state, bars = 4, { parts } = {}) {
           if (!slide) { push(gateEnd, { t: 'noteOff', part: p, note }); tie = null; }
           continue;
         }
-        push(ti, { t: 'noteOn', part: p, note, vel: clamp(vel * RATCHET_DECAY ** i, 0.01, 1) });
+        const slice = stepSlice(step);
+        const on = { t: 'noteOn', part: p, note, vel: clamp(vel * RATCHET_DECAY ** i, 0.01, 1) };
+        if (slice != null) on.slice = slice;
+        push(ti, on);
         if (tie !== null) { push(ti + SLIDE_OVERLAP, { t: 'noteOff', part: p, note: tie }); tie = null; }
         if (slide) tie = note;
         else push(gateEnd, { t: 'noteOff', part: p, note });

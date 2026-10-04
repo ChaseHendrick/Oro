@@ -162,6 +162,7 @@ export function createVoiceHost(ctx, { masterIn, delayIn = null, reverbIn = null
   let tracker = null, trackerOffs = [];
   let voiceLevel = 0, voiceSent = 0;
   let capturing = null;
+  let feed = null;
   let queue = Promise.resolve();
   const clip = createClipLight();
   let meterBuf = null;
@@ -190,6 +191,41 @@ export function createVoiceHost(ctx, { masterIn, delayIn = null, reverbIn = null
 
   // ---------------------------------------------------------------- open / close
 
+  function stopFeed() {
+    if (!feed) return;
+    try { tap.disconnect(feed.sp); } catch { /* already gone */ }
+    try { feed.sp.disconnect(); } catch { /* already gone */ }
+    try { feed.sink.disconnect(); } catch { /* already gone */ }
+    feed.sp.onaudioprocess = null;
+    feed = null;
+  }
+
+  /** Copy the mic, after the input gain, into the synth for the vocoder. The copy is silent, so it does not double the voice in the master. */
+  function startFeed() {
+    if (feed || !mic || typeof ctx.createScriptProcessor !== 'function') return;
+    let sp;
+    try { sp = ctx.createScriptProcessor(256, 1, 1); } catch { return; }
+    const sink = ctx.createGain();
+    sink.gain.value = 0;
+    sp.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      const copy = new Float32Array(input.length);
+      copy.set(input);
+      e.outputBuffer.getChannelData(0).fill(0);
+      post({ t: 'voicePcm', pcm: copy });
+    };
+    try {
+      tap.connect(sp);
+      sp.connect(sink);
+      sink.connect(masterIn);
+      feed = { sp, sink };
+    } catch {
+      try { sp.disconnect(); } catch { /* ignore */ }
+      try { sink.disconnect(); } catch { /* ignore */ }
+      sp.onaudioprocess = null;
+    }
+  }
+
   function closeTracker() {
     for (const off of trackerOffs) { try { off(); } catch { /* ignore */ } }
     trackerOffs = [];
@@ -199,6 +235,7 @@ export function createVoiceHost(ctx, { masterIn, delayIn = null, reverbIn = null
   }
 
   function closeMic(reason = null) {
+    stopFeed();
     closeTracker();
     if (guard) { try { guard.dispose(); } catch { /* ignore */ } guard = null; }
     guardTrip = null;
@@ -271,6 +308,7 @@ export function createVoiceHost(ctx, { masterIn, delayIn = null, reverbIn = null
       info.warnings = [...info.warnings, `The feedback guard could not start (${(err && err.message) || err}). Use headphones and keep Monitor off with speakers.`];
     }
     applyGains();
+    startFeed();
     await startTracker();
   }
 

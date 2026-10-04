@@ -51,6 +51,7 @@ export function createLooper(ctx, { input, output, worklet }) {
     state: 'empty', len: 0, pos: 0, bars: DEFAULT_BARS, loopBars: 0, layers: 0, recPos: 0, recTarget: 0,
     cue: false, muted: false, volume: 1, feedback: 1, peak: 0, capturing: false, capture: -1,
     sampleRate: ctx ? ctx.sampleRate : 48000, edit: 0, loopSpb: 0,
+    speed: 1, reverse: false, rate: 1, scrub: false, fpos: 0,
   };
   let nextId = 1;
   const waiting = new Map();   // id -> {resolve, reject, timer}
@@ -72,8 +73,14 @@ export function createLooper(ctx, { input, output, worklet }) {
         state = { ...state, ...m, capture: m.capturing ? state.capture : -1 };
         events.emit('change', { ...state, prev });
       } else if (m.t === 'pos') {
-        state = { ...state, pos: m.pos, len: m.len, recPos: m.recPos, recTarget: m.recTarget, cue: m.cue, capture: m.capture, peak: m.peak };
+        state = {
+          ...state, pos: m.pos, len: m.len, recPos: m.recPos, recTarget: m.recTarget, cue: m.cue, capture: m.capture, peak: m.peak,
+          fpos: m.fpos, rate: m.rate, speed: m.speed, reverse: m.reverse, scrub: m.scrub,
+        };
         events.emit('pos', { ...state });
+      } else if (m.t === 'peaks') {
+        state = { ...state, peaks: m.peaks, peaksLen: m.len, peaksEdit: m.edit };
+        events.emit('peaks', { peaks: m.peaks, len: m.len, edit: m.edit });
       } else if (m.t === 'loop') {
         settle(m.id, (w) => w.resolve(m.len ? { L: m.L, R: m.R, len: m.len, sampleRate: m.sampleRate, loopBars: m.loopBars || 0, edit: m.edit || 0, loopSpb: m.loopSpb || 0 } : null));
       } else if (m.t === 'replaced') {
@@ -106,7 +113,7 @@ export function createLooper(ctx, { input, output, worklet }) {
     get available() { return !!node; },
     get reason() { return reason; },
     get node() { return node; },
-    /** Latest state from the worklet: {state, len, pos, bars, loopBars, layers, muted, volume, feedback, cue, capturing, edit, loopSpb, ...}. */
+    /** Latest state from the worklet: {state, len, pos, bars, loopBars, layers, muted, volume, feedback, cue, capturing, edit, loopSpb, speed, reverse, rate, scrub, ...}. */
     status() { return { ...state }; },
     on(name, fn) { return events.on(name, fn); },
     off(name, fn) { events.off(name, fn); },
@@ -120,6 +127,19 @@ export function createLooper(ctx, { input, output, worklet }) {
     setVolume(v) { post({ t: 'volume', v }); },
     setMute(on) { post({ t: 'mute', v: !!on }); },
     setFeedback(v) { post({ t: 'feedback', v }); },
+    /**
+     * Tape. `rate` is a speed from 0 to 2. `reverse` plays backward. Exactly
+     * 1 forward is the original integer read. `scrub` is a 0..1 position
+     * while the pointer is down, or null to release. Omit a field to leave
+     * it unchanged.
+     */
+    setTape({ rate, reverse, scrub } = {}) {
+      const msg = { t: 'tape' };
+      if (rate != null) msg.rate = rate;
+      if (reverse != null) msg.reverse = !!reverse;
+      if (Object.prototype.hasOwnProperty.call(arguments[0] || {}, 'scrub')) msg.scrub = scrub;
+      post(msg);
+    },
     /** Transport anchor (engine.setTransport forwards it): {playing, beatTime, beat, spb}. */
     transport(t) { post({ t: 'transport', playing: !!t.playing, beatTime: t.beatTime, beat: t.beat, spb: t.spb }); },
     /** A copy of the current loop: {L, R, len, sampleRate, loopBars, edit, loopSpb} or null when empty. */

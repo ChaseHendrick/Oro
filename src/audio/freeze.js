@@ -114,14 +114,20 @@ export function freezeSignature(part, global = {}) {
   const seq = activeSeq(part);
   if (seq && Array.isArray(seq.steps) && seq.steps.some(st => st && st.lock)) { delete params.centerX; delete params.centerY; }
   const drum = part.drum ? { on: part.drum.on, pads: (part.drum.pads || []).map(p => (p ? { ...p, sample: p.sample ? p.sample.rate : null } : p)) } : null;
+  // 2.13 the sampler's settings, its audio by reference below (absent: the 2.12 signature)
+  const smp = part.sampler ? [{ ...part.sampler, sample: part.sampler.sample ? part.sampler.sample.rate : null }] : [];
   const json = JSON.stringify([
     params, part.mods || null, part.links || null, part.funcPoints || null, drum, part.trackFx || null, part.dot || null,
-    part.chord || null, seq, terrainKey(part.userTerrain && part.userTerrain.A), terrainKey(part.userTerrain && part.userTerrain.B),
+    part.chord || null, seq, ...smp, terrainKey(part.userTerrain && part.userTerrain.A), terrainKey(part.userTerrain && part.userTerrain.B),
     FREEZE_GLOBALS.map(k => global[k]),
   ]);
   const ut = part.userTerrain || {};
   const refs = [ut.A ? ut.A.data : null, ut.B ? ut.B.data : null, part.noiseRecording || null];
   for (const p of (part.drum && part.drum.pads) || []) refs.push(p && p.sample ? p.sample.data : null);
+  if (part.sampler) {
+    refs.push(part.sampler.sample ? part.sampler.sample.data : null);
+    if (part.sampler.sample && part.sampler.sample.right) refs.push(part.sampler.sample.right);
+  }
   return [json, ...refs];
 }
 
