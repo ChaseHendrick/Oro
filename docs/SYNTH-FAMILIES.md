@@ -34,7 +34,7 @@ Defaults for the new amounts stay at zero so old patches do not change. A filter
 
 ## The score desk
 
-The website that agents write to is a second face of the same idea: one land, many desks. Piano, guitar and marimba are waveguide strikes. Rhodes and bell are FM. Organ is additive. Lead and clav are filtered. Sub scans a wavetable row. Pad crossfades two terrains. Cloud is granular. The orchestra stays on the terrain oscillator. Kick, snare, hat, clap, tom, ride, crash, shaker and rim are synthesized. The grammar is in `/llms.txt` and `GET /api/oro`. A Claude skill that speaks that grammar ships as `oro-music-skill.zip` on the site and as `skills/oro-music/` in this repo.
+The website that agents write to is a second face of the same idea: one land, many desks. Piano, guitar and marimba are waveguide strikes. Rhodes and bell are FM. Organ is additive. Lead and clav are filtered. Sub scans a wavetable row. Pad crossfades two terrains. Cloud is granular. The orchestra stays on the terrain oscillator. Kick, snare, hat, clap, tom, ride, crash, shaker and rim are synthesized. The grammar is in `skills/oro-music/` and `oro.schema()` on an open page. `node scripts/oro-score.mjs` checks a score and writes one. It does not render audio. `GET /api/oro` is not a route on the site.
 
 ## What not to chase
 
