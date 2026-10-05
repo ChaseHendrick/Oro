@@ -104,6 +104,24 @@ async function boot() {
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };
+  window.oro = {
+    play: (scoreText) => music.score.play(scoreText),
+    stop: () => music.score.stop(),
+    compose: (opts) => music.score.compose(opts),
+    schema: () => music.score.schema(),
+    getScore: () => music.score.getScore(),
+  };
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || data.source !== 'oro-agent' || typeof data.type !== 'string') return;
+    let receipt = null;
+    if (data.type === 'play') receipt = window.oro.play(data.score);
+    else if (data.type === 'stop') receipt = window.oro.stop();
+    else if (data.type === 'compose') receipt = window.oro.compose(data);
+    else if (data.type === 'schema') receipt = window.oro.schema();
+    else return;
+    try { event.source && event.source.postMessage({ source: 'oro', type: data.type, receipt }, event.origin || '*'); } catch { /* the other window has gone */ }
+  });
   if (pluginRequested()) {
     window.orograph.host = {
       outputs: () => hostOutputs((store.get('parts') || []).length),

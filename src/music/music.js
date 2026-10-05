@@ -13,6 +13,7 @@ import { createPreview } from './preview.js';
 import { createExplorer } from './explore.js';
 import { renderSessionEvents } from './render.js';
 import { capturePhrase } from './capture.js';
+import { createScoreDesk } from './desk.js';
 import { SEQ_STEPS, SEQ_RATES, NOTE_NAMES, SCALE_NAMES, defaultStep, patternPath, clamp } from '../core/params.js';
 import { isTrack } from '../core/tracks.js';
 import { KIT_BASE_NOTE, KIT_PADS } from '../dsp/drum-kit.js';
@@ -48,6 +49,7 @@ export function createMusic({ store, engine = null, presets = null, timers = def
     emit: (e) => emitter.emit('preview', e),
   });
   const explorer = createExplorer({ store, router, timebase, transport, emit: (e) => emitter.emit('explore', e) });
+  const score = createScoreDesk({ store, router, timebase, timers });
 
   const unsubs = [];
   // A panic or all-notes-off also ends the preview, and so does loading a whole new session.
@@ -143,10 +145,13 @@ export function createMusic({ store, engine = null, presets = null, timers = def
     exploreNote: (e) => explorer.exploreNote(e),
     /** Sequencer + arp notes and dot-lock glides for an offline bounce: [{ time, msg }], beat 0 at time 0. */
     renderEvents,
+    /** Agent score desk: play, stop, compose, schema, getScore. */
+    score,
     setPresets(p) { presetLib = p || null; },
     on: (type, fn) => emitter.on(type, fn),
     off: (type, fn) => emitter.off(type, fn),
     dispose() {
+      score.dispose();
       previewer.dispose();
       explorer.dispose();
       transport.stop();

@@ -12,7 +12,7 @@
 import { deepClone } from './store.js';
 import { PART_PARAM_MAP, GLOBAL_PARAM_MAP } from './params.js';
 
-const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock', 'version', 'jam', 'learn', 'plugin']);
+const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'history', 'load', 'voice', 'lock', 'version', 'jam', 'learn', 'plugin', 'score']);
 const SHARED = ['userTerrain', 'noiseRecording'];
 
 /** A drum kit with each pad's sample string shared (strings are immutable). */

@@ -3,6 +3,16 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.16.1 (October 2026): A score an agent can actually play
+
+**New**
+* **Score desk.** `oro.play(score)` on an open page plays a text score and puts the tracks back when it stops. `oro.compose({ prompt })` writes one. `oro.schema()` is the voice list. `postMessage` from `oro-agent` gets a receipt back. The same check runs with no page: `node scripts/oro-score.mjs`.
+* **Picture cues.** `cue title 12` comes back as seconds, so a hit can be locked to a cut. Chords (`Cmaj4`) are one line. Beats can be fractions or triplet eighths (`2t`).
+* **Opening.** A prompt like "anime opening at 180 bpm" writes a cold flash, three name-card stabs, eight hits and a title hold, with those cues named.
+
+**Fixes**
+* The skill no longer tells an agent to `POST /api/oro` or `/api/oro/beat`. Those routes are not served. The receipt's `durationSeconds` is the length. ride, crash, shaker and timpani say which kit pad they really play.
+
 ## 2.15.1 (October 2026): Lane, jam notes, and small fixes
 
 **Fixes**
