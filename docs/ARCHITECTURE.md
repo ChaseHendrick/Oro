@@ -25,6 +25,7 @@ implementers; anything not specified is the implementer's choice.
 | `src/visual/` | Visuals | `visuals.js` + helpers (scene, terrain mesh, path line, dot, physics, sky, post) |
 | `src/ui/`, `src/styles/`, `index.html` | UI | layout, knobs, panels, keyboard, sequencer grid, dialogs, theme |
 | `src/music/`, `src/midi/`, `src/presets/` | Music | router/arp, sequencer/transport, MIDI, factory patches & scenes, preset storage |
+| `src/agent/`, `scripts/oro-score.mjs`, `scripts/oro-mcp.mjs` | Agent API (2.17) | `window.oro`, the `postMessage` bridge, the score command line and MCP server |
 | `electron/`, `.github/`, `vite.config.js`, `public/`, `README.md` | Packaging | desktop app, CI, icons, PWA manifest |
 | `src/main.js` | architect / integrator | bootstraps everything |
 
@@ -494,3 +495,29 @@ up after steady headroom, judged against the display frame or the frame-rate
 cap. Full draws device pixels up to the quality preset's pixel-ratio cap, as
 before. The pref is `ui.renderScale` ('auto' | 'full'). Only the 3D canvas is
 scaled; the interface, minimap and 2D panels stay at native resolution.
+
+## 2.17 additions
+
+* **Score desk.** `src/music/orchestra.js` (57 pitched voices, the 8-pad kit and 29 drum
+  pieces, each a factory patch plus offsets), `score-styles.js` (styles and 20 grooves),
+  `score.js` (parse, check, compose; receipts with `errors[].fix`), `desk.js` (plays a score
+  on borrowed or added tracks and restores them; emits `score` events `start`, `cue`, `end`
+  through `music.on('score')`), `score-render.js` (offline render with `OroDSP` and a JS
+  master chain: convolution reverb, delay, chorus, warmth, BS.1770 loudness, look-ahead
+  limiter; 5 minute cap) and `score-export.js` (MIDI, `#score=` links). Autosave skips the
+  borrowed tracks through `autosave.addFilter`.
+* **Agent API.** `src/agent/api.js`: `createAgentApi(...)` is `window.oro`;
+  `installBridge(win, api, { allowMutating })` answers `{ source: 'oro-agent', id, type, args }`
+  with `{ source: 'oro', id, ok, result }`. Calls in `MUTATING` need `?agent=1`
+  (`agentOptIn`). Agent edits use store meta source `'agent'`, so they are undoable.
+* **Touch.** Worklet message `{ t: 'touch', v: [x, y, height, down], part, fx }`
+  (`engine.touchMap`). `TouchBank` (`src/dsp/touch-sources.js`) smooths it into Link
+  sources Touch X, Touch Y, Touch Height and Touch Down (appended to `LINK_SOURCES`) and,
+  with `fx`, the rig on that track (cutoff, resonance, drive, fold, delay and reverb sends).
+  `src/music/touch.js` turns map touches into strums or the FX rig.
+* **Contracts appended:** `LINK_CURVES` gains S-curve, Steps, Invert, Rectify and Half;
+  `PART_PARAMS` gains `pitchEnv` (semitones times envelope 2); `FX_TYPES` 32 to 40 are the
+  nine new track effects; `parts.N.dot.cruise` (Roll: Keep rolling, kept only when above 0).
+* **32-bit float WAV.** `wavBlobFromPieces({ format: 'float32' })` writes format 3;
+  Bounce, Record and the score render take a `format`.
+

@@ -71,10 +71,10 @@ few lines.
 * **Patches and scenes.** More than fifty factory patches in ten categories, seven
   factory scenes, searchable categories, authors and folders, 36 MIDI Program Change
   favourites, your own patches and scenes, random patches, and JSON export and import.
-* **Mix and record.** A four-slot effects rack on each track with 27 effects and ten
+* **Mix and record.** A four-slot effects rack on each track with 40 effects and ten
   routing layouts, plus vector mixing for banks of four tracks. Shimmer, granular pitch
   shifting, EQ and multiband compression join the master effects and limiter with an
-  adjustable ceiling. Record what you play to a 24-bit WAV, or **bounce** the sequencers
+  adjustable ceiling. Record what you play to a 24-bit or 32-bit float WAV, or **bounce** the sequencers
   offline, with optional stems per part.
 * **3D sound and listening modes (2.12).** Place any track around your head for
   headphones (by hand, or let it follow the dot on the map), export a 5.1 or 7.1 surround
@@ -345,9 +345,12 @@ Linux by GitHub Actions and published on the
 | `src/audio/` | Audio setup, effects, recording, importing images and WAV files |
 | `src/visual/` | The 3D landscape, the orbit and the dot (three.js, Rapier physics) |
 | `src/ui/`, `src/styles/` | Knobs, panels, keyboard, sequencer grid, themes |
-| `src/music/`, `src/midi/`, `src/presets/` | Sequencer, arpeggiator, MIDI, factory sounds |
+| `src/music/`, `src/midi/`, `src/presets/` | Sequencer, arpeggiator, the score desk (orchestra, styles, offline render, MIDI export), MIDI, factory sounds |
+| `src/agent/` | The agent API behind `window.oro` and the `postMessage` bridge |
 | `electron/` | The desktop app shell |
 | `public/`, `build/` | Icons and the web app manifest |
+| `scripts/` | The score command line (`oro-score.mjs`), the MCP server (`oro-mcp.mjs`) and build helpers |
+| `skills/`, `plugins/` | The Claude skill and plugin for writing music on Oro |
 | `tests/` | Automated tests |
 | `docs/` | The user guide, architecture notes, the research brief, MPC and pedal notes, screenshots |
 | `dev/` | Developer test pages and tools (icon and notice generators) |
@@ -362,6 +365,9 @@ Linux by GitHub Actions and published on the
 | [Guitar pedals](docs/PEDALS.md) | The design of version 1.1's pedalboard integration and what is wired |
 | [Research brief](docs/RESEARCH.md) | Wave terrain synthesis: history, maths, prior art and the build stack |
 | [Architecture](docs/ARCHITECTURE.md) | How the code fits together, for developers |
+| [Synth families](docs/SYNTH-FAMILIES.md) | Other kinds of synthesis and which of them Oro covers |
+| [Handoff](docs/HANDOFF.md) | The current state of the code, what was measured, and what is left, for the next developer |
+| [Score skill](skills/oro-music/SKILL.md) | The score format, the voices and the styles, written for agents |
 
 ## Independent work
 

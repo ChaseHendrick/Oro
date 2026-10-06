@@ -869,8 +869,15 @@ not) or for an audio file, and tune `fillAnime` in `score-styles.js` to it.
 
 1. Ask the owner about the reference post and to listen to `a.wav` renders of
    `anime-song`, `epic`, `symphonic`, `drums` (a few grooves), `ambient` and `lofi`. Fix what they hear.
-2. Open a PR from this branch, wait for CI, squash merge only when the owner says so (a
-   merge publishes a release). Mention the Mac auto-update rename issue in the notes.
+2. PR [ChaseHendrick/Oro#33](https://github.com/ChaseHendrick/Oro/pull/33) is open from this
+   branch. Get CI green, then squash merge only when the owner says so (a merge publishes a
+   release). Mention the Mac auto-update rename issue in the notes.
+   Two checks were started and stopped before they finished, to save the owner's usage: an
+   adversarial code review of the 2.17 diff, and independent judges re-measuring the
+   status claims in this section (every voice sounds, no clipping, the level rebalance,
+   tests, perf, build, browser). Rerun them before merging.
+   The README hero image (`docs/screenshots/orograph-dark.webp`) still shows the old
+   OROGRAPH name; recapture it at 1440x900 in the dark theme (the machine was too loaded).
 3. The user guide has section 20 for 2.17. In-app Help (`src/ui/help.js`) and the
    shortcuts list do not mention the Score desk or the Touch tool yet.
 4. Website: the music page `softwareVersion`, and say `/api/oro` is not served (the skill

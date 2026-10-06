@@ -2813,11 +2813,14 @@ effect menu, Mix amount and four controls named for that algorithm. Bypass or Mi
 passes dry audio through. Effects are applied after voice pan and before the track's level and sends,
 and their tails continue after notes release. Patches include the rack.
 
-The 31 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
+The 40 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
 Phaser, Overdrive, Distortion, Decimator, Granular pitch shift, Four-band EQ, Sidechain
 ducking, Multiband compression, Compressor, Limiter, Tremolo, Auto pan, Ring modulation,
 Envelope wah, Low-pass filter, High-pass filter, Comb resonator, Stereo width, Warmth,
-Noise gate, Tape colour, Frequency shifter, Hyper dimension, Filter sequencer and Vocoder. Multiband
+Noise gate, Tape colour, Frequency shifter, Hyper dimension, Filter sequencer, Vocoder, and
+the nine added in 2.17 (Transient shaper, Trance gate, Disperser, Tape stop, Reverser,
+Parametric EQ band, Bucket brigade delay, Grain looper and Tape echo, described in
+[section 20](#20-scores-touch-and-new-sounds-217)). Multiband
 compression uses three bands with upward and downward compression; it is not a copy of any
 branded compressor.
 
