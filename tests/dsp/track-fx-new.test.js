@@ -24,9 +24,10 @@ function noise(seed = 1) { let x = seed; return () => { x ^= x << 13; x ^= x >>>
 
 describe('new track effects: catalogue', () => {
   it('appends the three effects after the existing 27 so saved racks keep their meaning', () => {
-    expect(FX_TYPES.length).toBe(32);
-    expect(FX_TYPES.slice(-4, -1).map(type => type.id)).toEqual(NEW);
-    expect(FX_TYPES[FX_TYPES.length - 1].id).toBe('vocoder');
+    // 2.17 appends nine more after the vocoder; these three keep their places
+    expect(FX_TYPES.length).toBeGreaterThanOrEqual(32);
+    expect(FX_TYPES.slice(28, 31).map(type => type.id)).toEqual(NEW);
+    expect(FX_TYPES[31].id).toBe('vocoder');
     expect(FX_TYPE_MAP.tape.index).toBe(27);
     for (const id of NEW) { expect(FX_TYPE_MAP[id].params).toHaveLength(4); expect(FX_TYPE_MAP[id].defaults).toHaveLength(4); }
   });

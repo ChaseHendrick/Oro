@@ -121,14 +121,20 @@ export function encodePCM24(channels, frames = channels[0] ? channels[0].length 
 }
 
 /**
- * A complete 24-bit WAV file as a Blob from already-packed PCM pieces.
- * @param {Uint8Array[]} pieces output of encodePCM24, in order
+ * A complete WAV file as a Blob from already-packed pieces: 24-bit PCM
+ * (encodePCM24) by default, or 32-bit float (encodeFloat32) with
+ * format 'float32' (2.17).
+ * @param {Uint8Array[]} pieces in order
  */
-export function wavBlobFromPieces({ sampleRate, channels = 2, frames, pieces }) {
-  const parts = [wavHeader({ sampleRate, channels, bitsPerSample: 24, frames }), ...pieces];
-  if (((frames * channels * 3) & 1) === 1) parts.push(new Uint8Array(1));
+export function wavBlobFromPieces({ sampleRate, channels = 2, frames, pieces, format = 'pcm24' }) {
+  const float = format === 'float32';
+  const parts = [wavHeader({ sampleRate, channels, bitsPerSample: float ? 32 : 24, frames, format: float ? 3 : 1 }), ...pieces];
+  if (!float && ((frames * channels * 3) & 1) === 1) parts.push(new Uint8Array(1));
   return new Blob(parts, { type: 'audio/wav' });
 }
+
+/** WAV formats Oro writes for bounces and recordings (2.17). */
+export const WAV_FORMATS = Object.freeze(['pcm24', 'float32']);
 
 /** One-shot encoder: Float32 channels -> 24-bit WAV bytes. */
 export function encodeWav24(channels, sampleRate) {

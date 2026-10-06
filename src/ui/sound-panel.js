@@ -169,7 +169,7 @@ export function createSoundPanel(ctx) {
       h('div', { class: 'knob-row knob-row--env' }, ['ampDelay','attack','ampHold','decay','sustain','release'].map(id => amp4('Amp')(id)))),
     card('Envelope 2', select('env2Mode', 'Envelope 2 mode'),
       h('div', { class: 'env-wrap' }, env2.el),
-      h('div', { class: 'knob-row knob-row--env' }, ['env2Delay','env2Attack','env2Hold','env2Decay','env2Sustain','env2Release'].map(id => amp4('Envelope 2')(id)))));
+      h('div', { class: 'knob-row knob-row--env' }, ['env2Delay','env2Attack','env2Hold','env2Decay','env2Sustain','env2Release','pitchEnv'].map(id => amp4('Envelope 2')(id)))));
 
   return { el, dispose: scope.dispose };
 }

@@ -196,13 +196,20 @@ export function createTopbar(ctx, container) {
   scope.on(versionsBtn, 'click', () => { import('./version-panel.js').then(m => m.openVersionHistory(ctx)).catch(err => console.warn('[ui] version history failed', err)); });
   // 2.12 live performance mode (loaded on demand)
   const jamBtn = h('button', { type: 'button', class: 'icon-btn jam-btn', 'aria-label': 'Jam together', dataset: { tip: 'Jam together: one direct connection. The invite contains a network address.' } }, 'Jam');
+  // 2.17 the score desk: write, play, render and share a score (loaded on demand)
+  const scoreBtn = h('button', { type: 'button', class: 'icon-btn jam-btn score-btn', 'aria-label': 'Score desk', 'aria-haspopup': 'dialog', dataset: { tip: 'Score desk: describe a piece, play it on Oro\'s instruments, render a WAV' } }, 'Score');
+  let scorePop = null;
+  scope.on(scoreBtn, 'click', () => {
+    if (scorePop && scorePop.isOpen && scorePop.isOpen()) { scorePop.close(); return; }
+    import('./score-panel.js').then(m => { scorePop = m.openScorePanel(ctx, scoreBtn); }).catch(err => console.warn('[ui] score desk failed', err));
+  });
   scope.on(jamBtn, 'click', () => { if (typeof ctx.openJam === 'function') ctx.openJam(); });
   const liveBtn = h('button', { type: 'button', class: 'icon-btn live-btn-top', 'aria-label': 'Live mode', 'aria-haspopup': 'dialog', dataset: { tip: 'Live mode: full-screen pads, setlist and big controls for the stage (Shift+L)' }, html: icon('live') });
   scope.on(liveBtn, 'click', () => { if (typeof ctx.toggleLive === 'function') ctx.toggleLive(); });
   // 2.12 listening modes (what you hear only)
   const listenBtn = createListenButton(ctx);
   scope.add(listenBtn.dispose);
-  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, jamBtn, liveBtn, macrosBtn, listenBtn.el, midiBtn, themeBtn, settingsBtn, helpBtn);
+  const utils = h('div', { class: 'utils' }, undoBtn, redoBtn, versionsBtn, scoreBtn, jamBtn, liveBtn, macrosBtn, listenBtn.el, midiBtn, themeBtn, settingsBtn, helpBtn);
 
   // On hendrickresearch.com (served under /music/oro/) a way back to the site's Music page.
   const siteBack = isOnSite()

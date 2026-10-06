@@ -59,6 +59,7 @@ import { TrackEffects } from './track-effects.js';
 import { ScienceBank } from './science-sources.js';
 import { WeatherBank } from './weather-sources.js';
 import { PadBank } from './pad-sources.js';
+import { TouchBank, TOUCH_RIG } from './touch-sources.js';
 import { Filter2 } from './filter2.js';
 import { KitPlayer } from './drum-kit.js';
 import { SamplerPlayer } from './sampler.js';
@@ -163,7 +164,7 @@ const WRAP_RANGE = new Float64Array(PART_PARAMS.map(d => (d.id === 'rotate' ? 36
 const L_VEL = 0, L_WHEEL = 1, L_PRESS = 2, L_KEY = 3, L_SLIDE = 4, L_MACRO = 5,
   L_MSPEED = 9, L_MHEIGHT = 10, L_ENV1 = 11, L_ENV2 = 12, L_RAND = 13, L_TERRAIN = 14, L_GUITAR = 15, L_VOICE = 16, L_EXPRESSION = 17, L_SUSTAIN = 18, L_BREATH = 19,
   L_SCIENCE = 20, L_SCIENCE_END = 26, L_SWIRLX = 27, L_SWIRLY = 28,
-  L_TURING = 29, L_FUNC = 30, L_WEATHER = 31, L_WEATHER_END = 34, L_PAD = 35, L_PAD_END = 36;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
+  L_TURING = 29, L_FUNC = 30, L_WEATHER = 31, L_WEATHER_END = 34, L_PAD = 35, L_PAD_END = 36, L_TOUCH = 37, L_TOUCH_END = 40;   // v2.4: Turing (global, ScienceBank.out[7]) and the track's Function (per voice)   // v2.1: Neuron..Collapse (ScienceBank.out order), then per-voice Swirl
 const NSRC = LINK_SOURCES.length;
 const PART_SOURCE = new Uint8Array(NSRC);
 for (const s of [L_WHEEL, L_MACRO, L_MACRO + 1, L_MACRO + 2, L_MACRO + 3, L_MSPEED, L_MHEIGHT, L_GUITAR, L_VOICE, L_EXPRESSION, L_SUSTAIN, L_BREATH]) if (s < NSRC) PART_SOURCE[s] = 1;
@@ -171,6 +172,8 @@ for (let s = L_SCIENCE; s <= L_SCIENCE_END && s < NSRC; s++) PART_SOURCE[s] = 1;
 if (L_TURING < NSRC) PART_SOURCE[L_TURING] = 1;
 for (let s = L_WEATHER; s <= L_WEATHER_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.10 live weather (global)
 for (let s = L_PAD; s <= L_PAD_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // v2.11 game controller right stick (global)
+for (let s = L_TOUCH; s <= L_TOUCH_END && s < NSRC; s++) PART_SOURCE[s] = 1;   // 2.17 touch on the map (global)
+// 2.17 the touch tool rig uses M_CUTOFF, M_RES, M_DRIVE and M_FOLD
 const SCI_TURING = 7;
 const SCIENCE_KEYS = { sciNeuronCurrent: 'neuronCurrent', sciNeuronKick: 'neuronKick', sciNeuronTemp: 'neuronTemp', sciNeuronRate: 'neuronRate',
   sciLorenzRate: 'lorenzRate', sciPendEnergy: 'pendEnergy', sciPendRate: 'pendRate', sciSmoothTime: 'smoothTime', sciSmoothness: 'smoothness',
@@ -296,8 +299,15 @@ function wrapHalf(d) { return d - Math.floor(d + 0.5); }
 
 /** Link curves: 0 Linear y = x, 1 Soft sign(x) x^2, 2 Hard sign(x) |x|^0.5. */
 function linkCurve(c, x) {
+  if (c === 0) return x;
   if (c === 1) return x < 0 ? -x * x : x * x;
   if (c === 2) return x < 0 ? -Math.sqrt(-x) : Math.sqrt(x);
+  // 2.17 remap curves
+  if (c === 3) { const a = x < 0 ? -x : x, s = a * a * (3 - 2 * (a > 1 ? 1 : a)); return x < 0 ? -s : s; }
+  if (c === 4) return Math.round(x * 4) / 4;
+  if (c === 5) return -x;
+  if (c === 6) return x < 0 ? -x : x;
+  if (c === 7) return x > 0 ? x : 0;
   return x;
 }
 
@@ -906,6 +916,15 @@ class Part {
       const g = via >= 0 ? this.partSourceValue(via, macros, guitar, voice, science) : 1;
       pl[this.lkDst[i]] += this.lkAmt[i] * linkCurve(this.lkCurve[i], this.partSourceValue(this.lkSrc[i], macros, guitar, voice, science)) * g;
     }
+    // 2.17 the touch tool's FX rig on the touched track (zero, and skipped, otherwise)
+    const t = this.touch, rig = t ? t.rigAmount(this.index) : 0;
+    if (rig > 1e-4) {
+      const x = t.out[0], y = t.out[1], h = t.out[2];
+      pl[M_CUTOFF] += rig * x * TOUCH_RIG.cutoff;
+      pl[M_RES] += rig * (y > 0 ? y : 0) * TOUCH_RIG.resonance;
+      pl[M_DRIVE] += rig * (y < 0 ? -y : 0) * TOUCH_RIG.drive;
+      pl[M_FOLD] += rig * (h > 0 ? h : 0) * TOUCH_RIG.fold;
+    }
   }
 
   /** Value of a part-wide Link source. */
@@ -923,6 +942,7 @@ class Part {
       else if (s === L_TURING) x = science ? science[SCI_TURING] : 0;
       else if (s >= L_WEATHER && s <= L_WEATHER_END) x = this.weather ? this.weather[s - L_WEATHER] : 0;
       else if (s >= L_PAD && s <= L_PAD_END) x = this.pad ? this.pad[s - L_PAD] : 0;
+      else if (s >= L_TOUCH && s <= L_TOUCH_END) x = this.touch ? this.touch.out[s - L_TOUCH] : 0;
       else if (s >= L_SCIENCE && s <= L_SCIENCE_END) x = science ? science[s - L_SCIENCE] : 0;
       else if (s >= L_MACRO && s < L_MACRO + 4) x = macros[s - L_MACRO];
       else x = 0;
@@ -1024,7 +1044,8 @@ export class OroDSP {
     this.parts = [];
     this.weather = new WeatherBank();   // v2.10 live weather Link sources (global), read by every part
     this.pad = new PadBank();           // v2.11 game controller right stick Link sources (global)
-    for (let i = 0; i < MAX_PARTS; i++) { const P = new Part(i, this.sr, this.os); P.weather = this.weather.out; P.pad = this.pad.out; this.parts.push(P); }
+    this.touch = new TouchBank();       // 2.17 touch on the map: Link sources and the touch tool's rig
+    for (let i = 0; i < MAX_PARTS; i++) { const P = new Part(i, this.sr, this.os); P.weather = this.weather.out; P.pad = this.pad.out; P.touch = this.touch; this.parts.push(P); }
     // Parts (tracks) in use: 0..count-1. The rest only render while they fade
     // out after being removed (see setTracks and dormant()).
     this.count = DEFAULT_PARTS;
@@ -1198,6 +1219,7 @@ export class OroDSP {
       case 'noiseRecording': this.setNoiseRecording(msg.part, msg.data); break;
       case 'weather': this.weather.set(msg.v, !!msg.snap); break;
       case 'pad': this.pad.set(msg.v, !!msg.snap); break;
+      case 'touch': this.touch.set(msg.v, msg.part, msg.fx); break;
       case 'expression': case 'sustainLevel': case 'breath': {
         const P=this.partAt(msg.part); if (P) P[msg.t]=clamp01(finiteOr(msg.v,0)); break;
       }
@@ -1353,6 +1375,7 @@ export class OroDSP {
     const P = new Part(i, this.sr, this.os);
     P.weather = this.weather.out;
     P.pad = this.pad.out;
+    P.touch = this.touch;
     P.rc.dcR = this.dcR;
     const air = this.airTabs[String(this.os)];
     if (air) { P.rc.tiltA = air.a; P.rc.airNorm = air.tab; }
@@ -1585,6 +1608,7 @@ export class OroDSP {
     if (s === L_TURING) return this.science.out[SCI_TURING];
     if (s >= L_WEATHER && s <= L_WEATHER_END) return this.weather.out[s - L_WEATHER];
     if (s >= L_PAD && s <= L_PAD_END) return this.pad.out[s - L_PAD];
+    if (s >= L_TOUCH && s <= L_TOUCH_END) return this.touch.out[s - L_TOUCH];
     return 0;
   }
 
@@ -2729,9 +2753,12 @@ export class OroDSP {
     // pitch
     // v2.9 microtuning: bend and Tune move through the tuning by keys; Fine
     // (cents) and Octave (2/1) stay equal-tempered. The default keeps the original sum.
-    const semis = this.tuneSemis === null
+    let semis = this.tuneSemis === null
       ? v.pitch + prm[PI.octave] * 12 + prm[PI.tune] + MP[M_FINE] / 100 + P.bend * prm[PI.bendRange]
       : this.tunedPitch(v.pitch + prm[PI.tune] + P.bend * prm[PI.bendRange]) + prm[PI.octave] * 12 + MP[M_FINE] / 100;
+    // 2.17 pitch envelope: Envelope 2 times Pitch env semitones (skipped at 0)
+    const pe = prm[PI.pitchEnv];
+    if (pe !== 0) semis += pe * v.env2Lvl;
     let f = 440 * Math.exp((semis - 69) * (Math.LN2 / 12));
     if (!(f > 0)) f = 1;
     v.hz = f;
@@ -3085,6 +3112,7 @@ export class OroDSP {
     this.science.step(elapsed / this.sr, this.transport.playing ? this.currentBeats() : null, 60 / this.tempo);
     this.weather.step(elapsed / this.sr);
     this.pad.step(elapsed / this.sr);
+    this.touch.step(elapsed / this.sr);
     let anySolo = false;
     const count = this.count;
     for (let i = 0; i < count; i++) if (this.parts[i].params[PI.solo] >= 0.5) anySolo = true;
@@ -3128,7 +3156,9 @@ export class OroDSP {
       // back into the master and the effects instead), only while the send runs.
       const pT = pedalOn ? (P.params[PI.pedalPre] >= 0.5 ? (audible ? VOICE_GAIN * P.exit * P.exit : 0) : post) * clamp01(P.params[PI.pedalSend]) : 0;
       const gT = pedalOn && P.params[PI.pedalInsert] >= 0.5 ? 0 : post;
-      const dT = gT * clamp01(P.params[PI.delaySend]), rT = gT * clamp01(P.params[PI.reverbSend]);
+      // 2.17 the touch tool throws echo and reverb at the top of the map
+      const rig = this.touch.rigAmount(P.index), up = rig > 0 ? rig * Math.max(0, this.touch.out[1]) : 0;
+      const dT = gT * clamp01(P.params[PI.delaySend] + up * TOUCH_RIG.echo), rT = gT * clamp01(P.params[PI.reverbSend] + up * TOUCH_RIG.space);
       // one-pole towards the targets, snapping when close so muting reaches true zero
       P.gainS = Math.abs(gT - P.gainS) < 1e-4 ? gT : P.gainS + (gT - P.gainS) * k;
       P.dlyS = Math.abs(dT - P.dlyS) < 1e-4 ? dT : P.dlyS + (dT - P.dlyS) * k;

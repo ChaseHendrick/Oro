@@ -35,7 +35,31 @@ export const FX_TYPES = Object.freeze([
   effect('hyper', 'Hyper dimension', ['Rate', 'Detune', 'Width', 'Dimension'], [0.35, 0.4, 0.8, 0.4], 'Six detuned delay voices spread across the stereo field, plus short cross reflections.'),
   effect('filterseq', 'Filter sequencer', ['Pattern', 'Glide', 'Resonance', 'Depth'], [0, 0.2, 0.45, 0.75], 'A resonant low-pass steps through an eight-step pattern in sixteenth notes at the song tempo.'),
   effect('vocoder', 'Vocoder', ['Bands', 'Formant', 'Sibilance', ''], [(16 - 8) / 24, 0.5, 0.4, 0.5], 'Microphone or another track shapes this track.'),
+  // 2.17: appended, so saved racks keep their effects
+  effect('transient', 'Transient shaper', ['Attack', 'Sustain', 'Speed', 'Output'], [0.65, 0.5, 0.4, 0.5], 'Two envelope followers find the attacks: push or soften the hits and the tails separately.'),
+  effect('trancegate', 'Trance gate', ['Pattern', 'Rate', 'Smooth', 'Depth'], [0, 0.5, 0.15, 1], 'A tempo-synced gate chops the sound in a sixteen-step pattern.'),
+  effect('disperser', 'Disperser', ['Frequency', 'Amount', 'Pinch', 'Spread'], [0.45, 0.4, 0.4, 0.1], 'A chain of up to 32 all-pass filters smears the phase around one frequency: zaps, lasers and rubbery transients.'),
+  effect('tapestop', 'Tape stop', ['Stop', 'Stop time', 'Start time', 'Curve'], [0, 0.3, 0.2, 0.5], 'Turn Stop on and the tape slows to a halt; turn it off and it spins back up.'),
+  effect('reverser', 'Reverser', ['Time', 'Smooth', 'Feedback', 'Tone'], [0.35, 0.6, 0, 0.8], 'Plays each slice of the sound backwards, with overlapping heads for a smooth swell.'),
+  effect('peq', 'Parametric EQ band', ['Frequency', 'Gain', 'Q', 'Shape'], [0.5, 0.5, 0.35, 0], 'One band anywhere from 20 Hz to 20 kHz: bell, shelves, notch or a cut.'),
+  effect('bbd', 'Bucket brigade delay', ['Time', 'Feedback', 'Modulation', 'Age'], [0.55, 0.35, 0.2, 0.35], 'A dark analog-style delay: the filters close as the time grows, and the modulation turns short times into chorus and flanging.'),
+  effect('grainloop', 'Grain looper', ['Grain', 'Repeats', 'Envelope', 'Pitch'], [0.45, 0.2, 0.3, 0.5], 'Catches a grain of the sound and loops it a few times with an envelope, then catches the next.'),
+  effect('tapeecho', 'Tape echo', ['Time', 'Feedback', 'Heads', 'Wear'], [0.45, 0.4, 0.3, 0.3], 'Three playback heads at 1x, 2x and 3x the time, with wow, saturation and a darkening loop.'),
 ]);
+/** 2.17 trance gate patterns (sixteen steps, x open). */
+export const TRANCE_PATTERNS = Object.freeze([
+  { name: 'Eighths', steps: 'x.x.x.x.x.x.x.x.' },
+  { name: 'Sixteenths', steps: 'xxxxxxxxxxxxxxxx' },
+  { name: 'Offbeat', steps: '.x.x.x.x.x.x.x.x' },
+  { name: 'Gallop', steps: 'x.xxx.xxx.xxx.xx' },
+  { name: 'Stutter', steps: 'xx.xxx.xx.x.xxx.' },
+  { name: 'Dotted', steps: 'x..x..x..x..x.x.' },
+  { name: 'Pump', steps: '.xxx.xxx.xxx.xxx' },
+  { name: 'Build', steps: 'x...x...x.x.xxxx' },
+]);
+export const TRANCE_RATES = Object.freeze(['1/32', '1/16', '1/8']);
+export const PEQ_SHAPES = Object.freeze(['Bell', 'Low shelf', 'High shelf', 'Notch', 'Low cut', 'High cut']);
+export const TAPE_ECHO_HEADS = Object.freeze(['1', '2', '3', '1+2', '2+3', '1+3', '1+2+3']);
 /** Eight-step cutoff patterns of the filter sequencer (0 closed, 1 open). */
 export const FILTER_SEQ_PATTERNS = Object.freeze([
   { name: 'Ramp up', steps: [0, .14, .29, .43, .57, .71, .86, 1] },
@@ -110,6 +134,25 @@ export function fxParamScale(type, parameter) {
   else if (type === 'filterseq' && parameter === 0) return { min: 0, max: FILTER_SEQ_PATTERNS.length - 1, curve: 'int', unit: '', options: FILTER_SEQ_PATTERNS.map(pattern => pattern.name) };
   else if (type === 'vocoder' && parameter === 0) return { min: 8, max: 32, curve: 'int', unit: '' };
   else if (type === 'vocoder' && parameter === 1) { min = -12; max = 12; unit = 'st'; }
+  else if (type === 'transient' && parameter < 2) { min = -100; max = 100; unit = '%'; }
+  else if (type === 'transient' && parameter === 3) { min = -12; max = 12; unit = 'dB'; }
+  else if (type === 'trancegate' && parameter === 0) return { min: 0, max: TRANCE_PATTERNS.length - 1, curve: 'int', unit: '', options: TRANCE_PATTERNS.map((x) => x.name) };
+  else if (type === 'trancegate' && parameter === 1) return { min: 0, max: 2, curve: 'int', unit: '', options: TRANCE_RATES.slice() };
+  else if (type === 'disperser' && parameter === 0) { min = 40; max = 8000; curve = 'exp'; unit = 'Hz'; }
+  else if (type === 'disperser' && parameter === 1) return { min: 1, max: 32, curve: 'int', unit: '' };
+  else if (type === 'tapestop' && parameter === 0) return { min: 0, max: 1, curve: 'int', unit: '', options: ['Play', 'Stop'] };
+  else if (type === 'tapestop' && (parameter === 1 || parameter === 2)) { min = .05; max = 2; unit = 's'; }
+  else if (type === 'reverser' && parameter === 0) { min = .05; max = 1; unit = 's'; }
+  else if (type === 'peq' && parameter === 0) { min = 20; max = 20000; curve = 'exp'; unit = 'Hz'; }
+  else if (type === 'peq' && parameter === 1) { min = -18; max = 18; unit = 'dB'; }
+  else if (type === 'peq' && parameter === 2) { min = .3; max = 12; curve = 'exp'; unit = ''; }
+  else if (type === 'peq' && parameter === 3) return { min: 0, max: PEQ_SHAPES.length - 1, curve: 'int', unit: '', options: PEQ_SHAPES.slice() };
+  else if (type === 'bbd' && parameter === 0) { min = .005; max = .6; curve = 'exp'; unit = 's'; }
+  else if (type === 'grainloop' && parameter === 0) { min = .02; max = 1; curve = 'exp'; unit = 's'; }
+  else if (type === 'grainloop' && parameter === 1) return { min: 1, max: 16, curve: 'int', unit: '' };
+  else if (type === 'grainloop' && parameter === 3) { min = -12; max = 12; unit = 'st'; }
+  else if (type === 'tapeecho' && parameter === 0) { min = .04; max = .5; curve = 'exp'; unit = 's'; }
+  else if (type === 'tapeecho' && parameter === 2) return { min: 0, max: TAPE_ECHO_HEADS.length - 1, curve: 'int', unit: '', options: TAPE_ECHO_HEADS.slice() };
   return { min, max, curve, unit };
 }
 export function formatFxParam(type, parameter, value) {
@@ -134,6 +177,25 @@ export function formatFxParam(type, parameter, value) {
   if (type === 'vocoder' && parameter === 0) return String(Math.round(8 + p * 24));
   if (type === 'vocoder' && parameter === 1) { const st = p * 24 - 12; return (st >= 0 ? '+' : '') + st.toFixed(1) + ' st'; }
   if (type === 'vocoder' && parameter === 2) return Math.round(p * 100) + '%';
+  if (type === 'transient' && parameter < 2) { const v = Math.round(p * 200 - 100); return (v > 0 ? '+' : '') + v + '%'; }
+  if (type === 'transient' && parameter === 3) { const v = p * 24 - 12; return (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB'; }
+  if (type === 'trancegate' && parameter === 0) return TRANCE_PATTERNS[Math.round(p * (TRANCE_PATTERNS.length - 1))].name;
+  if (type === 'trancegate' && parameter === 1) return TRANCE_RATES[Math.round(p * 2)];
+  if (type === 'disperser' && parameter === 0) return Math.round(40 * Math.pow(200, p)) + ' Hz';
+  if (type === 'disperser' && parameter === 1) return String(Math.round(1 + p * 31));
+  if (type === 'tapestop' && parameter === 0) return p >= .5 ? 'Stop' : 'Play';
+  if (type === 'tapestop' && (parameter === 1 || parameter === 2)) return (.05 + p * 1.95).toFixed(2) + ' s';
+  if (type === 'reverser' && parameter === 0) return Math.round((.05 + p * .95) * 1000) + ' ms';
+  if (type === 'peq' && parameter === 0) { const hz = 20 * Math.pow(1000, p); return hz < 1000 ? Math.round(hz) + ' Hz' : (hz / 1000).toFixed(1) + ' kHz'; }
+  if (type === 'peq' && parameter === 1) { const v = p * 36 - 18; return (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB'; }
+  if (type === 'peq' && parameter === 2) return (.3 * Math.pow(40, p)).toFixed(2);
+  if (type === 'peq' && parameter === 3) return PEQ_SHAPES[Math.round(p * (PEQ_SHAPES.length - 1))];
+  if (type === 'bbd' && parameter === 0) { const ms = 5 * Math.pow(120, p); return (ms < 100 ? ms.toFixed(1) : Math.round(ms)) + ' ms'; }
+  if (type === 'grainloop' && parameter === 0) return Math.round(20 * Math.pow(50, p)) + ' ms';
+  if (type === 'grainloop' && parameter === 1) return String(Math.round(1 + p * 15));
+  if (type === 'grainloop' && parameter === 3) { const st = Math.round(p * 24 - 12); return (st > 0 ? '+' : '') + st + ' st'; }
+  if (type === 'tapeecho' && parameter === 0) return Math.round(40 * Math.pow(12.5, p)) + ' ms';
+  if (type === 'tapeecho' && parameter === 2) return TAPE_ECHO_HEADS[Math.round(p * (TAPE_ECHO_HEADS.length - 1))];
   return Math.round(p * 100) + '%';
 }
 /** Frequency shifter amount: a cubic curve around the centre gives fine

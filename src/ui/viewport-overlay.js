@@ -34,13 +34,23 @@ export const STYLES = [
 const DOT_ICONS = ['pin', 'roll', 'drift', 'explore', 'tour', 'pendulum'];
 const DOT_TIPS = [
   'Pin: the dot stays exactly where you place it',
-  'Roll: the dot is a marble that rolls downhill. Flick it to throw it',
+  'Roll: the dot is a marble that follows the land. Click to drop it, flick it to throw it',
   'Drift: the dot wanders slowly on its own',
   'Explore: the marble roams and plays in-key notes at peaks and valleys',
   'Tour: the dot travels through your waypoints in time',
   'Pendulum: the dot rides the tip of a swinging double pendulum',
 ];
 const DOT_DEF = { id: 'dotMode', label: 'Dot', curve: 'enum', min: 0, max: DOT_MODES.length - 1, default: 0, options: DOT_MODES };
+// 2.17 the touch tool: what a press or a drag on the land does
+export const TOUCH_MODES = [
+  { value: 'move', label: 'Move', icon: 'pin', tip: 'Move: click the map to move the dot' },
+  { value: 'strum', label: 'Strum', icon: 'wave', tip: 'Strum: drag across the land to play in-key notes; higher ground plays higher' },
+  { value: 'fx', label: 'FX', icon: 'bolt', tip: 'FX: hold and drag on the land. Left and right sweep the filter, up throws echo and reverb, down drives it, high ground folds the wave. Let go and it glides back' },
+];
+const TOUCH_HINTS = {
+  strum: 'Strum: drag across the land to play notes. The dot still moves when you drag the dot itself',
+  fx: 'FX: hold and drag on the land: left and right sweep the filter, up throws echo, down drives it. Let go to glide back',
+};
 
 export function createViewportOverlay(ctx, viewportEl) {
   const scope = createScope();
@@ -93,7 +103,14 @@ export function createViewportOverlay(ctx, viewportEl) {
     if (physicsPop && physicsPop.isOpen()) { physicsPop.close(); return; }
     physicsPop = openDotSettings(ctx, physicsBtn);
   });
+  const touchSeg = createSegmented(ctx, binder.uiValue('touchMode', TOUCH_MODES.map(m => m.value), 'move'), {
+    label: 'Touch', iconOnly: true, size: 'sm', className: 'seg--touch',
+    options: TOUCH_MODES.map(m => ({ value: m.value, label: m.label, icon: m.icon, tip: m.tip, aria: `Touch: ${m.label}` })),
+  });
+  scope.add(touchSeg.dispose);
+  if (!visuals) touchSeg.setDisabled(true, 'The touch tool needs the 3D map, which is not running');
   const right = h('div', { class: 'vp-toolbar vp-toolbar--right', role: 'toolbar', 'aria-label': 'Dot' },
+    h('span', { class: 'vp-label' }, 'Touch'), touchSeg.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }),
     h('span', { class: 'vp-label' }, 'Dot'), dotSeg.el, physicsBtn);
 
   // ---- signal card + coordinates
@@ -108,7 +125,21 @@ export function createViewportOverlay(ctx, viewportEl) {
   const hint = h('div', { class: 'vp-hint', role: 'note' }, h('span', { class: 'vp-hint-dot', 'aria-hidden': 'true' }), 'Click anywhere on the map to move the dot');
   const bottom = h('div', { class: 'vp-bottom' }, scopeCard.el, h('div', { class: 'vp-bottom-right' }, hint, coords));
 
-  overlay.append(left, right, editChip, bottom);
+  const touchChip = h('div', { class: 'vp-edit-chip vp-touch-chip', role: 'status', hidden: true },
+    h('span', { html: icon('bolt') }), h('span', { class: 'vp-touch-text' }),
+    h('button', { type: 'button', class: 'btn btn--xs', onClick: () => store.set('ui.touchMode', 'move', { source: 'ui' }) }, 'Done'));
+  overlay.append(left, right, editChip, touchChip, bottom);
+  const renderTouch = () => {
+    const m = store.get('ui.touchMode');
+    touchChip.hidden = !(m === 'strum' || m === 'fx') || !!store.get('ui.editWaypoints');
+    if (!touchChip.hidden) {
+      touchChip.firstChild.innerHTML = icon(m === 'strum' ? 'wave' : 'bolt');
+      setText(touchChip.querySelector('.vp-touch-text'), TOUCH_HINTS[m]);
+    }
+  };
+  scope.add(store.subscribe('ui.touchMode', renderTouch));
+  scope.add(store.subscribe('ui.editWaypoints', renderTouch));
+  renderTouch();
   const renderEdit = () => { editChip.hidden = !store.get('ui.editWaypoints'); };
   scope.add(store.subscribe('ui.editWaypoints', renderEdit));
   renderEdit();

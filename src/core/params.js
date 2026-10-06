@@ -269,6 +269,8 @@ export const PART_PARAMS = [
   P('smpStart', 'Sample start', 'sampler', 'lin', 0, 1, 0, { mod: true, hint: 'Where the region starts in the sample' }),
   P('smpEnd', 'Sample end', 'sampler', 'lin', 0, 1, 1, { mod: true, hint: 'Where the region ends in the sample' }),
   P('smpPos', 'Grain position', 'sampler', 'lin', 0, 1, 0.5, { mod: true, hint: 'Granular mode: where in the region the grains are read' }),
+  // 2.17 a pitch envelope: Envelope 2 bends the note by up to four octaves. 0 (the default) changes nothing.
+  P('pitchEnv', 'Pitch env', 'env2', 'lin', -48, 48, 0, { unit: 'st', detent: 0, hint: 'Envelope 2 moves the pitch by this many semitones: start high and fall for kicks, toms and zaps, or rise into a note. Double-click for 0' }),
 ];
 
 // Pedal routing belongs to the rig, not the sound: patch loads keep a part's
@@ -379,8 +381,12 @@ export const LINK_SOURCES = ['Velocity', 'Mod Wheel', 'Pressure', 'Key', 'Slide'
   // v2.10 live weather (global, src/dsp/weather-sources.js): Wind, Rain and Clouds 0..1, Temp -1..1
   'Weather Wind', 'Weather Rain', 'Weather Temp', 'Weather Clouds',
   // v2.11 game controller right stick (global, src/dsp/pad-sources.js): -1..1
-  'Pad Stick X', 'Pad Stick Y'];
-export const LINK_CURVES = ['Linear', 'Soft', 'Hard']; // y = x, sign(x)|x|^2, sign(x)|x|^0.5
+  'Pad Stick X', 'Pad Stick Y',
+  // 2.17 touch on the map (global, src/dsp/touch-sources.js): X, Y and Height -1..1, Down 0..1
+  'Touch X', 'Touch Y', 'Touch Height', 'Touch Down'];
+// y = x, sign(x)|x|^2, sign(x)|x|^0.5; 2.17 appends S-curve (smoothstep through 0), Steps (four levels a side),
+// Invert (-x), Rectify (|x|, a bipolar source moves one way) and Half (only the positive half)
+export const LINK_CURVES = ['Linear', 'Soft', 'Hard', 'S-curve', 'Steps', 'Invert', 'Rectify', 'Half'];
 export const MAX_LINKS = 8;
 export function defaultLinks() {
   // Mod wheel -> Morph used to be hard-wired; it is now an ordinary, editable link.

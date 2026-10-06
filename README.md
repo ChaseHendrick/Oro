@@ -119,9 +119,40 @@ few lines.
   patterns on the next bar or beat, mute and solo tracks, hit drums, play chords or recall
   macro and smart control presets; a setlist with Now and Next, notes and cues; large
   faders, tap tempo and Panic; a lock that ignores stray taps; keyboard and MIDI mapping.
+* **Score desk (2.17).** Describe a piece ("anime opening song in D minor", "lofi with
+  rain", "trap beat") or write a text score, and Oro plays it on its own orchestra, drum
+  kits and ambience, all made from the same terrain synth: 57 pitched voices from violin
+  to tuned timpani, 37 drum pieces, rain, ocean, wind and birds. Render it to a WAV (24-bit
+  or 32-bit float), save it as MIDI, or share a link. Agents use the same desk.
+* **Touch tool (2.17).** Touch: Strum turns the land into a harp, higher ground playing
+  higher notes in key. Touch: FX is a performance pad on the map: drag to sweep the filter,
+  throw echo and reverb, drive and fold the sound, and it glides back when you let go.
+* **Roll: Keep rolling (2.17).** Drop the marble anywhere and it travels on over the hills,
+  faster downhill and slower uphill, instead of settling in a valley.
+* **More sound design (2.17).** A pitch envelope, Link remap curves, and nine more effects:
+  transient shaper, trance gate, disperser, tape stop, reverser, parametric EQ band, bucket
+  brigade delay, grain looper and tape echo. Bounce and Record can write 32-bit float.
 * **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
   camera views, keyboard shortcuts for the main actions, and a layout that
   works on a phone.
+
+## For agents, bots and scripts
+
+Oro is built to be driven by software as well as people (2.17):
+
+* **In a page** (the website, the offline file or the desktop app): `window.oro`.
+  `oro.help()` lists every call, `oro.describe()` says what is loaded, and
+  `oro.play(score)`, `oro.compose({ prompt })`, `oro.set(track, { cutoff: 1200 })`,
+  `oro.loadPatch(0, 'Basalt Bass')`, `oro.pattern(0, [0, null, 2, 4])`,
+  `oro.dot(0, { mode: 'Roll', cruise: 0.5 })` and `await oro.render(score, { bits: 32 })`
+  do what they say and return a receipt with `ok`, and a `fix` for anything wrong.
+  The same calls work over `postMessage` with ids and replies; changes to the session
+  need the page opened with `?agent=1`. A `#score=` link opens Oro with a score ready to play.
+* **From a shell, no browser:** `node scripts/oro-score.mjs render --prompt "epic trailer" --out epic.wav --bits 32`
+  renders with the real DSP; `check`, `compose`, `midi`, `link` and `schema` do the rest.
+* **As an MCP server:** `claude mcp add oro -- node /path/to/Oro/scripts/oro-mcp.mjs`
+  gives an agent six score tools (schema, compose, check, render, midi, link).
+* **As a Claude skill:** [plugins/oro](plugins/oro) (the same as `skills/oro-music`).
 
 ## Download
 

@@ -128,6 +128,29 @@ export class PendulumDot {
   }
 }
 
+/** dot.cruise 0..1 (Roll > Keep rolling) -> the speed the marble keeps up, world units / s (0 = off). */
+export function cruiseSpeed(c) {
+  const v = Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 0;
+  return v * 7;
+}
+export const CRUISE_RATE = 1.6;   // 1 / s: how firmly the push brings the marble back up to speed
+export const CRUISE_MAX = 0.55;   // the push never exceeds this fraction of the marble's gravity
+
+/**
+ * Keep rolling: a push along the marble's heading while it is slower than
+ * the cruise speed (never a brake), so it goes on travelling over the land,
+ * faster downhill and slower uphill, and climbs out of a pit the way it was
+ * going instead of settling. Writes the push into out.x / out.z.
+ */
+export function cruisePush(speed, headX, headZ, cruise, gravity, out) {
+  const target = cruiseSpeed(cruise);
+  out.x = 0; out.z = 0;
+  if (!(target > 0)) return out;
+  const a = Math.min(CRUISE_MAX * gravity, Math.max(0, CRUISE_RATE * (target - speed)));
+  out.x = headX * a; out.z = headZ * a;
+  return out;
+}
+
 /** dot.driftSpeed 0..1 -> wander speed in tiles / s. */
 export function driftRate(s) {
   const v = Number.isFinite(s) ? Math.min(1, Math.max(0, s)) : 0.3;
@@ -381,6 +404,9 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       bounce: bounceFromParam(0.25),
       flick: flickScale(0.5),
       tiltX: 0, tiltY: 0,          // dot params, -1..1
+      cruise: 0,                   // 2.17 Keep rolling, 0..1
+      headX: 1, headZ: 0,          // the way the marble is going (unit vector)
+      cruiseX: 0, cruiseZ: 0,      // the Keep rolling push this frame
       windX: 0, windZ: 0,          // Explore push, world units / s^2
       pushX: 0, pushZ: 0,          // tilt + wind, world units / s^2
       drift: 0.3,
@@ -430,8 +456,19 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
   }
 
   function updatePush(s) {
-    s.pushX = tiltAccel(s.tiltX, s.gravity) + s.windX;
-    s.pushZ = tiltAccel(s.tiltY, s.gravity) + s.windZ;
+    s.pushX = tiltAccel(s.tiltX, s.gravity) + s.windX + s.cruiseX;
+    s.pushZ = tiltAccel(s.tiltY, s.gravity) + s.windZ + s.cruiseZ;
+  }
+  const _cruise = { x: 0, z: 0 };
+  /** Roll > Keep rolling: follow the marble's heading and push along it. */
+  function updateCruise(s) {
+    const sp = Math.sqrt(s.vx * s.vx + s.vz * s.vz);
+    if (sp > 0.15) { s.headX = s.vx / sp; s.headZ = s.vz / sp; }
+    const on = s.mode === MODE_ROLL && s.cruise > 0 && !s.held;
+    cruisePush(sp, s.headX, s.headZ, on ? s.cruise : 0, s.gravity, _cruise);
+    if (_cruise.x === s.cruiseX && _cruise.z === s.cruiseZ) return false;
+    s.cruiseX = _cruise.x; s.cruiseZ = _cruise.z;
+    return true;
   }
 
   function sync(p) {
@@ -515,6 +552,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       s.flick = flickScale(dot && dot.flick);
       s.tiltX = dot && Number.isFinite(dot.tiltX) ? dot.tiltX : 0;
       s.tiltY = dot && Number.isFinite(dot.tiltY) ? dot.tiltY : 0;
+      s.cruise = dot && Number.isFinite(dot.cruise) ? Math.min(1, Math.max(0, dot.cruise)) : 0;
       s.drift = dot && Number.isFinite(dot.driftSpeed) ? dot.driftSpeed : 0.3;
       s.pendRate = dot && Number.isFinite(dot.pendRate) ? dot.pendRate : 0.5;
       s.pendulum.setParams(dot && dot.pendEnergy, dot && dot.pendReach);
@@ -551,6 +589,8 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
       if (!isMarbleMode(s.mode)) return;
       vx *= s.flick; vz *= s.flick;
       const sp = Math.sqrt(vx * vx + vz * vz);
+      // a flick also points Keep rolling the way it was thrown
+      if (sp > 0.15) { s.headX = vx / sp; s.headZ = vz / sp; }
       const k = sp > MAX_SPEED ? MAX_SPEED / sp : 1;
       s.fallback.setVelocity(vx * k, vz * k);
       if (s.rapier) s.rapier.place(fieldFor(p), s.fallback.x, s.fallback.z, vx * k, vz * k);
@@ -567,6 +607,7 @@ export function createPhysics({ fieldFor, rapier = true, importer = null, parts 
         const hf = fieldFor(p);
         if (!hf || !hf.ready) continue;
         if (isMarbleMode(s.mode)) {
+          if (updateCruise(s)) { updatePush(s); if (s.rapier) s.rapier.setPush(s.pushX, s.pushZ); }
           if (s.rapier && s.mode === MODE_ROLL) {
             s.rapier.setTuning(s.gravity, s.damping, s.bounce);
             s.rapier.maybeRebuild(hf, time);

@@ -61,7 +61,9 @@ describe('links', () => {
     const existing = [];
     for (let i = 0; i < MAX_LINKS; i++) existing.push(suggestLink(existing));
     expect(existing.length).toBe(MAX_LINKS);
-    expect(LINK_CURVES.length).toBe(3);
+    // Linear, Soft and Hard keep their places; 2.17 appended the remap curves
+    expect(LINK_CURVES.slice(0, 3)).toEqual(['Linear', 'Soft', 'Hard']);
+    expect(LINK_CURVES.length).toBe(8);
   });
 });
 

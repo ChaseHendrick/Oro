@@ -280,14 +280,22 @@ const ART = [
 ];
 export const CONSOLE_HINT = 'Call the machine by its name and ask for its secret().';
 
-/** Greets the console once and exposes window.oro.secret(). */
+/**
+ * Greets the console once and exposes window.oro.secret(). 2.17: window.oro
+ * is also the agent API (src/agent/api.js), so the secret joins it instead
+ * of being skipped when the API got there first.
+ */
 export function installConsoleEgg(win = typeof window !== 'undefined' ? window : null) {
-  if (!win || win.oro) return;
+  if (!win) return;
+  const existing = win.oro && typeof win.oro === 'object' ? win.oro : null;
+  if (existing && typeof existing.secret === 'function') return;
   try { console.log(`${ART.join('\n')}\n\n${CONSOLE_HINT}`); } catch { /* no console */ }
-  win.oro = Object.freeze({
-    secret() {
-      found('secret', 'console');
-      return 'Thank you for looking under the hood. This one is now in Settings > Operator > Bookkeeping.';
-    },
-  });
+  const secret = () => {
+    found('secret', 'console');
+    return 'Thank you for looking under the hood. This one is now in Settings > Operator > Bookkeeping.';
+  };
+  if (existing) {
+    try { Object.defineProperty(existing, 'secret', { value: secret, enumerable: false }); return; } catch { /* frozen: fall through */ }
+  }
+  if (!existing) win.oro = Object.freeze({ secret });
 }
