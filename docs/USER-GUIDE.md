@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.15.1. Guitar pedals are in
+going on under the hood. It describes version 2.17.1. Guitar pedals are in
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -31,6 +31,7 @@ going on under the hood. It describes version 2.15.1. Guitar pedals are in
 18. [Credits and clean-room statement](#18-credits-and-clean-room-statement)
 19. [Expanded 2.0 controls](#19-using-the-expanded-20-controls)
 20. [Scores, touch and new sounds (2.17)](#20-scores-touch-and-new-sounds-217)
+21. [Visualizers (2.17.1)](#21-visualizers-2171)
 
 ---
 
@@ -3010,3 +3011,31 @@ the same choice. Export stems and the looper already offered 32-bit float.
 over `postMessage`. Without a browser, `node scripts/oro-score.mjs` renders scores to WAV,
 and `node scripts/oro-mcp.mjs` serves the same tools to MCP clients. See the README.
 
+## 21. Visualizers (2.17.1)
+
+The map is one way to watch the sound. The **Map** menu at the top left of the map swaps it
+for a visualizer, and back:
+
+* **Scope**: the wave you hear, left channel in the track colour and right in the accent
+  colour, held still on the pitch (it shows about three cycles). Quiet sounds are scaled up
+  to fill the view; the factor shows in the corner.
+* **Spectrum**: how loud each frequency is, from 20 Hz to 20 kHz on a musical (log) scale,
+  with a thin line holding the recent peaks. It is tilted by 3 dB per octave, so a balanced
+  mix reads roughly flat instead of falling to the right.
+* **Waterfall**: the spectrum over time, scrolling to the left, low notes at the bottom.
+  Brighter means louder.
+* **Stereo field**: left against right. A mono sound is a vertical line; a wide one spreads
+  sideways; a horizontal line means the two sides cancel. The **Correlation** meter below
+  reads +1 for mono, 0 for unrelated sides and below 0 when the sides fight (a mix that
+  will lose sound on a mono speaker).
+* **Halo**: the spectrum as a ring of bars, low notes at the top, around one cycle of the
+  live wave drawn as a circle.
+
+All of them read the master output after the effects and the limiter (before the
+listening mode), through taps that are connected to nothing onward, so they cannot change
+what you hear or what you record. While a visualizer is showing, the 3D map stops drawing,
+which saves the graphics card and battery; dots that roll, drift or tour keep moving,
+because they shape the sound. The map's own buttons come back with the map. Visualizers
+are plain 2D drawing, so they work where the 3D view cannot start, and in Live mode the one
+you picked is the backdrop. The choice is kept on this device. Agents can switch with
+`oro.show('scope')` (or `'map'`, `'spectrum'`, `'waterfall'`, `'vector'`, `'halo'`).

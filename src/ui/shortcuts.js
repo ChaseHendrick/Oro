@@ -47,6 +47,7 @@ export const SHORTCUTS = [
     { keys: ['Shift', 'Drag'], text: 'Change the orbit Size', join: '+' },
     { keys: ['Alt', 'Drag'], text: 'Rotate the orbit', join: '+' },
     { keys: ['Wheel'], text: 'Over the dot: Size. Elsewhere: zoom' },
+    { keys: ['Drag'], text: 'With Touch: Strum, play the land in key. With Touch: FX, sweep the filter and throw echo (map toolbar)' },
   ] },
   { group: 'Sequencer', items: [
     { keys: ['Arrows'], text: 'Left / right move along a row; up / down change the value' },

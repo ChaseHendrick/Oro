@@ -14,7 +14,7 @@ step sequencer, or a MIDI controller such as an Akai MPC.
 **[Download](#download)** · **[User guide](docs/USER-GUIDE.md)** ·
 **[Play in the browser](#play-in-the-browser)** · **[Claude plugin](plugins/oro)** · **[What's new](CHANGELOG.md)**
 
-![Oro in the dark theme: a 3D landscape with a glowing dot and its orbit, the Map panel on the right and the Sound controls below](docs/screenshots/orograph-dark.webp)
+![Oro 2.17.1 in the dark theme: a blue 3D landscape with a glowing dot and its orbit, the Map panel on the right and the Sound controls below](docs/screenshots/orograph-dark.webp)
 
 ## How it makes sound
 
@@ -132,9 +132,16 @@ few lines.
 * **More sound design (2.17).** A pitch envelope, Link remap curves, and nine more effects:
   transient shaper, trance gate, disperser, tape stop, reverser, parametric EQ band, bucket
   brigade delay, grain looper and tape echo. Bounce and Record can write 32-bit float.
+* **Visualizers (2.17.1).** Not in the mood for the map? The **Map** menu at its top left
+  swaps the 3D land for a **Scope**, a **Spectrum** with peak hold, a scrolling
+  **Waterfall**, a **Stereo field** with a correlation meter, or a **Halo** of frequencies
+  around the live wave. They read the master output, the 3D map rests while one is up
+  (dots keep rolling), and they work even where the 3D view cannot start.
 * **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
   camera views, keyboard shortcuts for the main actions, and a layout that
   works on a phone.
+
+![The visualizers in the dark theme: Scope, Spectrum, Waterfall and Halo](docs/screenshots/visualizers.webp)
 
 ## For agents, bots and scripts
 
@@ -144,8 +151,10 @@ Oro is built to be driven by software as well as people (2.17):
   `oro.help()` lists every call, `oro.describe()` says what is loaded, and
   `oro.play(score)`, `oro.compose({ prompt })`, `oro.set(track, { cutoff: 1200 })`,
   `oro.loadPatch(0, 'Basalt Bass')`, `oro.pattern(0, [0, null, 2, 4])`,
-  `oro.dot(0, { mode: 'Roll', cruise: 0.5 })` and `await oro.render(score, { bits: 32 })`
-  do what they say and return a receipt with `ok`, and a `fix` for anything wrong.
+  `oro.dot(0, { mode: 'Roll', cruise: 0.5 })`, `oro.show('spectrum')` and
+  `await oro.render(score, { bits: 32 })` do what they say and return a receipt with
+  `ok`, and a `fix` for anything wrong. Renders run in a background worker, so the page
+  stays smooth.
   The same calls work over `postMessage` with ids and replies; changes to the session
   need the page opened with `?agent=1`. A `#score=` link opens Oro with a score ready to play.
 * **From a shell, no browser:** `node scripts/oro-score.mjs render --prompt "epic trailer" --out epic.wav --bits 32`
@@ -200,6 +209,10 @@ downloads the new version in the background, checks it against the checksum publ
 with the release, and replaces the app when you quit (or when you choose **Restart now**),
 keeping the old one if anything goes wrong. Oro must be in your Applications folder for
 this. It is new in 2.11 and not yet tested on every macOS version.
+
+If you have 2.11 to 2.15.1 with automatic updates on, download the newest version once by
+hand: the repository was renamed from `synth` to `Oro`, and those versions only trust
+download links under the old name. From 2.16.0 on, automatic updates follow the new name.
 
 On macOS 14 Sonoma or older there is a shortcut: in Applications, hold **Control** and
 click Oro, choose **Open**, then click **Open** again.
@@ -344,7 +357,7 @@ Linux by GitHub Actions and published on the
 | `src/dsp/` | The sound engine: terrains, paths and the synthesizer voice |
 | `src/audio/` | Audio setup, effects, recording, importing images and WAV files |
 | `src/visual/` | The 3D landscape, the orbit and the dot (three.js, Rapier physics) |
-| `src/ui/`, `src/styles/` | Knobs, panels, keyboard, sequencer grid, themes |
+| `src/ui/`, `src/styles/` | Knobs, panels, keyboard, sequencer grid, the visualizers, themes |
 | `src/music/`, `src/midi/`, `src/presets/` | Sequencer, arpeggiator, the score desk (orchestra, styles, offline render, MIDI export), MIDI, factory sounds |
 | `src/agent/` | The agent API behind `window.oro` and the `postMessage` bridge |
 | `electron/` | The desktop app shell |

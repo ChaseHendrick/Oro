@@ -112,7 +112,7 @@ else if (cmd === 'check') {
   if (typeof text !== 'string') finish(text);
   const r = check(text);
   if (!r.ok) finish(r);
-  finish({ ok: true, url: scoreLink(r.text, readArg('--base')), hash: r.hash, durationSeconds: r.durationSeconds });
+  finish({ ok: true, url: await scoreLink(r.text, readArg('--base')), hash: r.hash, durationSeconds: r.durationSeconds });
 } else {
   console.error('Use: oro-score.mjs schema | check [file] | compose --prompt "..." | render [file] --out x.wav | midi [file] --out x.mid | link [file]');
   process.exit(2);

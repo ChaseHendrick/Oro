@@ -3,6 +3,31 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.17.1 (October 2026): Visualizers, smoother renders and score desk fixes
+
+**New**
+* **Visualizers.** A **Map** menu at the top left of the map swaps the 3D land for something else to watch: **Scope** (the wave you hear, left and right, held still on the pitch), **Spectrum** (loudness from 20 Hz to 20 kHz with peak hold), **Waterfall** (the spectrum scrolling over time), **Stereo field** (left against right, with a correlation meter) and **Halo** (a ring of frequencies around one cycle of the live wave). They read the master output and cannot change the sound. While one is showing the 3D map stops drawing, which saves the graphics card; dots that roll or drift keep moving. They also work where the 3D view cannot start, and in Live mode they become the backdrop. The choice is kept on this device. Agents can switch with `oro.show('spectrum')`.
+* **Renders no longer freeze the page.** Render WAV in the Score desk and `oro.render()` run in a background worker. Measured here on a 15 s piece: the longest pause of the page went from 1.3 s to 0.14 s.
+* **Help** has cards for the Score desk, the touch tool and Keep rolling, and the shortcuts list mentions the touch tool.
+* A `#score=` link pasted into a tab that already has Oro open now loads and plays.
+
+**Fixes**
+* Drum pieces beyond the classic kit (shaker, conga and the rest) could play as low notes on a pitched track when all 16 tracks were in use. They now get a kit track of their own, or the classic kit's pads on a track that really is a kit.
+* `oro.setGlobal({ scaleRoot: 'Bb' })` set the key to B, and a lower-case `'d'` set C. Flats and lower case now work, and a name that is not a note is an error.
+* `compose({ key: 'Dm' })` (or `'d'`, `'D minor'`) wrote C major. Those now work, a mode alone is used, a key alone keeps the style's mode, and a bad key or mode is an error instead of a silent C.
+* The composer wrote some notes outside the instrument's range in four styles (oboe in symphonic, bass in anime-song, trombone in epic, guitar in atlas), so its own scores came with warnings. Composed notes are now moved by octaves into range. Scores you write keep what they say and still only warn.
+* A note with `every` that ran past the end of the score was an error. The last repeat is now cut at the end.
+* `node scripts/oro-score.mjs link` printed `"url": {}`. It prints the link.
+* The offline render used a different pad than the live desk for a percussion piece on the classic kit; both now use the same one.
+* The browser render paused less and less often at 44.1 kHz; it now yields once a second of audio, at any rate.
+* The anime-song length warning said "fits 8 bars, so it is 1 bars long". It now says what happened.
+* Help said Jam connects you with one friend; it is up to five.
+* The MCP server reports the app's version from `package.json` and `oro_render` takes `voicing`.
+
+**Notes**
+* Macs on 2.11 to 2.15.1 with **Install updates automatically** turned on cannot update themselves to 2.16 or later, because the repository was renamed from `synth` to `Oro` and those versions only trust download links under the old name (2.16.0 and later already use the new name). Download this version once from the Releases page; automatic updates work again from then on.
+* As with 2.17.0, the orchestra, drums and ambience were measured, not judged by ear.
+
 ## 2.17.0 (October 2026): An orchestra, drums and ambience for the score desk, an agent API, the touch tool
 
 **New**

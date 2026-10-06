@@ -14,6 +14,8 @@ import { openPopover } from './layers.js';
 import { openPalettePopover } from './palettes.js';
 import { createFlatMap } from './flat-map.js';
 import { icon } from './icons.js';
+import { openMenu } from './menu.js';
+import { createVisualizer, VISUALIZERS } from './visualizer.js';
 
 export const VIEWS = [
   { value: 'orbit', label: 'Orbit view', icon: 'view-orbit' },
@@ -87,8 +89,31 @@ export function createViewportOverlay(ctx, viewportEl) {
   cameraBtn.disabled = !visuals;
   scope.on(cameraBtn, 'click', () => openCameraViews(ctx, cameraBtn));
 
+  // 2.17.1 what the viewport shows: the 3D map, or a visualizer in its place
+  const viz = createVisualizer(ctx, viewportEl);
+  scope.add(viz.dispose);
+  const vizIcon = h('span', { class: 'vp-viz-icon', 'aria-hidden': 'true' });
+  const vizText = h('span', { class: 'vp-viz-text' });
+  const vizBtn = h('button', { type: 'button', class: 'btn btn--sm btn--ghost vp-viz-btn', 'aria-haspopup': 'menu', dataset: { tip: 'What to show here: the 3D map, or a scope, spectrum, waterfall, stereo field or halo' } },
+    vizIcon, vizText, h('span', { class: 'vp-viz-caret', html: icon('chevron-down'), 'aria-hidden': 'true' }));
+  const renderViz = () => {
+    const cur = VISUALIZERS.find(v => v.value === store.get('ui.visualizer')) || VISUALIZERS[0];
+    vizIcon.innerHTML = icon(cur.icon);
+    setText(vizText, cur.label);
+    vizBtn.setAttribute('aria-label', `Show: ${cur.label}`);
+  };
+  scope.add(store.subscribe('ui.visualizer', renderViz));
+  renderViz();
+  scope.on(vizBtn, 'click', () => {
+    const cur = store.get('ui.visualizer') || 'map';
+    openMenu(ctx.layers, vizBtn, VISUALIZERS.map(v => ({
+      label: v.label, hint: v.hint, icon: icon(v.icon), checked: v.value === cur,
+      onSelect: () => store.set('ui.visualizer', v.value, { source: 'ui' }),
+    })), { label: 'Show' });
+  });
+  const mapOnly = h('span', { class: 'vp-map-only' }, viewSeg.el, cameraBtn, rotate.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }), styleSeg.el, paletteBtn);
   const left = h('div', { class: 'vp-toolbar vp-toolbar--left', role: 'toolbar', 'aria-label': 'View' },
-    viewSeg.el, cameraBtn, rotate.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }), styleSeg.el, paletteBtn);
+    vizBtn, h('span', { class: 'vp-sep vp-map-only', 'aria-hidden': 'true' }), mapOnly);
 
   // ---- dot behaviour
   const dotBinding = binder.path('dot.mode', DOT_DEF);
@@ -109,7 +134,7 @@ export function createViewportOverlay(ctx, viewportEl) {
   });
   scope.add(touchSeg.dispose);
   if (!visuals) touchSeg.setDisabled(true, 'The touch tool needs the 3D map, which is not running');
-  const right = h('div', { class: 'vp-toolbar vp-toolbar--right', role: 'toolbar', 'aria-label': 'Dot' },
+  const right = h('div', { class: 'vp-toolbar vp-toolbar--right vp-map-only', role: 'toolbar', 'aria-label': 'Dot' },
     h('span', { class: 'vp-label' }, 'Touch'), touchSeg.el, h('span', { class: 'vp-sep', 'aria-hidden': 'true' }),
     h('span', { class: 'vp-label' }, 'Dot'), dotSeg.el, physicsBtn);
 
@@ -119,13 +144,13 @@ export function createViewportOverlay(ctx, viewportEl) {
   const coordsText = h('span', { class: 'vp-coords-xy' });
   const heightText = h('span', { class: 'vp-coords-h' });
   const coords = h('div', { class: 'vp-coords', 'aria-live': 'off', dataset: { tip: 'Dot position on the map, and the height of the land under it' } }, coordsText, heightText);
-  const editChip = h('div', { class: 'vp-edit-chip', role: 'status', hidden: true },
+  const editChip = h('div', { class: 'vp-edit-chip vp-map-only', role: 'status', hidden: true },
     h('span', { html: icon('waypoint') }), h('span', null, 'Click the map to add waypoints, drag to move, right-click to delete'),
     h('button', { type: 'button', class: 'btn btn--xs', onClick: () => store.set('ui.editWaypoints', 0, { source: 'ui' }) }, 'Done'));
   const hint = h('div', { class: 'vp-hint', role: 'note' }, h('span', { class: 'vp-hint-dot', 'aria-hidden': 'true' }), 'Click anywhere on the map to move the dot');
-  const bottom = h('div', { class: 'vp-bottom' }, scopeCard.el, h('div', { class: 'vp-bottom-right' }, hint, coords));
+  const bottom = h('div', { class: 'vp-bottom vp-map-only' }, scopeCard.el, h('div', { class: 'vp-bottom-right' }, hint, coords));
 
-  const touchChip = h('div', { class: 'vp-edit-chip vp-touch-chip', role: 'status', hidden: true },
+  const touchChip = h('div', { class: 'vp-edit-chip vp-touch-chip vp-map-only', role: 'status', hidden: true },
     h('span', { html: icon('bolt') }), h('span', { class: 'vp-touch-text' }),
     h('button', { type: 'button', class: 'btn btn--xs', onClick: () => store.set('ui.touchMode', 'move', { source: 'ui' }) }, 'Done'));
   overlay.append(left, right, editChip, touchChip, bottom);
@@ -189,7 +214,7 @@ export function createViewportOverlay(ctx, viewportEl) {
     viewportEl.classList.add('is-flat');
     flat = createFlatMap(viewportEl, { store, terrains: ctx.terrains, tele: ctx.tele, ghost: () => ctx.ghost, source: 'ui' });
     viewportEl.insertBefore(flat.el, overlay);
-    const notice = h('div', { class: 'vp-notice', role: 'status' }, h('span', { html: icon('info') }),
+    const notice = h('div', { class: 'vp-notice vp-map-only', role: 'status' }, h('span', { html: icon('info') }),
       'The 3D view could not start here (WebGL may be off), so this flat map stands in. Click it to move the dot.');
     overlay.appendChild(notice);
     viewSeg.setDisabled(true, '3D view unavailable');

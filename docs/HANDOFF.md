@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-06 for Oro 2.17.0 (section 0 is the current state; 10.12 is the 2.17 work and what is left). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-06 for Oro 2.17.1 (section 0 is the current state; 10.13 is the 2.17.1 work, 10.12 the 2.17 work and what is left). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -8,17 +8,18 @@ separate future features; they are outside the 2.0 expansion.
 
 ---
 
-## 0. Read first: where things stand (2026-10-06, Oro 2.17.0)
+## 0. Read first: where things stand (2026-10-06, Oro 2.17.1)
 
-* **Code:** Oro **2.17.0** is on branch `claude/intelligent-feynman-i7wv3r` (not merged, no PR yet). `main` is 2.16.1 plus Grok's score desk (PR #32). A push to `main` publishes a desktop release (`.github/workflows/desktop.yml`), so merge only on purpose, after "Test and build the web app" is green.
-* **What 2.17 is:** a review and repair of Grok's 2.16.1 score desk, then a large expansion asked for in one session: an orchestra, drums and ambience for the score desk, composer styles (anime-song and others), an offline WAV renderer, an agent API (`window.oro` + postMessage), an MCP server, the touch tool (Strum / FX on the map), Roll > Keep rolling, nine track effects, a pitch envelope, Link remap curves, and 32-bit float for Bounce and Record. Section **10.12** has the details, the file map, what is verified and what is not, and the next steps.
-* **Checks at hand-off:** Vitest 2008 of 2009 pass; the one failure is the CPU timing test (`tests/dsp/perf.test.js`), which fails on this busy container on `main` too. `node dev/dsp/bench.mjs 1` on `main` and on the branch back to back showed no regression (10.12). `vite build` passes. A Chromium smoke test (preview build, `?agent=1`) exercised `window.oro`, a 15-track anime-song score, the touch API and the Score desk panel with no console errors. Nothing was tested on real audio hardware or by ear.
-* **The owner has not listened to any 2.17 sound.** Levels were measured offline (10.12) and every voice makes sound, but whether the orchestra, drums and ambience sound good is unconfirmed. Treat "sounds good" as an open question, not a fact.
-* **Still not done (from earlier):** a compiled plugin, a real Link session (GPL library not vendored), a TURN relay, a jam tried on two computers, live multi-out, and the hardware checks in 10.6.
+* **Code:** Oro **2.17.1** went to `main` through a pull request from `claude/charming-planck-aqmzsa`; a push to `main` publishes the desktop release (`.github/workflows/desktop.yml`), so if you are reading this on `main`, v2.17.1 was built from it. Check the Releases page for the ten assets before relying on that.
+* **What 2.17.1 is:** a review and bug-fix pass over 2.17.0 (score desk, agent API, renderer, CLI), page renders moved into a worker, Help cards for the 2.17 features, and **visualizers** the owner asked for ("extra/optional visualizers for people if they don't want to look at the terrain map"): Scope, Spectrum, Waterfall, Stereo field and Halo in place of the 3D map. Section **10.13** has the details.
+* **Website:** the site served Oro **2.15.1** until this session (two releases behind). The 2.17.1 sync is a pull request in `ChaseHendrick/hendrickresearch.com` (branch `claude/oro-2.17.1`, `node scripts/sync-orograph.mjs ../Oro`, `softwareVersion` in `src/music.ts`). Verify the live page reports 2.17.1 after Vercel deploys.
+* **Checks at hand-off:** the full Vitest suite passed on this container (2009 tests before this work, plus 19 new ones in `tests/music/fixes-2171.test.js` and `tests/ui/visualizer.test.js`). `vite build` passes. Chromium (swiftshader) screenshots of every visualizer in both themes, with audio playing, showed no console errors; the map resumes drawing when switched back. The worker render was measured: longest main-thread pause 0.14 s against 1.3 s on the page.
+* **The owner has not listened to any 2.17 sound**, and the visualizers were seen only in headless Chromium, not on the owner's Mac or a phone.
+* **Still not done (from earlier):** a compiled plugin, a real Link session (GPL library not vendored), a TURN relay, a jam tried on two computers, live multi-out, and the hardware checks in 10.6. The reference X post (10.12) was never seen.
 * **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout. Not built.
-* **App version:** bump only `package.json`. Do not edit the v2.13.0 tag fixture in `tests/packaging/mac-update.test.js`.
-* **Agents:** never run broad `pkill` or `pkill -f <pattern>`: in this session `pkill -f "vite preview"` matched and killed the shell running the test suite. Kill only your own PIDs. Chromium checks here need `--disable-3d-apis --disable-webgl`, or the swiftshader flags in `tests/e2e/expansion.cjs` for a short run.
-* **Network from the container:** x.com, fxtwitter, nitter and fullbucket.de are blocked by the egress proxy. The owner's reference post (an X post by Ingi Erlingsson, status 2106567435826446624) was never seen; see 10.12.
+* **App version:** bump only `package.json` (`src/ui/settings.js` reads it). Do not edit the v2.13.0 tag fixture in `tests/packaging/mac-update.test.js`.
+* **Agents:** never run broad `pkill` or `pkill -f <pattern>`; kill only your own PIDs. Chromium checks here need `--disable-3d-apis --disable-webgl` for long runs, or the swiftshader flags in `tests/e2e/expansion.cjs` for a short one. With swiftshader the 3D map needs about 30 s before its first frame (shader compile).
+* **Network from the container:** x.com, fxtwitter, nitter and fullbucket.de are blocked by the egress proxy.
 
 ---
 
@@ -886,3 +887,47 @@ not) or for an audio file, and tune `fillAnime` in `score-styles.js` to it.
    modulation matrix view of all Links, an envelope follower of the track's own audio as a
    Link source, a slew (lag) per Link, more LFO shapes, wavetable spectral warps (Vital),
    a multiband splitter, and convolution reverb as a track effect.
+
+### 10.13 Oro 2.17.1: visualizers, worker renders, fixes
+
+**Asked for in this session:** "continue improving and bug fixing, and update the readme and
+hero image. push a new release and make sure its right on the site", then "can we add some
+more extra/optional visualizers for people if they dont want to look at the terrain map thing".
+
+**Visualizers** (`src/ui/visualizer.js`, wired in `src/ui/viewport-overlay.js`): a **Map** menu
+button at the left of the map toolbar sets `ui.visualizer` (`map`, `scope`, `spectrum`,
+`waterfall`, `vector`, `halo`), a device pref in `src/ui/prefs.js` and `DEFAULT_UI`. The layer is
+one 2D canvas (`.viz-layer`, z-index 1) over the map; CSS on `.viewport[data-viz]` hides the
+map's own controls (`.vp-map-only`) and layers. It taps `engine.analyser` (after the limiter,
+before the listening mode) with its own analysers (8192-point mono for the spectrum, two
+4096-sample channels through a splitter for the scope and stereo field), connected to nothing
+onward, and disconnects when the map is back. `visuals.setCovered(on)` stops 3D drawing and
+keeps the physics timer running so rolling dots still move. In Live mode the chosen
+visualizer is the backdrop (`src/styles/live.css`). `oro.show(name)` switches it. The maths
+(log bands with interpolation below one bin, a 3 dB/octave tilt, period estimate, correlation)
+is unit tested; the drawing was checked by screenshots only.
+
+**Worker renders** (`src/music/score-render-worker.js`, `src/music/score-render-host.js`):
+the Score desk's Render WAV and `oro.render()` run `renderScore` in a worker bundled by the
+`virtual:worklet:` plugin (Blob URL, then data: URL), falling back to the page. The result
+says `ranIn`.
+
+**Fixes:** percussion on a non-kit track when 16 tracks exist (`planTracks`, new
+`fallbackKit`); flat key names in `setGlobal`; `compose` keys (`Dm`, `d`, `D minor`, errors
+for bad keys and modes, a mode alone, a key alone keeps the style's mode); composed notes
+folded into instrument ranges (`inRange` in `score-styles.js`); repeats cut at the end; CLI
+`link` printed `{}`; render fallback pad; the 44.1 kHz yield drift; the anime-song length
+warning; Help's Jam size; the MCP server version and `voicing`; `#score=` links on
+`hashchange`.
+
+**Correction to 10.12:** the Mac auto-update rename problem affects 2.11 to 2.15.1, not
+2.16.0: the rename commit (164077b) is in the 2.16.0 build (826bc21). The 2.17.1 changelog
+and the README say so.
+
+**Hero image:** `docs/screenshots/orograph-dark.webp` was recaptured at 1440x900 in the dark
+theme (Glass Archipelago scene, Smart controls folded, tips off) with the Oro name;
+`docs/screenshots/visualizers.webp` is a 2 x 2 of Scope, Spectrum, Waterfall and Halo.
+
+**Next ideas:** per-track visualizers (the engine has no per-track taps yet), a spectrum
+of a chosen track next to the master, a full-screen visualizer button, and letting the
+Live mode backdrop pick a visualizer on its own.

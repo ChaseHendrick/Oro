@@ -13,6 +13,8 @@
 //   symphonic       a full orchestra in a classical layout
 //   lullaby         celesta, harp and soft strings in 3/4
 
+import { PITCHED } from './orchestra.js';
+
 const SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const FLAT_KEYS = new Set(['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb']);
@@ -62,6 +64,21 @@ const midiOf = (pc, oct) => (oct + 1) * 12 + (((pc % 12) + 12) % 12);
 /** The lowest MIDI note of pitch class pc at or above lo. */
 const atOrAbove = (pc, lo) => lo + ((((pc - lo) % 12) + 12) % 12);
 
+/**
+ * A composed note moved by octaves into its instrument's range (2.17.1), so
+ * the styles never write what check() would warn about. Written scores keep
+ * what they say: check() only warns.
+ */
+export function inRange(voice, midi) {
+  const r = PITCHED[voice] && PITCHED[voice].range;
+  if (!r) return midi;
+  const [lo, hi] = r;
+  let m = midi;
+  while (m < lo && m + 12 <= hi) m += 12;
+  while (m > hi && m - 12 >= lo) m -= 12;
+  return m;
+}
+
 function writer(o) {
   const beats = o.beats || 4;
   const end = o.bars * beats;
@@ -76,6 +93,7 @@ function writer(o) {
     end, beats,
     note(voice, midi, beat, len, vel, pan) {
       if (!ok(beat) || !(midi >= 0 && midi <= 127)) return;
+      midi = inRange(voice, midi);
       lines.push(`${voice} ${spell(Math.round(midi))} ${r3(beat)} ${r3(fit(beat, len))} ${r3(vol(vel))}${pan != null ? ` ${pan}` : ''}`);
     },
     chord(voice, midis, beat, len, vel) { for (const m of midis) this.note(voice, m, beat, len, vel); },
@@ -390,7 +408,10 @@ const ANIME_PLANS = [
 function fillAnime(o, w, rng, warnings) {
   const plan = ANIME_PLANS.filter((p) => p.bars <= Math.max(8, o.bars)).pop();
   if (plan.bars !== o.bars) {
-    warnings.push({ line: 0, field: 'bars', message: `The anime song form fits ${plan.bars} bars, so it is ${Math.min(plan.bars, o.bars)} bars long.`, fix: 'Ask for 8, 16, 24, 36 or 53 bars.' });
+    const message = o.bars < plan.bars
+      ? `The anime song form needs at least ${plan.bars} bars, so ${o.bars === 1 ? 'this bar is' : `these ${o.bars} bars are`} the start of a chorus.`
+      : `The anime song form comes in 8, 16, 24, 36 or 53 bars, so this one is ${plan.bars} bars, not ${o.bars}.`;
+    warnings.push({ line: 0, field: 'bars', message, fix: 'Ask for 8, 16, 24, 36 or 53 bars.' });
   }
   const bars = Math.min(plan.bars, o.bars);
   const end = bars * 4;

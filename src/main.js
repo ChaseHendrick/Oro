@@ -120,18 +120,25 @@ async function boot() {
   window.oro = createAgentApi({ store, engine, music, presets, visuals, getUi: () => ui && ui.ctx, version: APP_VERSION });
   installBridge(window, window.oro, { allowMutating: () => agentOptIn() });
   // A #score= link puts its score on the desk and plays it once audio is running.
-  if (/[#&]score=/.test(location.hash || '')) {
+  // 2.17.1: also when the link is pasted into a tab that already has Oro open.
+  let waitForAudio = null;
+  const openScoreLink = () => {
+    if (!/[#&]score=/.test(location.hash || '')) return;
     import('./music/score-export.js').then(async ({ scoreFromHash }) => {
       const text = await scoreFromHash(location.hash);
       const r = text ? music.score.load(text) : null;
       if (!r || !r.ok) { console.warn('[orograph] the score in this link could not be read', r && r.errors); return; }
       const go = () => { music.score.play(); };
+      if (waitForAudio) { waitForAudio(); waitForAudio = null; }
       if (store.get('ui.audioStarted') && engine && engine.context && engine.context.state === 'running') go();
       else {
-        const off = store.subscribe('ui.audioStarted', () => { if (store.get('ui.audioStarted')) { off(); go(); } });
+        const off = store.subscribe('ui.audioStarted', () => { if (store.get('ui.audioStarted')) { off(); waitForAudio = null; go(); } });
+        waitForAudio = off;
       }
     }).catch((err) => console.warn('[orograph] score link failed', err));
-  }
+  };
+  openScoreLink();
+  window.addEventListener('hashchange', openScoreLink);
   if (pluginRequested()) {
     window.orograph.host = {
       outputs: () => hostOutputs((store.get('parts') || []).length),

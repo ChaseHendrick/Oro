@@ -32,6 +32,7 @@ export const PREF_DEFAULTS = Object.freeze({
   liveSurround: 'off',  // play 3D tracks on surround speakers: 'off', '5.1', '7.1' (2.12)
   wavFormat: 'pcm24',   // Bounce and Record: 'pcm24' or 'float32' (2.17)
   touchMode: 'move',    // what a click or drag on the map does: 'move', 'strum', 'fx' (2.17)
+  visualizer: 'map',    // what the viewport shows: the 3D map or a visualizer (2.17.1)
 });
 
 const VALID = {
@@ -58,6 +59,7 @@ const VALID = {
   liveSurround: v => ['off', '5.1', '7.1'].includes(v),
   wavFormat: v => ['pcm24', 'float32'].includes(v),
   touchMode: v => ['move', 'strum', 'fx'].includes(v),
+  visualizer: v => ['map', 'scope', 'spectrum', 'waterfall', 'vector', 'halo'].includes(v),
 };
 
 /** Keep only known keys with valid values; fill the rest from defaults. */
@@ -86,7 +88,7 @@ export function savePrefs(prefs, storage = globalThis.localStorage) {
 }
 
 // Store-backed keys (live in store.ui so visuals and other modules can react).
-export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderScale', 'renderStyle', 'palette', 'autoRotate', 'audioQuality', 'listenMode', 'liveSurround', 'touchMode'];
+export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderScale', 'renderStyle', 'palette', 'autoRotate', 'audioQuality', 'listenMode', 'liveSurround', 'touchMode', 'visualizer'];
 
 /**
  * Restore preferences into the store and keep them persisted. Returns an

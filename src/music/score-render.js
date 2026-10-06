@@ -24,7 +24,7 @@ import { jobFor, jobKey, buildTerrainLevels } from '../audio/terrain-jobs.js';
 import { generateImpulse } from '../audio/reverb-ir.js';
 import { delaySeconds, delayToneFreqs, chorusSettings, warmthSettings, volumeGain } from '../audio/fx.js';
 import { encodeWav } from '../audio/wav.js';
-import { check } from './score.js';
+import { check, percOnKit } from './score.js';
 import { planTracks, voicedPart } from './desk.js';
 import { swingBeat } from './transport.js';
 
@@ -97,7 +97,7 @@ export async function renderScore(input, opts = {}) {
   for (const n of receipt.score.notes) {
     const part = plan.partOf.get(n.voice);
     if (part == null) continue;
-    const note = plan.fallback.has(n.voice) ? 36 : n.midi;
+    const note = plan.fallback.has(n.voice) ? percOnKit(n.voice) : n.midi;
     const on = at(n.beat), off = Math.max(on + 0.02, at(n.beat + n.len));
     events.push({ time: on, msg: { t: 'noteOn', part, note, vel: n.vel, time: on } });
     events.push({ time: off, msg: { t: 'noteOff', part, note, time: off } });
@@ -113,6 +113,7 @@ export async function renderScore(input, opts = {}) {
   const rl = new Float32Array(BLOCK), rr = new Float32Array(BLOCK);
   let next = 0;
   let lastReport = 0;
+  let lastYield = 0;
   for (let f = 0; f < frames; f += BLOCK) {
     const n = Math.min(BLOCK, frames - f);
     const t = f / sr;
@@ -126,7 +127,7 @@ export async function renderScore(input, opts = {}) {
       lastReport = f;
       progress(0.85 * f / frames);
       // let a browser breathe; Node does not need it
-      if (opts.yieldEvery && (f / sr) % opts.yieldEvery < BLOCK / sr) await new Promise((r) => setTimeout(r, 0));
+      if (opts.yieldEvery && t - lastYield >= opts.yieldEvery) { lastYield = t; await new Promise((r) => setTimeout(r, 0)); }
     }
   }
 

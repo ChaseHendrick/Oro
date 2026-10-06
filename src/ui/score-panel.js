@@ -88,9 +88,9 @@ export function openScorePanel(ctx, anchor) {
     rendering = true;
     renderBtn.disabled = true;
     try {
-      const { renderScore, encodeScoreWav } = await import('../music/score-render.js');
-      const out = await renderScore(text.value, {
-        voicing: value(voicingSel) || undefined, yieldEvery: 1,
+      const [{ encodeScoreWav }, { renderScoreInBackground }] = await Promise.all([import('../music/score-render.js'), import('../music/score-render-host.js')]);
+      const out = await renderScoreInBackground(text.value, {
+        voicing: value(voicingSel) || undefined,
         onProgress: (f) => setText(status, `Rendering ${Math.round(f * 100)}%...`),
       });
       if (!out.ok) { show(out.receipt, 'Render'); return; }
