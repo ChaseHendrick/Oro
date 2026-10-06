@@ -18,7 +18,7 @@
 
 import { MAX_PARTS } from '../core/params.js';
 import { createFx } from './fx.js';
-import { encodePCM24, wavBlobFromPieces } from './wav.js';
+import { encodePCM24, encodeFloat32, wavBlobFromPieces } from './wav.js';
 import { loadWorkletModule } from './worklet-loader.js';
 
 export const MAX_BOUNCE_SECONDS = 15 * 60;
@@ -124,11 +124,13 @@ function statsOf(chans, f, n, acc) {
 }
 
 /**
- * Interleaved 24-bit WAV from an AudioBuffer, encoded in slices so the page
- * stays responsive, with its peak and RMS measured on the way.
+ * Interleaved 24-bit WAV (or 32-bit float with format 'float32', 2.17) from
+ * an AudioBuffer, encoded in slices so the page stays responsive, with its
+ * peak and RMS measured on the way.
  * @returns {Promise<{blob: Blob, stats: {peak, rms, bad}}>}
  */
-export async function encodeBuffer(buffer) {
+export async function encodeBuffer(buffer, { format = 'pcm24' } = {}) {
+  const float = format === 'float32';
   const chans = [];
   for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
   const pieces = [];
@@ -137,10 +139,11 @@ export async function encodeBuffer(buffer) {
   for (let f = 0; f < buffer.length; f += ENCODE_FRAMES) {
     const n = Math.min(ENCODE_FRAMES, buffer.length - f);
     statsOf(chans, f, n, acc);
-    pieces.push(encodePCM24(chans.map(ch => ch.subarray(f, f + n)), n));
+    const slice = chans.map(ch => ch.subarray(f, f + n));
+    pieces.push(float ? encodeFloat32(slice, n) : encodePCM24(slice, n));
     if (nowMs() - t0 > YIELD_MS) { await yieldTask(); t0 = nowMs(); }
   }
-  const blob = wavBlobFromPieces({ sampleRate: buffer.sampleRate, channels: chans.length, frames: buffer.length, pieces });
+  const blob = wavBlobFromPieces({ sampleRate: buffer.sampleRate, channels: chans.length, frames: buffer.length, pieces, format: float ? 'float32' : 'pcm24' });
   return { blob, stats: { peak: acc.peak, rms: Math.sqrt(acc.sum / Math.max(1, acc.n)), bad: acc.bad } };
 }
 

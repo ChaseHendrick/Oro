@@ -259,6 +259,8 @@ export function sanitizePart(src, i) {
       pendEnergy: clamp(num(p.dot?.pendEnergy, base.dot.pendEnergy), -2.95, 4),
       pendReach: clamp(num(p.dot?.pendReach, base.dot.pendReach), 0, 1),
       pendRate: clamp(num(p.dot?.pendRate, base.dot.pendRate), 0, 1),
+      // 2.17 Roll > Keep rolling: kept only when set, so older sessions stay byte-for-byte the same
+      ...(num(p.dot?.cruise, 0) > 0 ? { cruise: clamp(num(p.dot.cruise, 0), 0, 1) } : {}),
     },
     links: p.links === undefined ? defaultLinks() : sanitizeLinks(p.links),
     funcPoints: sanitizeFuncPoints(p.funcPoints),

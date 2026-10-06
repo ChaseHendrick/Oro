@@ -71,10 +71,10 @@ few lines.
 * **Patches and scenes.** More than fifty factory patches in ten categories, seven
   factory scenes, searchable categories, authors and folders, 36 MIDI Program Change
   favourites, your own patches and scenes, random patches, and JSON export and import.
-* **Mix and record.** A four-slot effects rack on each track with 27 effects and ten
+* **Mix and record.** A four-slot effects rack on each track with 40 effects and ten
   routing layouts, plus vector mixing for banks of four tracks. Shimmer, granular pitch
   shifting, EQ and multiband compression join the master effects and limiter with an
-  adjustable ceiling. Record what you play to a 24-bit WAV, or **bounce** the sequencers
+  adjustable ceiling. Record what you play to a 24-bit or 32-bit float WAV, or **bounce** the sequencers
   offline, with optional stems per part.
 * **3D sound and listening modes (2.12).** Place any track around your head for
   headphones (by hand, or let it follow the dot on the map), export a 5.1 or 7.1 surround
@@ -119,9 +119,40 @@ few lines.
   patterns on the next bar or beat, mute and solo tracks, hit drums, play chords or recall
   macro and smart control presets; a setlist with Now and Next, notes and cues; large
   faders, tap tempo and Panic; a lock that ignores stray taps; keyboard and MIDI mapping.
+* **Score desk (2.17).** Describe a piece ("anime opening song in D minor", "lofi with
+  rain", "trap beat") or write a text score, and Oro plays it on its own orchestra, drum
+  kits and ambience, all made from the same terrain synth: 57 pitched voices from violin
+  to tuned timpani, 37 drum pieces, rain, ocean, wind and birds. Render it to a WAV (24-bit
+  or 32-bit float), save it as MIDI, or share a link. Agents use the same desk.
+* **Touch tool (2.17).** Touch: Strum turns the land into a harp, higher ground playing
+  higher notes in key. Touch: FX is a performance pad on the map: drag to sweep the filter,
+  throw echo and reverb, drive and fold the sound, and it glides back when you let go.
+* **Roll: Keep rolling (2.17).** Drop the marble anywhere and it travels on over the hills,
+  faster downhill and slower uphill, instead of settling in a valley.
+* **More sound design (2.17).** A pitch envelope, Link remap curves, and nine more effects:
+  transient shaper, trance gate, disperser, tape stop, reverser, parametric EQ band, bucket
+  brigade delay, grain looper and tape echo. Bounce and Record can write 32-bit float.
 * **Dark and light themes**, 24 palettes, six cameras and six render styles, saved
   camera views, keyboard shortcuts for the main actions, and a layout that
   works on a phone.
+
+## For agents, bots and scripts
+
+Oro is built to be driven by software as well as people (2.17):
+
+* **In a page** (the website, the offline file or the desktop app): `window.oro`.
+  `oro.help()` lists every call, `oro.describe()` says what is loaded, and
+  `oro.play(score)`, `oro.compose({ prompt })`, `oro.set(track, { cutoff: 1200 })`,
+  `oro.loadPatch(0, 'Basalt Bass')`, `oro.pattern(0, [0, null, 2, 4])`,
+  `oro.dot(0, { mode: 'Roll', cruise: 0.5 })` and `await oro.render(score, { bits: 32 })`
+  do what they say and return a receipt with `ok`, and a `fix` for anything wrong.
+  The same calls work over `postMessage` with ids and replies; changes to the session
+  need the page opened with `?agent=1`. A `#score=` link opens Oro with a score ready to play.
+* **From a shell, no browser:** `node scripts/oro-score.mjs render --prompt "epic trailer" --out epic.wav --bits 32`
+  renders with the real DSP; `check`, `compose`, `midi`, `link` and `schema` do the rest.
+* **As an MCP server:** `claude mcp add oro -- node /path/to/Oro/scripts/oro-mcp.mjs`
+  gives an agent six score tools (schema, compose, check, render, midi, link).
+* **As a Claude skill:** [plugins/oro](plugins/oro) (the same as `skills/oro-music`).
 
 ## Download
 
@@ -314,9 +345,12 @@ Linux by GitHub Actions and published on the
 | `src/audio/` | Audio setup, effects, recording, importing images and WAV files |
 | `src/visual/` | The 3D landscape, the orbit and the dot (three.js, Rapier physics) |
 | `src/ui/`, `src/styles/` | Knobs, panels, keyboard, sequencer grid, themes |
-| `src/music/`, `src/midi/`, `src/presets/` | Sequencer, arpeggiator, MIDI, factory sounds |
+| `src/music/`, `src/midi/`, `src/presets/` | Sequencer, arpeggiator, the score desk (orchestra, styles, offline render, MIDI export), MIDI, factory sounds |
+| `src/agent/` | The agent API behind `window.oro` and the `postMessage` bridge |
 | `electron/` | The desktop app shell |
 | `public/`, `build/` | Icons and the web app manifest |
+| `scripts/` | The score command line (`oro-score.mjs`), the MCP server (`oro-mcp.mjs`) and build helpers |
+| `skills/`, `plugins/` | The Claude skill and plugin for writing music on Oro |
 | `tests/` | Automated tests |
 | `docs/` | The user guide, architecture notes, the research brief, MPC and pedal notes, screenshots |
 | `dev/` | Developer test pages and tools (icon and notice generators) |
@@ -331,6 +365,9 @@ Linux by GitHub Actions and published on the
 | [Guitar pedals](docs/PEDALS.md) | The design of version 1.1's pedalboard integration and what is wired |
 | [Research brief](docs/RESEARCH.md) | Wave terrain synthesis: history, maths, prior art and the build stack |
 | [Architecture](docs/ARCHITECTURE.md) | How the code fits together, for developers |
+| [Synth families](docs/SYNTH-FAMILIES.md) | Other kinds of synthesis and which of them Oro covers |
+| [Handoff](docs/HANDOFF.md) | The current state of the code, what was measured, and what is left, for the next developer |
+| [Score skill](skills/oro-music/SKILL.md) | The score format, the voices and the styles, written for agents |
 
 ## Independent work
 

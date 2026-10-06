@@ -24,6 +24,9 @@ import { seedNewInstallDefaults } from './core/first-run.js';
 import { installConsoleEgg } from './ui/eggs.js';
 import { restoreRescue, clearRescue } from './learn/rescue.js';
 import { pluginRequested, hostOutputs, hostParamList, applyHostParam } from './plugin/host.js';
+import { createAgentApi, installBridge, agentOptIn } from './agent/api.js';
+import { createTouchTool } from './music/touch.js';
+import { version as APP_VERSION } from '../package.json';
 
 // Start-up timing marks (2.11): 'oro:boot' once the main chunk has run,
 // 'oro:ui' once the interface is built. Read with performance.getEntriesByType('mark').
@@ -82,6 +85,11 @@ async function boot() {
   // Visuals emit 'extremum' only in Explore mode; music checks the part's settings too.
   if (visuals && typeof visuals.on === 'function') {
     try { visuals.on('extremum', (e) => music.exploreNote(e)); } catch (err) { console.warn('[orograph] Explore notes unavailable', err); }
+    // 2.17 the touch tool (Touch: Strum / FX in the map toolbar)
+    try {
+      const touchTool = createTouchTool({ store, engine, router: music.router });
+      visuals.on('touch', (e) => touchTool.handle(e));
+    } catch (err) { console.warn('[orograph] the touch tool is unavailable', err); }
   }
 
   let midi = null;
@@ -92,7 +100,10 @@ async function boot() {
     console.warn('[orograph] MIDI unavailable', err);
   }
 
-  createUI(root, { store, engine, visuals, music, presets, midi, autosave, prepareUpdate: async () => {
+  // 2.17: a score borrows tracks while it plays; the saved session keeps them as they were
+  autosave.addFilter((state) => music.score.cleanState(state));
+
+  const ui = createUI(root, { store, engine, visuals, music, presets, midi, autosave, prepareUpdate: async () => {
     autosave.schedule(); autosave.flush();
     const saved = await Promise.all([autosave.settled(), presets.settled()]);
     return saved.every(Boolean);
@@ -104,24 +115,23 @@ async function boot() {
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };
-  window.oro = {
-    play: (scoreText) => music.score.play(scoreText),
-    stop: () => music.score.stop(),
-    compose: (opts) => music.score.compose(opts),
-    schema: () => music.score.schema(),
-    getScore: () => music.score.getScore(),
-  };
-  window.addEventListener('message', (event) => {
-    const data = event.data;
-    if (!data || data.source !== 'oro-agent' || typeof data.type !== 'string') return;
-    let receipt = null;
-    if (data.type === 'play') receipt = window.oro.play(data.score);
-    else if (data.type === 'stop') receipt = window.oro.stop();
-    else if (data.type === 'compose') receipt = window.oro.compose(data);
-    else if (data.type === 'schema') receipt = window.oro.schema();
-    else return;
-    try { event.source && event.source.postMessage({ source: 'oro', type: data.type, receipt }, event.origin || '*'); } catch { /* the other window has gone */ }
-  });
+  // 2.17 agent API (src/agent/api.js): window.oro and the postMessage bridge.
+  // Changing the session over postMessage needs the page opened with ?agent=1.
+  window.oro = createAgentApi({ store, engine, music, presets, visuals, getUi: () => ui && ui.ctx, version: APP_VERSION });
+  installBridge(window, window.oro, { allowMutating: () => agentOptIn() });
+  // A #score= link puts its score on the desk and plays it once audio is running.
+  if (/[#&]score=/.test(location.hash || '')) {
+    import('./music/score-export.js').then(async ({ scoreFromHash }) => {
+      const text = await scoreFromHash(location.hash);
+      const r = text ? music.score.load(text) : null;
+      if (!r || !r.ok) { console.warn('[orograph] the score in this link could not be read', r && r.errors); return; }
+      const go = () => { music.score.play(); };
+      if (store.get('ui.audioStarted') && engine && engine.context && engine.context.state === 'running') go();
+      else {
+        const off = store.subscribe('ui.audioStarted', () => { if (store.get('ui.audioStarted')) { off(); go(); } });
+      }
+    }).catch((err) => console.warn('[orograph] score link failed', err));
+  }
   if (pluginRequested()) {
     window.orograph.host = {
       outputs: () => hostOutputs((store.get('parts') || []).length),

@@ -23,6 +23,7 @@ export const DOT_DEFS = {
   flick: { id: 'flick', label: 'Flick', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How hard a flick of the dot throws the marble' },
   tiltX: { id: 'tiltX', label: 'Tilt X', curve: 'lin', min: -1, max: 1, default: 0, hint: 'Lean the world east or west' },
   tiltY: { id: 'tiltY', label: 'Tilt Y', curve: 'lin', min: -1, max: 1, default: 0, hint: 'Lean the world north or south' },
+  cruise: { id: 'cruise', label: 'Keep rolling', curve: 'lin', min: 0, max: 1, default: 0, hint: 'A push along the way the marble is going: it keeps travelling over the hills, faster downhill and slower uphill, instead of settling in a valley. Flick it to aim it' },
   driftSpeed: { id: 'driftSpeed', label: 'Speed', curve: 'lin', min: 0, max: 1, default: 0.3, hint: 'How fast the dot wanders' },
   exploreRate: { id: 'exploreRate', label: 'Density', curve: 'lin', min: 0, max: 1, default: 0.5, hint: 'How often Explore plays a note at a peak or a valley' },
   exploreRange: { id: 'exploreRange', label: 'Range', curve: 'int', min: 1, max: 4, default: 2, hint: 'How many octaves the height of the land spans' },
@@ -35,9 +36,9 @@ export const DOT_DEFS = {
 
 const MODE_NOTES = [
   'Pin keeps the dot exactly where you put it. Click or drag on the map to move it.',
-  'Roll turns the dot into a marble. Drag it and let go to flick it.',
+  'Roll turns the dot into a marble that follows the land. Click anywhere to drop it there; drag it and let go to flick it. Turn up Keep rolling and it travels on over the hills instead of settling.',
   'Drift lets the dot wander smoothly on its own.',
-  'Explore lets the marble roam under slowly turning gravity and play in-key notes at peaks and valleys.',
+  'Explore lets the marble roam under slowly turning gravity (so it curls around) and play in-key notes at peaks and valleys. For a marble that only follows the land, use Roll.',
   'Tour moves the dot through your waypoints in time with the tempo.',
   'Pendulum hangs a double pendulum where you put the dot; the dot rides the tip of the lower arm. Raise the energy for chaos.',
 ];
@@ -59,6 +60,9 @@ export function openDotSettings(ctx, anchor) {
     h('div', { class: 'mini-label' }, 'Marble'),
     h('div', { class: 'knob-row' }, knob('gravity', { format: pct }), knob('friction', { format: pct }), knob('bounce', { format: pct }), knob('flick', { format: pct })),
     h('div', { class: 'knob-row' }, knob('tiltX'), knob('tiltY')));
+  // 2.17 Roll only: Keep rolling
+  const roll = h('div', { class: 'dot-group', dataset: { modes: '1' } },
+    h('div', { class: 'knob-row' }, knob('cruise', { format: pct })));
   const pendulum = h('div', { class: 'dot-group', dataset: { modes: '5' } },
     h('div', { class: 'mini-label' }, 'Pendulum'),
     h('div', { class: 'knob-row' }, knob('pendEnergy', { format: v => v.toFixed(2) }), knob('pendReach', { format: pct }), knob('pendRate', { format: pct })));
@@ -107,7 +111,7 @@ export function openDotSettings(ctx, anchor) {
   });
   const fun = h('div', { class: 'dot-line dot-line--end dot-fun' }, golfBtn);
 
-  const body = h('div', { class: 'dot-pop' }, title, note, physics, drift, explore, tour, pendulum, fun);
+  const body = h('div', { class: 'dot-pop' }, title, note, physics, roll, drift, explore, tour, pendulum, fun);
   const wpPath = () => `parts.${binder.selected()}.dot.waypoints`;
 
   function renderWaypoints() {

@@ -500,6 +500,25 @@ export async function createVisuals(container, { store, engine = null, quality, 
   // read every frame: cached from the store (store.get splits its path each call)
   let editOn = !!store.get('ui.editWaypoints');
   function editing() { return editOn; }
+  // 2.17 the touch tool: 'move' (the dot follows clicks, as always), 'strum'
+  // or 'fx'. In strum and fx a press on the land (not on the dot) is a touch:
+  // the visuals report it ('touch' events) and draw a ripple; music and the
+  // engine decide what it does (src/music/touch.js).
+  let touchMode = store.get('ui.touchMode') || 'move';
+  let lastRipple = 0;
+  function touchEvent(phase, u, v, clientX, clientY, mode = touchMode) {
+    const uu = wrap01(u), vv = wrap01(v);
+    const height = view && view.A && view.A.data ? view.norm(uu, vv) : 0;
+    // screen position, -1..1 across the map view (up is +1)
+    const onScreen = Number.isFinite(clientX) && Number.isFinite(clientY) && rect && rect.width && rect.height;
+    const sx = onScreen ? ((clientX - rect.left) / rect.width) * 2 - 1 : uu * 2 - 1;
+    const sy = onScreen ? 1 - ((clientY - rect.top) / rect.height) * 2 : 1 - vv * 2;
+    const now = performance.now();
+    if (phase !== 'up' && now - lastRipple > 60) { lastRipple = now; markers.ping(uu, vv, height >= 0); }
+    const ev = { phase, mode, part: sel, u: uu, v: vv, height, x: Math.max(-1, Math.min(1, sx)), y: Math.max(-1, Math.min(1, sy)), time: now };
+    emit('touch', ev);
+    return ev;
+  }
 
   function teleFresh(now) {
     return tele && tele.part === sel && now - teleAt < TELE_STALE_MS ? tele : null;
@@ -789,6 +808,16 @@ export async function createVisuals(container, { store, engine = null, quality, 
       // empty sky: fall through to the camera
     }
 
+    // 2.17 touch tool: a press on the land plays it instead of moving the dot
+    if (!edit && touchMode !== 'move' && !overDot(e.clientX, e.clientY, isTouch) && pickTerrain(e.clientX, e.clientY, hit)) {
+      blockCamera();
+      press = { id: e.pointerId, kind: 'touch', sx: e.clientX, sy: e.clientY, moved: false, u: hit.u, v: hit.v, cx: e.clientX, cy: e.clientY };
+      canvas.style.cursor = 'crosshair';
+      overlay.hide();
+      touchEvent('down', hit.u, hit.v, e.clientX, e.clientY);
+      return;
+    }
+
     let kind = null;
     if (!edit && overDot(e.clientX, e.clientY, isTouch)) kind = e.shiftKey ? 'size' : e.altKey ? 'rotate' : 'dot';
     else if (!edit && pickTerrain(e.clientX, e.clientY, hit)) kind = 'terrain';
@@ -890,6 +919,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
       case 'fun':
         if (funInput) funInput('move', e.clientX, e.clientY);
         break;
+      case 'touch':
+        if (pickTerrain(e.clientX, e.clientY, hit)) {
+          press.u = hit.u; press.v = hit.v; press.cx = e.clientX; press.cy = e.clientY;
+          touchEvent('move', hit.u, hit.v, e.clientX, e.clientY);
+        }
+        break;
       default: break;
     }
   }
@@ -902,6 +937,11 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (p.kind === 'wp') markers.setActive(-1);
     if (p.kind === 'fun') {
       if (funInput) funInput(commit ? 'up' : 'cancel', 0, 0);
+      canvas.style.cursor = '';
+      return;
+    }
+    if (p.kind === 'touch') {
+      touchEvent('up', p.u, p.v, p.cx, p.cy);
       canvas.style.cursor = '';
       return;
     }
@@ -1063,6 +1103,10 @@ export async function createVisuals(container, { store, engine = null, quality, 
         case 'ui.autoRotate': rig.setAutoRotate(!!store.get('ui.autoRotate')); break;
         case 'ui.renderStyle': api.setRenderStyle(store.get('ui.renderStyle')); break;
         case 'ui.palette': api.setPalette(store.get('ui.palette')); break;
+        case 'ui.touchMode':
+          touchMode = store.get('ui.touchMode') || 'move';
+          if (press && press.kind === 'touch' && touchMode === 'move') endPress(false);
+          break;
         case 'ui.editWaypoints':
           editOn = !!store.get('ui.editWaypoints');
           // leaving edit mode mid-drag must not leave a waypoint grabbed
@@ -1092,6 +1136,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
   function applyUi() {
     editOn = !!store.get('ui.editWaypoints');
+    touchMode = store.get('ui.touchMode') || 'move';
     selectPart(clampPart(store.get('ui.selectedPart')), true);
     api.setQuality(store.get('ui.quality'));
     fpsCap = readFpsCap();
@@ -1840,6 +1885,17 @@ export async function createVisuals(container, { store, engine = null, quality, 
     off(type, fn) {
       const set = handlers.get(type);
       if (set) set.delete(fn);
+    },
+
+    /**
+     * 2.17 the touch tool without a pointer (oro.touch): { u, v, phase:
+     * 'down' | 'move' | 'up', mode: 'strum' | 'fx' }. Returns the event.
+     */
+    touch({ u = 0.5, v = 0.5, phase = 'move', mode } = {}) {
+      rect = canvas.getBoundingClientRect();
+      const m = mode === 'strum' || mode === 'fx' ? mode : touchMode === 'move' ? 'fx' : touchMode;
+      const ph = phase === 'down' || phase === 'up' ? phase : 'move';
+      return touchEvent(ph, u, v, NaN, NaN, m);
     },
 
     /** Follow the sequencer (dot-lock flashes, Tour on the beat). */

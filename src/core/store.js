@@ -40,6 +40,7 @@ export const DEFAULT_UI = Object.freeze({
   liveSurround: 'off',    // 2.12 live surround playback: 'off' | '5.1' | '7.1' (device setting)
   lockRecord: 0,          // sequencer dot-lock recording
   editWaypoints: 0,       // map clicks add Tour waypoints instead of moving the dot
+  touchMode: 'move',      // 2.17 a press on the land: 'move' the dot, 'strum' notes or play 'fx' (device setting)
   resoEngine: 'cpu',      // 2.12 Resonator engine: 'cpu' | 'gpu' (WebGPU); this session only, never saved
   resoGpuDetail: 128,     // 2.12 GPU Resonator grid: 128 | 192 | 256
 });

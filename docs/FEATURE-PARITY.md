@@ -26,7 +26,7 @@ in [EXPANSION-VALIDATION.md](EXPANSION-VALIDATION.md).
 | LFO repeats | 1 to 32 | 1 to 32, plus zero for continuous |
 | Steps LFO | 32 values, glide and smooth | 32 drawable values, glide and smooth interpolation |
 | Envelopes | Six stages, six modes | Delay/Attack/Hold/Decay/Sustain/Release; Gate, One-shot, Loop, Ping-pong, Trigger hold, Pluck |
-| Effects scale | 22 effects, four slots/layer, nine layouts | 27 effects, four slots/track, ten layouts |
+| Effects scale | 22 effects, four slots/layer, nine layouts | 40 effects, four slots/track, ten layouts |
 | Missing effects | Shimmer/flanger/phaser/overdrive/decimator | All five distinct algorithms |
 | Additional effects | Granular shift, four-band EQ, ducking, OTT-style | Overlapping pitch grains, four-band EQ, raw-source sidechain ducking, three-band upward/downward compression |
 | Vector mixing | Four-corner mix | Equal-power corners in selectable banks of four tracks |

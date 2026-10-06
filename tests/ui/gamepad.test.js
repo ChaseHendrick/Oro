@@ -274,7 +274,9 @@ describe('Pad Stick Link sources', () => {
     expect(LINK_SOURCES.indexOf('Weather Clouds')).toBe(34);
     expect(LINK_SOURCES.indexOf('Pad Stick X')).toBe(35);
     expect(LINK_SOURCES.indexOf('Pad Stick Y')).toBe(36);
-    expect(LINK_SOURCES.length).toBe(37);
+    // 2.17 appended the Touch sources after them
+    expect(LINK_SOURCES.length).toBeGreaterThanOrEqual(37);
+    expect(LINK_SOURCES.indexOf('Touch X')).toBe(37);
   });
 
   it('the bank smooths toward the stick and clamps', () => {

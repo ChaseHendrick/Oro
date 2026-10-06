@@ -1,4 +1,4 @@
-import { FX_TYPE_MAP, FX_ROUTINGS, FILTER_SEQ_PATTERNS, defaultTrackFx, freqShiftHz } from './track-fx-config.js';
+import { FX_TYPE_MAP, FX_ROUTINGS, FILTER_SEQ_PATTERNS, TRANCE_PATTERNS, TAPE_ECHO_HEADS, defaultTrackFx, freqShiftHz } from './track-fx-config.js';
 export { FX_TYPES, FX_ROUTINGS, defaultTrackFx, defaultFxSlot, sanitizeTrackFx } from './track-fx-config.js';
 
 const TAU = Math.PI * 2;
@@ -23,6 +23,11 @@ const HYPER_RATE = Float64Array.from([1, 1.18, .83, 1.37, .71, 1.52]);
 const HYPER_PAN = Float64Array.from([-1, 1, -.6, .6, -.25, .25]);
 const SEQ_STEPS = Float64Array.from(FILTER_SEQ_PATTERNS.flatMap(pattern => pattern.steps));
 const SEQ_LOW = Math.log(.005);
+// 2.17 trance gate steps (1 open, 0 closed), sixteen per pattern
+const GATE_STEPS = Uint8Array.from(TRANCE_PATTERNS.flatMap(pattern => [...pattern.steps].map(c => (c === 'x' ? 1 : 0))));
+// 2.17 tape echo head sets, as bit masks of heads 1, 2 and 3
+const ECHO_MASKS = Uint8Array.from(TAPE_ECHO_HEADS.map(h => h.split('+').reduce((m, x) => m | (1 << (Number(x) - 1)), 0)));
+const DISPERSE_MAX = 32;
 const rounded = (x) => { x = clamp(x, -3, 3); return x * (27 + x * x) / (27 + 9 * x * x); };
 
 // RBJ biquads in transposed direct form II. Coefficients and both channel
@@ -35,6 +40,8 @@ function coefficients(c, at, kind, hz, q, gain, sr) {
   else if (kind === 'high') { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = b0; a0 = 1 + a; a1 = -2 * cs; a2 = 1 - a; }
   else if (kind === 'band') { b0 = a; b1 = 0; b2 = -a; a0 = 1 + a; a1 = -2 * cs; a2 = 1 - a; }
   else if (kind === 'peak') { b0 = 1 + a * A; b1 = -2 * cs; b2 = 1 - a * A; a0 = 1 + a / A; a1 = b1; a2 = 1 - a / A; }
+  else if (kind === 'notch') { b0 = 1; b1 = -2 * cs; b2 = 1; a0 = 1 + a; a1 = -2 * cs; a2 = 1 - a; }
+  else if (kind === 'allpass') { b0 = 1 - a; b1 = -2 * cs; b2 = 1 + a; a0 = 1 + a; a1 = -2 * cs; a2 = 1 - a; }
   else {
     const t = 2 * Math.sqrt(A) * sn / Math.sqrt(2);
     if (kind === 'shelfLow') {
@@ -83,6 +90,13 @@ export class EffectSlot {
     this.vocC = new Float64Array(32 * 10);
     this.vocZL = new Float64Array(32 * 2); this.vocZR = new Float64Array(32 * 2); this.vocZM = new Float64Array(32 * 2);
     this.vocEnv = new Float64Array(32);
+    // 2.17 effects: a second envelope and four spare one-pole coefficients,
+    // the disperser's all-pass states, tape stop, grain looper, gate and echo state
+    this.env2 = 0; this.poleA = 0; this.poleB = 0; this.poleC = 0; this.poleD = 0;
+    this.dispL = new Float64Array(DISPERSE_MAX * 2); this.dispR = new Float64Array(DISPERSE_MAX * 2); this.dispStages = 1;
+    this.tapeSpeed = 1; this.tapeLag = 0; this.tapeU = 0; this.tapeK = 1; this.tapeStopT = 1; this.tapeStartT = 1;
+    this.loopHalf = 0; this.loopC = 0; this.loopG = 0; this.loopRep = 0; this.loopReady = 0; this.loopLen = 1; this.loopRepeats = 1;
+    this.gatePos = 0; this.headMask = 1; this.flutter = 0;
     this.L = 0; this.R = 0; this.tailL = 0; this.tailR = 0;
     this.reset();
   }
@@ -116,6 +130,10 @@ export class EffectSlot {
     this.hilbert.fill(0); this.hI = 0; this.hQ = 0; this.seqPos = 0;
     this.vocZL.fill(0); this.vocZR.fill(0); this.vocZM.fill(0); this.vocEnv.fill(0);
     this.vocHpZ = 0; this.vocKey = -1;
+    this.env2 = 0; this.dispL.fill(0); this.dispR.fill(0);
+    this.tapeSpeed = 1; this.tapeLag = 0; this.tapeU = 0;
+    this.loopHalf = 0; this.loopC = 0; this.loopG = 0; this.loopRep = 0; this.loopReady = 0;
+    this.gatePos = 0; this.flutter = 0;
     for (let i = 0; i < this.voicePhase.length; i++) this.voicePhase[i] = i / this.voicePhase.length;
   }
   /** One Hilbert step: hI and hQ receive the in-phase and quadrature parts. */
@@ -210,6 +228,46 @@ export class EffectSlot {
           coefficients(this.vocC, i * 10 + 5, 'band', hz * Math.pow(2, shift / 12), q, 0, sr);
         }
       }
+    }
+    else if (type === 32) {
+      // fast follower (the hit) against a slow one (the body); Speed sets both releases
+      this.poleA = timePole(.0004, sr); this.poleB = timePole(.012 + p[2] * .09, sr);
+      this.poleC = timePole(.018 + p[2] * .05, sr); this.poleD = timePole(.12 + p[2] * .4, sr);
+      this.ratio = (p[0] - .5) * 2.4; this.depth = (p[1] - .5) * 2.4; this.makeup = db((p[3] - .5) * 24);
+    } else if (type === 33) {
+      this.pattern = Math.round(this.target[0] * (TRANCE_PATTERNS.length - 1)) * 16;
+      this.rate = [2, 1, .5][Math.round(this.target[1] * 2)];
+      this.poleA = timePole(.0006 + p[2] * .03, sr); this.poleB = timePole(.001 + p[2] * .06, sr);
+    } else if (type === 34) {
+      this.dispStages = Math.round(1 + this.target[1] * (DISPERSE_MAX - 1));
+      const hz = 40 * Math.pow(200, p[0]), q = .3 + p[2] * 3.7;
+      coefficients(this.c, 0, 'allpass', hz, q, 0, sr);
+      coefficients(this.c, 5, 'allpass', hz * Math.pow(2, p[3] * .75), q, 0, sr);
+    } else if (type === 35) {
+      this.tapeStopT = (.05 + p[1] * 1.95) * sr; this.tapeStartT = (.05 + p[2] * 1.95) * sr; this.tapeK = .4 + p[3] * 3.2;
+    } else if (type === 36) {
+      this.grainSize = Math.round((.05 + p[0] * .95) * sr); this.fb = p[2] * .8; this.tone = pole(800 * Math.pow(25, p[3]), sr);
+    } else if (type === 37) {
+      const shape = Math.round(this.target[3] * 5);
+      const kind = ['peak', 'shelfLow', 'shelfHigh', 'notch', 'high', 'low'][shape];
+      coefficients(this.c, 0, kind, 20 * Math.pow(1000, p[0]), .3 * Math.pow(40, p[2]), p[1] * 36 - 18, sr);
+    } else if (type === 38) {
+      const seconds = .005 * Math.pow(120, p[0]);
+      this.delay = seconds * sr; this.fb = p[1] * .97;
+      this.rate = (.25 + p[2] * 4.75) / sr; this.depth = sr * Math.min(seconds * .45, .0045) * p[2];
+      // a 4096-stage chip clocked for this time: its filters sit near a third of the clock
+      const clock = 4096 / (2 * seconds);
+      this.tone = pole(Math.min(sr * .45, 16000, clock * .33) * (1 - .6 * p[3]), sr);
+      this.noise = db(-100 + p[3] * 42); this.drive = 1 + p[3] * 2.5;
+    } else if (type === 39) {
+      this.loopLen = Math.max(32, Math.min(Math.floor(this.size / 2) - 4, Math.round(.02 * Math.pow(50, p[0]) * sr)));
+      this.loopRepeats = Math.round(1 + this.target[1] * 15);
+      this.ratio = Math.pow(2, Math.round(p[3] * 24 - 12) / 12);
+    } else if (type === 40) {
+      this.delay = .04 * Math.pow(12.5, p[0]) * sr; this.fb = p[1] * .95;
+      this.headMask = ECHO_MASKS[Math.round(this.target[2] * (ECHO_MASKS.length - 1))];
+      this.tone = pole(6500 * (1 - .7 * p[3]), sr); this.drive = 1 + p[3] * 2;
+      this.rate = (.4 + p[3] * .5) / sr; this.depth = sr * .0018 * p[3]; this.noise = db(-96 + p[3] * 36);
     }
     if (this.type === 12) {
       coefficients(this.c, 0, 'shelfLow', 100, .707, 24 * p[0] - 12, sr);
@@ -440,6 +498,108 @@ export class EffectSlot {
       l = sumL * g + sib;
       r = sumR * g + sib;
     }
+    else if (type === 32) {
+      this.env += (peak > this.env ? this.poleA : this.poleB) * (peak - this.env);
+      this.env2 += (peak > this.env2 ? this.poleC : this.poleD) * (peak - this.env2);
+      const ratio = (this.env + 1e-5) / (this.env2 + 1e-5);
+      // at most +-18 dB of shaping, whatever the settings
+      const g = clamp(ratio > 1 ? Math.pow(ratio, this.ratio) : Math.pow(ratio, -this.depth), .125, 8);
+      this.gain += this.modPole * (g - this.gain);
+      l = L * this.gain * this.makeup; r = R * this.gain * this.makeup;
+      this.reduction = Math.min(1, this.gain);
+    } else if (type === 33) {
+      let pos = this.gatePos + this.stepRate * this.rate; if (pos >= 16) pos -= 16; this.gatePos = pos;
+      const step = pos | 0, open = GATE_STEPS[this.pattern + step] && pos - step < .72 ? 1 : 0;
+      const want = 1 - p[3] * (1 - open);
+      this.env += (want > this.env ? this.poleA : this.poleB) * (want - this.env);
+      l = L * this.env; r = R * this.env; this.reduction = this.env;
+    } else if (type === 34) {
+      const n = this.dispStages, c = this.c;
+      l = L; r = R;
+      for (let i = 0; i < n; i++) { l = this.biquadExt(l, c, 0, this.dispL, i * 2); r = this.biquadExt(r, c, 5, this.dispR, i * 2); }
+      l = safe(l); r = safe(r);
+    } else if (type === 35) {
+      // u: 0 playing, 1 stopped; speed = 1 - u^k. A spin-up from a full stop
+      // starts behind the tape by exactly the distance it will make up.
+      const stop = this.target[0] >= .5;
+      if (stop) this.tapeU = Math.min(1, this.tapeU + 1 / this.tapeStopT);
+      else if (this.tapeU > 0) {
+        if (this.tapeU >= 1) this.tapeLag = Math.min(this.size - 4, this.tapeStartT / (this.tapeK + 1));
+        this.tapeU = Math.max(0, this.tapeU - 1 / this.tapeStartT);
+      }
+      let speed = 1 - Math.pow(this.tapeU, this.tapeK);
+      if (this.tapeU <= 0 && this.tapeLag > 0) speed = 1 + Math.min(1, this.tapeLag / (this.sr * .08));
+      this.tapeSpeed = speed;
+      this.write(L, R);
+      if (this.tapeU >= 1) { this.tapeLag = 0; l = 0; r = 0; }
+      else {
+        this.tapeLag = clamp(this.tapeLag + 1 - speed, 0, this.size - 4);
+        const fade = Math.min(1, speed * 6);
+        l = this.read(this.bufL, this.tapeLag) * fade; r = this.read(this.bufR, this.tapeLag) * fade;
+      }
+    } else if (type === 36) {
+      // two reversed heads half a slice apart; each reads at twice its age, so
+      // the slice before this one comes out backwards
+      const n = this.grainSize, k = this.grainPhase, k2 = (k + (n >> 1)) % n;
+      const wA = Math.sin(Math.PI * k / n), wB = Math.sin(Math.PI * k2 / n);
+      const smooth = p[1];
+      const gA = (1 - smooth) * (k < n - 64 ? 1 : (n - k) / 64) + smooth * wA * wA, gB = smooth * wB * wB;
+      const aL = this.read(this.bufL, Math.max(1, 2 * k)), aR = this.read(this.bufR, Math.max(1, 2 * k));
+      const bL = this.read(this.bufL, Math.max(1, 2 * k2)), bR = this.read(this.bufR, Math.max(1, 2 * k2));
+      const yl = aL * gA + bL * gB, yr = aR * gA + bR * gB;
+      this.lpL += this.tone * (yl - this.lpL); this.lpR += this.tone * (yr - this.lpR);
+      this.write(L + this.lpL * this.fb, R + this.lpR * this.fb);
+      l = this.lpL; r = this.lpR;
+      this.grainPhase = k + 1 >= n ? 0 : k + 1;
+    } else if (type === 37) { l = this.biquad(L, 0); r = this.biquad(R, 0, true); }
+    else if (type === 38) {
+      this.phase = wrap(this.phase + this.rate);
+      const mL = this.depth * Math.sin(TAU * this.phase), mR = this.depth * Math.sin(TAU * (this.phase + .25));
+      const dl = this.read(this.bufL, Math.max(2, this.delay + mL)), dr = this.read(this.bufR, Math.max(2, this.delay + mR));
+      const t = this.tone;
+      this.lpL += t * (dl - this.lpL); this.lpR += t * (dr - this.lpR);
+      this.bodyL += t * (this.lpL - this.bodyL); this.bodyR += t * (this.lpR - this.bodyR);
+      const hiss = this.random() * this.noise, drive = this.drive;
+      this.write(rounded((L + this.bodyL * this.fb) * drive) / drive + hiss, rounded((R + this.bodyR * this.fb) * drive) / drive - hiss);
+      l = this.bodyL; r = this.bodyR;
+    } else if (type === 39) {
+      // record into one half of the buffer while the other half's grain loops
+      const half = this.size >> 1, len = this.loopLen;
+      if (this.loopC < len) { const at = (this.loopHalf ^ 1) * half + this.loopC; this.bufL[at] = safe(L); this.bufR[at] = safe(R); this.loopC++; }
+      l = 0; r = 0;
+      if (this.loopReady) {
+        const g = this.loopG, at = this.loopHalf * half, i = g | 0, f = g - i, j = i + 1 < len ? i + 1 : i;
+        const x = g / len, shape = p[2];
+        const edge = Math.min(1, x * 40, (1 - x) * 40);
+        const env = edge * (shape < .5 ? 1 - (1 - 2 * shape) * 0 : Math.pow(1 - x, (shape - .5) * 8));
+        const fade = 1 - .5 * (this.loopRep / Math.max(1, this.loopRepeats)) * shape;
+        l = (this.bufL[at + i] + (this.bufL[at + j] - this.bufL[at + i]) * f) * env * fade;
+        r = (this.bufR[at + i] + (this.bufR[at + j] - this.bufR[at + i]) * f) * env * fade;
+        this.loopG = g + this.ratio;
+        if (this.loopG >= len) { this.loopG = 0; this.loopRep++; }
+      }
+      if ((!this.loopReady || this.loopRep >= this.loopRepeats) && this.loopC >= len) {
+        this.loopHalf ^= 1; this.loopC = 0; this.loopG = 0; this.loopRep = 0; this.loopReady = 1;
+      }
+    } else if (type === 40) {
+      this.phase = wrap(this.phase + this.rate);
+      this.flutter = wrap(this.flutter + this.rate * 11.3);
+      const wow = this.depth * (Math.sin(TAU * this.phase) + .25 * Math.sin(TAU * this.flutter));
+      const mask = this.headMask, d = this.delay;
+      let el = 0, er = 0, heads = 0, lastL = 0, lastR = 0;
+      for (let h = 0; h < 3; h++) {
+        if (!(mask & (1 << h))) continue;
+        const at = Math.max(2, d * (h + 1) + wow);
+        lastL = this.read(this.bufL, at); lastR = this.read(this.bufR, at);
+        el += lastL; er += lastR; heads++;
+      }
+      el /= Math.max(1, Math.sqrt(heads)); er /= Math.max(1, Math.sqrt(heads));
+      this.lpL += this.tone * (lastL - this.lpL); this.lpR += this.tone * (lastR - this.lpR);
+      const hiss = this.random() * this.noise, drive = this.drive;
+      this.write(rounded((L + this.lpL * this.fb) * drive) / drive + hiss, rounded((R + this.lpR * this.fb) * drive) / drive + hiss);
+      this.bodyL += this.tone * (el - this.bodyL); this.bodyR += this.tone * (er - this.bodyR);
+      l = this.bodyL; r = this.bodyR;
+    }
     this.tailL *= 1 - this.transitionPole; this.tailR *= 1 - this.transitionPole;
     this.L = safe(L + (safe(l) - L) * this.mix + this.tailL); this.R = safe(R + (safe(r) - R) * this.mix + this.tailR);
     this.deltaL = this.L - L; this.deltaR = this.R - R;
@@ -484,7 +644,10 @@ export class TrackEffects {
     for (let i = 0; i < 4; i++) {
       const slot = this.slots[i];
       if (slot.tempo !== tempo) { slot.tempo = tempo; slot.stepRate = tempo / 15 / this.sampleRate; slot.control = 0; }
-      if (Number.isFinite(beat)) { const sixteenths = beat * 4; slot.seqPos = sixteenths - Math.floor(sixteenths / 8) * 8; }
+      if (Number.isFinite(beat)) {
+        const sixteenths = beat * 4; slot.seqPos = sixteenths - Math.floor(sixteenths / 8) * 8;
+        const g = sixteenths * slot.rate; if (slot.type === 33) slot.gatePos = g - Math.floor(g / 16) * 16;
+      }
     }
   }
   processSample(left, right, sidechain = 0, mods = null) {

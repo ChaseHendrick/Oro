@@ -30,6 +30,7 @@ going on under the hood. It describes version 2.15.1. Guitar pedals are in
 17. [Troubleshooting](#17-troubleshooting)
 18. [Credits and clean-room statement](#18-credits-and-clean-room-statement)
 19. [Expanded 2.0 controls](#19-using-the-expanded-20-controls)
+20. [Scores, touch and new sounds (2.17)](#20-scores-touch-and-new-sounds-217)
 
 ---
 
@@ -2812,11 +2813,14 @@ effect menu, Mix amount and four controls named for that algorithm. Bypass or Mi
 passes dry audio through. Effects are applied after voice pan and before the track's level and sends,
 and their tails continue after notes release. Patches include the rack.
 
-The 31 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
+The 40 effects are Stereo delay, Ping-pong delay, Reverb, Shimmer reverb, Chorus, Flanger,
 Phaser, Overdrive, Distortion, Decimator, Granular pitch shift, Four-band EQ, Sidechain
 ducking, Multiband compression, Compressor, Limiter, Tremolo, Auto pan, Ring modulation,
 Envelope wah, Low-pass filter, High-pass filter, Comb resonator, Stereo width, Warmth,
-Noise gate, Tape colour, Frequency shifter, Hyper dimension, Filter sequencer and Vocoder. Multiband
+Noise gate, Tape colour, Frequency shifter, Hyper dimension, Filter sequencer, Vocoder, and
+the nine added in 2.17 (Transient shaper, Trance gate, Disperser, Tape stop, Reverser,
+Parametric EQ band, Bucket brigade delay, Grain looper and Tape echo, described in
+[section 20](#20-scores-touch-and-new-sounds-217)). Multiband
 compression uses three bands with upward and downward compression; it is not a copy of any
 branded compressor.
 
@@ -2926,3 +2930,83 @@ the computer and patch; see `EXPANSION-VALIDATION.md` for the exact fixture.
 **Settings > Audio** reports worklet load. If a dense patch struggles, reduce simultaneous
 notes, unison or expensive track effects, or select a lower audio quality. These controls
 change synthesis cost and remain your choice.
+
+## 20. Scores, touch and new sounds (2.17)
+
+### The Score desk
+
+**Score** in the top bar opens the score desk. Type what you want ("anime opening song in
+D minor", "lofi with rain", "trap beat", "epic trailer", "lullaby") and press **Write**, or
+pick a style, key and mode. The score appears as text you can edit. **Play** plays it on
+Oro's own instruments: each voice gets a track of its own (up to 16) with its own patch,
+and the tracks you had are put back, as they were, a moment after it ends. Nothing a score
+does becomes an undo step or ends up in your saved session. **Render WAV** makes a finished
+file offline (24-bit or 32-bit float), **Save MIDI** writes a MIDI file for a DAW (drums on
+channel 10 with General MIDI notes), and **Copy link** makes a link that opens Oro with the
+score ready to play.
+
+The voices are the orchestra (violin to tuba, harp, celesta, glockenspiel, tuned timpani
+struck on the Resonator), band and synth voices, 37 drum pieces (the classic kit plus
+crash, ride, congas, shaker, taiko and more, built into kits of eight), and ambience
+(rain, wind, ocean, vinyl, city, fire, thunder, birds). They are all the terrain synth:
+patches set up to play those parts, not recordings of the instruments.
+
+A score line is `voice pitch beat length velocity`, for example `violin A4 0 1 0.8`. Beats
+are quarter notes from 0. A chord is one word (`Am7`, `Cmaj7@3`), drums use `x`, and
+`every 0.5` repeats a note (`hat x 0 0.1 0.4 every 0.5`). The schema in the console
+(`oro.schema()`) lists everything.
+
+### The touch tool
+
+**Touch** in the map toolbar has three settings:
+
+* **Move** (the default): a click moves the dot, as before.
+* **Strum**: drag across the land and it plays notes in the key on the selected track.
+  Higher ground plays higher notes, over three octaves, and faster drags play louder. On a
+  drum kit the height picks the pad.
+* **FX**: hold and drag on the land. Left and right sweep the filter, up opens the
+  resonance and throws echo and reverb, down drives the sound harder, and high ground folds
+  the wave. Let go and it all glides back. Nothing is saved and nothing goes into a bounce;
+  Record captures it.
+
+In Strum and FX, dragging the dot itself still moves the dot. Four Link sources follow
+your finger in any mode except Move: **Touch X**, **Touch Y**, **Touch Height** and
+**Touch Down**.
+
+### Roll: Keep rolling
+
+With the dot on **Roll**, click anywhere to drop the marble there; it follows the land,
+rolling down slopes. **Keep rolling** (in the dot settings) gives it a steady push along the
+way it is going, so it travels on over the hills, faster downhill and slower uphill,
+instead of settling in a valley. Flick it to aim it. **Explore** is the mode where the
+marble curls around under turning gravity; for a marble that only follows the land, use Roll.
+
+### New effects
+
+Nine effects join the track rack: **Transient shaper** (push or soften attacks and tails),
+**Trance gate** (a tempo-synced sixteen-step gate), **Disperser** (up to 32 all-pass stages
+for zaps and rubbery hits), **Tape stop** (turn Stop on and the tape slows to a halt),
+**Reverser** (each slice of sound played backwards), **Parametric EQ band** (one band
+anywhere from 20 Hz to 20 kHz), **Bucket brigade delay** (a dark analog-style delay that
+turns into chorus and flanging at short times), **Grain looper** (catches a grain and loops
+it a few times) and **Tape echo** (three heads with wow and a darkening loop).
+
+### Pitch envelope and remap curves
+
+**Pitch env**, next to the Envelope 2 knobs, lets Envelope 2 move the pitch by up to four
+octaves either way: start high and fall for kicks, toms and zaps. Links have five more
+curves: **S-curve**, **Steps** (four levels a side), **Invert**, **Rectify** (a two-way
+source moves the target one way) and **Half** (only the positive half).
+
+### 32-bit float files
+
+The Bounce dialog has a **Format** menu: 24-bit (with dither) or 32-bit float. Record uses
+the same choice. Export stems and the looper already offered 32-bit float.
+
+### For agents and scripts
+
+`window.oro` in the console (or a page that embeds Oro) has every control as a call:
+`oro.help()` lists them. Opening Oro with `?agent=1` lets other pages change the session
+over `postMessage`. Without a browser, `node scripts/oro-score.mjs` renders scores to WAV,
+and `node scripts/oro-mcp.mjs` serves the same tools to MCP clients. See the README.
+

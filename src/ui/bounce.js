@@ -90,6 +90,10 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
   barsSel.value = BOUNCE_BARS.includes(wantBars) ? String(wantBars) : '4';
   const tailSel = h('select', { class: 'select-native', 'aria-label': 'Reverb and delay tail' }, BOUNCE_TAILS.map(t => h('option', { value: String(t) }, t ? `${t} s tail` : 'No tail')));
   tailSel.value = '2';
+  // 2.17: 24-bit or 32-bit float, remembered on this computer (Record uses it too)
+  const fmtSel = h('select', { class: 'select-native', 'aria-label': 'WAV format' }, h('option', { value: 'pcm24' }, '24-bit'), h('option', { value: 'float32' }, '32-bit float'));
+  fmtSel.value = ctx.prefs && ctx.prefs.get && ctx.prefs.get('wavFormat') === 'float32' ? 'float32' : 'pcm24';
+  scope.on(fmtSel, 'change', () => { try { ctx.prefs.set('wavFormat', fmtSel.value); } catch { /* no prefs */ } });
   const output = localBinding({ id: 'bounceOutput', label: 'Files', default: 'mix' }, 'mix');
   const fx = localBinding({ id: 'bounceFx', label: 'Effects', default: 1 }, 1);
   const outSeg = createSegmented(ctx, output, {
@@ -116,7 +120,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
       ? 'Renders the sequencers and arpeggiators offline at the current tempo, sample-exact and faster than real time. Parts without a pattern stay silent.'
       : 'Bouncing needs the audio and music engines, which are not available here yet. Record still captures everything you play.'),
     ok && usesWeatherLinks(store) ? h('p', { class: 'popover-note bounce-weather' }, 'Live weather links hold still at their current readings while the bounce renders.') : null,
-    h('div', { class: 'bounce-grid' }, field('Length', sel(barsSel)), field('Tail', sel(tailSel))),
+    h('div', { class: 'bounce-grid' }, field('Length', sel(barsSel)), field('Tail', sel(tailSel)), field('Format', sel(fmtSel))),
     field('Files', outSeg.el),
     h('div', { class: 'bounce-row' }, h('span', { class: 'bounce-row-text' }, 'Effects', h('span', { class: 'setting-hint' }, 'Delay, reverb, chorus and warmth')), fxToggle.el),
     length, bar, status,
@@ -135,7 +139,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
   scope.add(store.subscribe('global.tempo', renderLength));
   renderLength();
   if (!ok) {
-    for (const el of [barsSel, tailSel]) el.disabled = true;
+    for (const el of [barsSel, tailSel, fmtSel]) el.disabled = true;
     outSeg.setDisabled(true, 'Bouncing is not available here');
     fxToggle.setDisabled(true, 'Bouncing is not available here');
   }
@@ -176,7 +180,7 @@ export function openBounce(ctx, anchor, { bars: wantBars } = {}) {
       await ctx.startAudio();
       const parts = Array.from({ length: partCount(store) }, (_, i) => i);
       const events = await music.renderEvents(bars, { parts });
-      const res = await engine.bounce({ bars, stems, fx: !!fx.get(), tailSeconds: Number(tailSel.value), events });
+      const res = await engine.bounce({ bars, stems, fx: !!fx.get(), tailSeconds: Number(tailSel.value), events, format: fmtSel.value });
       if (!res || !res.mix) throw new Error('The engine returned no audio');
       downloadBlob(res.mix, bounceName(started));
       let saved = 1;

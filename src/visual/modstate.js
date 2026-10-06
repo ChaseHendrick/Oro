@@ -113,9 +113,15 @@ export function noteSizeFactor(noteSize, note) {
   return Math.pow(2, (k * (note - 60)) / 24);
 }
 
+// Mirrors linkCurve in src/dsp/dsp-core.js (2.17 added curves 3 to 7).
 function linkCurve(c, x) {
   if (c === 1) return Math.sign(x) * x * x;
   if (c === 2) return Math.sign(x) * Math.sqrt(Math.abs(x));
+  if (c === 3) { const a = Math.min(1, Math.abs(x)); return Math.sign(x) * a * a * (3 - 2 * a); }
+  if (c === 4) return Math.round(x * 4) / 4;
+  if (c === 5) return -x;
+  if (c === 6) return Math.abs(x);
+  if (c === 7) return x > 0 ? x : 0;
   return x;
 }
 

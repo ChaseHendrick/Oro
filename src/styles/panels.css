@@ -134,7 +134,7 @@
 
 .bounce-btn .icon { width: 18px; height: 18px; }
 .popover--bounce { width: 300px; }
-.bounce-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 10px; }
+.bounce-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 10px; }
 .bounce-grid .select { width: 100%; }
 .bounce-progress { height: 6px; border-radius: 6px; background: var(--knob-track); overflow: hidden; }
 .bounce-fill { display: block; height: 100%; background: var(--part); transform-origin: left; transform: scaleX(0); transition: transform var(--dur) var(--ease); }
@@ -1503,3 +1503,13 @@
   .sampler-wave { height: 112px; }
   .sampler-actions .btn, .sampler-slice .btn { min-height: 44px; }
 }
+
+/* 2.17 score desk */
+.popover--score { width: min(440px, calc(100vw - 32px)); }
+.score-pop .score-row { display: flex; gap: 8px; margin: 10px 0 0; }
+.score-pop .score-row .field { flex: 1; min-width: 0; }
+.score-pop .score-text { width: 100%; box-sizing: border-box; min-height: 150px; resize: vertical; font-size: 12px; line-height: 1.45; margin: 4px 0 6px; white-space: pre; overflow: auto; }
+.score-pop .score-issues { margin: 0 0 6px; padding-left: 18px; font-size: 12px; color: var(--muted, inherit); max-height: 96px; overflow: auto; }
+.score-pop .score-issue.is-error { color: var(--danger, #e5484d); }
+.score-pop .score-status { min-height: 1.4em; }
+.score-pop .bounce-actions { flex-wrap: wrap; }

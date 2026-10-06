@@ -9,7 +9,8 @@ The skill does not need an account or an API key. It does not read names, emails
 Where a score can be sent, and nowhere else:
 
 - An Oro page the person already has open, through that page's own `oro.play`. The score stays in that browser tab. The page puts the tracks back when the score stops.
-- This repo, for a check with no audio: `node scripts/oro-score.mjs check score.txt`. It prints a receipt (length, cue times, the fix for a bad line) and does not store the score.
+- This repo on the person's own computer: `node scripts/oro-score.mjs check score.txt` prints a receipt (length, cue times, the fix for a bad line), and `render` writes a WAV next to it with Oro's own DSP. Nothing leaves the computer.
+- The Oro MCP server from this repo (`node scripts/oro-mcp.mjs`), which runs the same checks and renders locally.
 
 There is no `POST /api/oro` and no server WAV. Do not send a score to hendrickresearch.com for rendering.
 

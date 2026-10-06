@@ -1,9 +1,9 @@
 // Master recorder: taps the post-limiter output and produces a 24-bit stereo
-// WAV at the context rate. Audio arrives in blocks (from the recorder worklet,
+// WAV (or 32-bit float, 2.17) at the context rate. Audio arrives in blocks (from the recorder worklet,
 // or a ScriptProcessor when worklets are unavailable) and is packed to 24-bit
 // immediately, so memory holds the final file's bytes and nothing more.
 
-import { encodePCM24, wavBlobFromPieces } from './wav.js';
+import { encodePCM24, encodeFloat32, wavBlobFromPieces } from './wav.js';
 
 export const MAX_RECORD_SECONDS = 20 * 60;
 const STOP_TIMEOUT_MS = 1500;
@@ -46,7 +46,7 @@ export function createRecorder(ctx, source, { worklet, onEvent = () => {}, maxSe
 
   function addBlock(L, R, n) {
     if (!session) return;
-    session.pieces.push(encodePCM24([L, R], n));
+    session.pieces.push(session.format === 'float32' ? encodeFloat32([L, R], n) : encodePCM24([L, R], n));
     session.frames += n;
   }
 
@@ -55,7 +55,7 @@ export function createRecorder(ctx, source, { worklet, onEvent = () => {}, maxSe
     if (!s) return lastResult;
     session = null;
     clearTimeout(s.timer);
-    const blob = wavBlobFromPieces({ sampleRate: sr, channels: 2, frames: s.frames, pieces: s.pieces });
+    const blob = wavBlobFromPieces({ sampleRate: sr, channels: 2, frames: s.frames, pieces: s.pieces, format: s.format });
     lastResult = { blob, duration: s.frames / sr, frames: s.frames, reason };
     onEvent({ state: 'stopped', ...lastResult });
     for (const fn of s.waiters) fn(lastResult);
@@ -87,9 +87,9 @@ export function createRecorder(ctx, source, { worklet, onEvent = () => {}, maxSe
     /** Seconds captured so far in the current recording. */
     elapsed: () => (session ? session.frames / sr : 0),
     maxSeconds,
-    start() {
+    start({ format } = {}) {
       if (session) return;
-      session = { pieces: [], frames: 0, waiters: [], timer: 0, reason: null, stopping: false };
+      session = { pieces: [], frames: 0, waiters: [], timer: 0, reason: null, stopping: false, format: format === 'float32' ? 'float32' : 'pcm24' };
       if (mode === 'worklet') node.port.postMessage({ t: 'start', maxFrames });
       onEvent({ state: 'recording', duration: 0 });
     },

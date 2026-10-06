@@ -680,6 +680,15 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       post({ ...weatherMsg, snap: !!snap });
     },
     /** 2.11 game controller right stick [x, y], -1..1 (the DSP smooths it). */
+    /**
+     * 2.17 the touch tool: x, y (-1..1 across the map view), h (land height
+     * -1..1) and down (0..1) feed the Touch Link sources; fx runs the touch
+     * rig on `part`. Never saved, never bounced.
+     */
+    touchMap(part, x, y, h, down, fx = false) {
+      if (![x, y, h, down].every(Number.isFinite)) return;
+      post({ t: 'touch', v: [clamp(x, -1, 1), clamp(y, -1, 1), clamp(h, -1, 1), clamp(down, 0, 1)], part: validPart(part) ? part : -1, fx: !!fx });
+    },
     setPadStick(x, y) {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       padMsg = { t: 'pad', v: [clamp(x, -1, 1), clamp(y, -1, 1)] };
@@ -815,7 +824,7 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
             onFrames: (f) => progress(stage, pass.solo, f),
           });
           if (disposed) throw new Error('The audio engine was shut down');
-          const { blob, stats: level } = await encodeBuffer(r.buffer);
+          const { blob, stats: level } = await encodeBuffer(r.buffer, { format: opts.format === 'float32' ? 'float32' : 'pcm24' });
           info.passes.push({ stage, part: pass.solo, via: r.via, ...level });
           if (pass.solo === null) out.mix = blob; else out.stems[pass.solo] = blob;
           done += frames;
@@ -908,9 +917,10 @@ export async function createEngine({ store, mode: wantMode = 'auto', inlineTerra
       }
     },
 
-    async startRecording() {
+    /** `format`: 'pcm24' (default) or 'float32' (2.17). */
+    async startRecording({ format } = {}) {
       if (!recorder) throw new Error('Recording needs Web Audio, which this browser does not provide');
-      recorder.start();
+      recorder.start({ format });
     },
     async stopRecording() {
       if (!recorder) return new Blob([wavHeader({ sampleRate: 48000, frames: 0 })], { type: 'audio/wav' });

@@ -3,6 +3,33 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.17.0 (October 2026): An orchestra, drums and ambience for the score desk, an agent API, the touch tool
+
+**New**
+* **Score desk, for people too.** A Score button in the top bar: describe a piece ("anime opening song in D minor", "lofi with rain", "trap beat") or pick a style, edit the text, Play, Render WAV (24-bit or 32-bit float), Save MIDI, or Copy link.
+* **The orchestra.** 57 pitched voices, each a factory patch made into an instrument (violin, viola, cello, contrabass, strings, spiccato, tremolo, pizz, harp, piccolo, flute, oboe, cor anglais, clarinet, bassoon, horn, trumpet, trombone, tuba, brass, choir, ooh, piano, celesta, glock, xylophone, marimba, vibes, chimes, bell, tuned timpani on the Resonator, gong, guitar, bass and synths). `voicing patch` plays each voice through its own patch; scores add tracks (up to 16) and put them back afterwards.
+* **Drums.** 29 more drum pieces from the drum library (crash, splash, china, ride, ride bell, kick and snare variants, rimshot, floor and mid tom, shaker, tambourine, cowbell, agogo, congas, bongo, timbale, claves, wood block, triangle, taiko, concert bass drum, zap, noise burst). Kits are built from the pieces a score uses, eight to a kit. A `drums` style writes whole drum pieces in 20 grooves (rock, funk, hip-hop, trap, house, techno, disco, drum and bass, breakbeat, half time, metal, shuffle, jazz, bossa, samba, reggaeton, afrobeat, latin, march, taiko) with fills, breaks and endings.
+* **Ambience.** rain, wind, ocean, vinyl, city, fire, thunder, drone, night, shimmer, swirl and chirping birds, plus `ambient` and `lofi` styles.
+* **New styles.** `anime-song` (intro, verse, pre-chorus build, royal-road chorus, kime break, last chorus a semitone up, end hits; cues name every section), `epic`, `symphonic`, `lullaby`, `drums`, `ambient`, `lofi`. `orchestra-type` and `opening` now use the orchestra.
+* **Score grammar.** `every 0.5 until 16` repeats a note; `time 3/4`; `key Am`; `tempo`; sevenths and ninths (`Am7`, `Cmaj9`, `G7sus4`) with an explicit octave (`Am7@3`); MIDI numbers in JSON; a warning when a note leaves an instrument's range; up to 128 bars and 8000 notes.
+* **Offline render.** `node scripts/oro-score.mjs render score.txt --out piece.wav [--bits 32]` runs the real DSP at Pristine quality with the app's own convolution reverb, delay, chorus and warmth, measures loudness (BS.1770) to -14 LUFS and limits peaks at -1 dBFS. Also `midi` and `link`.
+* **Agent API.** `window.oro` has 34 methods: `help`, `describe`, `state`, the score desk, `params`, `set` (by name, clamped, undoable), `setGlobal`, `patches`, `loadPatch`, `scenes`, `addTrack`, `note`, `chord`, `transport`, `pattern`, `dot`, `touch`, `undo`, `render`, `link`, `on`. The same calls work over `postMessage` with ids and replies; changes need the page opened with `?agent=1`. `#score=` links open Oro with a score ready to play.
+* **MCP server.** `node scripts/oro-mcp.mjs` gives any MCP client six tools: schema, compose, check, render (WAV), midi, link.
+* **Touch tool.** Touch: Move / Strum / FX in the map toolbar. Strum: drag across the land to play in-key notes, higher ground higher. FX: hold and drag; left and right sweep the filter, up throws echo and reverb, down drives it, high ground folds the wave, and it all glides back on release. Four new Link sources: Touch X, Touch Y, Touch Height, Touch Down.
+* **Roll: Keep rolling.** The marble keeps travelling over the land, faster downhill and slower uphill, instead of settling in a valley. Flick it to aim it.
+* **Nine effects.** Transient shaper, trance gate, disperser, tape stop, reverser, parametric EQ band, bucket brigade delay, grain looper and tape echo.
+* **Pitch envelope.** Envelope 2 moves the pitch up to four octaves either way (Pitch env, next to the Envelope 2 knobs).
+* **Remap curves for Links.** S-curve, Steps, Invert, Rectify and Half join Linear, Soft and Hard.
+* **32-bit float** for Bounce and Record (Format in the Bounce dialog; Record uses the same choice).
+
+**Fixes (2.16.1 score desk)**
+* `window.oro` no longer hides the console secret.
+* `Am7` is a minor seventh, not A minor in octave 7.
+* A pitched tom plays the low or high tom pad (it sent a note the kit does not have) and keeps its pitch in the normalised score.
+* Loading a session, a panic, or another change to the track list stops a score safely; borrowed tracks are kept by id, never written over the wrong track, and never saved.
+* Tracks go back after the release tails, not in the middle of them.
+* The plugin no longer claims to render a WAV on a server.
+
 ## 2.16.1 (October 2026): A score an agent can actually play
 
 **New**

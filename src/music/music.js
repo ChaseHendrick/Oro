@@ -49,12 +49,19 @@ export function createMusic({ store, engine = null, presets = null, timers = def
     emit: (e) => emitter.emit('preview', e),
   });
   const explorer = createExplorer({ store, router, timebase, transport, emit: (e) => emitter.emit('explore', e) });
-  const score = createScoreDesk({ store, router, timebase, timers });
+  const score = createScoreDesk({ store, router, timebase, timers, emit: (e) => emitter.emit('score', e) });
 
   const unsubs = [];
   // A panic or all-notes-off also ends the preview, and so does loading a whole new session.
   unsubs.push(router.on('allOff', () => previewer.stop('panic')));
   unsubs.push(store.subscribe('', (path) => { if (path === '') previewer.stop('load'); }));
+  // The score desk stops with a panic, lets go of its tracks when a session
+  // is loaded, and stops (putting the tracks back) when someone else changes the list.
+  unsubs.push(router.on('allOff', () => score.panic()));
+  unsubs.push(store.subscribe('', (path, value, meta) => {
+    if (path === '') score.abandon();
+    else if (path === 'parts') score.tracksChanged(meta);
+  }));
 
   function currentStep(part) {
     const p = part === 'sel' || part == null ? store.get('ui.selectedPart') || 0 : Number(part);
@@ -145,7 +152,7 @@ export function createMusic({ store, engine = null, presets = null, timers = def
     exploreNote: (e) => explorer.exploreNote(e),
     /** Sequencer + arp notes and dot-lock glides for an offline bounce: [{ time, msg }], beat 0 at time 0. */
     renderEvents,
-    /** Agent score desk: play, stop, compose, schema, getScore. */
+    /** Agent score desk: play, stop, compose, check, schema, getScore, status (src/music/desk.js). */
     score,
     setPresets(p) { presetLib = p || null; },
     on: (type, fn) => emitter.on(type, fn),

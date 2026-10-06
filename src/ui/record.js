@@ -31,7 +31,7 @@ export function createRecorder(ctx, { onState } = {}) {
     busy = true; emit();
     try {
       await ctx.startAudio();
-      await engine.startRecording();
+      await engine.startRecording({ format: ctx.prefs && ctx.prefs.get ? ctx.prefs.get('wavFormat') : 'pcm24' });
       recording = true;
       startedAt = performance.now();
       startDate = new Date();

@@ -53,6 +53,10 @@ export function createAutosave({
   let firstChange = null;   // time of the oldest unsaved change
 
   let payload = () => store.serialize();
+  // Filters see every payload before it is written (2.17: the score desk puts
+  // borrowed tracks back here, so a session never saves a score's tracks).
+  const filters = [];
+  const filtered = () => filters.reduce((state, fn) => { try { return fn(state) || state; } catch { return state; } }, payload());
 
   function clear() {
     if (timer != null) { timers.clearTimeout(timer); timer = null; }
@@ -64,7 +68,7 @@ export function createAutosave({
     const unsavedSince = firstChange, revision = ++saveRevision;
     firstChange = null;
     try {
-      const result = writeDurable(SESSION_KEY, JSON.stringify(payload()), storage);
+      const result = writeDurable(SESSION_KEY, JSON.stringify(filtered()), storage);
       inFlight = !result.immediate;
       latestSave = result.done.then(ok => {
         if (revision === saveRevision) {
@@ -94,6 +98,12 @@ export function createAutosave({
     pending: () => firstChange != null || inFlight,
     settled: () => latestSave,
     setPayload(fn) { payload = typeof fn === 'function' ? fn : () => store.serialize(); },
+    /** Add fn(state) -> state, run on every save after the payload. Returns the remover. */
+    addFilter(fn) {
+      if (typeof fn !== 'function') return () => {};
+      filters.push(fn);
+      return () => { const i = filters.indexOf(fn); if (i >= 0) filters.splice(i, 1); };
+    },
     dispose() { clear(); },
   };
 }

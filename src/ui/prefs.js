@@ -30,6 +30,8 @@ export const PREF_DEFAULTS = Object.freeze({
   smartOpen: 1,       // the Smart controls card in the Sound tab is open (2.11)
   listenMode: 'normal', // what you hear: normal, headphones, mono, small, swap (2.12, never in exports)
   liveSurround: 'off',  // play 3D tracks on surround speakers: 'off', '5.1', '7.1' (2.12)
+  wavFormat: 'pcm24',   // Bounce and Record: 'pcm24' or 'float32' (2.17)
+  touchMode: 'move',    // what a click or drag on the map does: 'move', 'strum', 'fx' (2.17)
 });
 
 const VALID = {
@@ -54,6 +56,8 @@ const VALID = {
   smartOpen: v => v === 0 || v === 1,
   listenMode: v => ['normal', 'headphones', 'mono', 'small', 'swap'].includes(v),
   liveSurround: v => ['off', '5.1', '7.1'].includes(v),
+  wavFormat: v => ['pcm24', 'float32'].includes(v),
+  touchMode: v => ['move', 'strum', 'fx'].includes(v),
 };
 
 /** Keep only known keys with valid values; fill the rest from defaults. */
@@ -82,7 +86,7 @@ export function savePrefs(prefs, storage = globalThis.localStorage) {
 }
 
 // Store-backed keys (live in store.ui so visuals and other modules can react).
-export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderScale', 'renderStyle', 'palette', 'autoRotate', 'audioQuality', 'listenMode', 'liveSurround'];
+export const UI_PREF_KEYS = ['view', 'quality', 'fpsCap', 'renderScale', 'renderStyle', 'palette', 'autoRotate', 'audioQuality', 'listenMode', 'liveSurround', 'touchMode'];
 
 /**
  * Restore preferences into the store and keep them persisted. Returns an

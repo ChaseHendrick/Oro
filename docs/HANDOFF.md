@@ -1,6 +1,6 @@
 # Oro handoff
 
-Updated 2026-10-04 for Oro 2.15.1 (section 0 is the current state; see 10.11). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
+Updated 2026-10-06 for Oro 2.17.0 (section 0 is the current state; 10.12 is the 2.17 work and what is left). Earlier: written for 2.0.0, section 10 added for 2.12. Read this and `docs/ARCHITECTURE.md`
 before continuing. The owner requested the complete expansion in
 `docs/FEATURE-PARITY.md`, followed by desktop update controls. The measured checks and
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
@@ -8,18 +8,17 @@ separate future features; they are outside the 2.0 expansion.
 
 ---
 
-## 0. Read first: where things stand (2026-10-04, Oro 2.15.1)
+## 0. Read first: where things stand (2026-10-06, Oro 2.17.0)
 
-* **Code:** Oro **2.15.1** is this branch. GitHub Release **2.15.0** is what `main` published. A push to `main` runs `.github/workflows/desktop.yml` and publishes the desktop release. Do not merge until "Test and build the web app" is green on the commit that will land.
-* **In 2.15.1:** bug fixes on the 2.15.0 piano roll, jam, lessons and tempo lock. The lane moves with Shift and is removed by Clear. A failed invite does not burn a slot. Leave sends note-offs and goodbye. See 10.11. The 2.15.0 features are still: piano roll (quarter-step extras, one lane, step locks win), Jam (up to five invite codes, chat both ways, key notes on a shared clock, push-to-talk voice that never enters the engine), Learn (11 lessons, two badges), Match a sound (one real cycle of the land under the path), Link controls that report "Not in this build" because the GPL library is not vendored, and a plugin host contract behind `?plugin=1` (not a VST, AU or CLAP binary). See 10.10.
-* **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout (a Play view that gives the land the window, Shape / Move / Time around it). It is not built. Do not start that layout unless the owner asks.
-* **Still not done:** a compiled plugin, a real Link session (the library is GPL and is not in this MIT repo), a TURN relay, a jam tried on two real computers, a Playwright two-browser run, live multi-out, and the hardware checks in 10.6.
-* **Checks:** run the Vitest suite on the commit that will land. The CPU timing test can fail on a busy machine and still pass on GitHub CI.
-* **Branches:** do not reuse `claude/oro-2.15` (its PR was squash-merged). This patch belongs on a new branch. Do not force-push.
-* **Website:** `vercel.json` ignoreCommand builds production and `main` only. Do not change that. Update the music page `softwareVersion` and the copied `dist` after this release is live. The live site was still the previous copy when this note was written.
+* **Code:** Oro **2.17.0** is on branch `claude/intelligent-feynman-i7wv3r` (not merged, no PR yet). `main` is 2.16.1 plus Grok's score desk (PR #32). A push to `main` publishes a desktop release (`.github/workflows/desktop.yml`), so merge only on purpose, after "Test and build the web app" is green.
+* **What 2.17 is:** a review and repair of Grok's 2.16.1 score desk, then a large expansion asked for in one session: an orchestra, drums and ambience for the score desk, composer styles (anime-song and others), an offline WAV renderer, an agent API (`window.oro` + postMessage), an MCP server, the touch tool (Strum / FX on the map), Roll > Keep rolling, nine track effects, a pitch envelope, Link remap curves, and 32-bit float for Bounce and Record. Section **10.12** has the details, the file map, what is verified and what is not, and the next steps.
+* **Checks at hand-off:** Vitest 2008 of 2009 pass; the one failure is the CPU timing test (`tests/dsp/perf.test.js`), which fails on this busy container on `main` too. `node dev/dsp/bench.mjs 1` on `main` and on the branch back to back showed no regression (10.12). `vite build` passes. A Chromium smoke test (preview build, `?agent=1`) exercised `window.oro`, a 15-track anime-song score, the touch API and the Score desk panel with no console errors. Nothing was tested on real audio hardware or by ear.
+* **The owner has not listened to any 2.17 sound.** Levels were measured offline (10.12) and every voice makes sound, but whether the orchestra, drums and ambience sound good is unconfirmed. Treat "sounds good" as an open question, not a fact.
+* **Still not done (from earlier):** a compiled plugin, a real Link session (GPL library not vendored), a TURN relay, a jam tried on two computers, live multi-out, and the hardware checks in 10.6.
+* **Interface notes:** [docs/UI-NEXT.md](UI-NEXT.md) is research for a later layout. Not built.
 * **App version:** bump only `package.json`. Do not edit the v2.13.0 tag fixture in `tests/packaging/mac-update.test.js`.
-* **CPU timing test:** `tests/dsp/perf.test.js` measures about 36 to 38% on the Claude container (limit 35%) for both main and new code, but passes on GitHub CI. It re-measures once when a case is over. Compare with `node dev/dsp/bench.mjs 1` on main and the branch back to back before blaming new code.
-* **Agents:** never run broad `pkill` (it killed other agents' tests once); kill only your own PIDs. Chromium checks here need `--disable-3d-apis --disable-webgl` (software WebGL runs at about 1 frame per second at 5120x2160).
+* **Agents:** never run broad `pkill` or `pkill -f <pattern>`: in this session `pkill -f "vite preview"` matched and killed the shell running the test suite. Kill only your own PIDs. Chromium checks here need `--disable-3d-apis --disable-webgl`, or the swiftshader flags in `tests/e2e/expansion.cjs` for a short run.
+* **Network from the container:** x.com, fxtwitter, nitter and fullbucket.de are blocked by the egress proxy. The owner's reference post (an X post by Ingi Erlingsson, status 2106567435826446624) was never seen; see 10.12.
 
 ---
 
@@ -765,3 +764,125 @@ Patch on 2.15.0. `package.json` is 2.15.1.
 * **Tempo.** `setReadOnly` blocks drag, wheel, arrows and commit. Live mode disables its tempo buttons while Link is on, a plugin host is set, or external MIDI clock is active.
 * **Not claimed:** a compiled plugin, vendored Link, TURN, a jam on two real computers, Playwright jam, live multi-out. Voice still does not enter the engine. Host Mute mic still only sets a moderation flag. It does not stop that person's audio.
 
+### 10.12 Oro 2.17.0: orchestra, drums, ambience, agent API, touch tool, effects
+
+**What the owner asked for in this session**, in order: check Grok's work on the repo;
+keep improving the API so bots and agents can use Oro easily; can the marble be dropped
+anywhere and follow the land up and down without going in a circle; a mode to click or
+drag on the map and have effects; make music like an X post by Ingi Erlingsson possible;
+the best DSP and sound possible; improve the orchestra and add missing instruments; more
+drum instruments and drum pieces; ambience; what Pigments, Serum 2, Phase Plant, Vital,
+Massive X, Arturia and Fullbucket have that Oro lacks; 32-bit output; then "wrap it up,
+make a handoff". Effects and features were written from scratch from public descriptions
+of what those products do; no code, presets or sounds were copied.
+
+**Grok's work (the commits after 2.16.0 up to PR #32), what was wrong and is now fixed**
+
+* `window.oro` (score desk) was set before `installConsoleEgg()`, which returned early when
+  `window.oro` existed, so the console secret disappeared. The egg now adds `secret()` to the
+  existing object (not enumerable).
+* `Am7` parsed as A minor in octave 7 (the chord regex tried `m` before `m7`). Chord types are
+  now matched longest first, sevenths and ninths were added, and `@` gives an explicit octave.
+* A pitched `tom` sent its raw MIDI note (for example D3 = 50) to the kit, which has pads 36
+  to 43, and the normalised text dropped the pitch, so re-checking changed the hash.
+* The desk restored tracks by index: a session load, a reorder or a removed track during a
+  score wrote the old track over the wrong one. It now keeps tracks by id, abandons them on a
+  session load, stops on a panic and on someone else's track change, and the autosave always
+  stores the tracks as they were (`autosave.addFilter` + `desk.cleanState`).
+* Tracks were restored the moment the last note-off was scheduled, cutting release tails.
+  They now go back 2.5 s later.
+* `plugins/oro/.claude-plugin/plugin.json` claimed the plugin renders a WAV. It now says
+  where a WAV comes from (the repo's renderer).
+* Not fixable in code: renaming the repository `synth` to `Oro` means Macs on 2.11 to 2.16.0
+  with **Install updates automatically** on will reject the new asset URLs (their
+  `RELEASE_DOWNLOAD_PREFIX` names `/synth/`). Those people need one manual download. Say so in
+  the 2.17 release notes.
+* The 24-second film was committed and then removed; it is still in git history (5 MB).
+
+**Where the 2.17 code is**
+
+| Area | Files |
+|---|---|
+| Score grammar, checker, compose | `src/music/score.js` |
+| Composer styles (anime-song, opening, epic, symphonic, lullaby, drums with 20 grooves, ambient, lofi, orchestra-type, strings, brass-choir, sparse, atlas) | `src/music/score-styles.js` |
+| Voices: 57 pitched (each a factory patch made into an instrument, octave and tune zeroed), the classic kit, 29 drum pieces from the drum library built into kits of eight | `src/music/orchestra.js` |
+| Desk: planTracks (add or share tracks), voicedPart, play/stop/status/cleanState/abandon/load, cue events | `src/music/desk.js` |
+| Offline render: OroDSP at Pristine, the app's convolution reverb (partitioned FFT with `generateImpulse`), ping-pong delay, chorus, warmth, BS.1770 loudness to -14 LUFS, look-ahead limiter at -1 dBFS | `src/music/score-render.js` |
+| MIDI export (General MIDI drums), `#score=` links | `src/music/score-export.js` |
+| Agent API, postMessage bridge, opt-in (`?agent=1`) | `src/agent/api.js`, wired in `src/main.js` |
+| CLI and MCP server | `scripts/oro-score.mjs`, `scripts/oro-mcp.mjs` |
+| Score desk panel (top bar, Score) | `src/ui/score-panel.js`, `src/ui/topbar.js` |
+| Touch tool | `src/visual/visuals.js` (press kind `touch`, `visuals.touch()`), `src/music/touch.js`, `src/dsp/touch-sources.js`, `src/ui/viewport-overlay.js`; pref `touchMode` (store-backed) |
+| Keep rolling | `src/visual/physics.js` (`cruisePush`), `src/ui/dot-settings.js`, `src/core/migrate.js` (kept only when set) |
+| Effects 32 to 40 | `src/dsp/track-effects.js`, `src/dsp/track-fx-config.js` |
+| Pitch envelope (`pitchEnv`, appended to PART_PARAMS), remap curves, Touch Link sources (37 to 40) | `src/dsp/dsp-core.js`, `src/core/params.js`, `src/visual/modstate.js` |
+| 32-bit float Bounce and Record (pref `wavFormat`) | `src/audio/wav.js`, `src/audio/bounce.js`, `src/audio/recorder.js`, `src/audio/engine.js`, `src/ui/bounce.js`, `src/ui/record.js` |
+| Tests | `tests/music/score-217.test.js`, `tests/agent/api.test.js`, `tests/dsp/synth-217.test.js`, `tests/music/touch.test.js`, `tests/visual/cruise.test.js`, `tests/ui/eggs-217.test.js` |
+
+**Contracts kept:** LINK_SOURCES, LINK_CURVES, FX_TYPES and PART_PARAMS were only appended to.
+With the new features off, existing sessions render the same (the new DSP paths are
+skipped at 0). Two tests that pinned list lengths were updated to the append-only contract.
+
+**How to try it**
+
+* `node scripts/oro-score.mjs render --prompt "anime opening song in D minor" --out a.wav --bits 32`
+  (about 44 s of CPU for 52 s of audio here). `compose --prompt "trap beat" --text`, `midi`, `link`, `check`.
+* `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node scripts/oro-mcp.mjs`
+* In the app: Score in the top bar; Touch: Move / Strum / FX in the map toolbar; Dot: Roll, then
+  the sliders button, Keep rolling. In the console: `oro.help()`, `oro.describe()`.
+
+**Measured, not listened to.** Every voice and drum piece was rendered alone through the
+real DSP (master off, no loudness change): all make sound, none are NaN, peaks sit between
+about -7 and -23 dBFS. Taiko was about 10 dB hot (lowered); vinyl and city beds are quiet
+by design (-42 to -47 dB loudness). A 36-bar anime-song render showed the planned form in a
+spectrogram (intro, quieter verse, louder chorus, kime gaps, hotter last chorus, ring-out)
+and a roughly flat spectrum per octave from 60 Hz to 4 kHz. None of this says it sounds good.
+
+**The reference post.** The owner linked
+https://x.com/ingi_erlingsson/status/2106567435826446624 ("make sure music like this is
+possible"). x.com is blocked here, so it was never seen. Grok's `opening` style (cold
+flash, name cards, eight hits, title) and the `orchestra-type` default suggest an anime-style
+opening with a driving orchestral and rock soundtrack; `anime-song` was built on that
+guess. **Ask the owner** what the post sounds like (tempo, instruments, length, vocals or
+not) or for an audio file, and tune `fillAnime` in `score-styles.js` to it.
+
+**Not verified / known gaps**
+
+* No listening tests. The orchestral voices are factory patches with envelope, filter and
+  vibrato changes; they are not modelled instruments. Voice by voice tuning by ear is the
+  biggest open job (`PITCHED` in `orchestra.js`).
+* The touch tool and Keep rolling were checked in Node and with a short headless drag; not
+  on a phone, a touchscreen or with Rapier (Keep rolling pushes Rapier through world gravity,
+  `setPush`; only the built-in integrator is under test).
+* The score desk's `voicing patch` loads new lands into tracks, so the first notes wait 0.25 s
+  (`PATCH_LEAD`). On a slow machine terrain generation can take longer; notes would then
+  play on the old land briefly.
+* `oro.render()` in a page runs the offline renderer on the main thread (it yields once per
+  second of audio). Moving it into a worker would keep the page smooth.
+* The desk uses up to 16 tracks while a score plays. The Mix and Seq panels show them;
+  they disappear afterwards. No UI says "borrowed".
+* Renders are capped at 5 minutes (memory: about 12 float arrays the length of the piece).
+* The MCP server writes only under `--out-dir` (default `./oro-renders`).
+* Effects 32 to 40 have unit tests for behaviour and bounds; their sound was not judged by ear.
+
+**Next steps, in order**
+
+1. Ask the owner about the reference post and to listen to `a.wav` renders of
+   `anime-song`, `epic`, `symphonic`, `drums` (a few grooves), `ambient` and `lofi`. Fix what they hear.
+2. PR [ChaseHendrick/Oro#33](https://github.com/ChaseHendrick/Oro/pull/33) is open from this
+   branch. Get CI green, then squash merge only when the owner says so (a merge publishes a
+   release). Mention the Mac auto-update rename issue in the notes.
+   Two checks were started and stopped before they finished, to save the owner's usage: an
+   adversarial code review of the 2.17 diff, and independent judges re-measuring the
+   status claims in this section (every voice sounds, no clipping, the level rebalance,
+   tests, perf, build, browser). Rerun them before merging.
+   The README hero image (`docs/screenshots/orograph-dark.webp`) still shows the old
+   OROGRAPH name; recapture it at 1440x900 in the dark theme (the machine was too loaded).
+3. The user guide has section 20 for 2.17. In-app Help (`src/ui/help.js`) and the
+   shortcuts list do not mention the Score desk or the Touch tool yet.
+4. Website: the music page `softwareVersion`, and say `/api/oro` is not served (the skill
+   already does).
+5. Ideas left from the comparison with other synths: a second oscillator per voice, a
+   modulation matrix view of all Links, an envelope follower of the track's own audio as a
+   Link source, a slew (lag) per Link, more LFO shapes, wavetable spectral warps (Vital),
+   a multiband splitter, and convolution reverb as a track effect.
