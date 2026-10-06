@@ -1,7 +1,7 @@
 {
   "name": "orograph",
   "productName": "Oro",
-  "version": "2.17.0",
+  "version": "2.17.1",
   "description": "Oro: a 3D wave terrain synthesizer. One land, played as terrain, subtractive, FM, wavetable, additive, granular, physical and vector colour. Place the dot, twist knobs, or hand it a score.",
   "author": "Chase",
   "license": "MIT",

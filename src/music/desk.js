@@ -96,6 +96,26 @@ export function planTracks(receipt, count, { tracks = 'add' } = {}) {
       pitchedParts.push(part);
     }
   }
+  /** A track for the classic kit when none was planned: a free one, a new one, or the last pitched one. */
+  function fallbackKit() {
+    let part = free.length ? free.shift() : addSlot({ kind: 'kit', name: 'Kit' });
+    if (part >= 0) {
+      if (!slots.some((s) => s.part === part)) slots.push({ part, kind: 'kit', name: 'Kit', add: false });
+      return part;
+    }
+    if (pitchedParts.length > 1) {
+      part = pitchedParts.pop();
+      const slot = slots.find((s) => s.part === part);
+      for (const [v, p] of partOf) if (p === part) partOf.set(v, pitchedParts[pitchedParts.length - 1]);
+      Object.assign(slot, { kind: 'kit', name: 'Kit' });
+      delete slot.voice; delete slot.family;
+      warnings.push({ line: 0, field: 'tracks', message: 'All 16 tracks are in use, so two pitched voices share a track to make room for the drum pads.', fix: 'Use fewer voices.' });
+      return part;
+    }
+    part = slots.length ? slots[0].part : 0;
+    if (!slots.some((s) => s.part === part)) slots.push({ part, kind: 'kit', name: 'Kit', add: false });
+    return part;
+  }
   // voices left over share the pitched tracks (2.16 behaviour)
   const left = pitched.filter((v) => !partOf.has(v));
   if (left.length) {
@@ -110,14 +130,20 @@ export function planTracks(receipt, count, { tracks = 'add' } = {}) {
   }
   // drum pieces: kit tracks of their own, or the classic kit's pads
   for (const k of kitsUsed) {
-    const part = tracks === 'share' ? -1 : addSlot({ kind: 'perc', kit: k, name: kitsUsed.length > 1 ? `Percussion ${k}` : 'Percussion' });
+    if (tracks === 'share') break;
+    const name = kitsUsed.length > 1 ? `Percussion ${k}` : 'Percussion';
+    let part = addSlot({ kind: 'perc', kit: k, name });
+    // all 16 tracks exist: an existing track no voice uses can still hold a kit
+    if (part < 0 && free.length) { part = free.shift(); slots.push({ part, kind: 'perc', kit: k, name, add: false }); }
     if (part >= 0) percPart.set(k, part);
   }
   for (const v of perc) {
     const k = receipt.score.notes.find((n) => n.voice === v).kit;
     if (percPart.has(k)) partOf.set(v, percPart.get(k));
     else {
-      if (kitPart < 0) { kitPart = slots.length ? slots[0].part : 0; }
+      // the pads only sound on a track that is a kit (2.17.1: before, they
+      // could land on a pitched track and play as low notes)
+      if (kitPart < 0) kitPart = fallbackKit();
       fallback.add(v);
       partOf.set(v, kitPart);
     }

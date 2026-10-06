@@ -9,15 +9,16 @@
 // 32-bit float), oro_midi, oro_link. Files are written under --out-dir
 // (default ./oro-renders), never anywhere else.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve, join, basename } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve, join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { check, compose, schema } from '../src/music/score.js';
 import { scoreMidi, scoreLink } from '../src/music/score-export.js';
 
 const argv = process.argv.slice(2);
 const outDir = resolve(argv.includes('--out-dir') ? argv[argv.indexOf('--out-dir') + 1] : 'oro-renders');
-const VERSION = '2.17.0';
+const VERSION = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version;
 
 const scoreProp = { type: 'string', description: 'A text score (headers, cues, notes) or a JSON score. Use oro_schema for the grammar.' };
 const TOOLS = [
@@ -41,6 +42,7 @@ const TOOLS = [
       quality: { type: 'string', enum: ['pristine', 'high', 'standard', 'eco'] },
       loudness: { type: 'number', description: 'Target LUFS (default -14).' },
       sampleRate: { type: 'number' },
+      voicing: { type: 'string', enum: ['patch', 'tint'], description: 'patch: each voice through its own instrument patch.' },
     } },
   },
   { name: 'oro_midi', description: 'Write a score as a standard MIDI file (one track per voice, drums on channel 10).', inputSchema: { type: 'object', properties: { score: scoreProp, file: { type: 'string' } }, required: ['score'] } },
@@ -67,7 +69,7 @@ async function call(name, a = {}) {
     if (!score && a.prompt) { const c = compose({ prompt: a.prompt }); if (!c.ok) return { ...text(c), isError: true }; score = c.text; }
     const { renderScore, encodeScoreWav } = await import('../src/music/score-render.js');
     const t0 = Date.now();
-    const r = await renderScore(score, { quality: a.quality, loudness: a.loudness, sampleRate: a.sampleRate });
+    const r = await renderScore(score, { quality: a.quality, loudness: a.loudness, sampleRate: a.sampleRate, voicing: a.voicing });
     if (!r.ok) return { ...text(brief(r.receipt)), isError: true };
     const file = safeFile(a.file || r.receipt.score.title, '.wav');
     writeFileSync(file, encodeScoreWav(r, { format: a.bits === 32 ? 'float32' : 'pcm24' }));

@@ -177,6 +177,9 @@ jobs:
           The apps are not signed with paid Apple or Microsoft certificates, so the first launch
           needs one extra click. The README explains it step by step:
           https://github.com/$GH_REPO#download
+
+          Macs on 2.11 to 2.15.1 with Install updates automatically turned on need one manual
+          download (the repository was renamed). What changed: https://github.com/$GH_REPO/blob/main/CHANGELOG.md
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then

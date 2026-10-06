@@ -521,3 +521,17 @@ scaled; the interface, minimap and 2D panels stay at native resolution.
 * **32-bit float WAV.** `wavBlobFromPieces({ format: 'float32' })` writes format 3;
   Bounce, Record and the score render take a `format`.
 
+
+## 2.17.1 additions
+
+* **Visualizers** (`src/ui/visualizer.js`). `ui.visualizer` (a device pref) picks what the
+  viewport shows: `map` or one of five 2D visualizers on a canvas layer (`.viz-layer`) above
+  the 3D canvas and below `.vp-overlay`. The layer taps `engine.analyser` (after the
+  limiter, before the listening mode) with analysers of its own that feed nothing onward,
+  so it cannot change the sound or a recording. `visuals.setCovered(true)` stops the 3D
+  render loop and keeps the physics timer alive (rolling and drifting dots still write
+  `centerX`/`centerY`). `.viewport[data-viz]` hides the map-only controls.
+* **Worker renders** (`src/music/score-render-host.js`). Page renders post the score to
+  `score-render-worker.js` (bundled with the `virtual:worklet:` plugin like the terrain
+  worker) and get the stereo buffers back as transferables; without a worker the same
+  `renderScore` runs on the page.

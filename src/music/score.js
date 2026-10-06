@@ -238,7 +238,8 @@ export function check(input) {
       let k = 0;
       for (let b = r.note.beat; b < stop - 1e-9 && k < (r.times ?? Infinity); b = r.note.beat + (++k) * r.step) {
         if (notes.length > LIMITS.notes) break;
-        notes.push({ ...r.note, beat: b });
+        // the last repeat is cut at the end of the score instead of running past it
+        notes.push({ ...r.note, beat: b, len: Math.min(r.note.len, end - b) });
       }
     }
   }
@@ -588,6 +589,7 @@ export function compose(input = {}) {
   }
   const known = STYLES[style];
   const keyMode = keyFrom(src, prompt, known);
+  if (keyMode.error) return receipt(false, [keyMode.error], [], null);
   let bpm = src.bpm != null ? Number(src.bpm) : bpmFrom(prompt, style === 'drums' ? drumTempo(prompt) : known.bpm);
   if (src.bpm == null && /\bfaster\b/i.test(prompt)) bpm += 16;
   if (src.bpm == null && /\bslower\b/i.test(prompt)) bpm -= 16;
@@ -632,13 +634,20 @@ export function styleFromPrompt(prompt) {
 }
 
 function keyFrom(src, prompt, known) {
+  const askedMode = src.mode ? String(src.mode).trim().toLowerCase() : '';
+  if (askedMode && askedMode !== 'major' && askedMode !== 'minor') {
+    return { error: err(0, 'mode', `Mode "${src.mode}" is not major or minor.`, 'Use mode: "major" or "minor", or leave it out.') };
+  }
   if (src.key) {
-    const m = String(src.key).match(/^([A-G])([#b]?)$/);
-    return { key: m ? m[1] + (m[2] || '') : 'C', mode: src.mode === 'minor' ? 'minor' : (src.mode || 'major') };
+    // D, d, F#, Bb, Dm, D minor, Bb major (2.17.1: before, anything but a bare name became C)
+    const m = String(src.key).trim().match(/^([A-Ga-g])([#b]?)\s*(m|min|minor|maj|major)?$/);
+    if (!m) return { error: err(0, 'key', `Key "${src.key}" is not a note name.`, 'Use a name like D, F#, Bb or Dm.') };
+    const fromKey = m[3] ? (/^m(in)?(or)?$/.test(m[3]) ? 'minor' : 'major') : '';
+    return { key: m[1].toUpperCase() + (m[2] || ''), mode: askedMode || fromKey || known.mode || 'major' };
   }
   const m = prompt.match(/\b([A-G])([#b])?\s*(minor|major|min|maj)\b/i);
-  if (!m) return { key: known.key || 'A', mode: known.mode || 'minor' };
-  const mode = /min/i.test(m[3]) ? 'minor' : 'major';
+  if (!m) return { key: known.key || 'A', mode: askedMode || known.mode || 'minor' };
+  const mode = askedMode || (/min/i.test(m[3]) ? 'minor' : 'major');
   return { key: m[1].toUpperCase() + (m[2] || ''), mode };
 }
 

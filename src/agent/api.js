@@ -10,7 +10,7 @@
 //   sound:  params, get, set, setGlobal, patches, loadPatch, scenes, loadScene
 //   tracks: tracks, addTrack, removeTrack, select
 //   play:   start, note, chord, transport, pattern, panic
-//   map:    dot, touch
+//   map:    dot, touch, show (the 3D map or a visualizer)
 //   edit:   undo, redo
 //   events: on('score' | 'step' | 'note', fn)
 //
@@ -29,12 +29,14 @@ import { resolveVoice } from '../music/score.js';
 export const API_VERSION = 2;
 const META = Object.freeze({ source: 'agent' });
 const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const VIEW_IDS = Object.freeze(['map', 'scope', 'spectrum', 'waterfall', 'vector', 'halo']);
+const VIEW_NAMES = Object.freeze({ terrain: 'map', '3d': 'map', oscilloscope: 'scope', analyzer: 'spectrum', analyser: 'spectrum', spectrogram: 'waterfall', stereo: 'vector', 'stereo field': 'vector', goniometer: 'vector', ring: 'halo' });
 const CHORD_IVS = { maj: [0, 4, 7], min: [0, 3, 7], m: [0, 3, 7], dim: [0, 3, 6], aug: [0, 4, 8], sus2: [0, 2, 7], sus4: [0, 5, 7], 7: [0, 4, 7, 10], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], min7: [0, 3, 7, 10] };
 
 /** Methods that change the session: over postMessage they need ?agent=1. */
 export const MUTATING = Object.freeze(new Set([
   'set', 'setGlobal', 'loadPatch', 'loadScene', 'addTrack', 'removeTrack', 'select', 'note', 'chord', 'transport',
-  'pattern', 'dot', 'touch', 'undo', 'redo', 'start',
+  'pattern', 'dot', 'touch', 'undo', 'redo', 'start', 'show',
 ]));
 
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -49,6 +51,13 @@ export function noteNumber(x) {
   const pc = (LETTER[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12) % 12;
   const n = (Number(m[3]) + 1) * 12 + pc;
   return n >= 0 && n <= 127 ? n : NaN;
+}
+
+/** 'D' / 'f#' / 'Bb' -> pitch class 0..11, or -1. */
+export function pitchClass(name) {
+  const m = String(name || '').trim().match(/^([A-Ga-g])([#b]?)$/);
+  if (!m) return -1;
+  return (LETTER[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12) % 12;
 }
 
 /** A parameter value from a number, a boolean or an option name. */
@@ -156,18 +165,19 @@ export function createAgentApi({ store, engine = null, music = null, presets = n
     status() { return ok(music.score.status()); },
     /** Offline render of a score: { ok, url (a blob URL of the WAV), stats }. download: true saves it too. */
     async render(score, opts = {}) {
-      const { renderScore, encodeScoreWav } = await import('../music/score-render.js');
-      const r = await renderScore(score == null ? music.score.getScore() : score, { ...opts, yieldEvery: 1 });
+      const [{ encodeScoreWav }, { renderScoreInBackground }] = await Promise.all([import('../music/score-render.js'), import('../music/score-render-host.js')]);
+      const { download, onProgress, ...renderOpts } = opts;
+      const r = await renderScoreInBackground(score == null ? music.score.getScore() : score, { ...renderOpts, onProgress });
       if (!r.ok) return r.receipt;
       const bytes = encodeScoreWav(r, { format: opts.bits === 32 || opts.format === 'float32' ? 'float32' : 'pcm24' });
       const blob = new Blob([bytes], { type: 'audio/wav' });
       const url = typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(blob) : null;
-      if (opts.download && url && typeof document !== 'undefined') {
+      if (download && url && typeof document !== 'undefined') {
         const a = document.createElement('a');
         a.href = url; a.download = `${String(r.receipt.score.title || 'oro-score').replace(/[^\w-]+/g, '-')}.wav`;
         document.body.appendChild(a); a.click(); a.remove();
       }
-      return ok({ url, bytes: bytes.length, stats: r.stats, tracks: r.tracks, durationSeconds: r.receipt.durationSeconds, blob });
+      return ok({ url, bytes: bytes.length, stats: r.stats, tracks: r.tracks, durationSeconds: r.receipt.durationSeconds, ranIn: r.ranIn, blob });
     },
     async link(score) {
       const { scoreLink } = await import('../music/score-export.js');
@@ -216,7 +226,9 @@ export function createAgentApi({ store, engine = null, music = null, presets = n
         for (const [id, v] of Object.entries(values)) {
           const def = GLOBAL_PARAM_MAP[id];
           if (!def) { errors.push({ param: id, error: `${id} is not a global parameter.`, fix: "oro.params('global') lists them." }); continue; }
-          const r = paramValue(def, id === 'scaleRoot' && typeof v === 'string' ? NOTE_NAMES.indexOf(v.replace('b', '')) : v);
+          const pc = id === 'scaleRoot' && typeof v === 'string' ? pitchClass(v) : null;
+          if (pc === -1) { errors.push({ param: id, error: `"${v}" is not a key.`, fix: 'Use a note name such as D, F# or Bb.' }); continue; }
+          const r = paramValue(def, pc ?? v);
           if (r.error) { errors.push({ param: id, error: r.error, fix: r.fix }); continue; }
           store.set(`global.${id}`, r.value, META);
           done[id] = r.value;
@@ -372,6 +384,15 @@ export function createAgentApi({ store, engine = null, music = null, presets = n
       return ok(visuals.touch({ u: num(x, 0.5), v: num(y, 0.5), phase, mode }) || {});
     },
 
+    /** show('map' | 'scope' | 'spectrum' | 'waterfall' | 'vector' | 'halo'): what the viewport shows (2.17.1). */
+    show(name) {
+      const s = String(name || '').trim().toLowerCase();
+      const id = VIEW_NAMES[s] || s;
+      if (!VIEW_IDS.includes(id)) return fail(`"${name}" is not a view.`, `Use one of: ${VIEW_IDS.join(', ')}.`);
+      store.set('ui.visualizer', id, { source: 'ui' });
+      return ok({ showing: id });
+    },
+
     // ------------------------------------------------------------------ edit
     undo() { const u = ui(); if (!u || !u.history) return fail('Undo is not available here.'); u.history.undo(); return ok(); },
     redo() { const u = ui(); if (!u || !u.history) return fail('Redo is not available here.'); u.history.redo(); return ok(); },
@@ -422,6 +443,7 @@ export const HELP = Object.freeze([
   { name: 'panic', args: '', returns: 'stops every note' },
   { name: 'dot', args: "track, { x, y, mode: 'Pin'|'Roll'|'Drift'|'Explore'|'Tour'|'Pendulum', gravity, friction, bounce, cruise }", returns: '{ x, y, mode }', example: "oro.dot(0, { x: 0.3, y: 0.7, mode: 'Roll', cruise: 0.5 })" },
   { name: 'touch', args: "{ x, y, phase: 'down'|'move'|'up', mode: 'strum'|'fx' }", returns: 'what the touch did' },
+  { name: 'show', args: "'map' | 'scope' | 'spectrum' | 'waterfall' | 'vector' | 'halo'", returns: '{ showing } what the viewport shows', example: "oro.show('spectrum')" },
   { name: 'undo', args: '', returns: '{ ok }' },
   { name: 'redo', args: '', returns: '{ ok }' },
   { name: 'on', args: "'score' | 'step' | 'note', fn", returns: 'an off() function' },

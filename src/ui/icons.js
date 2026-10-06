@@ -76,6 +76,12 @@ const P = {
   space: '<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="2.2"/><circle cx="17.4" cy="7.6" r="1.4" fill="currentColor" stroke="none"/>',
   panic: '<path d="M8.4 3.6h7.2l5 5v7l-5 5H8.4l-5-5v-7z"/><path d="M12 8v5"/><circle cx="12" cy="16.2" r=".9" fill="currentColor" stroke="none"/>',
   wave: '<path d="M3 12c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/>',
+  // 2.17.1 visualizers
+  scope: '<rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2.6"/><path d="M5.6 12c1.4-4 2.8-4 4.2 0s2.8 4 4.2 0 2.8-4 4.2 0"/>',
+  spectrum: '<path d="M4 19.4h16"/><path d="M6 19.4v-5.2M9.3 19.4V8.6M12.6 19.4v-8M15.9 19.4V6.2M19.2 19.4v-3.6"/>',
+  waterfall: '<rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2.6"/><path d="M6.4 8.4h4M12.6 8.4h5M6.4 12h7M15.6 12h2M6.4 15.6h2.6M11.4 15.6h6.2"/>',
+  vector: '<circle cx="12" cy="12" r="8.4"/><path d="M12 3.6v16.8M3.6 12h16.8" opacity=".45"/><path d="M9.2 16.6c-1.8-3.6 4.2-5.4 3-9.4M14.4 16c.4-2.4-2.8-3.4-1.6-6.4"/>',
+  halo: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.6 1.6M16.9 16.9l1.6 1.6M5.5 18.5l1.6-1.6M16.9 7.1l1.6-1.6"/>',
   mpc: '<rect x="3.4" y="4.4" width="17.2" height="15.2" rx="2.2"/><g fill="currentColor" stroke="none"><rect x="6" y="11" width="2.6" height="2.6" rx=".6"/><rect x="9.6" y="11" width="2.6" height="2.6" rx=".6"/><rect x="6" y="14.6" width="2.6" height="2.6" rx=".6"/><rect x="9.6" y="14.6" width="2.6" height="2.6" rx=".6"/></g><circle cx="16.4" cy="8.4" r="1.4"/><circle cx="16.4" cy="14" r="1.4"/><path d="M6 7.6h6.2"/>',
   usb: '<path d="M12 3.6v13.2"/><path d="M9.6 6L12 3.4 14.4 6"/><path d="M12 12.2L7.6 10V8.2M12 14.4l4.4-2.2V9.6"/><circle cx="12" cy="18.6" r="1.8"/><rect x="6.4" y="6.6" width="2.4" height="1.8" rx=".3"/><circle cx="16.4" cy="8.4" r="1.2"/>',
   edit: '<path d="M5 19l1-4.2L15.6 5.2a1.8 1.8 0 0 1 2.6 0l.6.6a1.8 1.8 0 0 1 0 2.6L9.2 18z"/><path d="M13.8 7l3.2 3.2"/>',

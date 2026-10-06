@@ -1281,6 +1281,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   let physicsTimer = 0;
 
   let held = false; // paused by debug.pause() (deterministic test stepping)
+  let covered = false; // 2.17.1 a visualizer covers the map: draw nothing, keep the physics
   // 2.11: compile every scene shader up front, off the main thread where the
   // browser has KHR_parallel_shader_compile. The first frame used to link the
   // sky and marble programs synchronously, which froze start-up for seconds
@@ -1296,7 +1297,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     setTimeout(done, 20000); // never wait on a stuck status query forever
   }
   function shouldRender() {
-    return !held && !disposed && !contextLost && onScreen && document.visibilityState !== 'hidden' && width > 1 && height > 1;
+    return !held && !covered && !disposed && !contextLost && onScreen && document.visibilityState !== 'hidden' && width > 1 && height > 1;
   }
 
   function schedule() {
@@ -1313,7 +1314,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
     }
     // Keep rolling / drifting dots alive (they shape the sound) while the map
     // is scrolled away; the browser throttles this when the tab is hidden.
-    const needPhysics = !want && !held && !disposed && sim.anyActive();
+    // (under a visualizer the timer always runs, so a dot set rolling later still moves)
+    const needPhysics = !want && !held && !disposed && (covered || sim.anyActive());
     if (needPhysics && !physicsTimer) {
       let prev = performance.now();
       physicsTimer = setInterval(() => {
@@ -1887,6 +1889,8 @@ export async function createVisuals(container, { store, engine = null, quality, 
       if (set) set.delete(fn);
     },
 
+    /** 2.17.1: stop drawing while a visualizer covers the map (rolling dots keep moving). */
+    setCovered(on) { covered = !!on; schedule(); },
     /**
      * 2.17 the touch tool without a pointer (oro.touch): { u, v, phase:
      * 'down' | 'move' | 'up', mode: 'strum' | 'fx' }. Returns the event.
