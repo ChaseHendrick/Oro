@@ -3,6 +3,19 @@
 All notable changes to Oro (called Orograph until 2.3) are listed here. The [user guide](docs/USER-GUIDE.md)
 explains every feature in detail.
 
+## 2.17.2 (October 2026): Reliable agent controls and terrain performance
+
+* Score stop, completion and autosave restore only temporary playback settings;
+  live edits to existing tracks and tempo are kept.
+* Repeated Strum strikes hold for their own duration. Releases follow the original
+  track through reorders and do not release piano keys or another track's strum.
+  Session loads release agent and Strum notes before clearing their deadlines.
+* Interrupted map gestures release on track, mode and view changes, pointer
+  cancellation, window blur and session replacement.
+* Agent parameter batches validate before writing. Invalid patterns, dot/touch
+  options and track patches return actionable errors without partial edits; see
+  the [agent API guide](docs/AGENT-API.md).
+
 ## 2.17.1 (October 2026): Visualizers, smoother renders and score desk fixes
 
 **New**

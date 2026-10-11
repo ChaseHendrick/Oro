@@ -502,7 +502,8 @@ scaled; the interface, minimap and 2D panels stay at native resolution.
   pieces, each a factory patch plus offsets), `score-styles.js` (styles and 20 grooves),
   `score.js` (parse, check, compose; receipts with `errors[].fix`), `desk.js` (plays a score
   on borrowed or added tracks and restores them; emits `score` events `start`, `cue`, `end`
-  through `music.on('score')`), `score-render.js` (offline render with `OroDSP` and a JS
+  through `music.on('score')`; restore/autosave revert only untouched score overrides,
+  preserving live edits on existing tracks and tempo), `score-render.js` (offline render with `OroDSP` and a JS
   master chain: convolution reverb, delay, chorus, warmth, BS.1770 loudness, look-ahead
   limiter; 5 minute cap) and `score-export.js` (MIDI, `#score=` links). Autosave skips the
   borrowed tracks through `autosave.addFilter`.

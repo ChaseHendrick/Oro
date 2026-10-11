@@ -147,6 +147,9 @@ few lines.
 
 Oro is built to be driven by software as well as people (2.17):
 
+See the [agent API guide](docs/AGENT-API.md) for validated calls, receipts, terrain
+performance examples and a request/reply bridge with a timeout.
+
 * **In a page** (the website, the offline file or the desktop app): `window.oro`.
   `oro.help()` lists every call, `oro.describe()` says what is loaded, and
   `oro.play(score)`, `oro.compose({ prompt })`, `oro.set(track, { cutoff: 1200 })`,

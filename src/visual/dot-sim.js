@@ -170,7 +170,7 @@ export function createDotSim({
   }
 
   /** Someone else moved the dot (a lock glide, a knob, a preset). */
-  function external(p) {
+  function external(p, replace = false) {
     storeCenter(p, _c);
     const s = P[p];
     s.wroteU = _c.u; s.wroteV = _c.v;
@@ -185,12 +185,14 @@ export function createDotSim({
       t.yielding = true;
       placeTourState(p);
     }
-    // A pending simulated write would drag the dot back: drop it.
-    if (s.meta !== USER_META) s.pending = false;
+    // A replacement owns its incoming coordinates; a queued drag from the
+    // previous session/list must not write them back on the next frame.
+    // For ordinary leaf changes retain the existing user-write arbitration.
+    if (replace || s.meta !== USER_META) s.pending = false;
   }
 
   const offStore = store.subscribe('', (path, value, meta) => {
-    if (path === '' || path === 'parts') { syncAll(true); for (let p = 0; p < parts; p++) external(p); return; }
+    if (path === '' || path === 'parts') { syncAll(true); for (let p = 0; p < parts; p++) external(p, true); return; }
     const m = /^parts\.(\d+)(?:\.(\w+)(?:\.(\w+))?)?/.exec(path);
     if (!m) return;
     const p = Number(m[1]);

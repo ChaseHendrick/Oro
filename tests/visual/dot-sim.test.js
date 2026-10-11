@@ -68,6 +68,22 @@ describe('dot simulation: who moved the dot', () => {
     expect(other).toBeLessThanOrEqual(41);
   });
 
+  it('discards a throttled drag write when a session or track list replaces it', () => {
+    for (const replace of ['session', 'tracks']) {
+      const { store, sim, run } = setup();
+      sim.userWrite(0, 0.25, 0.35); // queued until the next frame
+      const state = defaultState();
+      state.parts[0].params.centerX = 0.73;
+      state.parts[0].params.centerY = 0.82;
+      if (replace === 'session') store.load(state);
+      else store.set('parts', state.parts, { source: 'tracks' });
+      run(0.1);
+      expect(store.get('parts.0.params.centerX')).toBe(0.73);
+      expect(store.get('parts.0.params.centerY')).toBe(0.82);
+      sim.dispose();
+    }
+  });
+
   it('puts a marble where an outside writer (a dot lock) says', () => {
     const { store, sim, run } = setup();
     store.set('parts.0.dot.mode', 1, { source: 'ui' });

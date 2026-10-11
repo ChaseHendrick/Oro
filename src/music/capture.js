@@ -30,7 +30,7 @@ const LEGATO_SLACK = 0.1;   // of a step: a note released this close before the 
 /** Note sources played by a person (not the sequencer, arp, previews or bounces). */
 export function isPersonSource(source) {
   const s = String(source || '');
-  return s === 'ui' || s === 'qwerty' || s === 'guitar' || s === 'voice' || s.startsWith('midi');
+  return s === 'ui' || s === 'qwerty' || s === 'guitar' || s === 'voice' || s.startsWith('midi') || s.startsWith('touch:');
 }
 
 /**
