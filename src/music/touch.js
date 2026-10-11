@@ -38,25 +38,78 @@ export function strumNote(store, part, height) {
 }
 
 export function createTouchTool({ store, engine = null, router = null, timers = globalThis, now = () => performance.now() }) {
-  let last = null;        // { note, at, x, y, time }
-  const held = new Set(); // `${part}:${note}` waiting for their note-off
+  let last = null;        // { id, note, at, x, y, time }
+  let disposed = false;
+  const held = new Map(); // stable track id + note -> the current strike's timer
+  const indexOf = (id) => (store.get('parts') || []).findIndex((p) => p.id === id);
+  const resetTouch = () => { if (typeof engine?.touchMap === 'function') engine.touchMap(-1, 0, 0, 0, 0, false); };
+
+  function release(strike) {
+    timers.clearTimeout(strike.timer);
+    const part = indexOf(strike.id);
+    if (part >= 0) { try { router.noteOff(part, strike.note, strike.source); } catch { /* gone */ } }
+  }
+
+  function clear(releaseNotes = false) {
+    for (const strike of held.values()) {
+      if (releaseNotes) release(strike);
+      else timers.clearTimeout(strike.timer);
+    }
+    held.clear();
+    last = null;
+  }
+  // Session loads preserve physically held router keys when IDs survive.
+  // Release our own sources first, leaving keyboard/MIDI keys alone; removed
+  // tracks have already been forgotten by the router's track watcher.
+  const unstore = store.subscribe('', (path) => {
+    if (path === '') { clear(true); resetTouch(); }
+    else if (path === 'parts') {
+      for (const [key, strike] of held) if (indexOf(strike.id) < 0) {
+        timers.clearTimeout(strike.timer);
+        held.delete(key);
+      }
+      if (last && indexOf(last.id) < 0) last = null;
+    }
+  });
+  const unrouter = router && typeof router.on === 'function' ? router.on('allOff', ({ parts }) => {
+    for (const [key, strike] of held) if (parts.includes(indexOf(strike.id))) {
+      timers.clearTimeout(strike.timer);
+      held.delete(key);
+    }
+    last = null;
+  }) : null;
 
   function noteOn(part, note, vel) {
     if (!router) return;
-    const key = `${part}:${note}`;
-    if (held.has(key)) { try { router.noteOff(part, note); } catch { /* gone */ } }
-    held.add(key);
-    try { router.noteOn(part, note, vel); } catch { return; }
-    timers.setTimeout(() => {
-      if (!held.delete(key)) return;
-      try { router.noteOff(part, note); } catch { /* gone */ }
+    const id = store.get(`parts.${part}.id`);
+    const key = `${id}:${note}`;
+    const previous = held.get(key);
+    if (previous) { held.delete(key); release(previous); }
+    // A touch owns its route separately from the piano and other tracks.
+    const strike = { id, note, source: `touch:${id}`, timer: null };
+    try { router.noteOn(part, note, vel, strike.source); } catch { return; }
+    held.set(key, strike);
+    strike.timer = timers.setTimeout(() => {
+      if (held.get(key) !== strike) return;
+      held.delete(key);
+      release(strike);
     }, STRUM_NOTE_S * 1000);
   }
 
   /** Handle one touch event from the visuals. Returns what it did. */
   function handle(ev) {
-    if (!ev || typeof ev !== 'object') return null;
-    const part = Number.isInteger(ev.part) ? ev.part : Math.round(Number(store.get('ui.selectedPart')) || 0);
+    if (disposed || !ev || typeof ev !== 'object') return null;
+    const part = typeof ev.trackId === 'string' ? indexOf(ev.trackId)
+      : Number.isInteger(ev.part) ? ev.part : Math.round(Number(store.get('ui.selectedPart')) || 0);
+    const id = store.get(`parts.${part}.id`);
+    if (!id) {
+      if (ev.phase !== 'up') return null;
+      // Touch sources are global in the DSP, so a removed track still needs
+      // an up message even though its track-specific FX rig no longer exists.
+      if (typeof engine?.touchMap === 'function') engine.touchMap(-1, ev.x, ev.y, ev.height, 0, false);
+      last = null;
+      return { mode: ev.mode, down: 0 };
+    }
     const down = ev.phase === 'up' ? 0 : 1;
     const fx = ev.mode === 'fx';
     if (engine && typeof engine.touchMap === 'function') engine.touchMap(part, ev.x, ev.y, ev.height, down, fx);
@@ -70,10 +123,10 @@ export function createTouchTool({ store, engine = null, router = null, timers = 
       const d = Math.hypot(ev.x - last.x, ev.y - last.y) / ((t - last.time) / 1000);
       vel = clamp(0.45 + d * 0.12, 0.45, 1);
     }
-    const fresh = !last || ev.phase === 'down';
+    const fresh = !last || last.id !== id || ev.phase === 'down';
     if (fresh || (note !== last.note && t - last.at >= STRUM_GAP_MS)) {
       noteOn(part, note, vel);
-      last = { note, at: t, x: ev.x, y: ev.y, time: t };
+      last = { id, note, at: t, x: ev.x, y: ev.y, time: t };
       return { mode: 'strum', note, vel };
     }
     last.x = ev.x; last.y = ev.y; last.time = t;
@@ -83,8 +136,12 @@ export function createTouchTool({ store, engine = null, router = null, timers = 
   return {
     handle,
     dispose() {
-      for (const key of held) { const [p, n] = key.split(':').map(Number); try { router && router.noteOff(p, n); } catch { /* gone */ } }
-      held.clear();
+      if (disposed) return;
+      disposed = true;
+      unstore();
+      if (typeof unrouter === 'function') unrouter();
+      clear(true);
+      resetTouch();
     },
   };
 }

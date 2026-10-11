@@ -160,7 +160,7 @@ export function createUI(root, modules = {}) {
   scope.add(prefs.dispose);
   rememberPlace(store, prefs, visuals, scope);
   // v2.6 undo history: Cmd/Ctrl+Z undoes, Shift+Cmd+Z or Ctrl+Y redoes (text fields keep their own undo)
-  const history = createHistory(store);
+  const history = createHistory(store, { filter: (state) => music?.score?.cleanState(state) ?? state });
   scope.add(history.dispose);
   const onUndoKey = (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;

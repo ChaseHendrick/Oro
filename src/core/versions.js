@@ -32,7 +32,7 @@ export const DAILY_DAYS = 60;
 export const SIZE_CAP = 200 * 1024 * 1024;
 const DAY = 24 * 60 * 60 * 1000;
 // Store writes that are not edits: the moving dot, the engine, preferences, previews.
-const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'load', 'voice', 'lock', 'version']);
+const IGNORE = new Set(['physics', 'engine', 'prefs', 'transport', 'theme', 'load', 'voice', 'lock', 'version', 'score']);
 
 /** 64-bit content hash of a string (two independent 32-bit hashes) plus its length, as hex. */
 export function hashString(s) {
@@ -337,9 +337,10 @@ export function createVersionScheduler({ save, timers = globalThis, now = () => 
  * The app's version history: the store, the scheduler on store edits, and
  * preview / restore. Only one per page (getVersions()).
  */
-export function createVersions({ store, backend, timers = globalThis, now = () => Date.now(), quietMs, maxMs, cap, migrate = (s) => s } = {}) {
+export function createVersions({ store, backend, timers = globalThis, now = () => Date.now(), quietMs, maxMs, cap, migrate = (s) => s, filter = (state) => state } = {}) {
+  const snapshot = () => filter(store.serialize());
   const versions = createVersionStore({ backend, now, cap });
-  const saveCurrent = (kind, name = '') => versions.save(store.serialize(), { kind, name }).catch((err) => { console.warn('[versions] save failed', err); return null; });
+  const saveCurrent = (kind, name = '') => versions.save(snapshot(), { kind, name }).catch((err) => { console.warn('[versions] save failed', err); return null; });
   const scheduler = createVersionScheduler({ save: (kind) => saveCurrent(kind), timers, now, quietMs, maxMs });
   let previewing = null;   // { id, entry, keep }
   const listeners = new Set();
@@ -358,14 +359,14 @@ export function createVersions({ store, backend, timers = globalThis, now = () =
     list: () => versions.list(),
     get previewing() { return previewing ? { id: previewing.id, entry: { ...previewing.entry } } : null; },
     /** Save version (named or not): always makes a version. */
-    saveNamed: (name) => versions.save(store.serialize(), { kind: 'manual', name: String(name || '').trim() || 'Saved version' }),
+    saveNamed: (name) => versions.save(snapshot(), { kind: 'manual', name: String(name || '').trim() || 'Saved version' }),
     saveNow: (kind = 'auto') => saveCurrent(kind),
     /** Load a version temporarily (not undoable, not a change). */
     async preview(id) {
       if (!previewing) await scheduler.flush('auto');
       const state = migrate(await versions.get(id));
       const entry = versions.list().find(v => v.id === id) || { id };
-      if (!previewing) previewing = { keep: store.serialize() };
+      if (!previewing) previewing = { keep: snapshot() };
       previewing.id = id; previewing.entry = entry;
       scheduler.pause(true);
       store.load(state, { source: 'version' });
@@ -384,7 +385,7 @@ export function createVersions({ store, backend, timers = globalThis, now = () =
     /** Make the previewed version (with any edits made while previewing) the session. */
     async keep() {
       if (!previewing) return false;
-      const target = store.serialize();
+      const target = snapshot();
       const keep = previewing.keep;
       previewing = null;
       store.load(keep, { source: 'version' });
@@ -448,10 +449,10 @@ export function installCloseHooks({ versions, win = globalThis.window, doc = glo
 
 let current = null, starting = null;
 /** Start version history for the app (main.js, after the UI). Safe to call again. */
-export function startVersions({ store, migrate } = {}) {
+export function startVersions({ store, migrate, filter } = {}) {
   if (!starting) starting = (async () => {
     const mig = migrate || (await import('./migrate.js')).migrateState;
-    current = createVersions({ store, backend: await durableBackend(), migrate: mig });
+    current = createVersions({ store, backend: await durableBackend(), migrate: mig, filter });
     installCloseHooks({ versions: current });
     return current;
   })();

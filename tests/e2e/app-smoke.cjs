@@ -6,7 +6,7 @@
 //
 // Screenshots land in /tmp/orograph-shots/app/. Exit code 1 on any failure.
 
-const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/opt/node22/lib/node_modules/playwright');
 const fs = require('node:fs');
 
 const URL_ = process.argv[2] || 'http://127.0.0.1:5190/';

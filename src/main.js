@@ -111,7 +111,7 @@ async function boot() {
 
   mark('oro:ui');
   // v2.11 version history (src/core/versions.js), loaded after the app is up
-  import('./core/versions.js').then(m => m.startVersions({ store })).catch(err => console.warn('[orograph] version history unavailable', err));
+  import('./core/versions.js').then(m => m.startVersions({ store, filter: (state) => music.score.cleanState(state) })).catch(err => console.warn('[orograph] version history unavailable', err));
 
   // Debug / test hook (used by the end-to-end tests; harmless in production).
   window.orograph = { store, engine, visuals, music, presets, midi, MAX_PARTS, tracks, deepClone };

@@ -6,6 +6,29 @@ before continuing. The owner requested the complete expansion in
 limitations are in `docs/EXPANSION-VALIDATION.md`. Arrangement and Sound Match remain
 separate future features; they are outside the 2.0 expansion.
 
+Continuation on 2026-10-11: Oro **2.17.2** is prepared from
+`3b95281822c4807d1cde748687138ef9112f4ffe` (2.17.1), with the improvements below.
+The owner authorized pushing and merging a new downloadable GitHub release and
+updating the website. Verify CI, packaging, release assets and the live site
+before reporting publication complete.
+
+* The existing Roll/Keep rolling and Move/Strum/FX modes already implement the
+  requested terrain controls. Their interrupted gestures now release the original
+  track and cannot overwrite incoming session coordinates with pending drags.
+* Score playback restores only its unchanged borrowed fields. Live edits and tempo
+  changes survive stop, completion, autosave, undo/redo and version snapshots.
+* Agent batches, patterns and terrain controls validate before mutation; discovery,
+  bridge errors and stable-ID note ownership are strengthened. Read
+  [AGENT-API.md](AGENT-API.md) for real JavaScript, postMessage and terrain examples.
+* The final suite passes 2,070 tests in 182 files; web and single-file builds pass.
+  Built-browser terrain and performance checks passed on the connected Mac,
+  including Rapier free motion, interruptions, output signal measurements and
+  score edits surviving autosave/reload. No listening or reference-clip comparison
+  was performed. Electron packaging and physical touch/hardware remain untested.
+* Run the focused browser checks with `PLAYWRIGHT_MODULE=/path/to/playwright node
+  tests/e2e/terrain-interaction.cjs URL` and `tests/e2e/agent-performance.cjs URL`.
+  The existing full-app smoke check accepts the same module override.
+
 ---
 
 ## 0. Read first: where things stand (2026-10-06, Oro 2.17.1)
@@ -156,6 +179,13 @@ bundles only English Chromium language files (about 50 MB less installed on Appl
 Keep `en-US` in that list: electron-builder matches locale names exactly, and Windows and
 Linux need `en-US.pak` as Chromium's fallback locale. Almost all of the remaining size is
 Electron itself.
+
+**Version parity is required.** The owner requires the live website to serve the
+same Oro version as the GitHub downloads. Treat release work as incomplete until
+the latest GitHub release tag, its downloaded app version and the live website's
+`oro.help().version` agree. After every Oro release, sync and deploy the website,
+then check the live page and downloaded bundle; recording a source version alone
+does not confirm deployment. Do not leave the website behind during future work.
 
 **Website update after a release** (in a clone of `hendrickresearch.com` next to `synth`):
 

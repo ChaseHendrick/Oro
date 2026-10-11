@@ -13,8 +13,8 @@
 //   * drum pieces beyond the classic kit get kit tracks of their own
 //   * everything borrowed is kept by track id, so a reorder, a removed track
 //     or a loaded session can never be written over; loading a session or a
-//     panic stops the score, and the autosave always stores the tracks as
-//     they were (cleanState)
+//     panic stops the score; restore and autosave undo only the score's
+//     temporary changes, keeping edits made while it plays (cleanState)
 //   * the restore waits for release tails; cue events fire as cues pass
 
 import { deepClone } from '../core/store.js';
@@ -183,12 +183,79 @@ export function voicedPart(base, s, receipt, voicing) {
   return part;
 }
 
+const owns = (v, key) => v != null && Object.prototype.hasOwnProperty.call(v, key);
+const object = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+function same(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => owns(b, k) && same(a[k], b[k]));
+}
+
+/** Only fields the score changes are borrowed. Arrays are one editable field. */
+function overrides(before, applied, prefix = '', out = new Map()) {
+  for (const key of new Set([...Object.keys(before), ...Object.keys(applied)])) {
+    const was = owns(before, key), now = owns(applied, key);
+    const a = before[key], b = applied[key], path = prefix ? `${prefix}.${key}` : key;
+    if (was === now && same(a, b)) continue;
+    if (was && now && object(a) && object(b)) overrides(a, b, path, out);
+    else out.set(path, { was, now, before: deepClone(a), applied: deepClone(b) });
+  }
+  return out;
+}
+
+function field(part, path) {
+  let v = part;
+  for (const k of path.split('.')) {
+    if (!owns(v, k)) return { exists: false };
+    v = v[k];
+  }
+  return { exists: true, value: v };
+}
+
+/** Three-way restore: another writer owns every field it edits. */
+function restoredPart(part, changes) {
+  let out = part;
+  for (const [path, c] of changes) {
+    const live = field(part, path);
+    if (live.exists !== c.now || !same(live.value, c.applied)) continue;
+    if (out === part) out = deepClone(part);
+    const keys = path.split('.'), last = keys.pop();
+    let parent = out;
+    for (const k of keys) parent = parent[k];
+    if (c.was) parent[last] = deepClone(c.before);
+    else delete parent[last];
+  }
+  return out;
+}
+
+const overlaps = (a, b) => !a || !b || a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+
 export function createScoreDesk({ store, router, timebase, timers, emit = () => {} }) {
   let current = '';
   let active = null;     // { notes, cues, end, start, title, ... }
   let timer = null;
-  let borrowed = null;   // { parts: Map(id -> part), added: Set(id), tempo, selected }
+  let borrowed = null;   // { parts: Map(id -> overrides), added: Set(id), tempo: {before, applied}? }
   let tailUntil = -Infinity;
+  let trackIds = (store.get('parts') || []).map((p) => p?.id);
+
+  // Observe paths, not only values: replacing params/presets with an object
+  // can intentionally keep a score value. A whole-list change is a track
+  // reorder/add/remove, handled by tracksChanged and the stable ids below.
+  // Follow delivered list events: a batch can edit then reorder a track,
+  // so current indices may already have changed when the edit is delivered.
+  const offEdits = store.subscribe('', (path, value, meta) => {
+    if (path === '' || path === 'parts') {
+      trackIds = (path === '' ? value?.parts || [] : value || []).map((p) => p?.id);
+      return;
+    }
+    if (!borrowed || meta?.source === SOURCE) return;
+    if (path === 'global' || path === 'global.tempo') borrowed.tempo = null;
+    const m = /^parts\.(\d+)(?:\.(.*))?$/.exec(path);
+    if (!m) return;
+    const changes = borrowed.parts.get(trackIds[Number(m[1])]);
+    if (changes) for (const key of changes.keys()) if (overlaps(key, m[2] || '')) changes.delete(key);
+  });
 
   function stop(reason = 'stop') {
     const a = active;
@@ -197,8 +264,13 @@ export function createScoreDesk({ store, router, timebase, timers, emit = () => 
     if (timer) { timers.clearInterval(timer); timer = null; }
     if (a) {
       const now = timebase.now();
+      // The engine and router have already moved their voices when a track
+      // list event stops us. Release on the track's current slot, and leave
+      // removed tracks to the engine's own removal cleanup.
+      const partOf = new Map((store.get('parts') || []).map((p, i) => [p?.id, i]));
       for (const n of a.notes) {
-        if (n.sentOn && !n.sentOff) router._engineOff(n.part, n.note, Math.max(now, n.at + 0.005), SOURCE);
+        const part = partOf.get(n.trackId);
+        if (part != null && n.sentOn && !n.sentOff) router._engineOff(part, n.note, Math.max(now, n.at + 0.005), SOURCE);
         n.sentOn = n.sentOff = true;
       }
       emit({ type: 'end', reason, title: a.title });
@@ -273,7 +345,7 @@ export function createScoreDesk({ store, router, timebase, timers, emit = () => 
       if (part == null) continue;
       const note = plan.fallback.has(n.voice) ? percOnKit(n.voice) : n.midi;
       const on = at(n.beat);
-      notes.push({ part, note, vel: n.vel, on, off: Math.max(on + 0.02, at(n.beat + n.len)), at: on, sentOn: false, sentOff: false });
+      notes.push({ part, trackId: store.get(`parts.${part}.id`), note, vel: n.vel, on, off: Math.max(on + 0.02, at(n.beat + n.len)), at: on, sentOn: false, sentOff: false });
     }
     notes.sort((x, y) => x.on - y.on);
     const cues = receipt.cues.map((c) => ({ ...c, at: start + c.seconds }));
@@ -290,7 +362,7 @@ export function createScoreDesk({ store, router, timebase, timers, emit = () => 
 
   function borrow(plan, receipt, voicing) {
     const parts = (store.get('parts') || []).slice();
-    const keep = { parts: new Map(), added: new Set(), tempo: store.get('global.tempo') };
+    const keep = { parts: new Map(), added: new Set(), tempo: null };
     // added tracks first (one write of the whole list), then the sounds
     const fresh = plan.slots.filter((s) => s.add);
     if (fresh.length) {
@@ -308,16 +380,21 @@ export function createScoreDesk({ store, router, timebase, timers, emit = () => 
       // a soloed track that is not in the score would silence it
       all.forEach((p, i) => {
         if (!p || !p.params || !p.params.solo || plan.slots.some((s) => s.part === i)) return;
-        if (!keep.parts.has(p.id)) keep.parts.set(p.id, deepClone(p));
+        keep.parts.set(p.id, overrides(p, { ...p, params: { ...p.params, solo: 0 } }));
         store.set(`parts.${i}.params.solo`, 0, META);
       });
       for (const s of plan.slots) {
         const base = all[s.part];
         if (!base) continue;
-        if (!keep.added.has(base.id) && !keep.parts.has(base.id)) keep.parts.set(base.id, deepClone(base));
-        store.set(`parts.${s.part}`, voicedPart(base, s, receipt, voicing), META);
+        const voiced = voicedPart(base, s, receipt, voicing);
+        if (!keep.added.has(base.id)) keep.parts.set(base.id, overrides(base, voiced));
+        store.set(`parts.${s.part}`, voiced, META);
       }
-      if (!store.get('ui.playing') && Number.isFinite(receipt.score.bpm)) store.set('global.tempo', Math.round(receipt.score.bpm), META);
+      if (!store.get('ui.playing') && Number.isFinite(receipt.score.bpm)) {
+        const before = store.get('global.tempo'), applied = Math.round(receipt.score.bpm);
+        if (before !== applied) keep.tempo = { before, applied };
+        store.set('global.tempo', applied, META);
+      }
     });
     borrowed = keep;
   }
@@ -329,21 +406,25 @@ export function createScoreDesk({ store, router, timebase, timers, emit = () => 
     borrowed = null;
     const parts = store.get('parts') || [];
     store.batch(() => {
-      parts.forEach((p, i) => { if (p && keep.parts.has(p.id)) store.set(`parts.${i}`, keep.parts.get(p.id), META); });
+      parts.forEach((p, i) => {
+        if (!p || !keep.parts.has(p.id)) return;
+        const next = restoredPart(p, keep.parts.get(p.id));
+        if (next !== p) store.set(`parts.${i}`, next, META);
+      });
       if (keep.added.size) store.set('parts', (store.get('parts') || []).filter((p) => !keep.added.has(p.id)), META);
-      if (keep.tempo != null && store.get('global.tempo') !== keep.tempo) store.set('global.tempo', keep.tempo, META);
+      if (keep.tempo && store.get('global.tempo') === keep.tempo.applied) store.set('global.tempo', keep.tempo.before, META);
     });
     const sel = store.get('ui.selectedPart');
     const n = (store.get('parts') || []).length;
     if (Number.isInteger(sel) && sel >= n) store.set('ui.selectedPart', Math.max(0, n - 1), META);
   }
 
-  /** A serialized session with every borrowed track as it was (for the autosave). */
+  /** Autosave without temporary score changes, retaining ordinary live edits. */
   function cleanState(state) {
     if (!borrowed || !state || !Array.isArray(state.parts)) return state;
     const keep = borrowed;
-    const out = { ...state, parts: state.parts.filter((p) => !keep.added.has(p && p.id)).map((p) => (keep.parts.has(p && p.id) ? deepClone(keep.parts.get(p.id)) : p)) };
-    if (keep.tempo != null && out.global) out.global = { ...out.global, tempo: keep.tempo };
+    const out = { ...state, parts: state.parts.filter((p) => !keep.added.has(p && p.id)).map((p) => (keep.parts.has(p && p.id) ? restoredPart(p, keep.parts.get(p.id)) : p)) };
+    if (keep.tempo && out.global?.tempo === keep.tempo.applied) out.global = { ...out.global, tempo: keep.tempo.before };
     return out;
   }
 
@@ -386,6 +467,6 @@ export function createScoreDesk({ store, router, timebase, timers, emit = () => 
     /** Stop when someone else adds, removes or moves tracks (not the desk itself). */
     tracksChanged(meta) { if ((active || borrowed) && !(meta && meta.source === SOURCE)) stop('tracks'); },
     panic(parts) { if (active || borrowed) stop('panic'); return parts; },
-    dispose() { stop('dispose'); },
+    dispose() { stop('dispose'); offEdits(); },
   };
 }

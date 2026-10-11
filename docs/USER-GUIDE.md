@@ -2,7 +2,7 @@
 
 Oro is a synthesizer you play by moving a glowing dot over a landscape. This guide
 explains what every part of it does and why, for a musician who likes to know what is
-going on under the hood. It describes version 2.17.1. Guitar pedals are in
+going on under the hood. It describes version 2.17.2. Guitar pedals are in
 ([section 15](#15-guitar-pedals)), and the looper and Resample
 ([section 12](#12-recording-and-bouncing)). Voice input, new in 1.4, is in
 [section 13](#voice-14).
@@ -2940,8 +2940,10 @@ change synthesis cost and remain your choice.
 D minor", "lofi with rain", "trap beat", "epic trailer", "lullaby") and press **Write**, or
 pick a style, key and mode. The score appears as text you can edit. **Play** plays it on
 Oro's own instruments: each voice gets a track of its own (up to 16) with its own patch,
-and the tracks you had are put back, as they were, a moment after it ends. Nothing a score
-does becomes an undo step or ends up in your saved session. **Render WAV** makes a finished
+and its temporary track settings are put back a moment after it ends. Edits you make to
+existing tracks or the tempo while it plays are kept, including in autosave. Extra tracks
+created for the score are removed when it stops. The score's temporary settings do not
+become an undo step or end up in your saved session. **Render WAV** makes a finished
 file offline (24-bit or 32-bit float), **Save MIDI** writes a MIDI file for a DAW (drums on
 channel 10 with General MIDI notes), and **Copy link** makes a link that opens Oro with the
 score ready to play.
@@ -2973,6 +2975,10 @@ are quarter notes from 0. A chord is one word (`Am7`, `Cmaj7@3`), drums use `x`,
 In Strum and FX, dragging the dot itself still moves the dot. Four Link sources follow
 your finger in any mode except Move: **Touch X**, **Touch Y**, **Touch Height** and
 **Touch Down**.
+
+A gesture belongs to the track and touch mode where it began. Changing tracks, touch
+modes or views, leaving the window, or cancelling the pointer releases the gesture.
+Strum notes have their own short hold; striking the same note again restarts that hold.
 
 ### Roll: Keep rolling
 

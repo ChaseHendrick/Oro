@@ -78,8 +78,9 @@ export function describeEdit(path, meta = {}) {
   return 'Edit';
 }
 
-export function createHistory(store, { limit = 60, quiet = 350, timers = globalThis } = {}) {
-  let cur = snapshotState(store);
+export function createHistory(store, { limit = 60, quiet = 350, timers = globalThis, filter = (state) => state } = {}) {
+  const snapshot = () => filter(snapshotState(store));
+  let cur = snapshot();
   let past = [], future = [];
   let timer = 0, pending = null;
   const listeners = new Set();
@@ -92,7 +93,7 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
     if (past.length > limit) past.shift();
     future = [];
     pending = null;
-    cur = snapshotState(store);
+    cur = snapshot();
     notify();
   }
 
@@ -101,7 +102,7 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
     if (path === 'ui' || String(path).startsWith('ui.')) return;
     if (paused || IGNORE.has(meta.source)) {
       // a wholesale replacement that is not an edit becomes the new start
-      if (path === '' && meta.source !== 'history' && !pending) { cur = snapshotState(store); }
+      if (path === '' && meta.source !== 'history' && !pending) { cur = snapshot(); }
       return;
     }
     if (!pending) pending = { before: cur, label: describeEdit(path, meta) };
@@ -112,7 +113,7 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
 
   function restore(state) {
     store.load(state, { source: 'history' });
-    cur = snapshotState(store);
+    cur = snapshot();
   }
 
   return {
@@ -124,7 +125,7 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
       commit();
       const e = past.pop();
       if (!e) return null;
-      future.push({ state: snapshotState(store), label: e.label });
+      future.push({ state: snapshot(), label: e.label });
       restore(e.state);
       notify();
       return e.label;
@@ -133,7 +134,7 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
       commit();
       const e = future.pop();
       if (!e) return null;
-      past.push({ state: snapshotState(store), label: e.label });
+      past.push({ state: snapshot(), label: e.label });
       restore(e.state);
       notify();
       return e.label;
@@ -144,12 +145,12 @@ export function createHistory(store, { limit = 60, quiet = 350, timers = globalT
     pause(on) {
       paused = !!on;
       if (paused) { timers.clearTimeout(timer); timer = 0; pending = null; }
-      else cur = snapshotState(store);
+      else cur = snapshot();
     },
     reset() {
       timers.clearTimeout(timer); timer = 0; pending = null;
       past = []; future = [];
-      cur = snapshotState(store);
+      cur = snapshot();
       notify();
     },
     on(fn) { listeners.add(fn); return () => listeners.delete(fn); },

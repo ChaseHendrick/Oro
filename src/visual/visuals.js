@@ -379,6 +379,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     fromU: 0, fromV: 0, toU: 0, toV: 0, t0: 0, dur: GLIDE_MS,
     hist: new Float64Array(8 * 3), histN: 0, histI: 0,
   };
+  let press = null;
 
   // ------------------------------------------------------------------ terrain
   const cache = createTerrainCache({
@@ -401,6 +402,16 @@ export async function createVisuals(container, { store, engine = null, quality, 
   // The track list changed shape: height fields and cached tables move with
   // their tracks (before the dot simulation below re-reads the store), so a
   // reorder rebuilds nothing.
+  // End input before dot-sim re-reads a replaced/reordered track list. The
+  // old control coordinates belong to the old list and must not be written
+  // over a loaded session or another track now occupying that index.
+  const offInputReset = store.subscribe('', (path) => {
+    if (path !== '' && path !== 'parts') return;
+    if (press) endPress(false, false);
+    cancelGlide();
+    if (ctl.mode === 'drag' && sim.isActive(sel)) sim.release(sel, 0, 0);
+    ctl.mode = 'idle';
+  });
   const offTracks = watchTracks(store, ({ perm, fresh }) => {
     fields = permute(fields, perm, fresh, () => new HeightField());
     tile = permute(tile, perm, fresh, () => ({ u: 0, v: 0 }));
@@ -506,7 +517,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   // engine decide what it does (src/music/touch.js).
   let touchMode = store.get('ui.touchMode') || 'move';
   let lastRipple = 0;
-  function touchEvent(phase, u, v, clientX, clientY, mode = touchMode) {
+  function touchEvent(phase, u, v, clientX, clientY, mode = touchMode, part = sel) {
     const uu = wrap01(u), vv = wrap01(v);
     const height = view && view.A && view.A.data ? view.norm(uu, vv) : 0;
     // screen position, -1..1 across the map view (up is +1)
@@ -515,7 +526,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     const sy = onScreen ? 1 - ((clientY - rect.top) / rect.height) * 2 : 1 - vv * 2;
     const now = performance.now();
     if (phase !== 'up' && now - lastRipple > 60) { lastRipple = now; markers.ping(uu, vv, height >= 0); }
-    const ev = { phase, mode, part: sel, u: uu, v: vv, height, x: Math.max(-1, Math.min(1, sx)), y: Math.max(-1, Math.min(1, sy)), time: now };
+    const ev = { phase, mode, part, trackId: store.get(`parts.${part}.id`), u: uu, v: vv, height, x: Math.max(-1, Math.min(1, sx)), y: Math.max(-1, Math.min(1, sy)), time: now };
     emit('touch', ev);
     return ev;
   }
@@ -675,7 +686,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
     lastWrapped[p].u = wrap01(ctl.u); lastWrapped[p].v = wrap01(ctl.v);
   }
 
-  function cancelGlide() { clearTimeout(glideTimer); if (ctl.mode === 'glide') ctl.mode = 'idle'; }
+  function cancelGlide() {
+    clearTimeout(glideTimer);
+    if (ctl.mode !== 'glide') return;
+    ctl.mode = 'idle';
+    if (sim.isActive(sel)) sim.release(sel, 0, 0);
+  }
 
   function recordHist(x, z) {
     const i = ctl.histI;
@@ -719,7 +735,6 @@ export async function createVisuals(container, { store, engine = null, quality, 
   // ------------------------------------------------------------------ pointer
   const pointer = { x: 0, y: 0, inside: false, moved: false, touch: false, buttons: 0 };
   // press.kind: 'dot' drag | 'terrain' click-glide | 'size' / 'rotate' gestures | 'wp' waypoint drag
-  let press = null;
   const touchIds = new Set();
   let longPress = 0;
   let rightBlocked = false;
@@ -811,10 +826,10 @@ export async function createVisuals(container, { store, engine = null, quality, 
     // 2.17 touch tool: a press on the land plays it instead of moving the dot
     if (!edit && touchMode !== 'move' && !overDot(e.clientX, e.clientY, isTouch) && pickTerrain(e.clientX, e.clientY, hit)) {
       blockCamera();
-      press = { id: e.pointerId, kind: 'touch', sx: e.clientX, sy: e.clientY, moved: false, u: hit.u, v: hit.v, cx: e.clientX, cy: e.clientY };
+      press = { id: e.pointerId, kind: 'touch', sx: e.clientX, sy: e.clientY, moved: false, part: sel, mode: touchMode, event: null };
       canvas.style.cursor = 'crosshair';
       overlay.hide();
-      touchEvent('down', hit.u, hit.v, e.clientX, e.clientY);
+      press.event = touchEvent('down', hit.u, hit.v, e.clientX, e.clientY, press.mode, press.part);
       return;
     }
 
@@ -921,15 +936,14 @@ export async function createVisuals(container, { store, engine = null, quality, 
         break;
       case 'touch':
         if (pickTerrain(e.clientX, e.clientY, hit)) {
-          press.u = hit.u; press.v = hit.v; press.cx = e.clientX; press.cy = e.clientY;
-          touchEvent('move', hit.u, hit.v, e.clientX, e.clientY);
+          press.event = touchEvent('move', hit.u, hit.v, e.clientX, e.clientY, press.mode, press.part);
         }
         break;
       default: break;
     }
   }
 
-  function endPress(commit) {
+  function endPress(commit, write = true) {
     const p = press;
     press = null;
     clearLongPress();
@@ -941,14 +955,22 @@ export async function createVisuals(container, { store, engine = null, quality, 
       return;
     }
     if (p.kind === 'touch') {
-      touchEvent('up', p.u, p.v, p.cx, p.cy);
+      // Release the initiating mode/track at its last position, even if UI
+      // selection or the displayed terrain has already changed.
+      if (p.event) {
+        const part = p.event.trackId ? store.get('parts').findIndex(t => t.id === p.event.trackId) : p.event.part;
+        emit('touch', { ...p.event, part, phase: 'up', time: performance.now() });
+      }
       canvas.style.cursor = '';
       return;
     }
+    if (!commit) cancelGlide();
     if (ctl.mode === 'drag') {
       ctl.mode = 'idle';
-      settleTile(sel);
-      sim.userWrite(sel, wrap01(ctl.u), wrap01(ctl.v), true, clock);
+      if (write) {
+        settleTile(sel);
+        sim.userWrite(sel, wrap01(ctl.u), wrap01(ctl.v), true, clock);
+      }
       if (sim.isActive(sel)) {
         flickVelocity(_flick);
         if (!commit) { _flick.x = 0; _flick.z = 0; }
@@ -961,7 +983,18 @@ export async function createVisuals(container, { store, engine = null, quality, 
   function onPointerUp(e) {
     touchIds.delete(e.pointerId);
     if (rightBlocked && e.button === 2) { rightBlocked = false; controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE; }
-    if (press && e.pointerId === press.id) endPress(true);
+    if (press && e.pointerId === press.id) endPress(e.type !== 'pointercancel');
+  }
+
+  function cancelInput() {
+    if (press) endPress(false);
+    cancelGlide();
+    if (ctl.mode === 'drag') {
+      ctl.mode = 'idle';
+      if (sim.isActive(sel)) sim.release(sel, 0, 0);
+    }
+    touchIds.clear();
+    clearLongPress();
   }
 
   function onPointerLeave() { pointer.inside = false; overlay.hide(); markers.setHover(-1); }
@@ -1023,6 +1056,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   }
 
   function onFocusChange() {
+    if (document.activeElement !== canvas) cancelInput();
     let visible = false;
     try { visible = document.activeElement === canvas && canvas.matches(':focus-visible'); } catch { visible = document.activeElement === canvas; }
     overlay.setFocus(visible);
@@ -1036,6 +1070,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
   canvas.addEventListener('keydown', onKeyDown);
   canvas.addEventListener('focus', onFocusChange);
   canvas.addEventListener('blur', onFocusChange);
+  window.addEventListener('blur', cancelInput);
   // capture + non-passive: runs before OrbitControls' zoom and can stop it over the dot
   canvas.addEventListener('wheel', onWheel, { capture: true, passive: false });
 
@@ -1051,9 +1086,10 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (p === prev && animate) return;
     // keep the dot where it was on screen and let it glide to its new home
     const oldU = dotPos.u, oldV = dotPos.v;
+    if (press) endPress(false);
+    cancelGlide();
     sel = p;
     selId = store.get(`parts.${p}.id`);
-    if (press) endPress(false);
     ctl.mode = 'idle';
     loadPart(p, animate);
     live.primed = false;
@@ -1104,13 +1140,13 @@ export async function createVisuals(container, { store, engine = null, quality, 
         case 'ui.renderStyle': api.setRenderStyle(store.get('ui.renderStyle')); break;
         case 'ui.palette': api.setPalette(store.get('ui.palette')); break;
         case 'ui.touchMode':
+          if (press && press.kind === 'touch') endPress(false);
           touchMode = store.get('ui.touchMode') || 'move';
-          if (press && press.kind === 'touch' && touchMode === 'move') endPress(false);
           break;
         case 'ui.editWaypoints':
           editOn = !!store.get('ui.editWaypoints');
           // leaving edit mode mid-drag must not leave a waypoint grabbed
-          if (press && press.kind === 'wp') endPress(false);
+          if (press && (press.kind === 'wp' || press.kind === 'touch')) endPress(false);
           markersDirty = true;
           pointer.moved = true;
           break;
@@ -1130,11 +1166,12 @@ export async function createVisuals(container, { store, engine = null, quality, 
     if (branch === 'params') {
       if (leaf === 'terrainA' || leaf === 'terrainB' || leaf === 'seed' || leaf === 'detail') { cache.invalidate(p); return; }
       // someone else moved the dot (a lock, a knob): a click-glide in flight gives way
-      if ((leaf === 'centerX' || leaf === 'centerY') && !sim.writing && meta !== USER_META && p === sel && ctl.mode === 'glide') ctl.mode = 'idle';
+      if ((leaf === 'centerX' || leaf === 'centerY') && !sim.writing && meta !== USER_META && p === sel && ctl.mode === 'glide') cancelGlide();
     }
   });
 
   function applyUi() {
+    if (press) endPress(false);
     editOn = !!store.get('ui.editWaypoints');
     touchMode = store.get('ui.touchMode') || 'move';
     selectPart(clampPart(store.get('ui.selectedPart')), true);
@@ -1336,9 +1373,9 @@ export async function createVisuals(container, { store, engine = null, quality, 
     schedule();
   });
   io.observe(container);
-  const onVisibility = () => schedule();
+  const onVisibility = () => { if (document.visibilityState === 'hidden') cancelInput(); schedule(); };
   document.addEventListener('visibilitychange', onVisibility);
-  const onLost = (e) => { e.preventDefault(); contextLost = true; schedule(); };
+  const onLost = (e) => { e.preventDefault(); cancelInput(); contextLost = true; schedule(); };
   const onRestored = () => { contextLost = false; schedule(); };
   canvas.addEventListener('webglcontextlost', onLost);
   canvas.addEventListener('webglcontextrestored', onRestored);
@@ -1890,7 +1927,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
     },
 
     /** 2.17.1: stop drawing while a visualizer covers the map (rolling dots keep moving). */
-    setCovered(on) { covered = !!on; schedule(); },
+    setCovered(on) { covered = !!on; if (covered) cancelInput(); schedule(); },
     /**
      * 2.17 the touch tool without a pointer (oro.touch): { u, v, phase:
      * 'down' | 'move' | 'up', mode: 'strum' | 'fx' }. Returns the event.
@@ -1967,6 +2004,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
 
     dispose() {
       if (disposed) return;
+      cancelInput();
       disposed = true;
       running = false;
       cancelAnimationFrame(raf);
@@ -1974,6 +2012,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       funInput = null;
       fun.dispose();
       offStore();
+      offInputReset();
       engineOffs.forEach(f => f());
       window.removeEventListener('orograph:theme', onTheme);
       if (motionMq) motionMq.removeEventListener('change', onMotion);
@@ -1989,6 +2028,7 @@ export async function createVisuals(container, { store, engine = null, quality, 
       canvas.removeEventListener('keydown', onKeyDown);
       canvas.removeEventListener('focus', onFocusChange);
       canvas.removeEventListener('blur', onFocusChange);
+      window.removeEventListener('blur', cancelInput);
       canvas.removeEventListener('wheel', onWheel, { capture: true });
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);
@@ -2022,6 +2062,10 @@ export async function createVisuals(container, { store, engine = null, quality, 
       pick(clientX, clientY) {
         rect = canvas.getBoundingClientRect();
         return pickTerrain(clientX, clientY, hit) ? { u: wrap01(hit.u), v: wrap01(hit.v), y: hit.y } : null;
+      },
+      simulation(part = sel) {
+        const p = clampPart(part), s = sim.state(p);
+        return { u: s.u, v: s.v, vx: s.vx, vz: s.vz, held: !!s.held, engine: sim.engineName(p) };
       },
       dot() { return { u: dotPos.u, v: dotPos.v, x: dotPos.x, y: dotPos.y, z: dotPos.z, src: dotSrc, offset: [dispOffset.u, dispOffset.v] }; },
       /** The camera's target and the displayed plane's centre (world units; the plane follows the camera). */
