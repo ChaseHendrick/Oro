@@ -1,7 +1,7 @@
 # Oro agent controls
 
 The running browser, offline HTML and desktop app expose `window.oro` (API version
-2). Start with `oro.help()`, `oro.state()` and `oro.params(track)`. Help includes
+2; `oro.appVersion` identifies the app release). Start with `oro.help()`, `oro.state()` and `oro.params(track)`. Help includes
 argument examples and each method's `requiresAgentOptIn` permission; parameter
 discovery includes current values, ranges, curves, units and enum option names.
 `oro.schema()` describes the separate score grammar. There is no `/api/oro` HTTP

@@ -24,7 +24,7 @@ const URL_ = process.argv[2] || 'http://127.0.0.1:5191/';
       const id = api.tracks().tracks[0].id;
       const before = JSON.stringify(o.store.serialize());
       const bad = [api.set(id, { cutoff: 1200, typo: 1 }), api.dot(id, { x: 0.2, mode: 'wrong' }), api.pattern(id, [0, { degree: NaN }]), api.addTrack({ patch: 'missing patch' })];
-      return { version: api.help().version, bad: bad.map(r => ({ ok: r.ok, error: r.error })), unchanged: JSON.stringify(o.store.serialize()) === before, help: api.help().methods.length, audio: api.state().audio };
+      return { version: api.appVersion, bad: bad.map(r => ({ ok: r.ok, error: r.error })), unchanged: JSON.stringify(o.store.serialize()) === before, help: api.help().methods.length, audio: api.state().audio };
     });
     assert.ok(validation.bad.every(r => r.ok === false && r.error));
     assert.equal(validation.unchanged, true);

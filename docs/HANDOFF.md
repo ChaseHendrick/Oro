@@ -183,7 +183,7 @@ Electron itself.
 **Version parity is required.** The owner requires the live website to serve the
 same Oro version as the GitHub downloads. Treat release work as incomplete until
 the latest GitHub release tag, its downloaded app version and the live website's
-`oro.help().version` agree. After every Oro release, sync and deploy the website,
+`oro.appVersion` agree. After every Oro release, sync and deploy the website,
 then check the live page and downloaded bundle; recording a source version alone
 does not confirm deployment. Do not leave the website behind during future work.
 
